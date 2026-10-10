@@ -1,27 +1,5 @@
 package club.heiqi.uilib.ui.scene.integration;
 
-import club.heiqi.uilib.testing.TestApplication;
-import club.heiqi.uilib.testing.GlfwTestEnvironment;
-import club.heiqi.uilib.testing.GlfwTestEnvironment.Profile;
-import club.heiqi.uilib.host.client.gl.Lwjgl3GlApi;
-import club.heiqi.uilib.host.client.gl.GlProgramProvider;
-
-import java.awt.image.BufferedImage;
-import java.io.File;
-import java.nio.ByteBuffer;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import javax.imageio.ImageIO;
-import org.lwjgl.system.MemoryUtil;
-import club.heiqi.uilib.host.client.gl.GlQuadRenderer;
-import club.heiqi.uilib.host.client.gl.GlQuadRenderer.Counters;
-import club.heiqi.uilib.host.client.gl.GlQuadRenderer.Texture;
-import club.heiqi.uilib.ui.render.batch.OrderedQuadBatch;
-import club.heiqi.uilib.ui.render.batch.OrderedQuadBatch.Quad;
-import club.heiqi.uilib.ui.render.batch.OrderedQuadBatch.State;
-import club.heiqi.uilib.ui.render.batch.OrderedQuadCollector;
-import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import static org.lwjgl.opengl.GL32C.GL_ACTIVE_TEXTURE;
 import static org.lwjgl.opengl.GL32C.GL_ARRAY_BUFFER;
 import static org.lwjgl.opengl.GL32C.GL_ARRAY_BUFFER_BINDING;
@@ -121,9 +99,34 @@ import static org.lwjgl.opengl.GL32C.glTexParameteri;
 import static org.lwjgl.opengl.GL32C.glUseProgram;
 import static org.lwjgl.opengl.GL32C.glViewport;
 
-/** 独立 hidden GLFW 上下文，直接消费生产 collector/backend；不启动 MC。
- * 参考器按原图元顺序在 premult 字节域执行 SrcOver；允许每通道 2/255，覆盖
- * RGBA8 framebuffer 每次混合的定点舍入及驱动浮点转换差异，不容许移动图元次序。
+import club.heiqi.uilib.host.client.gl.GlProgramProvider;
+import club.heiqi.uilib.host.client.gl.GlQuadRenderer;
+import club.heiqi.uilib.host.client.gl.GlQuadRenderer.Counters;
+import club.heiqi.uilib.host.client.gl.GlQuadRenderer.Texture;
+import club.heiqi.uilib.host.client.gl.Lwjgl3GlApi;
+import club.heiqi.uilib.testing.GlfwTestEnvironment;
+import club.heiqi.uilib.testing.GlfwTestEnvironment.Profile;
+import club.heiqi.uilib.testing.TestApplication;
+import club.heiqi.uilib.ui.render.batch.OrderedQuadBatch;
+import club.heiqi.uilib.ui.render.batch.OrderedQuadBatch.Quad;
+import club.heiqi.uilib.ui.render.batch.OrderedQuadBatch.State;
+import club.heiqi.uilib.ui.render.batch.OrderedQuadCollector;
+import club.heiqi.uilib.ui.scene.layout.LayoutBox;
+
+import org.lwjgl.system.MemoryUtil;
+
+import java.awt.image.BufferedImage;
+import java.io.File;
+import java.nio.ByteBuffer;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+
+import javax.imageio.ImageIO;
+
+/**
+ * 独立 hidden GLFW 上下文，直接消费生产 collector/backend；不启动 MC。 参考器按原图元顺序在 premult 字节域执行 SrcOver；允许每通道
+ * 2/255，覆盖 RGBA8 framebuffer 每次混合的定点舍入及驱动浮点转换差异，不容许移动图元次序。
  */
 public final class GlBatchScenario extends TestApplication {
     private static final int W = 96, H = 72, CAPACITY = 4, TOLERANCE = 2;
@@ -215,10 +218,7 @@ public final class GlBatchScenario extends TestApplication {
             }
             for (int y = 0; y < H; y++)
                 for (int x = 0; x < W; x++) {
-                    if (x + 0.5 < q.x
-                            || x + 0.5 >= q.x + q.width
-                            || y + 0.5 < q.y
-                            || y + 0.5 >= q.y + q.height
+                    if (!covers(q, x + .5, y + .5)
                             || item.clip != null && !item.clip.contains(x, y)) continue;
                     int offset = (y * W + x) * 4;
                     for (int c = 0; c < 4; c++)
@@ -227,6 +227,39 @@ public final class GlBatchScenario extends TestApplication {
                 }
         }
         return result;
+    }
+
+    /** 与正式EBO共用0-1-2、0-2-3拓扑；像素中心按top-left边归属，仅混合一次。 */
+    private static boolean covers(Quad q, double x, double y) {
+        return triangle(q.x0, q.y0, q.x1, q.y1, q.x2, q.y2, x, y)
+                || triangle(q.x0, q.y0, q.x2, q.y2, q.x3, q.y3, x, y);
+    }
+
+    private static boolean triangle(
+            double ax,
+            double ay,
+            double bx,
+            double by,
+            double cx,
+            double cy,
+            double px,
+            double py) {
+        double area = edge(ax, ay, bx, by, cx, cy);
+        if (area == 0) return false;
+        if (area < 0) return triangle(ax, ay, cx, cy, bx, by, px, py);
+        return included(ax, ay, bx, by, px, py)
+                && included(bx, by, cx, cy, px, py)
+                && included(cx, cy, ax, ay, px, py);
+    }
+
+    private static double edge(double ax, double ay, double bx, double by, double px, double py) {
+        return (bx - ax) * (py - ay) - (by - ay) * (px - ax);
+    }
+
+    private static boolean included(
+            double ax, double ay, double bx, double by, double px, double py) {
+        double value = edge(ax, ay, bx, by, px, py);
+        return value > 0 || value == 0 && (by < ay || by == ay && bx > ax);
     }
 
     private static int[] readback() {

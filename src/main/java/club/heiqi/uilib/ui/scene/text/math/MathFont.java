@@ -83,8 +83,20 @@ public interface MathFont {
     /** 真实竖向 variant 或部件构建；超出能力时明确报告，不任意变形。 */
     TextLayout stretch(int codepoint, float minimumHeight);
 
-    /** 显示型大算子选择真实完整字形：优先满足建议高度，否则使用最大的可用变体。
-     * 算子并非须覆盖内容的定高根号；不做非等比拉伸。 */
+    /** 明确轴的真实伸缩；旧实现保留竖向能力，横向不伪造支持。 */
+    default TextLayout stretch(int codepoint, float minimumAdvance, MathAxis axis) {
+        java.util.Objects.requireNonNull(axis, "axis");
+        if (axis == MathAxis.VERTICAL) return stretch(codepoint, minimumAdvance);
+        throw new UnsupportedOperationException("数学字体不支持横向伸缩");
+    }
+
+    /** 单字形的真实 top-accent attachment，含布局 X 原点；无单字形数据时为 NaN。 */
+    default float topAccentAttachment(TextLayout layout) {
+        java.util.Objects.requireNonNull(layout, "layout");
+        return Float.NaN;
+    }
+
+    /** 显示型大算子选择真实完整字形：优先满足建议高度，否则使用最大的可用变体。 算子并非须覆盖内容的定高根号；不做非等比拉伸。 */
     default TextLayout displayOperator(int codepoint, float preferredHeight) {
         return stretch(codepoint, preferredHeight);
     }

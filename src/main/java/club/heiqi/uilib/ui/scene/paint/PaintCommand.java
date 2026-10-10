@@ -1,14 +1,16 @@
 package club.heiqi.uilib.ui.scene.paint;
 
-import java.util.Objects;
+import club.heiqi.uilib.ui.scene.image.ImagePlacement;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.text.TextLayout;
-import club.heiqi.uilib.ui.scene.image.ImagePlacement;
+
+import java.util.Objects;
 
 /** 封闭值载荷：不引用节点、不读回布局；嵌套计划均为同代已定位值。 */
 public final class PaintCommand {
     public enum Kind {
         RECT,
+        LINE,
         TEXT,
         IMAGE,
         IMAGE_BRANCH_OVERLAY
@@ -19,6 +21,47 @@ public final class PaintCommand {
     public final int color;
     public final TextLayout text;
     public final ImagePlacement image;
+    public final Line line;
+
+    /** 平端点线段，线宽沿法线居中；零长度不绘制，clip不改变端点或方向。 */
+    public static final class Line {
+        public final float x0, y0, x1, y1, thickness;
+
+        private Line(float x0, float y0, float x1, float y1, float thickness) {
+            if (!Float.isFinite(x0)
+                    || !Float.isFinite(y0)
+                    || !Float.isFinite(x1)
+                    || !Float.isFinite(y1)
+                    || !Float.isFinite(thickness)
+                    || thickness <= 0) throw new IllegalArgumentException("无效线段");
+            this.x0 = x0;
+            this.y0 = y0;
+            this.x1 = x1;
+            this.y1 = y1;
+            this.thickness = thickness;
+        }
+
+        public boolean empty() {
+            return x0 == x1 && y0 == y1;
+        }
+
+        private LayoutBox bounds() {
+            double half = empty() ? 0 : (double) thickness / 2;
+            double left = Math.floor(Math.min(x0, x1) - half);
+            double top = Math.floor(Math.min(y0, y1) - half);
+            double right = Math.ceil(Math.max(x0, x1) + half);
+            double bottom = Math.ceil(Math.max(y0, y1) + half);
+            if (left < Integer.MIN_VALUE
+                    || top < Integer.MIN_VALUE
+                    || right > Integer.MAX_VALUE
+                    || bottom > Integer.MAX_VALUE
+                    || right - left > Integer.MAX_VALUE
+                    || bottom - top > Integer.MAX_VALUE)
+                throw new IllegalArgumentException("线段超出布局坐标范围");
+            // 仅作保守包络；消费者必须使用line端点生成四角，不能绘制此box。
+            return new LayoutBox((int) left, (int) top, (int) (right - left), (int) (bottom - top));
+        }
+    }
 
     /** IMAGE的呈现分支由控件定义，backend仅依据资源事实选择；null表示该分支留空。 */
     public final PaintPlan pendingPaint, failedPaint, readyOverlay;
@@ -50,6 +93,33 @@ public final class PaintCommand {
             PaintPlan failedPaint,
             PaintPlan readyOverlay,
             PaintCommand branchSource) {
+        this(
+                kind,
+                box,
+                clip,
+                color,
+                text,
+                image,
+                pendingPaint,
+                failedPaint,
+                readyOverlay,
+                branchSource,
+                null);
+    }
+
+    private PaintCommand(
+            Kind kind,
+            LayoutBox box,
+            LayoutBox clip,
+            int color,
+            TextLayout text,
+            ImagePlacement image,
+            PaintPlan pendingPaint,
+            PaintPlan failedPaint,
+            PaintPlan readyOverlay,
+            PaintCommand branchSource,
+            Line line) {
+        this.line = line;
         this.kind = kind;
         this.box = Objects.requireNonNull(box, "box");
         this.clip = clip;
@@ -116,6 +186,14 @@ public final class PaintCommand {
                 failed,
                 null,
                 source);
+    }
+
+    /** 封闭端点/线宽事实；不持有live节点，不以clip裁短后重新计算方向。 */
+    public static PaintCommand line(
+            float x0, float y0, float x1, float y1, float thickness, LayoutBox clip, int color) {
+        Line line = new Line(x0, y0, x1, y1, thickness);
+        return new PaintCommand(
+                Kind.LINE, line.bounds(), clip, color, null, null, null, null, null, null, line);
     }
 
     public static PaintCommand rect(LayoutBox box, LayoutBox clip, int color) {

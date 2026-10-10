@@ -1,0 +1,310 @@
+# name type numArgs numOptionalArgs allowedInArgument allowedInText allowedInMath infix primitive visibility sourcePath distLine sourceUrl argTypesSpecified argTypeCount argTypes...
+\\.	accent	1	0	false	true	true	false	false	public-or-contextual	src/functions/accent.js	7809	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/accent.js	true	1	primitive
+\\'	accent	1	0	false	true	true	false	false	public-or-contextual	src/functions/accent.js	7809	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/accent.js	true	1	primitive
+\\"	accent	1	0	false	true	true	false	false	public-or-contextual	src/functions/accent.js	7809	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/accent.js	true	1	primitive
+\\(	styling	0	0	false	true	false	false	false	public-or-contextual	src/functions/math.js	13223	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/math.js	false	0
+\\)	text	0	0	false	true	false	false	false	public-or-contextual	src/functions/math.js	13253	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/math.js	false	0
+\\]	text	0	0	false	true	false	false	false	public-or-contextual	src/functions/math.js	13253	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/math.js	false	0
+\\@binrel	mclass	2	0	false	false	true	false	false	internal	src/functions/mclass.js	8142	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/mclass.js	false	0
+\\@char	textord	1	0	false	true	true	false	false	internal	src/functions/char.js	8604	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/char.js	false	0
+\\\\	cr	0	0	false	true	true	false	false	internal	src/functions/cr.js	8740	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/cr.js	false	0
+\\\\abovefrac	genfrac	3	0	false	false	true	false	false	internal	src/functions/genfrac.js	12438	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/genfrac.js	true	3	math	size	math
+\\\\atopfrac	genfrac	2	0	true	false	true	false	false	internal	src/functions/genfrac.js	12171	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/genfrac.js	false	0
+\\\\bracefrac	genfrac	2	0	true	false	true	false	false	internal	src/functions/genfrac.js	12171	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/genfrac.js	false	0
+\\\\brackfrac	genfrac	2	0	true	false	true	false	false	internal	src/functions/genfrac.js	12171	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/genfrac.js	false	0
+\\\\cdleft	cdlabel	1	0	false	false	true	false	false	internal	src/environments/cd.js	8514	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/environments/cd.js	false	0
+\\\\cdleftarrow	xArrow	1	1	false	false	true	false	false	internal	src/functions/arrow.js	7914	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/arrow.js	false	0
+\\\\cdlongequal	xArrow	1	1	false	false	true	false	false	internal	src/functions/arrow.js	7914	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/arrow.js	false	0
+\\\\cdparent	cdlabelparent	1	0	false	false	true	false	false	internal	src/environments/cd.js	8565	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/environments/cd.js	false	0
+\\\\cdright	cdlabel	1	0	false	false	true	false	false	internal	src/environments/cd.js	8514	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/environments/cd.js	false	0
+\\\\cdrightarrow	xArrow	1	1	false	false	true	false	false	internal	src/functions/arrow.js	7914	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/arrow.js	false	0
+\\\\globalfuture	internal	0	0	false	true	true	false	true	internal	src/functions/def.js	9010	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/def.js	false	0
+\\\\globallet	internal	0	0	false	true	true	false	true	internal	src/functions/def.js	8983	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/def.js	false	0
+\\\\globallong	internal	0	0	false	true	true	false	false	internal	src/functions/def.js	8858	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/def.js	false	0
+\\`	accent	1	0	false	true	true	false	false	public-or-contextual	src/functions/accent.js	7809	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/accent.js	true	1	primitive
+\\^	accent	1	0	false	true	true	false	false	public-or-contextual	src/functions/accent.js	7809	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/accent.js	true	1	primitive
+\\=	accent	1	0	false	true	true	false	false	public-or-contextual	src/functions/accent.js	7809	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/accent.js	true	1	primitive
+\\~	accent	1	0	false	true	true	false	false	public-or-contextual	src/functions/accent.js	7809	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/accent.js	true	1	primitive
+\\above	infix	1	0	false	false	true	true	false	public-or-contextual	src/functions/genfrac.js	12413	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/genfrac.js	true	1	size
+\\acute	accent	1	0	false	false	true	false	false	public-or-contextual	src/functions/accent.js	7786	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/accent.js	false	0
+\\angl	enclose	1	0	false	false	true	false	false	public-or-contextual	src/functions/enclose.js	10446	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/enclose.js	true	1	hbox
+\\arccos	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13695	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+\\arcctg	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13695	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+\\arcsin	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13695	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+\\arctan	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13695	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+\\arctg	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13695	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+\\arg	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13695	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+\\atop	infix	0	0	false	false	true	true	false	public-or-contextual	src/functions/genfrac.js	12284	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/genfrac.js	false	0
+\\bar	accent	1	0	false	false	true	false	false	public-or-contextual	src/functions/accent.js	7786	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/accent.js	false	0
+\\Bbb	font	1	0	true	false	true	false	false	public-or-contextual	src/functions/font.js	11846	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/font.js	false	0
+\\bcancel	enclose	1	0	false	false	true	false	false	public-or-contextual	src/functions/enclose.js	10422	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/enclose.js	false	0
+\\begin	environment	1	0	false	false	true	false	false	public-or-contextual	src/functions/environment.js	11755	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/environment.js	true	1	text
+\\bf	font	0	0	false	true	true	false	false	public-or-contextual	src/functions/font.js	11907	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/font.js	false	0
+\\big	delimsizing	1	0	false	false	true	false	false	public-or-contextual	src/functions/delimsizing.js	9856	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/delimsizing.js	true	1	primitive
+\\Big	delimsizing	1	0	false	false	true	false	false	public-or-contextual	src/functions/delimsizing.js	9856	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/delimsizing.js	true	1	primitive
+\\bigcap	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13628	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+\\bigcup	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13628	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+\\bigg	delimsizing	1	0	false	false	true	false	false	public-or-contextual	src/functions/delimsizing.js	9856	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/delimsizing.js	true	1	primitive
+\\Bigg	delimsizing	1	0	false	false	true	false	false	public-or-contextual	src/functions/delimsizing.js	9856	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/delimsizing.js	true	1	primitive
+\\biggl	delimsizing	1	0	false	false	true	false	false	public-or-contextual	src/functions/delimsizing.js	9856	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/delimsizing.js	true	1	primitive
+\\Biggl	delimsizing	1	0	false	false	true	false	false	public-or-contextual	src/functions/delimsizing.js	9856	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/delimsizing.js	true	1	primitive
+\\biggm	delimsizing	1	0	false	false	true	false	false	public-or-contextual	src/functions/delimsizing.js	9856	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/delimsizing.js	true	1	primitive
+\\Biggm	delimsizing	1	0	false	false	true	false	false	public-or-contextual	src/functions/delimsizing.js	9856	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/delimsizing.js	true	1	primitive
+\\biggr	delimsizing	1	0	false	false	true	false	false	public-or-contextual	src/functions/delimsizing.js	9856	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/delimsizing.js	true	1	primitive
+\\Biggr	delimsizing	1	0	false	false	true	false	false	public-or-contextual	src/functions/delimsizing.js	9856	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/delimsizing.js	true	1	primitive
+\\bigl	delimsizing	1	0	false	false	true	false	false	public-or-contextual	src/functions/delimsizing.js	9856	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/delimsizing.js	true	1	primitive
+\\Bigl	delimsizing	1	0	false	false	true	false	false	public-or-contextual	src/functions/delimsizing.js	9856	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/delimsizing.js	true	1	primitive
+\\bigm	delimsizing	1	0	false	false	true	false	false	public-or-contextual	src/functions/delimsizing.js	9856	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/delimsizing.js	true	1	primitive
+\\Bigm	delimsizing	1	0	false	false	true	false	false	public-or-contextual	src/functions/delimsizing.js	9856	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/delimsizing.js	true	1	primitive
+\\bigodot	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13628	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+\\bigoplus	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13628	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+\\bigotimes	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13628	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+\\bigr	delimsizing	1	0	false	false	true	false	false	public-or-contextual	src/functions/delimsizing.js	9856	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/delimsizing.js	true	1	primitive
+\\Bigr	delimsizing	1	0	false	false	true	false	false	public-or-contextual	src/functions/delimsizing.js	9856	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/delimsizing.js	true	1	primitive
+\\bigsqcup	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13628	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+\\biguplus	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13628	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+\\bigvee	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13628	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+\\bigwedge	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13628	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+\\binom	genfrac	2	0	true	false	true	false	false	public-or-contextual	src/functions/genfrac.js	12171	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/genfrac.js	false	0
+\\bm	mclass	1	0	false	false	true	false	false	public-or-contextual	src/functions/font.js	11878	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/font.js	false	0
+\\bold	font	1	0	true	false	true	false	false	public-or-contextual	src/functions/font.js	11846	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/font.js	false	0
+\\boldsymbol	mclass	1	0	false	false	true	false	false	public-or-contextual	src/functions/font.js	11878	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/font.js	false	0
+\\brace	infix	0	0	false	false	true	true	false	public-or-contextual	src/functions/genfrac.js	12284	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/genfrac.js	false	0
+\\brack	infix	0	0	false	false	true	true	false	public-or-contextual	src/functions/genfrac.js	12284	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/genfrac.js	false	0
+\\breve	accent	1	0	false	false	true	false	false	public-or-contextual	src/functions/accent.js	7786	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/accent.js	false	0
+\\c	accent	1	0	false	true	true	false	false	public-or-contextual	src/functions/accent.js	7809	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/accent.js	true	1	primitive
+\\cal	font	0	0	false	true	true	false	false	public-or-contextual	src/functions/font.js	11907	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/font.js	false	0
+\\cancel	enclose	1	0	false	false	true	false	false	public-or-contextual	src/functions/enclose.js	10422	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/enclose.js	false	0
+\\cfrac	genfrac	2	0	false	false	true	false	false	public-or-contextual	src/functions/genfrac.js	12255	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/genfrac.js	false	0
+\\ch	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13695	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+\\check	accent	1	0	false	false	true	false	false	public-or-contextual	src/functions/accent.js	7786	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/accent.js	false	0
+\\choose	infix	0	0	false	false	true	true	false	public-or-contextual	src/functions/genfrac.js	12284	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/genfrac.js	false	0
+\\color	color	1	0	false	true	true	false	false	public-or-contextual	src/functions/color.js	8699	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/color.js	true	1	color
+\\colorbox	enclose	2	0	false	true	true	false	false	public-or-contextual	src/functions/enclose.js	10342	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/enclose.js	true	2	color	text
+\\coprod	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13628	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+\\cos	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13695	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+\\cosec	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13695	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+\\cosh	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13695	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+\\cot	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13695	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+\\cotg	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13695	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+\\coth	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13695	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+\\csc	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13695	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+\\ctg	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13695	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+\\cth	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13695	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+\\dbinom	genfrac	2	0	true	false	true	false	false	public-or-contextual	src/functions/genfrac.js	12171	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/genfrac.js	false	0
+\\ddot	accent	1	0	false	false	true	false	false	public-or-contextual	src/functions/accent.js	7786	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/accent.js	false	0
+\\def	internal	0	0	false	true	true	false	true	public-or-contextual	src/functions/def.js	8892	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/def.js	false	0
+\\deg	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13695	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+\\det	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13721	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+\\dfrac	genfrac	2	0	true	false	true	false	false	public-or-contextual	src/functions/genfrac.js	12171	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/genfrac.js	false	0
+\\dim	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13695	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+\\displaystyle	styling	0	0	false	true	true	false	true	public-or-contextual	src/functions/styling.js	14615	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/styling.js	false	0
+\\dot	accent	1	0	false	false	true	false	false	public-or-contextual	src/functions/accent.js	7786	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/accent.js	false	0
+\\edef	internal	0	0	false	true	true	false	true	public-or-contextual	src/functions/def.js	8892	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/def.js	false	0
+\\emph	text	1	0	true	true	true	false	false	public-or-contextual	src/functions/text.js	15161	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/text.js	true	1	text
+\\end	environment	1	0	false	false	true	false	false	public-or-contextual	src/functions/environment.js	11755	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/environment.js	true	1	text
+\\exp	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13695	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+\\fbox	enclose	1	0	false	true	true	false	false	public-or-contextual	src/functions/enclose.js	10400	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/enclose.js	true	1	hbox
+\\fcolorbox	enclose	3	0	false	true	true	false	false	public-or-contextual	src/functions/enclose.js	10370	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/enclose.js	true	3	color	color	text
+\\footnotesize	sizing	0	0	false	true	true	false	false	public-or-contextual	src/functions/sizing.js	14327	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/sizing.js	false	0
+\\frac	genfrac	2	0	true	false	true	false	false	public-or-contextual	src/functions/genfrac.js	12171	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/genfrac.js	false	0
+\\frak	font	1	0	true	false	true	false	false	public-or-contextual	src/functions/font.js	11846	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/font.js	false	0
+\\futurelet	internal	0	0	false	true	true	false	true	public-or-contextual	src/functions/def.js	9010	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/def.js	false	0
+\\gcd	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13721	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+\\gdef	internal	0	0	false	true	true	false	true	public-or-contextual	src/functions/def.js	8892	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/def.js	false	0
+\\genfrac	genfrac	6	0	true	false	true	false	false	public-or-contextual	src/functions/genfrac.js	12347	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/genfrac.js	true	6	math	math	size	text	math	math
+\\global	internal	0	0	false	true	true	false	false	public-or-contextual	src/functions/def.js	8858	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/def.js	false	0
+\\grave	accent	1	0	false	false	true	false	false	public-or-contextual	src/functions/accent.js	7786	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/accent.js	false	0
+\\H	accent	1	0	false	true	true	false	false	public-or-contextual	src/functions/accent.js	7809	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/accent.js	true	1	primitive
+\\hat	accent	1	0	false	false	true	false	false	public-or-contextual	src/functions/accent.js	7786	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/accent.js	false	0
+\\hbox	hbox	1	0	false	true	true	false	true	public-or-contextual	src/functions/hbox.js	12727	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/hbox.js	true	1	text
+\\hdashline	text	0	0	false	true	true	false	false	public-or-contextual	src/environments/array.js	11727	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/environments/array.js	false	0
+\\hline	text	0	0	false	true	true	false	false	public-or-contextual	src/environments/array.js	11727	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/environments/array.js	false	0
+\\hom	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13695	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+\\hphantom	hphantom	1	0	false	true	true	false	false	public-or-contextual	src/functions/phantom.js	14056	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/phantom.js	false	0
+\\href	href	2	0	false	true	true	false	false	public-or-contextual	src/functions/href.js	12622	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/href.js	true	2	url	original
+\\hskip	kern	1	0	false	true	true	false	true	public-or-contextual	src/functions/kern.js	13090	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/kern.js	true	1	size
+\\html@mathml	htmlmathml	2	0	false	true	true	false	false	public-or-contextual	src/functions/htmlmathml.js	12877	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/htmlmathml.js	false	0
+\\htmlClass	html	2	0	false	true	true	false	false	public-or-contextual	src/functions/html.js	12765	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/html.js	true	2	raw	original
+\\htmlData	html	2	0	false	true	true	false	false	public-or-contextual	src/functions/html.js	12765	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/html.js	true	2	raw	original
+\\htmlId	html	2	0	false	true	true	false	false	public-or-contextual	src/functions/html.js	12765	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/html.js	true	2	raw	original
+\\htmlStyle	html	2	0	false	true	true	false	false	public-or-contextual	src/functions/html.js	12765	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/html.js	true	2	raw	original
+\\huge	sizing	0	0	false	true	true	false	false	public-or-contextual	src/functions/sizing.js	14327	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/sizing.js	false	0
+\\Huge	sizing	0	0	false	true	true	false	false	public-or-contextual	src/functions/sizing.js	14327	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/sizing.js	false	0
+\\iiint	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13747	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+\\iint	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13747	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+\\includegraphics	includegraphics	1	1	false	false	true	false	false	public-or-contextual	src/functions/includegraphics.js	12940	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/includegraphics.js	true	2	raw	url
+\\inf	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13721	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+\\int	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13747	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+\\intop	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13628	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+\\it	font	0	0	false	true	true	false	false	public-or-contextual	src/functions/font.js	11907	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/font.js	false	0
+\\ker	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13695	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+\\kern	kern	1	0	false	true	true	false	true	public-or-contextual	src/functions/kern.js	13090	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/kern.js	true	1	size
+\\large	sizing	0	0	false	true	true	false	false	public-or-contextual	src/functions/sizing.js	14327	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/sizing.js	false	0
+\\Large	sizing	0	0	false	true	true	false	false	public-or-contextual	src/functions/sizing.js	14327	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/sizing.js	false	0
+\\LARGE	sizing	0	0	false	true	true	false	false	public-or-contextual	src/functions/sizing.js	14327	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/sizing.js	false	0
+\\left	leftright	1	0	false	false	true	false	true	public-or-contextual	src/functions/delimsizing.js	9942	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/delimsizing.js	false	0
+\\let	internal	0	0	false	true	true	false	true	public-or-contextual	src/functions/def.js	8983	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/def.js	false	0
+\\lg	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13695	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+\\lim	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13721	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+\\ln	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13695	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+\\log	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13695	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+\\long	internal	0	0	false	true	true	false	false	public-or-contextual	src/functions/def.js	8858	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/def.js	false	0
+\\mathbb	font	1	0	true	false	true	false	false	public-or-contextual	src/functions/font.js	11846	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/font.js	false	0
+\\mathbf	font	1	0	true	false	true	false	false	public-or-contextual	src/functions/font.js	11846	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/font.js	false	0
+\\mathbin	mclass	1	0	false	false	true	false	true	public-or-contextual	src/functions/mclass.js	8100	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/mclass.js	false	0
+\\mathcal	font	1	0	true	false	true	false	false	public-or-contextual	src/functions/font.js	11846	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/font.js	false	0
+\\mathchoice	mathchoice	4	0	false	false	true	false	true	public-or-contextual	src/functions/mathchoice.js	13294	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/mathchoice.js	false	0
+\\mathclap	lap	1	0	false	true	true	false	false	public-or-contextual	src/functions/lap.js	13153	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/lap.js	false	0
+\\mathclose	mclass	1	0	false	false	true	false	true	public-or-contextual	src/functions/mclass.js	8100	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/mclass.js	false	0
+\\mathfrak	font	1	0	true	false	true	false	false	public-or-contextual	src/functions/font.js	11846	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/font.js	false	0
+\\mathinner	mclass	1	0	false	false	true	false	true	public-or-contextual	src/functions/mclass.js	8100	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/mclass.js	false	0
+\\mathit	font	1	0	true	false	true	false	false	public-or-contextual	src/functions/font.js	11846	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/font.js	false	0
+\\mathllap	lap	1	0	false	true	true	false	false	public-or-contextual	src/functions/lap.js	13153	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/lap.js	false	0
+\\mathnormal	font	1	0	true	false	true	false	false	public-or-contextual	src/functions/font.js	11846	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/font.js	false	0
+\\mathop	op	1	0	false	false	true	false	true	public-or-contextual	src/functions/op.js	13659	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+\\mathopen	mclass	1	0	false	false	true	false	true	public-or-contextual	src/functions/mclass.js	8100	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/mclass.js	false	0
+\\mathord	mclass	1	0	false	false	true	false	true	public-or-contextual	src/functions/mclass.js	8100	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/mclass.js	false	0
+\\mathpunct	mclass	1	0	false	false	true	false	true	public-or-contextual	src/functions/mclass.js	8100	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/mclass.js	false	0
+\\mathrel	mclass	1	0	false	false	true	false	true	public-or-contextual	src/functions/mclass.js	8100	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/mclass.js	false	0
+\\mathring	accent	1	0	false	false	true	false	false	public-or-contextual	src/functions/accent.js	7786	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/accent.js	false	0
+\\mathrlap	lap	1	0	false	true	true	false	false	public-or-contextual	src/functions/lap.js	13153	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/lap.js	false	0
+\\mathrm	font	1	0	true	false	true	false	false	public-or-contextual	src/functions/font.js	11846	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/font.js	false	0
+\\mathscr	font	1	0	true	false	true	false	false	public-or-contextual	src/functions/font.js	11846	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/font.js	false	0
+\\mathsf	font	1	0	true	false	true	false	false	public-or-contextual	src/functions/font.js	11846	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/font.js	false	0
+\\mathsfit	font	1	0	true	false	true	false	false	public-or-contextual	src/functions/font.js	11846	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/font.js	false	0
+\\mathtt	font	1	0	true	false	true	false	false	public-or-contextual	src/functions/font.js	11846	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/font.js	false	0
+\\max	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13721	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+\\middle	middle	1	0	false	false	true	false	true	public-or-contextual	src/functions/delimsizing.js	10060	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/delimsizing.js	false	0
+\\min	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13721	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+\\mkern	kern	1	0	false	true	true	false	true	public-or-contextual	src/functions/kern.js	13090	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/kern.js	true	1	size
+\\mskip	kern	1	0	false	true	true	false	true	public-or-contextual	src/functions/kern.js	13090	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/kern.js	true	1	size
+\\normalsize	sizing	0	0	false	true	true	false	false	public-or-contextual	src/functions/sizing.js	14327	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/sizing.js	false	0
+\\oiiint	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13747	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+\\oiint	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13747	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+\\oint	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13747	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+\\operatorname@	operatorname	1	0	false	false	true	false	false	public-or-contextual	src/functions/operatorname.js	13914	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/operatorname.js	false	0
+\\operatornamewithlimits	operatorname	1	0	false	false	true	false	false	public-or-contextual	src/functions/operatorname.js	13914	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/operatorname.js	false	0
+\\over	infix	0	0	false	false	true	true	false	public-or-contextual	src/functions/genfrac.js	12284	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/genfrac.js	false	0
+\\overbrace	horizBrace	1	0	false	false	true	false	false	public-or-contextual	src/functions/horizBrace.js	12591	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/horizBrace.js	false	0
+\\overgroup	accent	1	0	false	false	true	false	false	public-or-contextual	src/functions/accent.js	7786	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/accent.js	false	0
+\\overleftarrow	accent	1	0	false	false	true	false	false	public-or-contextual	src/functions/accent.js	7786	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/accent.js	false	0
+\\overleftharpoon	accent	1	0	false	false	true	false	false	public-or-contextual	src/functions/accent.js	7786	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/accent.js	false	0
+\\overleftrightarrow	accent	1	0	false	false	true	false	false	public-or-contextual	src/functions/accent.js	7786	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/accent.js	false	0
+\\overline	overline	1	0	false	false	true	false	false	public-or-contextual	src/functions/overline.js	13966	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/overline.js	false	0
+\\overlinesegment	accent	1	0	false	false	true	false	false	public-or-contextual	src/functions/accent.js	7786	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/accent.js	false	0
+\\overrightarrow	accent	1	0	false	false	true	false	false	public-or-contextual	src/functions/accent.js	7786	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/accent.js	false	0
+\\Overrightarrow	accent	1	0	false	false	true	false	false	public-or-contextual	src/functions/accent.js	7786	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/accent.js	false	0
+\\overrightharpoon	accent	1	0	false	false	true	false	false	public-or-contextual	src/functions/accent.js	7786	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/accent.js	false	0
+\\overset	mclass	2	0	false	false	true	false	false	public-or-contextual	src/functions/mclass.js	8164	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/mclass.js	false	0
+\\phantom	phantom	1	0	false	true	true	false	false	public-or-contextual	src/functions/phantom.js	14027	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/phantom.js	false	0
+\\phase	enclose	1	0	false	false	true	false	false	public-or-contextual	src/functions/enclose.js	10422	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/enclose.js	false	0
+\\pmb	pmb	1	0	false	true	true	false	false	public-or-contextual	src/functions/pmb.js	8227	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/pmb.js	false	0
+\\Pr	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13721	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+\\prod	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13628	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+\\r	accent	1	0	false	true	true	false	false	public-or-contextual	src/functions/accent.js	7809	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/accent.js	true	1	primitive
+\\raisebox	raisebox	2	0	false	true	true	false	false	public-or-contextual	src/functions/raisebox.js	14146	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/raisebox.js	true	2	size	hbox
+\\relax	internal	0	0	false	true	true	false	false	public-or-contextual	src/functions/relax.js	14192	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/relax.js	false	0
+\\right	leftright-right	1	0	false	false	true	false	true	public-or-contextual	src/functions/delimsizing.js	9916	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/delimsizing.js	false	0
+\\rm	font	0	0	false	true	true	false	false	public-or-contextual	src/functions/font.js	11907	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/font.js	false	0
+\\rule	rule	2	1	false	true	true	false	false	public-or-contextual	src/functions/rule.js	14217	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/rule.js	true	3	size	size	size
+\\scriptscriptstyle	styling	0	0	false	true	true	false	true	public-or-contextual	src/functions/styling.js	14615	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/styling.js	false	0
+\\scriptsize	sizing	0	0	false	true	true	false	false	public-or-contextual	src/functions/sizing.js	14327	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/sizing.js	false	0
+\\scriptstyle	styling	0	0	false	true	true	false	true	public-or-contextual	src/functions/styling.js	14615	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/styling.js	false	0
+\\sec	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13695	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+\\sf	font	0	0	false	true	true	false	false	public-or-contextual	src/functions/font.js	11907	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/font.js	false	0
+\\sh	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13695	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+\\sin	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13695	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+\\sinh	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13695	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+\\sixptsize	sizing	0	0	false	true	true	false	false	public-or-contextual	src/functions/sizing.js	14327	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/sizing.js	false	0
+\\small	sizing	0	0	false	true	true	false	false	public-or-contextual	src/functions/sizing.js	14327	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/sizing.js	false	0
+\\smallint	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13628	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+\\smash	smash	1	1	false	true	true	false	false	public-or-contextual	src/functions/smash.js	14371	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/smash.js	false	0
+\\sout	enclose	1	0	false	false	true	false	false	public-or-contextual	src/functions/enclose.js	10422	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/enclose.js	false	0
+\\sqrt	sqrt	1	1	false	false	true	false	false	public-or-contextual	src/functions/sqrt.js	14486	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/sqrt.js	false	0
+\\stackrel	mclass	2	0	false	false	true	false	false	public-or-contextual	src/functions/mclass.js	8164	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/mclass.js	false	0
+\\sum	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13628	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+\\sup	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13721	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+\\tan	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13695	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+\\tanh	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13695	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+\\tbinom	genfrac	2	0	true	false	true	false	false	public-or-contextual	src/functions/genfrac.js	12171	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/genfrac.js	false	0
+\\text	text	1	0	true	true	true	false	false	public-or-contextual	src/functions/text.js	15161	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/text.js	true	1	text
+\\textbf	text	1	0	true	true	true	false	false	public-or-contextual	src/functions/text.js	15161	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/text.js	true	1	text
+\\textcircled	accent	1	0	false	true	true	false	false	public-or-contextual	src/functions/accent.js	7809	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/accent.js	true	1	primitive
+\\textcolor	color	2	0	false	true	true	false	false	public-or-contextual	src/functions/color.js	8673	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/color.js	true	2	color	original
+\\textit	text	1	0	true	true	true	false	false	public-or-contextual	src/functions/text.js	15161	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/text.js	true	1	text
+\\textmd	text	1	0	true	true	true	false	false	public-or-contextual	src/functions/text.js	15161	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/text.js	true	1	text
+\\textnormal	text	1	0	true	true	true	false	false	public-or-contextual	src/functions/text.js	15161	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/text.js	true	1	text
+\\textrm	text	1	0	true	true	true	false	false	public-or-contextual	src/functions/text.js	15161	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/text.js	true	1	text
+\\textsf	text	1	0	true	true	true	false	false	public-or-contextual	src/functions/text.js	15161	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/text.js	true	1	text
+\\textstyle	styling	0	0	false	true	true	false	true	public-or-contextual	src/functions/styling.js	14615	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/styling.js	false	0
+\\texttt	text	1	0	true	true	true	false	false	public-or-contextual	src/functions/text.js	15161	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/text.js	true	1	text
+\\textup	text	1	0	true	true	true	false	false	public-or-contextual	src/functions/text.js	15161	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/text.js	true	1	text
+\\tfrac	genfrac	2	0	true	false	true	false	false	public-or-contextual	src/functions/genfrac.js	12171	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/genfrac.js	false	0
+\\tg	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13695	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+\\th	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13695	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+\\tilde	accent	1	0	false	false	true	false	false	public-or-contextual	src/functions/accent.js	7786	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/accent.js	false	0
+\\tiny	sizing	0	0	false	true	true	false	false	public-or-contextual	src/functions/sizing.js	14327	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/sizing.js	false	0
+\\tt	font	0	0	false	true	true	false	false	public-or-contextual	src/functions/font.js	11907	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/font.js	false	0
+\\u	accent	1	0	false	true	true	false	false	public-or-contextual	src/functions/accent.js	7809	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/accent.js	true	1	primitive
+\\underbrace	horizBrace	1	0	false	false	true	false	false	public-or-contextual	src/functions/horizBrace.js	12591	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/horizBrace.js	false	0
+\\undergroup	accentUnder	1	0	false	false	true	false	false	public-or-contextual	src/functions/accentunder.js	7848	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/accentunder.js	false	0
+\\underleftarrow	accentUnder	1	0	false	false	true	false	false	public-or-contextual	src/functions/accentunder.js	7848	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/accentunder.js	false	0
+\\underleftrightarrow	accentUnder	1	0	false	false	true	false	false	public-or-contextual	src/functions/accentunder.js	7848	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/accentunder.js	false	0
+\\underline	underline	1	0	false	true	true	false	false	public-or-contextual	src/functions/underline.js	15206	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/underline.js	false	0
+\\underlinesegment	accentUnder	1	0	false	false	true	false	false	public-or-contextual	src/functions/accentunder.js	7848	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/accentunder.js	false	0
+\\underrightarrow	accentUnder	1	0	false	false	true	false	false	public-or-contextual	src/functions/accentunder.js	7848	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/accentunder.js	false	0
+\\underset	mclass	2	0	false	false	true	false	false	public-or-contextual	src/functions/mclass.js	8164	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/mclass.js	false	0
+\\url	href	1	0	false	true	true	false	false	public-or-contextual	src/functions/href.js	12666	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/href.js	true	1	url
+\\utilde	accentUnder	1	0	false	false	true	false	false	public-or-contextual	src/functions/accentunder.js	7848	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/accentunder.js	false	0
+\\v	accent	1	0	false	true	true	false	false	public-or-contextual	src/functions/accent.js	7809	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/accent.js	true	1	primitive
+\\vcenter	vcenter	1	0	false	false	true	false	false	public-or-contextual	src/functions/vcenter.js	15269	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/vcenter.js	true	1	original
+\\vec	accent	1	0	false	false	true	false	false	public-or-contextual	src/functions/accent.js	7786	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/accent.js	false	0
+\\verb	verb	0	0	false	true	true	false	false	public-or-contextual	src/functions/verb.js	15317	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/verb.js	false	0
+\\vphantom	vphantom	1	0	false	true	true	false	false	public-or-contextual	src/functions/phantom.js	14106	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/phantom.js	false	0
+\\widecheck	accent	1	0	false	false	true	false	false	public-or-contextual	src/functions/accent.js	7786	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/accent.js	false	0
+\\widehat	accent	1	0	false	false	true	false	false	public-or-contextual	src/functions/accent.js	7786	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/accent.js	false	0
+\\widetilde	accent	1	0	false	false	true	false	false	public-or-contextual	src/functions/accent.js	7786	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/accent.js	false	0
+\\xcancel	enclose	1	0	false	false	true	false	false	public-or-contextual	src/functions/enclose.js	10422	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/enclose.js	false	0
+\\xdef	internal	0	0	false	true	true	false	true	public-or-contextual	src/functions/def.js	8892	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/def.js	false	0
+\\xhookleftarrow	xArrow	1	1	false	false	true	false	false	public-or-contextual	src/functions/arrow.js	7914	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/arrow.js	false	0
+\\xhookrightarrow	xArrow	1	1	false	false	true	false	false	public-or-contextual	src/functions/arrow.js	7914	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/arrow.js	false	0
+\\xleftarrow	xArrow	1	1	false	false	true	false	false	public-or-contextual	src/functions/arrow.js	7914	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/arrow.js	false	0
+\\xLeftarrow	xArrow	1	1	false	false	true	false	false	public-or-contextual	src/functions/arrow.js	7914	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/arrow.js	false	0
+\\xleftequilibrium	xArrow	1	1	false	false	true	false	false	public-or-contextual	src/functions/arrow.js	7914	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/arrow.js	false	0
+\\xleftharpoondown	xArrow	1	1	false	false	true	false	false	public-or-contextual	src/functions/arrow.js	7914	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/arrow.js	false	0
+\\xleftharpoonup	xArrow	1	1	false	false	true	false	false	public-or-contextual	src/functions/arrow.js	7914	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/arrow.js	false	0
+\\xleftrightarrow	xArrow	1	1	false	false	true	false	false	public-or-contextual	src/functions/arrow.js	7914	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/arrow.js	false	0
+\\xLeftrightarrow	xArrow	1	1	false	false	true	false	false	public-or-contextual	src/functions/arrow.js	7914	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/arrow.js	false	0
+\\xleftrightharpoons	xArrow	1	1	false	false	true	false	false	public-or-contextual	src/functions/arrow.js	7914	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/arrow.js	false	0
+\\xlongequal	xArrow	1	1	false	false	true	false	false	public-or-contextual	src/functions/arrow.js	7914	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/arrow.js	false	0
+\\xmapsto	xArrow	1	1	false	false	true	false	false	public-or-contextual	src/functions/arrow.js	7914	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/arrow.js	false	0
+\\xrightarrow	xArrow	1	1	false	false	true	false	false	public-or-contextual	src/functions/arrow.js	7914	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/arrow.js	false	0
+\\xRightarrow	xArrow	1	1	false	false	true	false	false	public-or-contextual	src/functions/arrow.js	7914	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/arrow.js	false	0
+\\xrightequilibrium	xArrow	1	1	false	false	true	false	false	public-or-contextual	src/functions/arrow.js	7914	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/arrow.js	false	0
+\\xrightharpoondown	xArrow	1	1	false	false	true	false	false	public-or-contextual	src/functions/arrow.js	7914	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/arrow.js	false	0
+\\xrightharpoonup	xArrow	1	1	false	false	true	false	false	public-or-contextual	src/functions/arrow.js	7914	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/arrow.js	false	0
+\\xrightleftarrows	xArrow	1	1	false	false	true	false	false	public-or-contextual	src/functions/arrow.js	7914	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/arrow.js	false	0
+\\xrightleftharpoons	xArrow	1	1	false	false	true	false	false	public-or-contextual	src/functions/arrow.js	7914	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/arrow.js	false	0
+\\xtofrom	xArrow	1	1	false	false	true	false	false	public-or-contextual	src/functions/arrow.js	7914	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/arrow.js	false	0
+\\xtwoheadleftarrow	xArrow	1	1	false	false	true	false	false	public-or-contextual	src/functions/arrow.js	7914	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/arrow.js	false	0
+\\xtwoheadrightarrow	xArrow	1	1	false	false	true	false	false	public-or-contextual	src/functions/arrow.js	7914	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/arrow.js	false	0
+∏	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13628	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+∐	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13628	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+∑	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13628	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+∫	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13747	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+∬	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13747	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+∭	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13747	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+∮	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13747	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+∯	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13747	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+∰	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13747	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+⋀	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13628	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+⋁	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13628	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+⋂	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13628	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+⋃	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13628	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+⨀	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13628	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+⨁	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13628	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+⨂	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13628	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+⨄	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13628	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+⨆	op	0	0	false	false	true	false	false	public-or-contextual	src/functions/op.js	13628	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/op.js	false	0
+$	styling	0	0	false	true	false	false	false	public-or-contextual	src/functions/math.js	13223	https://raw.githubusercontent.com/KaTeX/KaTeX/v0.16.21/src/functions/math.js	false	0

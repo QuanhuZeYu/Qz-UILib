@@ -2,12 +2,13 @@ package club.heiqi.uilib.host.client.gl;
 
 import static club.heiqi.uilib.host.client.gl.GlTokens.*;
 
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import club.heiqi.uilib.host.client.font.context.FontRenderContext;
 import club.heiqi.uilib.ui.render.batch.OrderedQuadBatch;
-import club.heiqi.uilib.ui.render.batch.OrderedQuadBatch.Quad;
 import club.heiqi.uilib.ui.render.batch.OrderedQuadBatch.Draw;
+import club.heiqi.uilib.ui.render.batch.OrderedQuadBatch.Quad;
+
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 
 /** 有界自有vertex/index producer；program与uniform仍由active Iris Pass.use/宿主preDraw拥有。 */
 final class GlFontIrisProducer implements AutoCloseable {
@@ -77,43 +78,10 @@ final class GlFontIrisProducer implements AutoCloseable {
             for (int i = draw.firstQuad; i < draw.firstQuad + draw.quadCount; i++) {
                 Quad q = batch.quads().get(i);
                 boolean emoji = draw.state.material == GlQuadRenderer.COLOR_PREMULT;
-                vertex(q, q.x, q.y, q.u0, q.v0, emoji, alpha, normal, entity, midBlock, scope);
-                vertex(
-                        q,
-                        q.x + q.width,
-                        q.y,
-                        q.u1,
-                        q.v0,
-                        emoji,
-                        alpha,
-                        normal,
-                        entity,
-                        midBlock,
-                        scope);
-                vertex(
-                        q,
-                        q.x + q.width,
-                        q.y + q.height,
-                        q.u1,
-                        q.v1,
-                        emoji,
-                        alpha,
-                        normal,
-                        entity,
-                        midBlock,
-                        scope);
-                vertex(
-                        q,
-                        q.x,
-                        q.y + q.height,
-                        q.u0,
-                        q.v1,
-                        emoji,
-                        alpha,
-                        normal,
-                        entity,
-                        midBlock,
-                        scope);
+                vertex(q, q.x0, q.y0, q.u0, q.v0, emoji, alpha, normal, entity, midBlock, scope);
+                vertex(q, q.x1, q.y1, q.u1, q.v0, emoji, alpha, normal, entity, midBlock, scope);
+                vertex(q, q.x2, q.y2, q.u1, q.v1, emoji, alpha, normal, entity, midBlock, scope);
+                vertex(q, q.x3, q.y3, q.u0, q.v1, emoji, alpha, normal, entity, midBlock, scope);
             }
         staging.flip();
         long bytes = staging.remaining();

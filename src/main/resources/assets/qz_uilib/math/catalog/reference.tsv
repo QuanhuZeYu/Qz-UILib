@@ -1,0 +1,16 @@
+# key value
+katex	0.16.21
+commit	923f2aa15692d06ef77051bfb018c17339ef1ab4
+vscode	1.140.0
+vscodeCommit	07f806f999227108933c2e30515b26eecc1fda74
+plugin	1.1.2
+bundleSha256	65e825a9ca4ff2a8e85a52d765436f347c212a2241aed1f2ad1b13532e136c39
+default.mathEnabled	true
+default.enableFencedBlocks	true
+default.globalGroup	true
+default.trust	false
+default.throwOnError	true
+default.strict	warn
+default.maxExpand	1000
+default.maxSize	Infinity
+default.output	htmlAndMathml

@@ -356,7 +356,43 @@ val mathGlScenario = registerTestApplication("mathGlScenario", "正式数学字�
     classpath = sourceSets.getByName("main").output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime
     args(layout.buildDirectory.dir("math-embed/gpu").get().asFile.absolutePath)
 }
-tasks.named("check") { dependsOn(mathFontScenario, mathLayoutScenario, mathSceneScenario) }
+val mathCatalogScenario = registerTestApplication("mathCatalogScenario", "固定数学符号命令宏目录的真实静态语义消费", "club.heiqi.uilib.ui.scene.integration.MathCatalogScenario") {
+    dependsOn(tasks.named("testClasses"))
+    classpath = sourceSets.getByName("main").output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime
+}
+val mathMacroScenario = registerTestApplication("mathMacroScenario", "数学词法宏的原文来源作用域与显式文档上下文", "club.heiqi.uilib.ui.scene.integration.MathMacroScenario") {
+    dependsOn(tasks.named("testClasses"))
+    classpath = sourceSets.getByName("main").output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime
+}
+val paintPrimitiveScenario = registerTestApplication("paintPrimitiveScenario", "同树局部后置绘制顺序与真实斜线GPU图元", "club.heiqi.uilib.ui.scene.integration.PaintPrimitiveScenario") {
+    dependsOn(tasks.named("testClasses"))
+    classpath = sourceSets.getByName("main").output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime
+    args(layout.buildDirectory.dir("math-complete/paint-gpu").get().asFile.absolutePath)
+}
+val mathArrayScenario = registerTestApplication("mathArrayScenario", "二维数学环境共享列行及物品基线与显式编号验收", "club.heiqi.uilib.ui.scene.integration.MathArrayScenario") {
+    dependsOn(tasks.named("testClasses"))
+    classpath = sourceSets.getByName("main").output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime
+}
+val mathDecorationScenario = registerTestApplication("mathDecorationScenario", "数学饰件颜色盒与变换的真实字体有序几何验收", "club.heiqi.uilib.ui.scene.integration.MathDecorationScenario") {
+    dependsOn(tasks.named("testClasses"))
+    classpath = sourceSets.getByName("main").output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime
+}
+val mathStructureScenario = registerTestApplication("mathStructureScenario", "完整数学函数模式参数和环境的结构来源验收", "club.heiqi.uilib.ui.scene.text.math.MathStructureScenario") {
+    dependsOn(tasks.named("testClasses"))
+    classpath = sourceSets.getByName("main").output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime
+}
+tasks.named("check") { dependsOn(mathFontScenario, mathLayoutScenario, mathSceneScenario, mathCatalogScenario, mathMacroScenario, mathStructureScenario, mathArrayScenario, mathDecorationScenario) }
+val mathTextFontScenario = registerTestApplication("mathTextFontScenario", "数学文字真实字族字重姿态及显式候选与资源代际", "club.heiqi.uilib.ui.scene.integration.MathTextFontScenario") {
+    dependsOn(tasks.named("testClasses"))
+    classpath = sourceSets.getByName("main").output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime
+    args(layout.buildDirectory.dir("math-text-fonts").get().asFile.absolutePath)
+}
+tasks.named("check") { dependsOn(mathTextFontScenario) }
+val mathCoverageScenario = registerTestApplication("mathCoverageScenario", "固定数学全身份语料的真实同树字形与GPU证据", "club.heiqi.uilib.ui.scene.integration.MathCoverageScenario") {
+    dependsOn(tasks.named("testClasses"))
+    classpath = sourceSets.getByName("main").output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime
+    args(layout.buildDirectory.dir("math-complete/coverage").get().asFile.absolutePath)
+}
 val imageGlScenario = registerTestApplication("imageGlScenario", "真实RGBA图像fit与有序GL回放及状态/上传预算（需要设备）", "club.heiqi.uilib.ui.scene.integration.ImageGlScenario") {
     dependsOn(tasks.named("testClasses"))
     classpath = sourceSets.getByName("main").output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime

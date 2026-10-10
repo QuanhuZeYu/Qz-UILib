@@ -1,18 +1,21 @@
 package club.heiqi.uilib.ui.render.batch;
 
+import club.heiqi.uilib.ui.scene.layout.LayoutBox;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
-import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 
 /** 有序提交段。软件与GL消费者共用载荷；资源版本由资源服务持有，不暴露GL纹理ID。 */
 public final class OrderedQuadBatch {
-    /** 每quad四个顶点；x/y、u/v、图集层、ARGB由回放写入实际顶点格式。 */
+    /** 顶点0/1/2/3对应UV的左上/右上/右下/左下；bbox仅用于保守剔除。 */
     public static final class Quad {
+        public final float x0, y0, x1, y1, x2, y2, x3, y3;
         public final float x, y, width, height, u0, v0, u1, v1;
         public final int layer, color;
 
+        /** 保留轴对齐构造，既有文字/图像及调用方无需改变。 */
         public Quad(
                 float x,
                 float y,
@@ -24,29 +27,112 @@ public final class OrderedQuadBatch {
                 float v1,
                 int layer,
                 int color) {
-            if (!Float.isFinite(x)
-                    || !Float.isFinite(y)
-                    || !Float.isFinite(width)
-                    || !Float.isFinite(height)
-                    || !Float.isFinite(x + width)
-                    || !Float.isFinite(y + height)
-                    || width < 0
-                    || height < 0
+            this(
+                    x,
+                    y,
+                    end(x, width),
+                    y,
+                    end(x, width),
+                    end(y, height),
+                    x,
+                    end(y, height),
+                    u0,
+                    v0,
+                    u1,
+                    v1,
+                    layer,
+                    color);
+        }
+
+        public Quad(
+                float x0,
+                float y0,
+                float x1,
+                float y1,
+                float x2,
+                float y2,
+                float x3,
+                float y3,
+                float u0,
+                float v0,
+                float u1,
+                float v1,
+                int layer,
+                int color) {
+            if (!Float.isFinite(x0)
+                    || !Float.isFinite(y0)
+                    || !Float.isFinite(x1)
+                    || !Float.isFinite(y1)
+                    || !Float.isFinite(x2)
+                    || !Float.isFinite(y2)
+                    || !Float.isFinite(x3)
+                    || !Float.isFinite(y3)
                     || !Float.isFinite(u0)
                     || !Float.isFinite(v0)
                     || !Float.isFinite(u1)
                     || !Float.isFinite(v1)
                     || layer < 0) throw new IllegalArgumentException("无效图元");
-            this.x = x;
-            this.y = y;
-            this.width = width;
-            this.height = height;
+            this.x0 = x0;
+            this.y0 = y0;
+            this.x1 = x1;
+            this.y1 = y1;
+            this.x2 = x2;
+            this.y2 = y2;
+            this.x3 = x3;
+            this.y3 = y3;
+            x = Math.min(Math.min(x0, x1), Math.min(x2, x3));
+            y = Math.min(Math.min(y0, y1), Math.min(y2, y3));
+            width = Math.max(Math.max(x0, x1), Math.max(x2, x3)) - x;
+            height = Math.max(Math.max(y0, y1), Math.max(y2, y3)) - y;
+            if (!Float.isFinite(width) || !Float.isFinite(height))
+                throw new IllegalArgumentException("图元包络超出坐标范围");
             this.u0 = u0;
             this.v0 = v0;
             this.u1 = u1;
             this.v1 = v1;
             this.layer = layer;
             this.color = color;
+        }
+
+        private static float end(float start, float extent) {
+            if (!Float.isFinite(extent) || extent < 0) throw new IllegalArgumentException("无效图元尺寸");
+            return start + extent;
+        }
+
+        /** 同一法线几何用于GL及软件消费；平端点，零长度生成空quad。 */
+        public static Quad line(
+                float x0,
+                float y0,
+                float x1,
+                float y1,
+                float thickness,
+                float u0,
+                float v0,
+                float u1,
+                float v1,
+                int layer,
+                int color) {
+            if (!Float.isFinite(thickness) || thickness <= 0)
+                throw new IllegalArgumentException("无效线宽");
+            double dx = (double) x1 - x0, dy = (double) y1 - y0;
+            double length = Math.hypot(dx, dy);
+            double nx = length == 0 ? 0 : dy / length * thickness / 2;
+            double ny = length == 0 ? 0 : -dx / length * thickness / 2;
+            return new Quad(
+                    (float) (x0 + nx),
+                    (float) (y0 + ny),
+                    (float) (x1 + nx),
+                    (float) (y1 + ny),
+                    (float) (x1 - nx),
+                    (float) (y1 - ny),
+                    (float) (x0 - nx),
+                    (float) (y0 - ny),
+                    u0,
+                    v0,
+                    u1,
+                    v1,
+                    layer,
+                    color);
         }
     }
 

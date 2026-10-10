@@ -1,23 +1,24 @@
 package club.heiqi.uilib.ui.scene.host;
 
-import java.util.ArrayDeque;
-import java.util.ArrayList;
-import java.util.List;
-import club.heiqi.uilib.ui.scene.input.ScenePointerEvent;
 import club.heiqi.uilib.ui.scene.input.SceneNavigationEvent;
-import club.heiqi.uilib.ui.scene.runtime.ScenePointerRouter;
-import java.util.Objects;
+import club.heiqi.uilib.ui.scene.input.ScenePointerEvent;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometryView;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.PaintCommand;
-import club.heiqi.uilib.ui.scene.paint.PaintPlanBuilder;
 import club.heiqi.uilib.ui.scene.paint.PaintPlan;
+import club.heiqi.uilib.ui.scene.paint.PaintPlanBuilder;
+import club.heiqi.uilib.ui.scene.runtime.ScenePointerRouter;
 import club.heiqi.uilib.ui.scene.runtime.ScenePresentation;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
+
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
 
 /** 事件顺序、脏声明、几何准备与最终绘制由框架协调；状态无需帧提交。 */
 public final class SceneFramePipeline implements AutoCloseable {
@@ -134,8 +135,10 @@ public final class SceneFramePipeline implements AutoCloseable {
         pointer(ScenePointerEvent.scroll(x, y, delta));
     }
 
-    /** 每事件独立domain.execute→prepare→route，前handler状态影响下一事件。
-     * handler失败时取消owner、仅记本批剩余物理尾部并外抛，不丢已采集的第二键。 */
+    /**
+     * 每事件独立domain.execute→prepare→route，前handler状态影响下一事件。
+     * handler失败时取消owner、仅记本批剩余物理尾部并外抛，不丢已采集的第二键。
+     */
     public void frame() {
         synchronized (inputs) {
             checkOpen();
@@ -252,8 +255,10 @@ public final class SceneFramePipeline implements AutoCloseable {
         }
     }
 
-    /** 页面关闭时丢弃未处理输入并取消owner，不执行frame或replay；不关闭业务runtime。
-     * 生命周期所有者随后关闭runtime；重复close安全，pending域任务也不再访问host。 */
+    /**
+     * 页面关闭时丢弃未处理输入并取消owner，不执行frame或replay；不关闭业务runtime。
+     * 生命周期所有者随后关闭runtime；重复close安全，pending域任务也不再访问host。
+     */
     @Override
     public void close() {
         List<QueuedInput> pending = new ArrayList<>();
@@ -313,8 +318,13 @@ public final class SceneFramePipeline implements AutoCloseable {
         java.util.Set<SceneNode> captured =
                 java.util.Collections.newSetFromMap(
                         new java.util.IdentityHashMap<SceneNode, Boolean>());
+        ArrayDeque<SceneNode> open = new ArrayDeque<>();
         for (SceneGeometryView.Entry entry : ordered) {
             if (insideCaptured(entry.node, captured)) continue;
+            // 只消费已定位条目；按唯一树祖先关系反向关闭，不重走逻辑children补出幻影。
+            while (!open.isEmpty() && !inSubtree(entry.node, open.peek()))
+                paintAfterChildren(open.pop(), geometry, paint);
+            open.push(entry.node);
             if (entry.node.control() != null) {
                 entry.node.control().preparePaint(entry.node, geometry, text, metricsRevision);
                 SceneNode child = entry.node.control().paintFallbackChild(entry.node);
@@ -404,6 +414,7 @@ public final class SceneFramePipeline implements AutoCloseable {
                                 entry.text));
             }
         }
+        while (!open.isEmpty()) paintAfterChildren(open.pop(), geometry, paint);
         for (SceneGeometryView.Entry entry : ordered)
             if (!insideCaptured(entry.node, captured) && entry.node.control() != null) {
                 entry.node.control().paintOverlay(entry.node, geometry, overlay, text);
@@ -411,6 +422,11 @@ public final class SceneFramePipeline implements AutoCloseable {
                 if (childOverlay != null) append(overlay, childOverlay);
             }
         return new PaintLayers(paint.build(), overlay.build());
+    }
+
+    private void paintAfterChildren(
+            SceneNode node, SceneGeometryView geometry, PaintPlanBuilder target) {
+        if (node.control() != null) node.control().paintAfterChildren(node, geometry, target);
     }
 
     private boolean insideCaptured(SceneNode node, java.util.Set<SceneNode> captured) {

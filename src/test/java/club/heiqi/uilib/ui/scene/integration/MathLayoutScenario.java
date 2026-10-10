@@ -5,6 +5,7 @@ import club.heiqi.uilib.testing.TestApplication;
 import club.heiqi.uilib.ui.scene.text.TextDecoration;
 import club.heiqi.uilib.ui.scene.text.TextEffects;
 import club.heiqi.uilib.ui.scene.text.TextLayout;
+import club.heiqi.uilib.ui.scene.text.TextPolicy;
 import club.heiqi.uilib.ui.scene.text.TextStyle;
 import club.heiqi.uilib.ui.scene.text.font.FontSource;
 import club.heiqi.uilib.ui.scene.text.font.FontTextService;
@@ -15,16 +16,7 @@ import club.heiqi.uilib.ui.scene.text.math.MathFont;
 import club.heiqi.uilib.ui.scene.text.math.MathLayout;
 import club.heiqi.uilib.ui.scene.text.math.MathLayoutEngine;
 import club.heiqi.uilib.ui.scene.text.math.MathStyle;
-import java.io.ByteArrayOutputStream;
-import java.io.InputStream;
-import java.nio.ByteBuffer;
-import java.nio.IntBuffer;
-import java.nio.ByteOrder;
-import java.nio.charset.StandardCharsets;
-import java.util.Collections;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.Map;
+
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.system.MemoryUtil;
@@ -33,6 +25,17 @@ import org.lwjgl.util.freetype.FreeType;
 import org.lwjgl.util.harfbuzz.HarfBuzz;
 import org.lwjgl.util.harfbuzz.OpenType;
 import org.lwjgl.util.harfbuzz.hb_ot_math_glyph_variant_t;
+
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.nio.IntBuffer;
+import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 
 /** 真正的 FT/HB 字形与数学布局；净空期望独立读取随包字体 MATH 表，不复制布局算法。 */
 public final class MathLayoutScenario extends TestApplication {
@@ -96,6 +99,27 @@ public final class MathLayoutScenario extends TestApplication {
                         > normal.lines().get(0).glyphs().get(0).inkBounds.bottom
                                 - normal.lines().get(0).glyphs().get(0).inkBounds.top,
                 "积分墨迹没有变大");
+        // smallint 必须保普通 STIX 字形；仅成功显示 U222B 不能证明算子尺寸语义正确。
+        MathLayout smallIntegral = layout(tex("@smallint"), MathStyle.DISPLAY, slots());
+        healthy(smallIntegral);
+        TextLayout.Glyph smallGlyph =
+                smallIntegral.pieces.get(0).text.lines().get(0).glyphs().get(0);
+        require(
+                smallGlyph.glyphId == normalId && smallGlyph.glyphId != actual.glyphId,
+                "smallint错误选择display积分large variant");
+        near(
+                smallGlyph.inkBounds.bottom - smallGlyph.inkBounds.top,
+                normal.lines().get(0).glyphs().get(0).inkBounds.bottom
+                        - normal.lines().get(0).glyphs().get(0).inkBounds.top,
+                "smallint没有保持普通积分墨迹");
+        near(
+                smallIntegral.pieces.get(0).text.advanceWidth,
+                normal.advanceWidth,
+                "smallint没有保持普通积分advance");
+        require(
+                smallIntegral.pieces.get(0).sourceStart == 0
+                        && smallIntegral.pieces.get(0).sourceEnd == tex("@smallint").length(),
+                "smallint完整控制词来源丢失");
         for (MathLayout.TextPiece p : layout.pieces)
             require(
                     p.sourceStart >= 0
@@ -301,8 +325,17 @@ public final class MathLayoutScenario extends TestApplication {
                         .get(mathFonts.pieces.size() - 1)
                         .text
                         .originalText
+                        .replace((char) 0x00a0, ' ')
                         .equals(" 中文 α "),
                 "text组丢失Unicode或空格");
+        TextLayout actualText = mathFonts.pieces.get(mathFonts.pieces.size() - 1).text;
+        TextLayout nativeText =
+                text.layout(" 中文 α ", actualText.style, Integer.MAX_VALUE, TextPolicy.NO_WRAP);
+        near(
+                actualText.advanceWidth,
+                nativeText.advanceWidth,
+                "text Unicode/空格未沿同一真实native整形run测量");
+        require(actualText.logicalText.equals(nativeText.logicalText), "native text run语义不一致");
         for (MathLayout.TextPiece piece : mathFonts.pieces)
             if (piece.sourceStart < tex("h@mathrm{h}@mathbf{h}@mathit{h}@mathnormal{h}").length())
                 require(
@@ -320,28 +353,40 @@ public final class MathLayoutScenario extends TestApplication {
         fallback(
                 layout(unknownControl, MathStyle.TEXT, slots()),
                 unknownControl,
-                "parse",
+                "macro",
                 0,
                 unknownControl.length());
-        for (String prefix : new String[] {tex("@embed"), tex("@text"), tex("@frac")}) {
-            String source = prefix + emoji;
-            MathLayout rejected = layout(source, MathStyle.TEXT, slots());
-            fallback(rejected, source, "parse", prefix.length(), source.length());
-            for (MathLayout.Diagnostic diagnostic : rejected.diagnostics) {
-                if (!diagnostic.stage.equals("parse")) continue;
-                require(
-                        !(diagnostic.start > 0
-                                && diagnostic.start < source.length()
-                                && Character.isHighSurrogate(source.charAt(diagnostic.start - 1))
-                                && Character.isLowSurrogate(source.charAt(diagnostic.start))),
-                        "诊断起点切开代理对");
-                require(
-                        !(diagnostic.end > 0
-                                && diagnostic.end < source.length()
-                                && Character.isHighSurrogate(source.charAt(diagnostic.end - 1))
-                                && Character.isLowSurrogate(source.charAt(diagnostic.end))),
-                        "诊断终点切开代理对");
-            }
+        // 完整参数合同接受 primitive：缺绑定是 layout 错误，缺第二 frac 参数在 macro 层诊断；TEXT Unicode 交原生字体覆盖。
+        String bareEmbed = tex("@embed") + emoji, missingArgument = tex("@frac") + emoji;
+        fallback(
+                layout(bareEmbed, MathStyle.TEXT, slots()),
+                bareEmbed,
+                "layout",
+                0,
+                bareEmbed.length());
+        MathLayout boundUnicode = layout(bareEmbed, MathStyle.TEXT, slots(emoji));
+        healthy(boundUnicode);
+        require(
+                boundUnicode.embeds.size() == 1 && boundUnicode.embeds.get(0).id.equals(emoji),
+                "Unicode primitive Item标识丢失");
+        fallback(
+                layout(missingArgument, MathStyle.TEXT, slots()),
+                missingArgument,
+                "macro",
+                missingArgument.length(),
+                missingArgument.length());
+        MathLayout unicodeText = layout(tex("@text") + emoji, MathStyle.TEXT, slots());
+        healthy(unicodeText);
+        require(
+                unicodeText.pieces.size() == 1
+                        && unicodeText.pieces.get(0).text.originalText.equals(emoji),
+                "primitive text Unicode未交真实native整形");
+        for (MathLayout.Diagnostic diagnostic : unicodeText.diagnostics) {
+            require(
+                    diagnostic.start <= diagnostic.end
+                            && diagnostic.start >= 0
+                            && diagnostic.end <= (tex("@text") + emoji).length(),
+                    "Unicode native覆盖诊断越界");
         }
         String duplicate = tex("@embed{ore}+@embed{ore}");
         fallback(
@@ -349,7 +394,7 @@ public final class MathLayoutScenario extends TestApplication {
                 duplicate,
                 "parse",
                 duplicate.lastIndexOf((char) 92),
-                duplicate.length());
+                duplicate.lastIndexOf((char) 92) + tex("@embed").length());
         String absent = tex("1+@embed{missing}");
         fallback(layout(absent, MathStyle.TEXT, slots()), absent, "layout", 2, absent.length());
         Map<String, MathEmbedMetrics> invalid = slots("ore");
@@ -403,7 +448,23 @@ public final class MathLayoutScenario extends TestApplication {
                     "错误式丢失完整原文: " + source);
         }
         String missingGlyph = "1+" + new String(Character.toChars(0x10ffff));
-        fallback(layout(missingGlyph, MathStyle.TEXT, slots()), missingGlyph, "font", 2, 4);
+        MathLayout missingText = layout(missingGlyph, MathStyle.TEXT, slots());
+        require(!missingText.fallback, "匿名Unicode文字缺覆盖被误判为数学整式失败");
+        boolean nativeWarning = false, replacement = false, completeSource = false;
+        for (MathLayout.TextPiece piece : missingText.pieces)
+            if (piece.sourceStart == 2 && piece.sourceEnd == missingGlyph.length()) {
+                completeSource = piece.text.originalText.equals(missingGlyph.substring(2));
+                for (TextLayout.Diagnostic diagnostic : piece.text.diagnostics())
+                    nativeWarning |=
+                            diagnostic.kind == TextLayout.Diagnostic.Kind.MISSING_GLYPH
+                                    && diagnostic.sourceStart == 0
+                                    && diagnostic.sourceEnd == missingGlyph.substring(2).length();
+                for (TextLayout.Line line : piece.text.lines())
+                    for (TextLayout.Glyph glyph : line.glyphs()) replacement |= glyph.replacement;
+            }
+        require(
+                completeSource && nativeWarning && replacement,
+                "匿名文字缺覆盖未保留原source/native诊断/稳定替代事实");
         for (MathEmbedMetrics metrics :
                 new MathEmbedMetrics[] {
                     new MathEmbedMetrics(Float.MAX_VALUE, 1, 0.8f),
@@ -415,12 +476,22 @@ public final class MathLayoutScenario extends TestApplication {
             invalid.put("ore", metrics);
             fallback(layout(embed, MathStyle.TEXT, invalid), embed, "layout", 0, embed.length());
         }
-        StringBuilder tooDeep = new StringBuilder();
-        for (int i = 0; i < 65; i++) tooDeep.append('{');
-        tooDeep.append('x');
-        for (int i = 0; i < 65; i++) tooDeep.append('}');
-        MathLayout bounded = layout(tooDeep.toString(), MathStyle.TEXT, slots());
-        require(bounded.fallback && bounded.diagnostics.get(0).stage.equals("parse"), "解析深度没有边界");
+        // 宏作用域前置检查与 parser row 的计数不同，保两层实际边界及精确原文来源，不只检查任意 fallback。
+        for (int levels : new int[] {63, 64, 65}) {
+            StringBuilder nested = new StringBuilder();
+            for (int i = 0; i < levels; i++) nested.append('{');
+            nested.append('x');
+            for (int i = 0; i < levels; i++) nested.append('}');
+            MathLayout bounded = layout(nested.toString(), MathStyle.TEXT, slots());
+            if (levels == 63) healthy(bounded);
+            else
+                fallback(
+                        bounded,
+                        nested.toString(),
+                        levels == 64 ? "parse" : "macro",
+                        levels,
+                        levels + 1);
+        }
         FontSource validMath =
                 text.mathFont(style(EM)).text("x").lines().get(0).glyphs().get(0).source;
         FontSource missing =
@@ -468,28 +539,26 @@ public final class MathLayoutScenario extends TestApplication {
     /** 这些反例经过生产解析和整式降级入口，不访问内部 AST。 */
     private void delimiterFailures() {
         String[][] cases = {
-            {"𝑥@left", "", "缺少定界token"},
-            {"𝑥@left😀x@right)", "😀", "无效码点token"},
-            {"@left a x@right)", "a", "普通字母不能作token"},
-            {"@left@unknown x@right)", "@unknown", "未知命令token"},
-            {"x@middle|y", "@middle", "middle没有本组left"},
-            {"x@right)", "@right", "right没有本组left"},
-            {"@left({x@right)}", "@right", "right不可跨花括号"},
-            {"@left({x@middle|y}@right)", "@middle", "middle不可串入内分组"},
-            {"{@left(x}@right)", "}", "left不可跨花括号闭合"},
-            {"@sqrt[@left(x]@right){y}", "]", "left不可跨根指数闭合"},
-            {"@left(x@middle@right)", "@right", "middle缺少token"},
-            {"@left(x@right", "", "right缺少token"},
-            {"@left(x@middle|y", "@left", "围合组未闭合"},
-            {"@left(@left[x@right)@right]@right)", "@right", "嵌套结束后多余right"}
+            {"𝑥@left", "@left", "macro", "缺少定界token"},
+            {"𝑥@left😀x@right)", "😀", "parse", "无效码点token"},
+            {"@left a x@right)", "a", "parse", "普通字母不能作token"},
+            {"@left@unknown x@right)", "@unknown ", "parse", "未知命令token包含lexer消费的尾随空白"},
+            {"x@middle|y", "@middle", "parse", "middle没有本组left"},
+            {"x@right)", "@right", "parse", "right没有本组left"},
+            {"@left({x@right)}", "@right", "parse", "right不可跨花括号"},
+            {"{@left(x}@right)", "@left", "parse", "left缺少本组right归发起token"},
+            {"@sqrt[@left(x]@right){y}", "@right", "macro", "根指数先消费后right缺少参数"},
+            {"@left(x@middle@right)", "@right", "parse", "middle缺少token"},
+            {"@left(x@right", "@right", "macro", "right缺少token"},
+            {"@left(x@middle|y", "@left", "parse", "围合组未闭合归发起token"},
+            {"@left(@left[x@right)@right]@right)", "@right", "parse", "嵌套结束后多余right"}
         };
         for (String[] item : cases) {
             String source = tex(item[0]), token = tex(item[1]);
             int start = token.isEmpty() ? source.length() : source.lastIndexOf(token);
             int end = token.isEmpty() ? start : start + token.length();
-            // 未闭合围合结构把诊断归到发起的left，避免丢失配对来源。
-            if (item[2].equals("围合组未闭合")) end = source.length();
-            fallback(layout(source, MathStyle.TEXT, slots()), source, "parse", start, end);
+            // 宏前置参数检查与配对解析分别归属真实控制词/token；fallback仍保完整原输入和UTF16来源。
+            fallback(layout(source, MathStyle.TEXT, slots()), source, item[2], start, end);
         }
         String missing = tex("@left(@embed{missing}@right)");
         int start = missing.indexOf(tex("@embed"));
@@ -506,8 +575,10 @@ public final class MathLayoutScenario extends TestApplication {
                 duplicate,
                 "parse",
                 repeated,
-                duplicate.indexOf(tex("@right")));
+                repeated + tex("@embed").length());
         healthy(layout("@left(x@right)", MathStyle.TEXT, slots()));
+        // fixed允许middle穿过普通花括号作用于当前left；不是必须拒绝的反例。
+        healthy(layout("@left({x@middle|y}@right)", MathStyle.TEXT, slots()));
     }
 
     private void delimiters() {
@@ -515,7 +586,8 @@ public final class MathLayoutScenario extends TestApplication {
         items.put("deep", new MathEmbedMetrics(1.3f, 9, 1.2f));
         String source =
                 tex(
-                        "a@left(@embed{deep}@middle|x@middle@Vert y@right@rfloor^{@embed{up}}_{@embed{lo}}");
+                        "a@left(@embed{deep}@middle|x@middle@Vert"
+                                + " y@right@rfloor^{@embed{up}}_{@embed{lo}}");
         MathLayout layout = layout(source, MathStyle.TEXT, items);
         healthy(layout);
         float axis = layout.baseline - metric(5, EM);
@@ -581,6 +653,97 @@ public final class MathLayoutScenario extends TestApplication {
                         + (ink(left)[3] - ink(left)[1])
                         + " rightHeight="
                         + (ink(right)[3] - ink(right)[1]));
+        nestedMiddle();
+    }
+
+    private void nestedMiddle() {
+        // fixed只有left直接可见的middle被重定高；普通group/frac/cell包住的middle保size1并贡献真实墨迹。
+        for (float em : new float[] {18.7f, 32.3f, 51.1f}) {
+            MathLayout big =
+                    engine.layout(
+                            MathContent.parse(tex("@big|")),
+                            style(em),
+                            MathStyle.TEXT,
+                            text,
+                            slots());
+            healthy(big);
+            MathLayout.TextPiece expected = big.pieces.get(0);
+            float[] expectedInk = ink(expected);
+            for (String body :
+                    new String[] {
+                        "{x@middle|y}",
+                        "@frac{x@middle|y}{z}",
+                        "@begin{matrix}x@middle|y@end{matrix}"
+                    }) {
+                String source = tex("@left(" + body + "@right)");
+                MathLayout result =
+                        engine.layout(
+                                MathContent.parse(source),
+                                style(em),
+                                MathStyle.TEXT,
+                                text,
+                                slots());
+                healthy(result);
+                int start = source.indexOf(tex("@middle"));
+                MathLayout.TextPiece actual = piece(result, start);
+                float[] actualInk = ink(actual);
+                require(
+                        actual.sourceEnd == start + tex("@middle|").length(),
+                        "nestedmiddle来源丢失真实参数token");
+                near(
+                        actual.text.style.logicalEm,
+                        em,
+                        "nestedmiddle fixed baseStyle被script/cell比例再次缩小");
+                near(
+                        actual.text.advanceWidth,
+                        expected.text.advanceWidth,
+                        "nestedmiddle未复用size1真实glyph宽度");
+                near(
+                        actualInk[3] - actualInk[1],
+                        expectedInk[3] - expectedInk[1],
+                        "nestedmiddle变成外共同target或零墨迹");
+                for (TextLayout.Line line : actual.text.lines())
+                    for (TextLayout.Glyph glyph : line.glyphs())
+                        require(
+                                glyph.glyphId != 0
+                                        && !glyph.replacement
+                                        && glyph.source.id.equals("stix-two-math"),
+                                "nestedmiddle未真实画STIX字形");
+                require(
+                        result.rules.size() == (body.startsWith("@frac") ? 1 : 0),
+                        "nestedmiddle丢分式横线");
+            }
+            Map<String, MathEmbedMetrics> items = slots("deep");
+            items.put("deep", new MathEmbedMetrics(1.3f, 9, 1.2f));
+            String mixed =
+                    tex("@left({x@middle|y}@left[@embed{deep}@middle|z@right]@middle|a@right)");
+            MathLayout scopes =
+                    engine.layout(MathContent.parse(mixed), style(em), MathStyle.TEXT, text, items);
+            healthy(scopes);
+            require(
+                    scopes.embeds.size() == 1 && scopes.embeds.get(0).id.equals("deep"),
+                    "nearestfence丢Item唯一空间");
+            MathLayout.TextPiece grouped = piece(scopes, mixed.indexOf(tex("@middle"))),
+                    outer = piece(scopes, mixed.lastIndexOf(tex("@middle")));
+            near(
+                    ink(grouped)[3] - ink(grouped)[1],
+                    expectedInk[3] - expectedInk[1],
+                    "普通group泄漏nearest外target");
+            require(
+                    ink(outer)[3] - ink(outer)[1] > ink(grouped)[3] - ink(grouped)[1],
+                    "外directmiddle未使用外共同target");
+            System.out.println(
+                    "PASS nestedmiddle em="
+                            + em
+                            + " size1Ink="
+                            + (expectedInk[3] - expectedInk[1])
+                            + " grouped="
+                            + grouped.sourceStart
+                            + ":"
+                            + grouped.sourceEnd
+                            + " directOuterInk="
+                            + (ink(outer)[3] - ink(outer)[1]));
+        }
     }
 
     private void delimiterTokens() {
@@ -629,7 +792,10 @@ public final class MathLayoutScenario extends TestApplication {
             MathLayout result = layout(source, MathStyle.TEXT, slots());
             healthy(result);
             require(result.pieces.size() == 3, "合法token没有实际glyph: " + token);
-            require(piece(result, 0).sourceEnd == tex("@left" + token).length(), "定界token来源范围不完整");
+            // lexer的控制词token含吞掉的尾随分隔空白；控制符与literal不包含另一个空格token。
+            int delimiterEnd =
+                    tex("@left" + token).length() + (token.matches("@[A-Za-z]+") ? 1 : 0);
+            require(piece(result, 0).sourceEnd == delimiterEnd, "定界token来源范围不完整: " + token);
             // 空/短围合可以选择基本字形，必须仍以真实墨迹中线居轴，不能把基线空白当墨迹。
             for (MathStyle currentStyle : MathStyle.values()) {
                 float currentEm =

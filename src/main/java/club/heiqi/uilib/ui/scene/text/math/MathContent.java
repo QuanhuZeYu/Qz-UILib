@@ -2,36 +2,141 @@ package club.heiqi.uilib.ui.scene.text.math;
 
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 
 /** 源码只解析一次；内部 AST 不承诺为长期公开接口，布局与主题均不修改它。 */
 public final class MathContent {
     public final String source;
     public final List<MathLayout.Diagnostic> diagnostics;
+    public final List<MathLexer.Token> expandedTokens, tagTokens;
+    public final MathMacros nextMacros;
+    public final List<MathMacroExpander.RowTag> rowTags;
+    public final List<MathMacroExpander.EnvironmentHeader> environmentHeaders;
+    public final List<MathMacroExpander.Message> macroMessages;
     final Node root;
 
-    private MathContent(String source, Node root, List<MathLayout.Diagnostic> diagnostics) {
+    private MathContent(
+            String source,
+            Node root,
+            List<MathLayout.Diagnostic> diagnostics,
+            MathMacroExpander.Result expansion) {
         this.source = source;
         this.root = root;
+        this.expandedTokens = expansion.tokens;
+        this.tagTokens = expansion.tagTokens;
+        this.nextMacros = expansion.nextMacros;
+        this.rowTags = expansion.rowTags;
+        this.environmentHeaders = expansion.environmentHeaders;
+        this.macroMessages = expansion.messages;
         this.diagnostics =
                 Collections.unmodifiableList(new ArrayList<MathLayout.Diagnostic>(diagnostics));
     }
 
     public static MathContent parse(String source) {
+        return parse(source, MathMacros.empty());
+    }
+
+    public static MathContent parse(String source, MathMacros macros) {
         Objects.requireNonNull(source, "source");
-        Parser parser = new Parser(source);
+        MathMacroExpander.Result expansion = MathMacroExpander.expand(source, macros);
+        if (!expansion.diagnostics.isEmpty()) {
+            List<MathLayout.Diagnostic> diagnostics = new ArrayList<MathLayout.Diagnostic>();
+            for (MathMacroExpander.Diagnostic d : expansion.diagnostics)
+                diagnostics.add(
+                        new MathLayout.Diagnostic("macro", d.sourceStart, d.sourceEnd, d.message));
+            return new MathContent(source, null, diagnostics, expansion);
+        }
+        MathParser parser =
+                new MathParser(
+                        expansion.tokens,
+                        source.length(),
+                        expansion.rowTags,
+                        expansion.environmentHeaders);
         try {
-            if (source.length() > 16384)
-                throw parser.error(0, source.length(), "公式超过16384个UTF-16单位");
-            Node root = parser.row(false, false);
-            return new MathContent(source, root, Collections.<MathLayout.Diagnostic>emptyList());
-        } catch (ParseFailure failure) {
-            return new MathContent(source, null, Collections.singletonList(failure.diagnostic));
+            Node root = parser.parse(expansion.tagTokens);
+            return new MathContent(
+                    source, root, Collections.<MathLayout.Diagnostic>emptyList(), expansion);
+        } catch (MathParser.Failure failure) {
+            MathLayout.Diagnostic d = failure.diagnostic;
+            int[] span = new int[] {d.start, d.end};
+            return new MathContent(
+                    source,
+                    null,
+                    Collections.singletonList(
+                            new MathLayout.Diagnostic(d.stage, span[0], span[1], d.message)),
+                    expansion);
+        }
+    }
+
+    /** 字符 parser 的私有桥，不向业务发布展开索引；后续 Node payload 复制也由此统一出口。 */
+    static final class ParserBridge {
+        final String text;
+        final int[] starts, ends;
+        final int sourceLength;
+
+        ParserBridge(List<MathLexer.Token> tokens, int sourceLength) {
+            this.sourceLength = sourceLength;
+            StringBuilder value = new StringBuilder();
+            List<Integer> ss = new ArrayList<Integer>(), es = new ArrayList<Integer>();
+            for (int i = 0; i < tokens.size(); i++) {
+                MathLexer.Token token = tokens.get(i);
+                String tokenText = token.text;
+                for (int n = 0; n < tokenText.length(); n++) {
+                    value.append(tokenText.charAt(n));
+                    ss.add(token.sourceStart);
+                    es.add(token.sourceEnd);
+                }
+                // 控制词和随后字母仍是两个 token，绝不能合成另一个控制词。
+                if (tokenText.matches("\\\\[A-Za-z@]+")
+                        && i + 1 < tokens.size()
+                        && !tokens.get(i + 1).text.isEmpty()
+                        && MathLexer.letter(tokens.get(i + 1).text.charAt(0))) {
+                    value.append(' ');
+                    ss.add(token.sourceStart);
+                    es.add(token.sourceEnd);
+                }
+            }
+            text = value.toString();
+            starts = new int[ss.size()];
+            ends = new int[es.size()];
+            for (int i = 0; i < starts.length; i++) {
+                starts[i] = ss.get(i);
+                ends[i] = es.get(i);
+            }
+        }
+
+        int[] span(int start, int end) {
+            if (starts.length == 0) return new int[] {sourceLength, sourceLength};
+            int s = Math.max(0, Math.min(start, starts.length));
+            int e = Math.max(s, Math.min(end, starts.length));
+            if (s == e) {
+                int p = s == starts.length ? ends[s - 1] : starts[s];
+                return new int[] {p, p};
+            }
+            int lo = starts[s], hi = ends[s];
+            for (int i = s + 1; i < e; i++) {
+                lo = Math.min(lo, starts[i]);
+                hi = Math.max(hi, ends[i]);
+            }
+            return new int[] {lo, hi};
+        }
+
+        Node remap(Node node) {
+            if (node == null) return null;
+            List<Node> children = new ArrayList<Node>();
+            for (Node child : node.children) children.add(remap(child));
+            int[] range = span(node.start, node.end);
+            return new Node(
+                    node.kind,
+                    range[0],
+                    range[1],
+                    node.value,
+                    children,
+                    remap(node.first),
+                    remap(node.second),
+                    remap(node.third),
+                    node.payload);
         }
     }
 
@@ -42,6 +147,7 @@ public final class MathContent {
         EMBED,
         FRAC,
         BINOM,
+        GENFRAC,
         DELIMITED,
         DELIMITER,
         MIDDLE,
@@ -50,8 +156,35 @@ public final class MathContent {
         FONT,
         STYLE,
         SPACE,
-        OPERATOR
+        OPERATOR,
+        ARRAY,
+        ACCENT,
+        OVERUNDER,
+        XARROW,
+        HORIZBRACE,
+        COLOR,
+        SIZE,
+        CLASSIFY,
+        PHANTOM,
+        BOX,
+        RAISE,
+        RULE,
+        MATHCHOICE,
+        VCENTER,
+        LAP,
+        SMASH,
+        ENCLOSE,
+        PMB,
+        HTMLMATHML,
+        VERB,
+        UNSUPPORTED,
+        TAG,
+        LINEBREAK,
+        INTERNAL
     }
+
+    /** 参数事实独立于树；所有子内容仅在 Node 的 children/first/second/third。 */
+    interface Payload {}
 
     static final class Node {
         final Kind kind;
@@ -59,6 +192,7 @@ public final class MathContent {
         final String value;
         final List<Node> children;
         final Node first, second, third;
+        final Payload payload;
 
         Node(
                 Kind kind,
@@ -69,384 +203,337 @@ public final class MathContent {
                 Node first,
                 Node second,
                 Node third) {
+            this(kind, start, end, value, children, first, second, third, null);
+        }
+
+        Node(
+                Kind kind,
+                int start,
+                int end,
+                String value,
+                List<Node> children,
+                Node first,
+                Node second,
+                Node third,
+                Payload payload) {
             this.kind = kind;
             this.start = start;
             this.end = end;
             this.value = value;
-            this.children =
-                    children == null
-                            ? Collections.<Node>emptyList()
-                            : Collections.unmodifiableList(new ArrayList<Node>(children));
+            this.children = immutable(children == null ? Collections.<Node>emptyList() : children);
             this.first = first;
             this.second = second;
             this.third = third;
+            this.payload = payload;
         }
     }
 
-    private static final class ParseFailure extends RuntimeException {
-        final MathLayout.Diagnostic diagnostic;
+    static <T> List<T> immutable(List<T> values) {
+        return Collections.unmodifiableList(new ArrayList<T>(values));
+    }
 
-        ParseFailure(int start, int end, String message) {
-            super(message);
-            diagnostic = new MathLayout.Diagnostic("parse", start, end, message);
+    static final class GlyphSpec implements Payload {
+        final String originalToken, mode, atomGroup, catalogFont, replacement;
+        final String styledFont;
+
+        GlyphSpec(
+                String token,
+                String mode,
+                String group,
+                String font,
+                String replacement,
+                String styledFont) {
+            this.originalToken = token;
+            this.mode = mode;
+            this.atomGroup = group;
+            this.catalogFont = font;
+            this.replacement = replacement;
+            this.styledFont = styledFont;
         }
     }
 
-    private static final class Parser {
-        private static final Map<String, String> SYMBOLS = symbols();
-        private static final Map<String, String> DELIMITERS = delimiters();
-        final String source;
-        final Set<String> embeds = new HashSet<String>();
-        int index, depth;
-        char terminator;
+    static final class FractionSpec implements Payload {
+        final String leftDelimiter, rightDelimiter, style, align;
+        final boolean hasBar, continued;
+        final MathDimension thickness;
 
-        Parser(String source) {
-            this.source = source;
+        FractionSpec(
+                String left,
+                String right,
+                String style,
+                String align,
+                boolean bar,
+                boolean continued,
+                MathDimension thickness) {
+            this.leftDelimiter = left;
+            this.rightDelimiter = right;
+            this.style = style;
+            this.align = align;
+            this.hasBar = bar;
+            this.continued = continued;
+            this.thickness = thickness;
+        }
+    }
+
+    static final class DelimiterSpec implements Payload {
+        final String originalToken, atomGroup;
+        final int size;
+
+        DelimiterSpec(String token, String group, int size) {
+            this.originalToken = token;
+            this.atomGroup = group;
+            this.size = size;
+        }
+    }
+
+    static final class OperatorSpec implements Payload {
+        final String originalToken, limits;
+        final boolean symbol, defaultLimits, alwaysHandleSupSub;
+        final GlyphSpec symbolFacts;
+
+        OperatorSpec(
+                String token,
+                String limits,
+                boolean symbol,
+                boolean defaultLimits,
+                boolean always) {
+            this(token, limits, symbol, defaultLimits, always, null);
         }
 
-        ParseFailure error(int start, int end, String message) {
-            return new ParseFailure(start, end, message);
+        OperatorSpec(
+                String token,
+                String limits,
+                boolean symbol,
+                boolean defaultLimits,
+                boolean always,
+                GlyphSpec symbolFacts) {
+            this.originalToken = token;
+            this.limits = limits;
+            this.symbol = symbol;
+            this.defaultLimits = defaultLimits;
+            this.alwaysHandleSupSub = always;
+            this.symbolFacts = symbolFacts;
+        }
+    }
+
+    static final class FontSpec implements Payload {
+        final String font, mode;
+
+        FontSpec(String font, String mode) {
+            this.font = font;
+            this.mode = mode;
+        }
+    }
+
+    static final class StyleSpec implements Payload {
+        final String style;
+
+        StyleSpec(String style) {
+            this.style = style;
+        }
+    }
+
+    static final class SizeSpec implements Payload {
+        final int size;
+
+        SizeSpec(int size) {
+            this.size = size;
+        }
+    }
+
+    static final class ColorSpec implements Payload {
+        final String css;
+
+        ColorSpec(String css) {
+            this.css = css;
+        }
+    }
+
+    static final class ClassSpec implements Payload {
+        final String atomGroup;
+        final boolean characterBox;
+
+        ClassSpec(String group, boolean characterBox) {
+            this.atomGroup = group;
+            this.characterBox = characterBox;
+        }
+    }
+
+    static final class SpaceSpec implements Payload {
+        final MathDimension dimension;
+        final boolean nonBreaking, allowBreak;
+        final GlyphSpec symbolFacts;
+
+        SpaceSpec(MathDimension dimension, boolean nonBreaking, boolean allowBreak) {
+            this(dimension, nonBreaking, allowBreak, null);
         }
 
-        void space() {
-            while (index < source.length() && Character.isWhitespace(source.codePointAt(index)))
-                index += Character.charCount(source.codePointAt(index));
+        SpaceSpec(
+                MathDimension dimension,
+                boolean nonBreaking,
+                boolean allowBreak,
+                GlyphSpec symbolFacts) {
+            this.dimension = dimension;
+            this.nonBreaking = nonBreaking;
+            this.allowBreak = allowBreak;
+            this.symbolFacts = symbolFacts;
+        }
+    }
+
+    static final class DecorationSpec implements Payload {
+        final String command;
+        final boolean below, stretchy, shifty;
+
+        DecorationSpec(String command, boolean below, boolean stretchy, boolean shifty) {
+            this.command = command;
+            this.below = below;
+            this.stretchy = stretchy;
+            this.shifty = shifty;
+        }
+    }
+
+    static final class BoxSpec implements Payload {
+        final MathDimension width, height, shift;
+        final String background, border;
+        final boolean keepWidth, keepHeight, keepDepth, visible;
+
+        BoxSpec(
+                MathDimension width,
+                MathDimension height,
+                MathDimension shift,
+                String background,
+                String border,
+                boolean keepWidth,
+                boolean keepHeight,
+                boolean keepDepth,
+                boolean visible) {
+            this.width = width;
+            this.height = height;
+            this.shift = shift;
+            this.background = background;
+            this.border = border;
+            this.keepWidth = keepWidth;
+            this.keepHeight = keepHeight;
+            this.keepDepth = keepDepth;
+            this.visible = visible;
+        }
+    }
+
+    static final class VerbSpec implements Payload {
+        final boolean starred;
+
+        VerbSpec(boolean starred) {
+            this.starred = starred;
+        }
+    }
+
+    static final class UnsupportedSpec implements Payload {
+        final String command, reason;
+
+        UnsupportedSpec(String command) {
+            this.command = command;
+            this.reason = "trust=false";
+        }
+    }
+
+    static final class TagSpec implements Payload {
+        final boolean displayRequired, parenthesized;
+
+        TagSpec(boolean displayRequired, boolean parenthesized) {
+            this.displayRequired = displayRequired;
+            this.parenthesized = parenthesized;
+        }
+    }
+
+    static final class ColumnSpec {
+        enum Type {
+            ALIGN,
+            SOLID,
+            DASHED,
+            INSERT
         }
 
-        /** 错误区间与控制符消费都停在码点边界，不能把合法代理对切半。 */
-        int nextCodePointEnd() {
-            return index == source.length()
-                    ? index
-                    : index + Character.charCount(source.codePointAt(index));
-        }
+        final Type type;
+        final String align;
+        final double preGap, postGap;
+        final int insertChild;
 
-        Node node(Kind kind, int start, String value, Node first, Node second, Node third) {
-            return new Node(kind, start, index, value, null, first, second, third);
+        ColumnSpec(Type type, String align, double preGap, double postGap, int insertChild) {
+            this.type = type;
+            this.align = align;
+            this.preGap = preGap;
+            this.postGap = postGap;
+            this.insertChild = insertChild;
         }
+    }
 
-        Node row(boolean grouped, boolean degree) {
-            return row(grouped ? '}' : degree ? ']' : (char) 0, -1);
+    static final class RowSpec {
+        final int firstCell, cellCount, tagChild;
+        final MathDimension gapAfter;
+        final boolean automaticTag;
+
+        RowSpec(
+                int firstCell,
+                int count,
+                MathDimension gapAfter,
+                int tagChild,
+                boolean automaticTag) {
+            this.firstCell = firstCell;
+            this.cellCount = count;
+            this.gapAfter = gapAfter;
+            this.tagChild = tagChild;
+            this.automaticTag = automaticTag;
         }
+    }
 
-        /** 围合结构继承当前分组终点，middle只属于直接所在的围合层。 */
-        Node row(char endToken, int leftStart) {
-            int start = index;
-            if (++depth > 64) throw error(start, index, "公式嵌套超过64层");
-            char previousTerminator = terminator;
-            terminator = endToken;
-            List<Node> nodes = new ArrayList<Node>();
-            while (true) {
-                space();
-                if (index == source.length()) {
-                    if (leftStart >= 0) throw error(leftStart, index, "left缺少同组right");
-                    if (endToken != 0) throw error(start, index, "分组未闭合");
-                    break;
-                }
-                char ch = source.charAt(index);
-                if (ch == endToken && endToken != 0) {
-                    if (leftStart >= 0) throw error(index, index + 1, "left/right不能跨分组配对");
-                    index++;
-                    break;
-                }
-                if (leftStart >= 0 && commandAt("right")) break;
-                if (leftStart >= 0 && commandAt("middle")) {
-                    int marker = index;
-                    command();
-                    nodes.add(delimiter(Kind.MIDDLE, marker));
-                    continue;
-                }
-                if (ch == '}') throw error(index, index + 1, "多余的闭合分组");
-                nodes.add(postfix(atom()));
-            }
-            terminator = previousTerminator;
-            depth--;
-            return new Node(Kind.ROW, start, index, "", nodes, null, null, null);
+    static final class LineSpec {
+        final int beforeRow;
+        final boolean dashed;
+
+        LineSpec(int beforeRow, boolean dashed) {
+            this.beforeRow = beforeRow;
+            this.dashed = dashed;
         }
+    }
 
-        Node delimited(int start) {
-            Node left = delimiter(Kind.DELIMITER, start);
-            Node body = row(terminator, start);
-            int rightStart = index;
-            command();
-            Node right = delimiter(Kind.DELIMITER, rightStart);
-            return node(Kind.DELIMITED, start, "", left, body, right);
-        }
+    /** flat children: 每行连续 cell，行号/列号仅由 RowSpec 索引；附加插入列与 tag 也用 child index。 */
+    static final class ArraySpec implements Payload {
+        final String environment, cellStyle, separation, leftDelimiter, rightDelimiter;
+        final List<RowSpec> rows;
+        final List<ColumnSpec> columns;
+        final List<LineSpec> lines;
+        final double stretch;
+        final boolean displayRequired, inlineAutoDisplay, addJot, outerSpacing, singleRow;
 
-        Node delimiter(Kind kind, int marker) {
-            space();
-            int start = index;
-            if (index == source.length()) throw error(start, start, "缺少定界token");
-            String token;
-            if (source.charAt(index) == (char) 92) token = String.valueOf((char) 92) + command();
-            else {
-                index = nextCodePointEnd();
-                token = source.substring(start, index);
-            }
-            String value = DELIMITERS.get(token);
-            if (value == null) throw error(start, index, "无效定界token: " + token);
-            return node(kind, marker, value, null, null, null);
-        }
-
-        Node argument() {
-            space();
-            if (index == source.length()) throw error(index, index, "缺少命令参数");
-            if (++depth > 64) throw error(index, index, "公式嵌套超过64层");
-            Node value = atom();
-            depth--;
-            if (value.kind == Kind.STYLE || value.kind == Kind.SPACE)
-                throw error(value.start, value.end, "参数需要数学原子或分组");
-            return value;
-        }
-
-        Node group() {
-            space();
-            if (index == source.length() || source.charAt(index) != '{')
-                throw error(index, nextCodePointEnd(), "命令需要花括号分组");
-            int start = index++;
-            Node value = row(true, false);
-            return new Node(Kind.ROW, start, index, "", value.children, null, null, null);
-        }
-
-        Node postfix(Node base) {
-            Node upper = null, lower = null;
-            String limits = "default";
-            boolean modified = false;
-            while (true) {
-                space();
-                if (index == source.length()) break;
-                char ch = source.charAt(index);
-                if (ch == '^' || ch == '_') {
-                    if (base.kind == Kind.STYLE || base.kind == Kind.SPACE)
-                        throw error(index, index + 1, "脚本缺少基础原子");
-                    int marker = index++;
-                    if (ch == '^' && upper != null || ch == '_' && lower != null)
-                        throw error(marker, index, "重复的同类脚本");
-                    Node script = argument();
-                    if (ch == '^') upper = script;
-                    else lower = script;
-                    modified = true;
-                } else if (ch == '\\' && (commandAt("limits") || commandAt("nolimits"))) {
-                    int marker = index;
-                    String command = command();
-                    if (base.kind != Kind.OPERATOR) throw error(marker, index, "上下限指令只能跟随算子");
-                    if (!limits.equals("default")) throw error(marker, index, "重复的上下限指令");
-                    limits = command;
-                    modified = true;
-                } else break;
-            }
-            return modified ? node(Kind.SCRIPTS, base.start, limits, base, upper, lower) : base;
-        }
-
-        boolean commandAt(String name) {
-            String target = "\\" + name;
-            int end = index + target.length();
-            return source.startsWith(target, index)
-                    && (end == source.length() || !asciiLetter(source.charAt(end)));
-        }
-
-        String command() {
-            int start = ++index;
-            if (index == source.length()) throw error(start - 1, index, "未完成的命令");
-            if (asciiLetter(source.charAt(index))) {
-                while (index < source.length() && asciiLetter(source.charAt(index))) index++;
-            } else index = nextCodePointEnd();
-            return source.substring(start, index);
-        }
-
-        String literalGroup() {
-            space();
-            int start = index;
-            if (index == source.length() || source.charAt(index) != '{')
-                throw error(start, nextCodePointEnd(), "命令需要花括号分组");
-            index++;
-            StringBuilder value = new StringBuilder();
-            int nesting = 1;
-            while (index < source.length()) {
-                char ch = source.charAt(index++);
-                if (ch == '\\'
-                        && index < source.length()
-                        && "{}\\".indexOf(source.charAt(index)) >= 0) {
-                    value.append(source.charAt(index++));
-                } else if (ch == '{') {
-                    if (++nesting > 64) throw error(start, index, "文字分组嵌套超过64层");
-                    value.append(ch);
-                } else if (ch == '}') {
-                    if (--nesting == 0) return value.toString();
-                    value.append(ch);
-                } else value.append(ch);
-            }
-            throw error(start, index, "文字分组未闭合");
-        }
-
-        Node atom() {
-            space();
-            int start = index;
-            if (index == source.length()) throw error(index, index, "缺少数学原子");
-            int cp = source.codePointAt(index);
-            if (cp == '{') return group();
-            if (cp == '^' || cp == '_' || cp == '}') throw error(index, index + 1, "数学原子缺失");
-            if (cp >= 0xd800 && cp <= 0xdfff) throw error(index, index + 1, "孤立UTF-16代理项");
-            if (cp != '\\') {
-                index += Character.charCount(cp);
-                return node(Kind.GLYPH, start, new String(Character.toChars(cp)), null, null, null);
-            }
-            String name = command();
-            if (name.equals("left")) return delimited(start);
-            if (name.equals("middle") || name.equals("right"))
-                throw error(start, index, name + "缺少本组left");
-            if (name.equals("frac")
-                    || name.equals("dfrac")
-                    || name.equals("tfrac")
-                    || name.equals("binom")) {
-                Node numerator = group(), denominator = group();
-                return node(
-                        name.equals("binom") ? Kind.BINOM : Kind.FRAC,
-                        start,
-                        name,
-                        numerator,
-                        denominator,
-                        null);
-            }
-            if (name.equals("sqrt")) {
-                space();
-                Node degree = null;
-                if (index < source.length() && source.charAt(index) == '[') {
-                    index++;
-                    degree = row(false, true);
-                }
-                Node radicand = group();
-                return node(Kind.ROOT, start, name, radicand, degree, null);
-            }
-            if (name.equals("text"))
-                return node(Kind.TEXT, start, literalGroup(), null, null, null);
-            if (name.equals("embed")) {
-                String id = literalGroup();
-                if (id.isEmpty()) throw error(start, index, "嵌入标识为空");
-                if (!embeds.add(id)) throw error(start, index, "重复嵌入标识: " + id);
-                return node(Kind.EMBED, start, id, null, null, null);
-            }
-            if (name.equals("mathrm")
-                    || name.equals("mathit")
-                    || name.equals("mathbf")
-                    || name.equals("mathnormal"))
-                return node(Kind.FONT, start, name, group(), null, null);
-            if (name.equals("displaystyle")
-                    || name.equals("textstyle")
-                    || name.equals("scriptstyle")
-                    || name.equals("scriptscriptstyle"))
-                return node(Kind.STYLE, start, name, null, null, null);
-            if (name.equals(",")
-                    || name.equals(":")
-                    || name.equals(";")
-                    || name.equals("!")
-                    || name.equals("quad")
-                    || name.equals("qquad")
-                    || name.equals(" ")) return node(Kind.SPACE, start, name, null, null, null);
-            if (name.equals("int")
-                    || name.equals("sum")
-                    || name.equals("prod")
-                    || name.equals("sin")
-                    || name.equals("cos")
-                    || name.equals("tan")
-                    || name.equals("log")
-                    || name.equals("ln")
-                    || name.equals("exp")
-                    || name.equals("lim"))
-                return node(Kind.OPERATOR, start, name, null, null, null);
-            if (name.equals("operatorname")) {
-                boolean limits = index < source.length() && source.charAt(index) == '*';
-                if (limits) index++;
-                return node(
-                        Kind.OPERATOR,
-                        start,
-                        (limits ? "*" : "@") + literalGroup(),
-                        null,
-                        null,
-                        null);
-            }
-            String symbol = SYMBOLS.get(name);
-            if (symbol != null) return node(Kind.GLYPH, start, symbol, null, null, null);
-            throw error(start, index, "本阶段未支持命令: " + name);
-        }
-
-        static boolean asciiLetter(char ch) {
-            return ch >= 'a' && ch <= 'z' || ch >= 'A' && ch <= 'Z';
-        }
-
-        /** 每项对应一个明确token；普通花括号仍是分组，必须转义后用作定界符。 */
-        static Map<String, String> delimiters() {
-            Map<String, String> values = new HashMap<String, String>();
-            String[][] aliases = {
-                {".", "."},
-                {"(", "(", "lparen"},
-                {")", ")", "rparen"},
-                {"[", "[", "lbrack"},
-                {"]", "]", "rbrack"},
-                {"{", "lbrace", "{"},
-                {"}", "rbrace", "}"},
-                {"|", "|", "vert", "lvert", "rvert"},
-                {"‖", "‖", "Vert", "lVert", "rVert", "|"},
-                {"⟨", "⟨", "<", "langle", "lt"},
-                {"⟩", "⟩", ">", "rangle", "gt"},
-                {"⌊", "⌊", "lfloor"},
-                {"⌋", "⌋", "rfloor"},
-                {"⌈", "⌈", "lceil"},
-                {"⌉", "⌉", "rceil"},
-                {"↑", "↑", "uparrow"},
-                {"↓", "↓", "downarrow"},
-                {"↕", "↕", "updownarrow"},
-                {"⇑", "⇑", "Uparrow"},
-                {"⇓", "⇓", "Downarrow"},
-                {"⇕", "⇕", "Updownarrow"}
-            };
-            for (String[] item : aliases) {
-                String glyph = item[0];
-                for (int i = 1; i < item.length; i++) {
-                    String alias = item[i];
-                    // 花括号及第二个bar别名只接受控制符，避免把分组/单bar改成另一语义。
-                    if (!alias.equals("{")
-                            && !alias.equals("}")
-                            && !(glyph.equals("‖") && alias.equals("|"))
-                            && !asciiLetter(alias.charAt(0))) values.put(alias, glyph);
-                    if (!alias.equals(".")
-                            && (asciiLetter(alias.charAt(0))
-                                    || alias.equals("{")
-                                    || alias.equals("}")
-                                    || glyph.equals("‖") && alias.equals("|")))
-                        values.put(String.valueOf((char) 92) + alias, glyph);
-                }
-            }
-            return Collections.unmodifiableMap(values);
-        }
-
-        static Map<String, String> symbols() {
-            Map<String, String> values = new HashMap<String, String>();
-            String[] names = {
-                "alpha",
-                "beta",
-                "gamma",
-                "delta",
-                "theta",
-                "pi",
-                "sigma",
-                "omega",
-                "infty",
-                "cdot",
-                "times",
-                "pm",
-                "leq",
-                "geq",
-                "neq",
-                "rightarrow",
-                "to"
-            };
-            String[] glyphs = {
-                "α", "β", "γ", "δ", "θ", "π", "σ", "ω", "∞", "⋅", "×", "±", "≤", "≥", "≠", "→", "→"
-            };
-            for (int i = 0; i < names.length; i++) values.put(names[i], glyphs[i]);
-            for (String value : new String[] {"{", "}", "_", "^", "%", "#", "$", "&", "\\"})
-                values.put(value, value);
-            return Collections.unmodifiableMap(values);
+        ArraySpec(
+                String environment,
+                String cellStyle,
+                String separation,
+                String left,
+                String right,
+                List<RowSpec> rows,
+                List<ColumnSpec> columns,
+                List<LineSpec> lines,
+                double stretch,
+                boolean displayRequired,
+                boolean inlineAutoDisplay,
+                boolean addJot,
+                boolean outerSpacing,
+                boolean singleRow) {
+            this.environment = environment;
+            this.cellStyle = cellStyle;
+            this.separation = separation;
+            this.leftDelimiter = left;
+            this.rightDelimiter = right;
+            this.rows = immutable(rows);
+            this.columns = immutable(columns);
+            this.lines = immutable(lines);
+            this.stretch = stretch;
+            this.displayRequired = displayRequired;
+            this.inlineAutoDisplay = inlineAutoDisplay;
+            this.addJot = addJot;
+            this.outerSpacing = outerSpacing;
+            this.singleRow = singleRow;
         }
     }
 }

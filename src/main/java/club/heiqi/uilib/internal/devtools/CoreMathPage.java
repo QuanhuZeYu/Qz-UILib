@@ -1,8 +1,5 @@
 package club.heiqi.uilib.internal.devtools;
 
-import java.util.Collections;
-import java.util.LinkedHashMap;
-import java.util.Map;
 import club.heiqi.uilib.host.client.image.MinecraftImageServices;
 import club.heiqi.uilib.host.client.image.MinecraftItemSource;
 import club.heiqi.uilib.ui.host.minecraft.MinecraftSceneScreen;
@@ -25,6 +22,9 @@ import club.heiqi.uilib.ui.scene.text.math.MathContent;
 import club.heiqi.uilib.ui.scene.text.math.MathEmbedMetrics;
 import club.heiqi.uilib.ui.scene.text.math.MathLayout;
 import club.heiqi.uilib.ui.scene.text.math.MathStyle;
+
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 /** /qzcore math：正式数学与 Item 来源接入页，宿主只提交物品来源。 */
 public final class CoreMathPage extends MinecraftSceneScreen {
@@ -120,7 +120,8 @@ public final class CoreMathPage extends MinecraftSceneScreen {
                                         .signal(
                                                 MathContent.parse(
                                                         tex(
-                                                                "@sum@limits_{n=1}^{@embed{limit}} @frac{@embed{numerator}}{n^2}"))),
+                                                                "@sum@limits_{n=1}^{@embed{limit}}"
+                                                                        + " @frac{@embed{numerator}}{n^2}"))),
                                 theme,
                                 MathStyle.DISPLAY,
                                 slots(ctx, theme, item, "limit", "numerator"))
@@ -184,6 +185,52 @@ public final class CoreMathPage extends MinecraftSceneScreen {
                                 MathStyle.DISPLAY,
                                 slots(ctx, theme, item, "chooseTop", "chooseBottom"))
                         .padding(5);
+        String[] familyNames = {
+            "矩阵与分段",
+            "数组与行列线",
+            "对齐与编号",
+            "重音与宽构建",
+            "上下说明与箭头",
+            "字体与文字",
+            "颜色边框与取消线",
+            "尺寸与盒",
+            "广义分式与脚本",
+            "内置及文档宏",
+            "默认拒绝与来源"
+        };
+        String[] familySources = {
+            "@begin{pmatrix}1&@embed{family}@@@frac12&@sqrt{x}@end{pmatrix} @qquad"
+                    + " f(x)=@begin{cases}x^2&x>0@@0&x@leq0@end{cases}",
+            "@begin{array}{l|c:r}@hline @embed{family}&x&y@@[.3em]a&b&c@@@hdashline"
+                    + " d&e&f@end{array}",
+            "@begin{align}E&=mc^2@@A&=@embed{family}@tag{Item}@@B&=@frac{1}{2}@nonumber@end{align}",
+            "@hat{x}+@widehat{a+b+c}+@widetilde{abcdef}+@vec{F}+@underbrace{x+@embed{family}}_{n}+@overbrace{a+b}^{m}",
+            "@overset{def}{=} @underset{x}{@sum} @xrightarrow[n@to@infty]{a+b+c} @embed{family}"
+                    + " @xleftrightharpoons[u]{v}",
+            "@mathbb{R}+@mathcal{ABC}+@mathfrak{g}+@boldsymbol{@alpha} @quad @textrm{Roman}"
+                    + " @textsf{Sans} @texttt{Mono} @text{mass @textbf{Item}} @embed{family}",
+            "@colorbox{yellow}{$@textcolor{blue}{x+@embed{family}}$} @quad"
+                    + " @fcolorbox{red}{white}{y} @quad @xcancel{a+b}",
+            "@phantom{XX}x+@hphantom{@embed{family}}y+@smash[b]{@frac{a}{b}}+@raisebox{.5em}{z}+@rule[.2em]{1em}{.1em}",
+            "@genfrac{(}{)}{0pt}{0}{@embed{family}+1}{2}+{a@over"
+                    + " b}+@mathchoice{D}{T}{S}{SS}+x''_i@@[1pt]@left({x@middle|y}@right)+@left(@frac{x@middle|y}{z}@right)",
+            "@newcommand{@sample}[1]{@frac{#1}{2}} @sample{@embed{family}}+@Braket{a|b}+@pmod{n}",
+            "@href{https://example.invalid}{x} + @htmlClass{test}{hidden} + @embed{family}"
+        };
+        MathContent[] familyContent = new MathContent[familySources.length];
+        for (int i = 0; i < familySources.length; i++)
+            familyContent[i] = MathContent.parse(tex(familySources[i]));
+        Signal<Integer> family = ctx.domain().signal(0);
+        ReadableSignal<MathContent> selectedFamily =
+                ctx.domain().computed(ctx.scope(), () -> familyContent[family.get()]);
+        SceneNode familyMath =
+                SceneMath.create(
+                                ctx,
+                                selectedFamily,
+                                theme,
+                                MathStyle.DISPLAY,
+                                slots(ctx, theme, item, "family"))
+                        .padding(5);
         SceneNode viewport =
                 new SceneNode()
                         .size(Size.fill(1), Size.fixed(210))
@@ -200,7 +247,11 @@ public final class CoreMathPage extends MinecraftSceneScreen {
                         .add(scripts)
                         .add(fences)
                         .add(tallRoot)
-                        .add(binomial);
+                        .add(binomial)
+                        .add(
+                                SceneLabel.create(
+                                        ctx, () -> "完整数学家族：" + familyNames[family.get()], theme))
+                        .add(familyMath);
         SceneNode actions =
                 new SceneNode()
                         .axis(SceneNode.Axis.ROW)
@@ -224,6 +275,12 @@ public final class CoreMathPage extends MinecraftSceneScreen {
                                         () -> invalid.get() ? "恢复积分" : "非法公式",
                                         theme,
                                         () -> invalid.set(!invalid.get())));
+        actions.add(
+                SceneButton.create(
+                        ctx,
+                        () -> "下一家族：" + familyNames[family.get()],
+                        theme,
+                        () -> family.set((family.get() + 1) % familyContent.length)));
         SceneNode controls =
                 new SceneNode()
                         .axis(SceneNode.Axis.ROW)
@@ -280,8 +337,11 @@ public final class CoreMathPage extends MinecraftSceneScreen {
                                                                         SceneMath.layout(tallRoot))
                                                                 + " 二项式："
                                                                 + diagnostics(
+                                                                        SceneMath.layout(binomial))
+                                                                + " 当前家族："
+                                                                + diagnostics(
                                                                         SceneMath.layout(
-                                                                                binomial)))));
+                                                                                familyMath)))));
         SceneNode page =
                 new SceneNode()
                         .size(Size.fill(1), Size.fill(1))
@@ -291,11 +351,14 @@ public final class CoreMathPage extends MinecraftSceneScreen {
                         .bind(
                                 NodeBinding.value(
                                         theme, (node, value) -> node.background(value.panel)))
-                        .add(SceneLabel.create(ctx, () -> "数学与物品：积分、脚本、伸缩定界符、大根式与二项式", theme))
+                        .add(SceneLabel.create(ctx, () -> "完整数学与物品：基础公式、二维环境、宏、样式与装饰", theme))
                         .add(actions)
                         .add(controls)
                         .add(viewport)
                         .add(SceneLabel.create(ctx, () -> "积分源文：" + content.get().source, theme))
+                        .add(
+                                SceneLabel.create(
+                                        ctx, () -> "家族源文：" + selectedFamily.get().source, theme))
                         .add(
                                 SceneLabel.create(
                                         ctx,

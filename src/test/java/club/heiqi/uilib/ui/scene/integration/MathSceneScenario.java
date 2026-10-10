@@ -1,11 +1,5 @@
 package club.heiqi.uilib.ui.scene.integration;
 
-import java.lang.reflect.Field;
-import java.util.Collections;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
 import club.heiqi.uilib.host.font.freetype.LwjglFontEngine;
 import club.heiqi.uilib.testing.TestApplication;
 import club.heiqi.uilib.ui.reactive.ReactiveDomain;
@@ -38,6 +32,13 @@ import club.heiqi.uilib.ui.scene.text.math.MathFont;
 import club.heiqi.uilib.ui.scene.text.math.MathLayout;
 import club.heiqi.uilib.ui.scene.text.math.MathStyle;
 
+import java.lang.reflect.Field;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
 /** 真 FT/HB + 正式页面/帧/input/共享CPU图像；位图提示事实不冒充 Minecraft 物品绘制。 */
 public final class MathSceneScenario extends TestApplication {
     private FontTextService fonts;
@@ -69,6 +70,7 @@ public final class MathSceneScenario extends TestApplication {
         scenario("被动hover祖先clip窄视口滚动", this::input);
         scenario("来源主题字号字体重载与整式错误恢复", this::dynamic);
         scenario("绑定唯一身份passive资格及卸载释放", this::lifecycle);
+        scenario("装饰有序图元夹多个Item及phantom失去资格", this::decorations);
     }
 
     private static ImageContent bitmap() {
@@ -230,7 +232,23 @@ public final class MathSceneScenario extends TestApplication {
                     return;
                 Thread.sleep(5);
             } while (System.nanoTime() < deadline);
-            throw new AssertionError("共享图像未及时READY");
+            StringBuilder failure = new StringBuilder("共享图像未及时READY");
+            domain.execute(
+                    () -> {
+                        MathLayout value = layout();
+                        if (value != null)
+                            for (MathLayout.Diagnostic d : value.diagnostics)
+                                failure.append(" [")
+                                        .append(d.stage)
+                                        .append(" ")
+                                        .append(d.start)
+                                        .append(":")
+                                        .append(d.end)
+                                        .append(" ")
+                                        .append(d.message)
+                                        .append("]");
+                    });
+            throw new AssertionError(failure.toString());
         }
 
         SceneGeometryView geometry() {
@@ -496,6 +514,82 @@ public final class MathSceneScenario extends TestApplication {
                         });
                 quantityTooltip(f, "upper", em);
             }
+        }
+    }
+
+    private void decorations() throws Exception {
+        String formula =
+                tex("@colorbox{yellow}{$@cancel{@embed{a}}$}x@fcolorbox{blue}{cyan}{$@embed{b}$}y");
+        try (Fixture f = new Fixture(formula, MathStyle.TEXT, "a", "b", "hidden")) {
+            f.ready();
+            f.domain.execute(
+                    () -> {
+                        healthy(f.layout());
+                        java.util.List<PaintCommand> commands = f.paint.commands();
+                        int a = -1, b = -1, bg = -1, line = -1, between = -1;
+                        for (int i = 0; i < commands.size(); i++) {
+                            PaintCommand cmd = commands.get(i);
+                            if (cmd.kind == PaintCommand.Kind.IMAGE) {
+                                if (a < 0) a = i;
+                                else b = i;
+                            }
+                            if (cmd.kind == PaintCommand.Kind.RECT && cmd.color == 0xffffff00)
+                                bg = i;
+                            if (cmd.kind == PaintCommand.Kind.LINE) line = i;
+                            if (cmd.kind == PaintCommand.Kind.TEXT && a >= 0 && b < 0) between = i;
+                        }
+                        require(
+                                bg < a && a < line && line < between && between < b,
+                                "绘制不是背景→Item→cancel→邻text→下一Item");
+                        require(
+                                commands.stream()
+                                                .filter(c -> c.kind == PaintCommand.Kind.IMAGE)
+                                                .count()
+                                        == 2,
+                                "重复绘制Item");
+                        require(
+                                commands.stream()
+                                                .filter(
+                                                        c ->
+                                                                c.kind == PaintCommand.Kind.RECT
+                                                                        && c.color == 0xff0000ff)
+                                                .count()
+                                        == 4,
+                                "边框颜色/4RECT丢失");
+                        require(f.geometry().get(f.nodes.get("hidden")) == null, "非活动slot仍有资源几何");
+                    });
+            quantityTooltip(f, "a", EM);
+            f.domain.execute(
+                    () -> f.content.set(MathContent.parse(tex("@phantom{@embed{a}}+@embed{b}"))));
+            f.frame();
+            f.domain.execute(
+                    () -> {
+                        require(
+                                f.geometry().get(f.nodes.get("a")) == null,
+                                "phantom Item保留输入/资源资格");
+                        require(
+                                f.paint.commands().stream()
+                                                .filter(c -> c.kind == PaintCommand.Kind.IMAGE)
+                                                .count()
+                                        == 1,
+                                "phantom仍产生IMAGE");
+                    });
+            f.domain.execute(
+                    () -> f.content.set(MathContent.parse(tex("@embed{b}+@cancel{@embed{a}}"))));
+            f.frame();
+            f.domain.execute(
+                    () -> {
+                        placement(f, "a");
+                        placement(f, "b");
+                        java.util.List<PaintCommand> commands = f.paint.commands();
+                        int lastImage = -1, lastLine = -1;
+                        for (int i = 0; i < commands.size(); i++) {
+                            if (commands.get(i).kind == PaintCommand.Kind.IMAGE) lastImage = i;
+                            if (commands.get(i).kind == PaintCommand.Kind.LINE) lastLine = i;
+                        }
+                        require(lastLine > lastImage, "最后suffix未在Item子树关闭后绘制");
+                    });
+            quantityTooltip(f, "a", EM);
         }
     }
 

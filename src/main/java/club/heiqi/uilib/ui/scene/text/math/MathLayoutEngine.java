@@ -1,28 +1,51 @@
 package club.heiqi.uilib.ui.scene.text.math;
 
+import static club.heiqi.uilib.ui.scene.text.math.MathFont.Constant.*;
+
 import club.heiqi.uilib.ui.scene.text.FontStyle;
 import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
 import club.heiqi.uilib.ui.scene.text.TextLayout;
 import club.heiqi.uilib.ui.scene.text.TextPolicy;
 import club.heiqi.uilib.ui.scene.text.TextStyle;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.InkBounds;
+import club.heiqi.uilib.ui.scene.text.math.MathBox.Atom;
 import club.heiqi.uilib.ui.scene.text.math.MathContent.Node;
+
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.EnumMap;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import static club.heiqi.uilib.ui.scene.text.math.MathFont.Constant.*;
+import java.util.Set;
 
 /** 自有数学盒主路径；不持有资源或场景状态，可由纯派生按输入变化重新求值。 */
 public final class MathLayoutEngine {
+    // fixed 插件按完整源公式判定行内 display；只提升 TEXT 入口，脚本请求不会被源文环境覆盖。
+    private static final java.util.regex.Pattern INLINE_DISPLAY =
+            java.util.regex.Pattern.compile(
+                    "\\\\begin\\{(align|equation|gather|cd|alignat)\\}",
+                    java.util.regex.Pattern.CASE_INSENSITIVE);
+
     public MathLayout layout(
             MathContent content,
             TextStyle style,
             MathStyle mathStyle,
             SceneTextMeasurer text,
             Map<String, MathEmbedMetrics> embeds) {
+        return layout(content, style, mathStyle, text, embeds, 1);
+    }
+
+    /** 编号是显式文档输入；仅实际自动标签消费编号，布局没有外部副作用。 */
+    public MathLayout layout(
+            MathContent content,
+            TextStyle style,
+            MathStyle mathStyle,
+            SceneTextMeasurer text,
+            Map<String, MathEmbedMetrics> embeds,
+            int initialEquationNumber) {
+        if (initialEquationNumber < 1) throw new IllegalArgumentException("公式初始编号必须为正整数");
         Objects.requireNonNull(content, "content");
         Objects.requireNonNull(style, "style");
         Objects.requireNonNull(mathStyle, "mathStyle");
@@ -30,17 +53,32 @@ public final class MathLayoutEngine {
         Objects.requireNonNull(embeds, "embeds");
         List<MathLayout.Diagnostic> diagnostics =
                 new ArrayList<MathLayout.Diagnostic>(content.diagnostics);
-        if (content.root == null) return fallback(content, style, text, diagnostics);
-        if (content.root.children.isEmpty()) return new Box().finish(diagnostics);
+        if (content.root == null)
+            return fallback(content, style, text, diagnostics, initialEquationNumber);
+        if (content.root.kind == MathContent.Kind.ROW && content.root.children.isEmpty())
+            return new MathBox().finish(diagnostics, initialEquationNumber);
         try {
             Session session = new Session(style, text, embeds, diagnostics, content.root);
-            Box result = session.box(content.root, new Context(mathStyle, "mathnormal", false));
+            session.nextTag = initialEquationNumber;
+            MathStyle effectiveStyle =
+                    mathStyle == MathStyle.TEXT && INLINE_DISPLAY.matcher(content.source).find()
+                            ? MathStyle.DISPLAY
+                            : mathStyle;
+            MathBox result = session.box(content.root, session.context(effectiveStyle));
             if (!Float.isFinite(result.width) || !Float.isFinite(result.ascent + result.descent))
                 throw new LayoutFailure("layout", content.root, "公式几何超出有限范围");
-            return result.finish(diagnostics);
+            Set<String> spatialIds = new HashSet<String>();
+            for (MathLayout.Entry entry : result.entries)
+                if (entry.embed != null && !spatialIds.add(entry.embed.id))
+                    throw new LayoutFailure(
+                            "layout",
+                            entry.embed.sourceStart,
+                            entry.embed.sourceEnd,
+                            "同一嵌入标识不能拥有多个空间: " + entry.embed.id);
+            return result.finish(diagnostics, session.nextTag);
         } catch (LayoutFailure failure) {
             diagnostics.add(failure.diagnostic);
-            return fallback(content, style, text, diagnostics);
+            return fallback(content, style, text, diagnostics, initialEquationNumber);
         }
     }
 
@@ -48,7 +86,8 @@ public final class MathLayoutEngine {
             MathContent content,
             TextStyle style,
             SceneTextMeasurer text,
-            List<MathLayout.Diagnostic> diagnostics) {
+            List<MathLayout.Diagnostic> diagnostics,
+            int initialEquationNumber) {
         TextLayout source =
                 text.layout(content.source, style, Integer.MAX_VALUE, TextPolicy.NO_WRAP);
         float baseline = source.lines().isEmpty() ? 0 : source.lines().get(0).baseline;
@@ -61,66 +100,37 @@ public final class MathLayoutEngine {
                 source.advanceHeight,
                 baseline,
                 Collections.singletonList(
-                        new MathLayout.TextPiece(source, 0, 0, 0, content.source.length())),
-                Collections.<MathLayout.Rule>emptyList(),
-                Collections.<MathLayout.Embed>emptyList(),
+                        MathLayout.Entry.text(
+                                new MathLayout.TextPiece(
+                                        source, 0, 0, 0, content.source.length()))),
                 diagnostics,
                 true,
-                source);
+                source,
+                initialEquationNumber);
     }
 
-    private static final class LayoutFailure extends RuntimeException {
+    static final class LayoutFailure extends RuntimeException {
         final MathLayout.Diagnostic diagnostic;
 
         LayoutFailure(String stage, Node node, String message) {
+            this(stage, node.start, node.end, message);
+        }
+
+        LayoutFailure(String stage, int start, int end, String message) {
             super(message);
-            diagnostic = new MathLayout.Diagnostic(stage, node.start, node.end, message);
+            diagnostic = new MathLayout.Diagnostic(stage, start, end, message);
         }
     }
 
-    private static final class Context {
-        final MathStyle style;
-        final String alphabet;
-        final boolean cramped;
-
-        Context(MathStyle style, String alphabet, boolean cramped) {
-            this.style = style;
-            this.alphabet = alphabet;
-            this.cramped = cramped;
-        }
-
-        Context style(MathStyle value) {
-            return new Context(value, alphabet, cramped);
-        }
-
-        Context cramped() {
-            return new Context(style, alphabet, true);
-        }
-
-        Context alphabet(String value) {
-            return new Context(style, value, cramped);
-        }
-    }
-
-    private enum Atom {
-        ORD,
-        OP,
-        BIN,
-        REL,
-        OPEN,
-        CLOSE,
-        PUNCT,
-        INNER,
-        NONE
-    }
-
-    private static final class Session {
+    static final class Session {
         final TextStyle base;
         final SceneTextMeasurer text;
         final Map<String, MathEmbedMetrics> embeds;
         final List<MathLayout.Diagnostic> diagnostics;
-        final Map<MathStyle, MathFont> fonts = new EnumMap<MathStyle, MathFont>(MathStyle.class);
+        final Map<TextStyle, MathFont> fonts = new HashMap<TextStyle, MathFont>();
         final float scriptPercent, scriptScriptPercent;
+        int nextTag = 1;
+        final Node rootBody;
 
         Session(
                 TextStyle base,
@@ -128,14 +138,14 @@ public final class MathLayoutEngine {
                 Map<String, MathEmbedMetrics> embeds,
                 List<MathLayout.Diagnostic> diagnostics,
                 Node rootNode) {
+            this.rootBody = rootNode.kind == MathContent.Kind.TAG ? rootNode.first : rootNode;
             this.base = base;
             this.text = text;
             this.embeds = embeds;
             this.diagnostics = diagnostics;
             try {
                 MathFont root = text.mathFont(mathTextStyle(base.logicalEm));
-                fonts.put(MathStyle.TEXT, root);
-                fonts.put(MathStyle.DISPLAY, root);
+                fonts.put(mathTextStyle(base.logicalEm), root);
                 scriptPercent = root == null ? 0 : root.constant(SCRIPT_PERCENT_SCALE_DOWN);
                 scriptScriptPercent =
                         root == null ? 0 : root.constant(SCRIPT_SCRIPT_PERCENT_SCALE_DOWN);
@@ -144,8 +154,19 @@ public final class MathLayoutEngine {
             }
         }
 
+        MathLayoutContext context(MathStyle style) {
+            return new MathLayoutContext(
+                    style,
+                    "mathnormal",
+                    false,
+                    base,
+                    base.logicalEm,
+                    scriptPercent == 0 ? 100 : scriptPercent,
+                    scriptScriptPercent == 0 ? 100 : scriptScriptPercent,
+                    style == MathStyle.DISPLAY);
+        }
+
         TextStyle mathTextStyle(float em) {
-            // Unicode alphabet 选择真实 glyph，避免再叠加合成 italic/bold。
             return new TextStyle(
                     base.font,
                     em,
@@ -156,56 +177,103 @@ public final class MathLayoutEngine {
                     FontStyle.NORMAL);
         }
 
-        TextStyle ordinaryTextStyle(Context context) {
-            return new TextStyle(
-                    base.font,
-                    em(context),
-                    base.color,
-                    base.candidates(),
-                    base.effects,
-                    base.decoration,
-                    base.fontStyle);
+        TextStyle mathTextStyle(MathLayoutContext context) {
+            return context.textStyle.withFontStyle(FontStyle.NORMAL);
         }
 
-        float em(Context context) {
-            return base.logicalEm
-                    * (context.style == MathStyle.SCRIPT
-                            ? scriptPercent / 100f
-                            : context.style == MathStyle.SCRIPT_SCRIPT
-                                    ? scriptScriptPercent / 100f
-                                    : 1);
+        TextStyle ordinaryTextStyle(MathLayoutContext context) {
+            TextStyle scope = context.textStyle;
+            // 数学正文的 default 角色选择真实 roman 族；显式候选/自定义 font 保留调用方覆盖，普通文字默认链不变。
+            if (scope.font.equals("default") && scope.candidates() == null)
+                return new TextStyle(
+                        "math-text-roman",
+                        scope.logicalEm,
+                        scope.color,
+                        null,
+                        scope.effects,
+                        scope.decoration,
+                        scope.fontStyle);
+            return scope;
         }
 
-        MathFont font(Context context, Node node) {
-            if (fonts.get(MathStyle.TEXT) == null)
-                throw new LayoutFailure("font", node, "当前候选链没有OpenType MATH字体");
-            MathFont font = fonts.get(context.style);
-            if (!fonts.containsKey(context.style)) {
-                font = text.mathFont(mathTextStyle(em(context)));
-                fonts.put(context.style, font);
-            }
-            if (font == null) throw new LayoutFailure("font", node, "当前脚本字号没有OpenType MATH字体");
+        float em(MathLayoutContext context) {
+            return context.em;
+        }
+
+        MathFont font(MathLayoutContext context, Node node) {
+            TextStyle key = mathTextStyle(context);
+            if (!fonts.containsKey(key)) fonts.put(key, text.mathFont(key));
+            MathFont font = fonts.get(key);
+            if (font == null) throw new LayoutFailure("font", node, "当前候选链没有OpenType MATH字体");
             return font;
         }
 
-        float c(Context context, Node node, MathFont.Constant constant) {
+        float c(MathLayoutContext context, Node node, MathFont.Constant constant) {
             return font(context, node).constant(constant);
         }
 
-        Box box(Node node, Context context) {
+        MathBox box(Node node, MathLayoutContext context) {
             try {
                 switch (node.kind) {
                     case ROW:
                         return row(node, context);
                     case FONT:
-                        return box(node.first, context.alphabet(node.value));
+                        return box(node.first, fontContext(node, context));
                     case STYLE:
-                        return new Box();
+                        return node.first == null
+                                ? new MathBox()
+                                : box(node.first, context.declaredStyle(style(node.value)));
+                    case ARRAY:
+                        return MathArrayLayout.layout(this, node, context);
+                    case ACCENT:
+                    case OVERUNDER:
+                    case XARROW:
+                    case HORIZBRACE:
+                    case COLOR:
+                    case SIZE:
+                    case CLASSIFY:
+                    case PHANTOM:
+                    case BOX:
+                    case RAISE:
+                    case RULE:
+                    case MATHCHOICE:
+                    case VCENTER:
+                    case LAP:
+                    case SMASH:
+                    case ENCLOSE:
+                    case PMB:
+                    case HTMLMATHML:
+                    case VERB:
+                    case UNSUPPORTED:
+                    case TAG:
+                    case LINEBREAK:
+                    case INTERNAL:
+                        return MathDecorations.layout(this, node, context);
+                    case DELIMITER:
+                        return delimiter(
+                                node,
+                                context,
+                                fixedDelimiterTarget(node, context),
+                                node.payload instanceof MathContent.DelimiterSpec
+                                        ? atom(((MathContent.DelimiterSpec) node.payload).atomGroup)
+                                        : Atom.ORD);
+                    case MIDDLE:
+                        // fixed middle先构造size1；被普通ROW/FRAC等wrapper包住时不再由外left重定高。
+                        MathLayoutContext sizedMiddle = context.style(MathStyle.TEXT);
+                        return delimiter(
+                                node, sizedMiddle, fixedDelimiterTarget(1, sizedMiddle), Atom.NONE);
                     case SPACE:
                         {
                             font(context, node);
-                            Box value = new Box();
-                            value.width = em(context) * space(node.value);
+                            MathBox value = new MathBox();
+                            MathContent.SpaceSpec spacing =
+                                    node.payload instanceof MathContent.SpaceSpec
+                                            ? (MathContent.SpaceSpec) node.payload
+                                            : null;
+                            value.width =
+                                    spacing != null && spacing.dimension != null
+                                            ? dimension(spacing.dimension, context, node)
+                                            : em(context) * space(node.value);
                             value.atom = Atom.NONE;
                             return value;
                         }
@@ -213,6 +281,8 @@ public final class MathLayoutEngine {
                         return embed(node, context);
                     case TEXT:
                         font(context, node);
+                        if (node.first != null)
+                            return box(node.first, fontContext(node, context).textMode(true));
                         return glyph(
                                 text.layout(
                                         node.value,
@@ -224,14 +294,49 @@ public final class MathLayoutEngine {
                                 false);
                     case GLYPH:
                         {
-                            Box value =
+                            MathContent.GlyphSpec spec =
+                                    node.payload instanceof MathContent.GlyphSpec
+                                            ? (MathContent.GlyphSpec) node.payload
+                                            : null;
+                            if (node.value.equals("")
+                                    && spec != null
+                                    && spec.originalToken.equals("\\@not"))
+                                return MathDecorations.negation(this, node, context);
+                            String intrinsic = intrinsicAlphabet(spec);
+                            if (spec != null && spec.mode.equals("text") && intrinsic == null)
+                                return glyph(
+                                        text.layout(
+                                                node.value,
+                                                ordinaryTextStyle(context),
+                                                Integer.MAX_VALUE,
+                                                TextPolicy.NO_WRAP),
+                                        node,
+                                        context,
+                                        false);
+                            String alphabet = intrinsic != null ? intrinsic : context.alphabet;
+                            if (spec != null
+                                    && intrinsic == null
+                                    && context.alphabet.equals("mathnormal")
+                                    && !spec.atomGroup.equals("mathord")) alphabet = "mathrm";
+                            MathLayoutContext glyphContext =
+                                    intrinsic == null ? context : intrinsicContext(context);
+                            String valueText =
+                                    intrinsic != null
+                                                    && spec.styledFont != null
+                                                    && spec.replacement != null
+                                            ? spec.replacement
+                                            : intrinsic != null ? spec.originalToken : node.value;
+                            MathBox value =
                                     glyph(
-                                            font(context, node)
-                                                    .text(alphabet(node.value, context.alphabet)),
+                                            font(glyphContext, node)
+                                                    .text(
+                                                            alphabet(
+                                                                    semanticSymbol(valueText),
+                                                                    alphabet)),
                                             node,
-                                            context,
+                                            glyphContext,
                                             true);
-                            value.atom = classify(node.value);
+                            value.atom = spec == null ? classify(node.value) : atom(spec.atomGroup);
                             return value;
                         }
                     case OPERATOR:
@@ -239,6 +344,7 @@ public final class MathLayoutEngine {
                     case SCRIPTS:
                         return scripts(node, context);
                     case FRAC:
+                    case GENFRAC:
                         return fraction(node, context);
                     case BINOM:
                         return binomial(node, context);
@@ -247,7 +353,7 @@ public final class MathLayoutEngine {
                     case ROOT:
                         return radical(node, context);
                     default:
-                        throw new AssertionError(node.kind);
+                        throw new LayoutFailure("layout", node, "数学节点布局尚未完成: " + node.kind);
                 }
             } catch (UnsupportedOperationException error) {
                 // 声明的字体能力缺口整式降级，程序错误不吞掉。
@@ -255,7 +361,87 @@ public final class MathLayoutEngine {
             }
         }
 
-        Box glyph(TextLayout layout, Node node, Context context, boolean mathematical) {
+        float dimension(MathDimension value, MathLayoutContext context, Node node) {
+            if (value == null || value.blank) return 0;
+            double scale;
+            String unit = value.unit;
+            if (unit.equals("em")) scale = context.sizeEm;
+            else if (unit.equals("ex")) scale = xHeight(context.style(MathStyle.TEXT), node);
+            else if (unit.equals("mu")) scale = context.em / 18;
+            else {
+                double points;
+                if (unit.equals("pt")) points = 1;
+                else if (unit.equals("mm")) points = 7227.0 / 2540;
+                else if (unit.equals("cm")) points = 7227.0 / 254;
+                else if (unit.equals("in")) points = 72.27;
+                else if (unit.equals("bp") || unit.equals("px")) points = 803.0 / 800;
+                else if (unit.equals("pc")) points = 12;
+                else if (unit.equals("dd")) points = 1238.0 / 1157;
+                else if (unit.equals("cc")) points = 14856.0 / 1157;
+                else if (unit.equals("nd")) points = 685.0 / 642;
+                else if (unit.equals("nc")) points = 1370.0 / 107;
+                else if (unit.equals("sp")) points = 1.0 / 65536;
+                else throw new LayoutFailure("layout", node, "未知数学单位: " + unit);
+                scale = base.logicalEm / 10 * points;
+            }
+            float result = (float) (value.number * scale);
+            if (!Float.isFinite(result)) throw new LayoutFailure("layout", node, "数学尺寸超出有限范围");
+            return result;
+        }
+
+        float xHeight(MathLayoutContext context, Node node) {
+            TextLayout layout = font(context, node).text("x");
+            float top = Float.POSITIVE_INFINITY, bottom = Float.NEGATIVE_INFINITY;
+            for (TextLayout.Line line : layout.lines())
+                for (TextLayout.Glyph glyph : line.glyphs()) {
+                    top = Math.min(top, glyph.y + glyph.inkBounds.top);
+                    bottom = Math.max(bottom, glyph.y + glyph.inkBounds.bottom);
+                }
+            return bottom - top;
+        }
+
+        int consumeEquationNumber(Node node) {
+            if (nextTag == Integer.MAX_VALUE) throw new LayoutFailure("layout", node, "公式编号超出整数范围");
+            return nextTag++;
+        }
+
+        MathBox tagNumber(Node node, MathLayoutContext context, int number) {
+            return glyph(
+                    text.layout(
+                            "(" + number + ")",
+                            ordinaryTextStyle(context.style(MathStyle.TEXT)),
+                            Integer.MAX_VALUE,
+                            TextPolicy.NO_WRAP),
+                    node,
+                    context,
+                    false);
+        }
+
+        float fixedDelimiterTarget(Node node, MathLayoutContext context) {
+            MathContent.DelimiterSpec spec = (MathContent.DelimiterSpec) node.payload;
+            return spec == null ? context.em : fixedDelimiterTarget(spec.size, context);
+        }
+
+        float fixedDelimiterTarget(int size, MathLayoutContext context) {
+            return (size == 1 ? 1.2f : size == 2 ? 1.8f : size == 3 ? 2.4f : 3) * context.em;
+        }
+
+        static Atom atom(String group) {
+            if (group == null) return Atom.ORD;
+            if (group.equals("mathord") || group.equals("textord") || group.equals("ord"))
+                return Atom.ORD;
+            if (group.equals("bin")) return Atom.BIN;
+            if (group.equals("rel")) return Atom.REL;
+            if (group.equals("open")) return Atom.OPEN;
+            if (group.equals("close")) return Atom.CLOSE;
+            if (group.equals("punct")) return Atom.PUNCT;
+            if (group.equals("op")) return Atom.OP;
+            if (group.equals("inner")) return Atom.INNER;
+            return Atom.ORD;
+        }
+
+        MathBox glyph(
+                TextLayout layout, Node node, MathLayoutContext context, boolean mathematical) {
             for (TextLayout.Diagnostic diagnostic : layout.diagnostics()) {
                 diagnostics.add(
                         new MathLayout.Diagnostic(
@@ -286,7 +472,7 @@ public final class MathLayoutEngine {
                     ink |= bounds.bottom > bounds.top || bounds.right > bounds.left;
                 }
             }
-            Box value = new Box();
+            MathBox value = new MathBox();
             value.width = right - left;
             value.ascent = -top;
             value.descent = bottom;
@@ -294,26 +480,25 @@ public final class MathLayoutEngine {
                 value.ascent = baseline;
                 value.descent = Math.max(0, layout.advanceHeight - baseline);
             }
-            value.pieces.add(
-                    new MathLayout.TextPiece(layout, -left, -baseline, node.start, node.end));
+            value.piece(new MathLayout.TextPiece(layout, -left, -baseline, node.start, node.end));
             if (mathematical) value.italic = font(context, node).italicCorrection(layout);
             return value;
         }
 
-        Box embed(Node node, Context context) {
+        MathBox embed(Node node, MathLayoutContext context) {
             MathEmbedMetrics metrics = embeds.get(node.value);
             if (metrics == null) throw new LayoutFailure("layout", node, "未绑定嵌入标识: " + node.value);
             if (!metrics.valid())
                 throw new LayoutFailure("layout", node, "嵌入尺寸必须有限、正值且基线在盒内: " + node.value);
             font(context, node);
             float em = em(context);
-            Box value = new Box();
+            MathBox value = new MathBox();
             value.width = metrics.widthEm * em;
             value.ascent = metrics.baselineEm * em;
             value.descent = (metrics.heightEm - metrics.baselineEm) * em;
             if (!Float.isFinite(value.width) || !Float.isFinite(value.ascent + value.descent))
                 throw new LayoutFailure("layout", node, "嵌入按当前字号换算后超出有限范围: " + node.value);
-            value.embeds.add(
+            value.embed(
                     new MathLayout.Embed(
                             node.value,
                             0,
@@ -326,33 +511,58 @@ public final class MathLayoutEngine {
             return value;
         }
 
-        Box row(Node node, Context initial) {
+        String intrinsicAlphabet(MathContent.GlyphSpec spec) {
+            if (spec == null) return null;
+            if (spec.styledFont != null) return spec.styledFont;
+            // Unicode letterlike holes 是数学字母的正式标量；typed replacement 的 ASCII 仅用于配合字族，不抹去原样式。
+            if (spec.originalToken.codePointCount(0, spec.originalToken.length()) == 1
+                    && "ℎℬℰℱℋℐℒℳℛℯℊℴℭℌℑℜℨℂℍℕℙℚℝℤ".contains(spec.originalToken)) return "mathrm";
+            return null;
+        }
+
+        MathLayoutContext intrinsicContext(MathLayoutContext context) {
+            TextStyle scope = context.textStyle;
+            // 宽数学字母自带样式，沿根数学候选和当前颜色/字号；正文别名不覆盖它，显式根候选仍完整保留。
+            return context.textStyle(
+                    new TextStyle(
+                            base.font,
+                            scope.logicalEm,
+                            scope.color,
+                            scope.candidates(),
+                            scope.effects,
+                            scope.decoration,
+                            FontStyle.NORMAL));
+        }
+
+        boolean textGlyph(Node node) {
+            return node.kind == MathContent.Kind.GLYPH
+                    && node.payload instanceof MathContent.GlyphSpec
+                    && ((MathContent.GlyphSpec) node.payload).mode.equals("text")
+                    && intrinsicAlphabet((MathContent.GlyphSpec) node.payload) == null;
+        }
+
+        boolean textRun(Node node, MathLayoutContext context) {
+            return textGlyph(node)
+                    || context.textMode
+                            && node.kind == MathContent.Kind.SPACE
+                            && (node.value.equals(" ") || node.value.equals(" "))
+                            && node.payload instanceof MathContent.SpaceSpec
+                            && ((MathContent.SpaceSpec) node.payload).dimension == null;
+        }
+
+        MathBox row(Node node, MathLayoutContext initial) {
             return row(node, initial, null);
         }
 
-        Box row(Node node, Context initial, Node fence) {
-            List<Box> boxes = new ArrayList<Box>();
-            List<Context> contexts = new ArrayList<Context>();
+        MathBox row(Node node, MathLayoutContext initial, Node fence) {
+            List<MathBox> boxes = new ArrayList<MathBox>();
+            List<MathLayoutContext> contexts = new ArrayList<MathLayoutContext>();
             List<Node> sources = new ArrayList<Node>();
-            Context context = initial;
-            for (Node child : node.children) {
-                if (child.kind == MathContent.Kind.STYLE) {
-                    context = context.style(style(child.value));
-                    continue;
-                }
-                // middle只先参与原子类别，不让本层定界墨迹反过来抬高共同目标。
-                Box value;
-                if (child.kind == MathContent.Kind.MIDDLE) {
-                    value = new Box();
-                    value.atom = Atom.REL;
-                } else value = box(child, context);
-                boxes.add(value);
-                contexts.add(context);
-                sources.add(child);
-            }
+            boolean multiline = node == rootBody && rootLineBreak(node.children);
+            collectRow(node.children, initial, fence != null, multiline, boxes, contexts, sources);
             if (fence != null) {
-                Box content = new Box();
-                for (Box value : boxes) content.add(value, 0, 0);
+                MathBox content = new MathBox();
+                for (MathBox value : boxes) content.add(value, 0, 0);
                 float target = delimiterTarget(content, initial, fence);
                 for (int i = 0; i < boxes.size(); i++)
                     if (sources.get(i).kind == MathContent.Kind.MIDDLE)
@@ -365,7 +575,11 @@ public final class MathLayoutEngine {
             // TeX BIN 归一化忽略显式 kern，按实际原子序列判定。
             Atom previous = Atom.NONE;
             for (int i = 0; i < boxes.size(); i++) {
-                Box current = boxes.get(i);
+                MathBox current = boxes.get(i);
+                if (multiline && sources.get(i).kind == MathContent.Kind.LINEBREAK) {
+                    previous = Atom.NONE;
+                    continue;
+                }
                 if (current.atom == Atom.NONE) continue;
                 Atom next = Atom.NONE;
                 for (int j = i + 1; j < boxes.size(); j++)
@@ -386,12 +600,21 @@ public final class MathLayoutEngine {
                                 || next == Atom.PUNCT)) current.atom = Atom.ORD;
                 previous = current.atom;
             }
-            Box value = new Box();
+            if (multiline) return lines(node, initial, boxes, contexts, sources);
+            MathBox value = horizontal(boxes, contexts, 0, boxes.size());
+            value.atom = fence == null ? Atom.ORD : Atom.INNER;
+            if (fence != null) value.italic = 0;
+            return value;
+        }
+
+        private MathBox horizontal(
+                List<MathBox> boxes, List<MathLayoutContext> contexts, int from, int end) {
+            MathBox value = new MathBox();
             float cursor = 0, left = 0, right = 0;
-            previous = Atom.NONE;
-            for (int i = 0; i < boxes.size(); i++) {
-                Box current = boxes.get(i);
-                Context currentContext = contexts.get(i);
+            Atom previous = Atom.NONE;
+            for (int i = from; i < end; i++) {
+                MathBox current = boxes.get(i);
+                MathLayoutContext currentContext = contexts.get(i);
                 if (current.atom != Atom.NONE) {
                     cursor +=
                             spacing(previous, current.atom, currentContext.style)
@@ -409,17 +632,241 @@ public final class MathLayoutEngine {
             }
             value.width = Math.max(right, cursor) - left;
             if (left < 0) value = value.shifted(-left, 0, value.width);
-            value.atom = fence == null ? Atom.ORD : Atom.INNER;
-            if (fence != null) value.italic = 0;
+            value.atom = Atom.ORD;
             return value;
         }
 
-        Box operator(Node node, Context context) {
+        private boolean rootLineBreak(List<Node> children) {
+            for (Node child : children) {
+                if (child.kind == MathContent.Kind.LINEBREAK) return true;
+                if ((child.kind == MathContent.Kind.STYLE
+                                || child.kind == MathContent.Kind.HTMLMATHML
+                                || child.kind == MathContent.Kind.COLOR
+                                || child.kind == MathContent.Kind.SIZE)
+                        && child.first != null
+                        && child.first.kind == MathContent.Kind.ROW
+                        && rootLineBreak(child.first.children)) return true;
+            }
+            return false;
+        }
+
+        private MathBox lines(
+                Node node,
+                MathLayoutContext context,
+                List<MathBox> boxes,
+                List<MathLayoutContext> contexts,
+                List<Node> sources) {
+            // CSS只把katex-html直接newline作为零高block；连续空block不创建新空行，margin按正最大/负最小折叠。
+            TextLayout.Line strut = font(context, node).text("M").lines().get(0);
+            float leading = Math.max(0, strut.lineHeight - strut.ascent - strut.descent) / 2;
+            MathBox result = new MathBox();
+            float baseline = 0, previousDepth = 0, positive = 0, negative = 0;
+            boolean first = true;
+            int from = 0;
+            for (int end = 0; end <= boxes.size(); end++) {
+                if (end < boxes.size() && sources.get(end).kind != MathContent.Kind.LINEBREAK)
+                    continue;
+                if (end > from) {
+                    MathBox line = horizontal(boxes, contexts, from, end);
+                    float ascent = Math.max(line.ascent, strut.ascent + leading),
+                            descent = Math.max(line.descent, strut.descent + leading);
+                    for (MathLayout.TextPiece piece : line.pieces())
+                        for (TextLayout.Line nativeLine : piece.text.lines()) {
+                            float nativeLeading =
+                                    Math.max(
+                                                    0,
+                                                    nativeLine.lineHeight
+                                                            - nativeLine.ascent
+                                                            - nativeLine.descent)
+                                            / 2;
+                            float localBaseline = piece.y + nativeLine.baseline;
+                            ascent =
+                                    Math.max(
+                                            ascent,
+                                            nativeLine.ascent + nativeLeading - localBaseline);
+                            descent =
+                                    Math.max(
+                                            descent,
+                                            nativeLine.descent + nativeLeading + localBaseline);
+                        }
+                    if (!first) baseline += previousDepth + ascent + positive + negative;
+                    result.add(line, 0, baseline);
+                    result.width = Math.max(result.width, line.width);
+                    first = false;
+                    previousDepth = descent;
+                    positive = negative = 0;
+                }
+                if (end < boxes.size()) {
+                    MathContent.SpaceSpec spec = (MathContent.SpaceSpec) sources.get(end).payload;
+                    float gap =
+                            spec.dimension == null
+                                    ? 0
+                                    : dimension(
+                                            spec.dimension, contexts.get(end), sources.get(end));
+                    positive = Math.max(positive, gap);
+                    negative = Math.min(negative, gap);
+                }
+                from = end + 1;
+            }
+            return result;
+        }
+
+        // STYLE body 与 HTMLMATHML 的显示分支是透明 fragment；普通 ROW/分组/CLASSIFY 保留原子边界。
+        private void collectRow(
+                List<Node> children,
+                MathLayoutContext initial,
+                boolean fenced,
+                boolean rootLines,
+                List<MathBox> boxes,
+                List<MathLayoutContext> contexts,
+                List<Node> sources) {
+            MathLayoutContext context = initial;
+            for (int index = 0; index < children.size(); index++) {
+                Node child = children.get(index);
+                if (rootLines
+                        && (child.kind == MathContent.Kind.COLOR
+                                || child.kind == MathContent.Kind.SIZE)
+                        && child.first != null
+                        && child.first.kind == MathContent.Kind.ROW) {
+                    collectRow(
+                            child.first.children,
+                            MathDecorations.scope(this, child, context),
+                            fenced,
+                            true,
+                            boxes,
+                            contexts,
+                            sources);
+                    continue;
+                }
+                if (textRun(child, context)) {
+                    StringBuilder run = new StringBuilder(child.value);
+                    int end = child.end;
+                    while (index + 1 < children.size()
+                            && textRun(children.get(index + 1), context)) {
+                        Node next = children.get(++index);
+                        run.append(next.value);
+                        end = next.end;
+                    }
+                    Node source =
+                            new Node(
+                                    MathContent.Kind.TEXT,
+                                    child.start,
+                                    end,
+                                    run.toString(),
+                                    null,
+                                    null,
+                                    null,
+                                    null);
+                    boxes.add(
+                            glyph(
+                                    text.layout(
+                                            run.toString(),
+                                            ordinaryTextStyle(context),
+                                            Integer.MAX_VALUE,
+                                            TextPolicy.NO_WRAP),
+                                    source,
+                                    context,
+                                    false));
+                    contexts.add(context);
+                    sources.add(source);
+                    continue;
+                }
+                if (child.kind == MathContent.Kind.STYLE && child.first == null) {
+                    context = context.declaredStyle(style(child.value));
+                    continue;
+                }
+                if (child.kind == MathContent.Kind.STYLE
+                        && child.first != null
+                        && child.first.kind == MathContent.Kind.ROW) {
+                    collectRow(
+                            child.first.children,
+                            context.declaredStyle(style(child.value)),
+                            fenced,
+                            rootLines,
+                            boxes,
+                            contexts,
+                            sources);
+                    continue;
+                }
+                if (child.kind == MathContent.Kind.HTMLMATHML
+                        && child.first != null
+                        && child.first.kind == MathContent.Kind.ROW) {
+                    collectRow(
+                            child.first.children,
+                            context,
+                            fenced,
+                            rootLines,
+                            boxes,
+                            contexts,
+                            sources);
+                    continue;
+                }
+                // 只有本层left直接可见的middle占位并共用target；nested wrapper内size1真实墨迹参与测高。
+                MathBox value;
+                if (fenced && child.kind == MathContent.Kind.MIDDLE) {
+                    value = new MathBox();
+                    value.atom = Atom.REL;
+                } else value = box(child, context);
+                boxes.add(value);
+                contexts.add(context);
+                sources.add(child);
+            }
+        }
+
+        MathLayoutContext fontContext(Node node, MathLayoutContext context) {
+            MathContent.FontSpec spec =
+                    node.payload instanceof MathContent.FontSpec
+                            ? (MathContent.FontSpec) node.payload
+                            : null;
+            String name = spec == null ? node.value : spec.font;
+            if (spec != null && spec.mode.equals("text")) {
+                TextStyle scope = ordinaryTextStyle(context);
+                FontStyle old = scope.fontStyle;
+                int weight =
+                        name.contains("bf") || name.equals("bold")
+                                ? 700
+                                : name.contains("md") ? 400 : old.weight;
+                FontStyle.Posture posture =
+                        name.contains("it") || name.equals("italic")
+                                ? FontStyle.Posture.ITALIC
+                                : name.contains("up") || name.equals("normal")
+                                        ? FontStyle.Posture.NORMAL
+                                        : old.posture;
+                if (name.equals("emph"))
+                    posture =
+                            old.posture == FontStyle.Posture.ITALIC
+                                    ? FontStyle.Posture.NORMAL
+                                    : FontStyle.Posture.ITALIC;
+                String family =
+                        name.equals("textrm") || name.equals("textnormal")
+                                ? "math-text-roman"
+                                : name.equals("textsf")
+                                        ? "math-text-sans"
+                                        : name.equals("texttt") ? "math-text-mono" : scope.font;
+                return context.textStyle(
+                        new TextStyle(
+                                family,
+                                scope.logicalEm,
+                                scope.color,
+                                scope.candidates(),
+                                scope.effects,
+                                scope.decoration,
+                                new FontStyle(weight, posture)));
+            }
+            return context.alphabet(name);
+        }
+
+        MathBox operator(Node node, MathLayoutContext context) {
             String name = node.value;
             int cp =
                     name.equals("int")
                             ? 0x222b
                             : name.equals("sum") ? 0x2211 : name.equals("prod") ? 0x220f : 0;
+            MathContent.OperatorSpec spec =
+                    node.payload instanceof MathContent.OperatorSpec
+                            ? (MathContent.OperatorSpec) node.payload
+                            : null;
+            if (spec != null && spec.symbol && cp == 0 && !name.isEmpty()) cp = name.codePointAt(0);
             MathFont font = font(context, node);
             TextLayout layout =
                     cp == 0
@@ -427,11 +874,14 @@ public final class MathLayoutEngine {
                                     name.startsWith("@") || name.startsWith("*")
                                             ? name.substring(1)
                                             : name)
+                            // fixed op 的 smallint 没有 large successor；用 typed 原控制词区分同为 U222B 的请求。
                             : context.style == MathStyle.DISPLAY
+                                            && (spec == null
+                                                    || !"\\smallint".equals(spec.originalToken))
                                     ? font.displayOperator(
                                             cp, font.constant(DISPLAY_OPERATOR_MIN_HEIGHT))
                                     : font.text(new String(Character.toChars(cp)));
-            Box value = glyph(layout, node, context, true);
+            MathBox value = glyph(layout, node, context, true);
             value.atom = Atom.OP;
             if (cp != 0) {
                 float center = (value.descent - value.ascent) / 2;
@@ -442,26 +892,39 @@ public final class MathLayoutEngine {
             return value;
         }
 
-        Box scripts(Node node, Context context) {
-            Box base = box(node.first, context);
-            Box upper =
+        MathBox scripts(Node node, MathLayoutContext context) {
+            MathBox base = box(node.first, context);
+            MathBox upper =
                     node.second == null
                             ? null
                             : box(node.second, context.style(context.style.script()));
-            Box lower =
+            MathBox lower =
                     node.third == null
                             ? null
                             : box(node.third, context.style(context.style.script()).cramped());
+            MathContent.OperatorSpec operator =
+                    node.first.payload instanceof MathContent.OperatorSpec
+                            ? (MathContent.OperatorSpec) node.first.payload
+                            : null;
             boolean limits =
                     node.value.equals("limits")
                             || node.value.equals("default")
                                     && context.style == MathStyle.DISPLAY
                                     && node.first.kind == MathContent.Kind.OPERATOR
-                                    && (node.first.value.equals("sum")
-                                            || node.first.value.equals("prod")
-                                            || node.first.value.equals("lim")
-                                            || node.first.value.startsWith("*"));
+                                    && (operator != null
+                                            ? operator.defaultLimits
+                                            : node.first.value.equals("sum")
+                                                    || node.first.value.equals("prod")
+                                                    || node.first.value.equals("lim")
+                                                    || node.first.value.startsWith("*"));
             if (limits) return limits(node, context, base, upper, lower);
+            MathContent.DecorationSpec brace =
+                    node.first.kind == MathContent.Kind.HORIZBRACE
+                                    && node.first.payload instanceof MathContent.DecorationSpec
+                            ? (MathContent.DecorationSpec) node.first.payload
+                            : null;
+            boolean centeredUpper = brace != null && !brace.below;
+            boolean centeredLower = brace != null && brace.below;
             float up = 0, down = 0;
             if (upper != null) {
                 up =
@@ -502,16 +965,43 @@ public final class MathLayoutEngine {
                     down += deficit - raise;
                 }
             }
-            Box value = new Box();
-            value.add(base, 0, 0);
-            float width = base.width;
+            if (centeredUpper && upper != null)
+                up =
+                        Math.max(
+                                up,
+                                base.ascent
+                                        + Math.max(
+                                                c(context, node, UPPER_LIMIT_BASELINE_RISE_MIN),
+                                                c(context, node, UPPER_LIMIT_GAP_MIN)
+                                                        + upper.descent));
+            if (centeredLower && lower != null)
+                down =
+                        Math.max(
+                                down,
+                                base.descent
+                                        + Math.max(
+                                                c(context, node, LOWER_LIMIT_BASELINE_DROP_MIN),
+                                                c(context, node, LOWER_LIMIT_GAP_MIN)
+                                                        + lower.ascent));
+            float upperX =
+                    upper == null
+                            ? 0
+                            : centeredUpper
+                                    ? (base.width - upper.width) / 2
+                                    : base.width + base.italic;
+            float lowerX =
+                    lower == null ? 0 : centeredLower ? (base.width - lower.width) / 2 : base.width;
+            float left = Math.min(0, Math.min(upperX, lowerX));
+            MathBox value = new MathBox();
+            value.add(base, -left, 0);
+            float width = base.width - left;
             if (upper != null) {
-                value.add(upper, base.width + base.italic, -up);
-                width = Math.max(width, base.width + base.italic + upper.width);
+                value.add(upper, upperX - left, -up);
+                width = Math.max(width, upperX - left + upper.width);
             }
             if (lower != null) {
-                value.add(lower, base.width, down);
-                width = Math.max(width, base.width + lower.width);
+                value.add(lower, lowerX - left, down);
+                width = Math.max(width, lowerX - left + lower.width);
             }
             value.width =
                     width
@@ -522,7 +1012,8 @@ public final class MathLayoutEngine {
             return value;
         }
 
-        Box limits(Node node, Context context, Box base, Box upper, Box lower) {
+        MathBox limits(
+                Node node, MathLayoutContext context, MathBox base, MathBox upper, MathBox lower) {
             float upperX = upper == null ? 0 : (base.width - upper.width) / 2 + base.italic / 2;
             float lowerX = lower == null ? 0 : (base.width - lower.width) / 2 - base.italic / 2;
             float left = Math.min(0, Math.min(upperX, lowerX));
@@ -532,7 +1023,7 @@ public final class MathLayoutEngine {
                             Math.max(
                                     upper == null ? 0 : upperX + upper.width,
                                     lower == null ? 0 : lowerX + lower.width));
-            Box value = new Box();
+            MathBox value = new MathBox();
             value.add(base, -left, 0);
             if (upper != null) {
                 float up =
@@ -555,15 +1046,32 @@ public final class MathLayoutEngine {
             return value;
         }
 
-        Box fraction(Node node, Context inherited) {
-            Context context = inherited;
+        MathBox fraction(Node node, MathLayoutContext inherited) {
+            MathLayoutContext context = inherited;
+            MathContent.FractionSpec spec =
+                    node.payload instanceof MathContent.FractionSpec
+                            ? (MathContent.FractionSpec) node.payload
+                            : null;
+            if (spec != null
+                    && spec.style != null
+                    && !spec.style.isEmpty()
+                    && !spec.style.equals("auto")) context = context.style(style(spec.style));
             if (node.value.equals("dfrac")) context = context.style(MathStyle.DISPLAY);
             else if (node.value.equals("tfrac")) context = context.style(MathStyle.TEXT);
-            Box numerator = box(node.first, context.style(context.style.fraction()));
-            Box denominator = box(node.second, context.style(context.style.fraction()).cramped());
+            if (spec != null && !spec.hasBar) return stackFraction(node, context, spec);
+            MathBox numerator = box(node.first, context.style(context.style.fraction()));
+            MathBox denominator =
+                    box(node.second, context.style(context.style.fraction()).cramped());
+            if (spec != null && spec.continued) {
+                numerator.ascent = Math.max(numerator.ascent, .85f * context.sizeEm);
+                numerator.descent = Math.max(numerator.descent, .35f * context.sizeEm);
+            }
             boolean display = context.style == MathStyle.DISPLAY;
             float axis = c(context, node, AXIS_HEIGHT);
-            float rule = c(context, node, FRACTION_RULE_THICKNESS);
+            float rule =
+                    spec != null && spec.thickness != null && !spec.thickness.blank
+                            ? dimension(spec.thickness, context, node)
+                            : c(context, node, FRACTION_RULE_THICKNESS);
             float up =
                     Math.max(
                             c(
@@ -599,17 +1107,98 @@ public final class MathLayoutEngine {
                                                     ? FRACTION_DENOM_DISPLAY_STYLE_GAP_MIN
                                                     : FRACTION_DENOMINATOR_GAP_MIN));
             float width = Math.max(numerator.width, denominator.width) + 2 * rule;
-            Box value = new Box();
-            value.add(numerator, (width - numerator.width) / 2, -up);
-            value.add(denominator, (width - denominator.width) / 2, down);
-            value.rule(0, -axis - rule / 2, width, rule);
+            MathBox value = new MathBox();
+            value.add(numerator, fractionX(spec, width, numerator.width), -up);
+            value.add(denominator, fractionX(spec, width, denominator.width), down);
+            value.rule(
+                    0,
+                    -axis - rule / 2,
+                    width,
+                    rule,
+                    context.textStyle.color,
+                    node.start,
+                    node.end);
             value.width = width;
             value.atom = Atom.INNER;
-            return value;
+            return fractionFences(value, node, context, spec);
+        }
+
+        float fractionX(MathContent.FractionSpec spec, float width, float childWidth) {
+            return spec != null && "l".equals(spec.align)
+                    ? 0
+                    : spec != null && "r".equals(spec.align)
+                            ? width - childWidth
+                            : (width - childWidth) / 2;
+        }
+
+        MathBox stackFraction(Node node, MathLayoutContext context, MathContent.FractionSpec spec) {
+            MathBox top = box(node.first, context.style(context.style.fraction())),
+                    bottom = box(node.second, context.style(context.style.fraction()).cramped());
+            boolean display = context.style == MathStyle.DISPLAY;
+            float up =
+                    c(
+                            context,
+                            node,
+                            display ? STACK_TOP_DISPLAY_STYLE_SHIFT_UP : STACK_TOP_SHIFT_UP);
+            float down =
+                    c(
+                            context,
+                            node,
+                            display
+                                    ? STACK_BOTTOM_DISPLAY_STYLE_SHIFT_DOWN
+                                    : STACK_BOTTOM_SHIFT_DOWN);
+            float deficit =
+                    c(context, node, display ? STACK_DISPLAY_STYLE_GAP_MIN : STACK_GAP_MIN)
+                            - (up + down - top.descent - bottom.ascent);
+            if (deficit > 0) {
+                up += deficit / 2;
+                down += deficit / 2;
+            }
+            MathBox result = new MathBox();
+            result.width = Math.max(top.width, bottom.width);
+            result.add(top, fractionX(spec, result.width, top.width), -up);
+            result.add(bottom, fractionX(spec, result.width, bottom.width), down);
+            result.atom = Atom.INNER;
+            return fractionFences(result, node, context, spec);
+        }
+
+        MathBox fractionFences(
+                MathBox body, Node node, MathLayoutContext context, MathContent.FractionSpec spec) {
+            if (spec == null || (spec.leftDelimiter == null && spec.rightDelimiter == null))
+                return body;
+            float axis = c(context, node, AXIS_HEIGHT),
+                    target = 2 * Math.max(body.ascent - axis, body.descent + axis);
+            MathBox left = fractionFence(node, context, spec.leftDelimiter, target, Atom.OPEN),
+                    right = fractionFence(node, context, spec.rightDelimiter, target, Atom.CLOSE);
+            MathBox result = new MathBox();
+            result.add(left, 0, 0);
+            result.add(body, left.width, 0);
+            result.add(right, left.width + body.width, 0);
+            result.width = left.width + body.width + right.width;
+            result.atom = Atom.INNER;
+            return result;
+        }
+
+        MathBox fractionFence(
+                Node node, MathLayoutContext context, String delimiter, float target, Atom atom) {
+            if (delimiter == null || delimiter.isEmpty()) return new MathBox();
+            return delimiter(
+                    new Node(
+                            MathContent.Kind.DELIMITER,
+                            node.start,
+                            node.end,
+                            delimiter,
+                            null,
+                            null,
+                            null,
+                            null),
+                    context,
+                    target,
+                    atom);
         }
 
         /** KaTeX0.16.21 makeLeftRightDelim：短缺量使用基准em，脚本只缩放axis与内容。 */
-        float delimiterTarget(Box content, Context context, Node node) {
+        float delimiterTarget(MathBox content, MathLayoutContext context, Node node) {
             float axis = c(context, node, AXIS_HEIGHT);
             float distance = Math.max(content.ascent - axis, content.descent + axis);
             float target = Math.max(distance / 500f * 901f, 2 * distance - 0.5f * base.logicalEm);
@@ -617,15 +1206,15 @@ public final class MathLayoutEngine {
             return target;
         }
 
-        Box delimiter(Node node, Context context, float target, Atom atom) {
+        MathBox delimiter(Node node, MathLayoutContext context, float target, Atom atom) {
             if (node.value.equals(".")) {
-                Box invisible = new Box();
+                MathBox invisible = new MathBox();
                 // 固定KaTeX makeNullDelimiter的baseSizing重置到基准字号。
                 invisible.width = 0.12f * base.logicalEm;
                 invisible.atom = atom;
                 return invisible;
             }
-            Box value =
+            MathBox value =
                     glyph(
                             font(context, node).stretch(node.value.codePointAt(0), target),
                             node,
@@ -636,7 +1225,7 @@ public final class MathLayoutEngine {
             // 普通数学盒包络含基线空白；定界符须按有符号的真实墨迹居中。
             // 字体局部原点移动到基线一侧时，也不能把空白计入墨迹中线。
             float top = Float.POSITIVE_INFINITY, bottom = Float.NEGATIVE_INFINITY;
-            for (MathLayout.TextPiece piece : value.pieces) {
+            for (MathLayout.TextPiece piece : value.pieces()) {
                 for (TextLayout.Line line : piece.text.lines()) {
                     for (TextLayout.Glyph glyph : line.glyphs()) {
                         top = Math.min(top, piece.y + glyph.y + glyph.inkBounds.top);
@@ -654,9 +1243,18 @@ public final class MathLayoutEngine {
             return value;
         }
 
-        Box binomial(Node node, Context context) {
-            Box top = box(node.first, context.style(context.style.fraction()));
-            Box bottom = box(node.second, context.style(context.style.fraction()).cramped());
+        MathBox binomial(Node node, MathLayoutContext inherited) {
+            MathLayoutContext context = inherited;
+            MathContent.FractionSpec spec =
+                    node.payload instanceof MathContent.FractionSpec
+                            ? (MathContent.FractionSpec) node.payload
+                            : null;
+            if (spec != null
+                    && spec.style != null
+                    && !spec.style.isEmpty()
+                    && !spec.style.equals("auto")) context = context.style(style(spec.style));
+            MathBox top = box(node.first, context.style(context.style.fraction()));
+            MathBox bottom = box(node.second, context.style(context.style.fraction()).cramped());
             boolean display = context.style == MathStyle.DISPLAY;
             float up =
                     c(
@@ -677,7 +1275,7 @@ public final class MathLayoutEngine {
                 down += deficit / 2;
             }
             float width = Math.max(top.width, bottom.width);
-            Box stack = new Box();
+            MathBox stack = new MathBox();
             stack.add(top, (width - top.width) / 2, -up);
             stack.add(bottom, (width - bottom.width) / 2, down);
             stack.width = width;
@@ -705,9 +1303,9 @@ public final class MathLayoutEngine {
                             null,
                             null,
                             null);
-            Box left = delimiter(leftNode, context, target, Atom.OPEN);
-            Box right = delimiter(rightNode, context, target, Atom.CLOSE);
-            Box value = new Box();
+            MathBox left = delimiter(leftNode, context, target, Atom.OPEN);
+            MathBox right = delimiter(rightNode, context, target, Atom.CLOSE);
+            MathBox value = new MathBox();
             value.add(left, 0, 0);
             value.add(stack, left.width, 0);
             value.add(right, left.width + width, 0);
@@ -716,8 +1314,8 @@ public final class MathLayoutEngine {
             return value;
         }
 
-        Box radical(Node node, Context context) {
-            Box radicand = box(node.first, context.cramped());
+        MathBox radical(Node node, MathLayoutContext context) {
+            MathBox radicand = box(node.first, context.cramped());
             float gap =
                     c(
                             context,
@@ -727,12 +1325,12 @@ public final class MathLayoutEngine {
                                     : RADICAL_VERTICAL_GAP);
             float rule = c(context, node, RADICAL_RULE_THICKNESS);
             float target = radicand.ascent + radicand.descent + gap + rule;
-            Box sign = glyph(font(context, node).stretch(0x221a, target), node, context, true);
+            MathBox sign = glyph(font(context, node).stretch(0x221a, target), node, context, true);
             float extra = Math.max(0, sign.ascent + sign.descent - target);
             gap += extra / 2;
             float ruleTop = -radicand.ascent - gap - rule;
             float signY = ruleTop + sign.ascent;
-            Box degree =
+            MathBox degree =
                     node.second == null
                             ? null
                             : box(node.second, context.style(MathStyle.SCRIPT_SCRIPT));
@@ -753,10 +1351,17 @@ public final class MathLayoutEngine {
                                         / 100f
                                 - degree.descent;
             }
-            Box value = new Box();
+            MathBox value = new MathBox();
             value.add(sign, signX, signY);
             value.add(radicand, signX + sign.width, 0);
-            value.rule(signX + sign.width, ruleTop, radicand.width, rule);
+            value.rule(
+                    signX + sign.width,
+                    ruleTop,
+                    radicand.width,
+                    rule,
+                    context.textStyle.color,
+                    node.start,
+                    node.end);
             value.ascent =
                     Math.max(value.ascent, -ruleTop + c(context, node, RADICAL_EXTRA_ASCENDER));
             if (degree != null) value.add(degree, degreeX, degreeY);
@@ -768,74 +1373,10 @@ public final class MathLayoutEngine {
         }
     }
 
-    /** 内部坐标以基线为原点；出口才转换为局部顶部，保留 TextLayout 原生基线。 */
-    private static final class Box {
-        float width, ascent, descent, italic;
-        Atom atom = Atom.ORD;
-        final List<MathLayout.TextPiece> pieces = new ArrayList<MathLayout.TextPiece>();
-        final List<MathLayout.Rule> rules = new ArrayList<MathLayout.Rule>();
-        final List<MathLayout.Embed> embeds = new ArrayList<MathLayout.Embed>();
-
-        void add(Box child, float x, float y) {
-            ascent = Math.max(ascent, child.ascent - y);
-            descent = Math.max(descent, child.descent + y);
-            for (MathLayout.TextPiece piece : child.pieces)
-                pieces.add(
-                        new MathLayout.TextPiece(
-                                piece.text,
-                                piece.x + x,
-                                piece.y + y,
-                                piece.sourceStart,
-                                piece.sourceEnd));
-            for (MathLayout.Rule rule : child.rules)
-                rules.add(new MathLayout.Rule(rule.x + x, rule.y + y, rule.width, rule.height));
-            for (MathLayout.Embed embed : child.embeds)
-                embeds.add(
-                        new MathLayout.Embed(
-                                embed.id,
-                                embed.x + x,
-                                embed.y + y,
-                                embed.width,
-                                embed.height,
-                                embed.baseline,
-                                embed.sourceStart,
-                                embed.sourceEnd));
-        }
-
-        void rule(float x, float y, float width, float height) {
-            rules.add(new MathLayout.Rule(x, y, width, height));
-            ascent = Math.max(ascent, -y);
-            descent = Math.max(descent, y + height);
-        }
-
-        Box shifted(float x, float y, float width) {
-            Box value = new Box();
-            value.add(this, x, y);
-            value.width = width;
-            value.atom = atom;
-            value.italic = italic;
-            return value;
-        }
-
-        MathLayout finish(List<MathLayout.Diagnostic> diagnostics) {
-            Box shifted = shifted(0, ascent, width);
-            return new MathLayout(
-                    Math.max(0, width),
-                    ascent + descent,
-                    ascent,
-                    shifted.pieces,
-                    shifted.rules,
-                    shifted.embeds,
-                    diagnostics,
-                    false,
-                    null);
-        }
-    }
-
-    private static MathStyle style(String name) {
-        if (name.equals("displaystyle")) return MathStyle.DISPLAY;
-        if (name.equals("textstyle")) return MathStyle.TEXT;
-        if (name.equals("scriptstyle")) return MathStyle.SCRIPT;
+    static MathStyle style(String name) {
+        if (name.equals("displaystyle") || name.equals("display")) return MathStyle.DISPLAY;
+        if (name.equals("textstyle") || name.equals("text")) return MathStyle.TEXT;
+        if (name.equals("scriptstyle") || name.equals("script")) return MathStyle.SCRIPT;
         return MathStyle.SCRIPT_SCRIPT;
     }
 
@@ -845,6 +1386,8 @@ public final class MathLayoutEngine {
         if (name.equals(";")) return 5f / 18;
         if (name.equals("!")) return -3f / 18;
         if (name.equals("quad")) return 1;
+        if (name.equals("\\nobreak") || name.equals("\\allowbreak")) return 0;
+        if (name.equals(" ") || name.equals(" ")) return .33333334f;
         if (name.equals("qquad")) return 2;
         return 1f / 3;
     }
@@ -883,20 +1426,140 @@ public final class MathLayoutEngine {
         return code == 1 ? 3 : code == 2 ? 4 : code == 3 ? 5 : 0;
     }
 
+    // KaTeX 私用槽位只在 glyph 请求处转为正式 Unicode 语义，typed catalog/source 保持原样。
+    // VS1 六组见 Unicode17 StandardizedVariants；STIX cmap14 有各自非默认 glyph，仍经同一字体整形链。
+    private static String semanticSymbol(String value) {
+        if (value.length() != 1) return value;
+        switch (value.charAt(0)) {
+            case 0xe00c:
+                return "≨︀";
+            case 0xe00d:
+                return "≩︀";
+            case 0xe01a:
+                return "⊊︀";
+            case 0xe01b:
+                return "⊋︀";
+            case 0xe017:
+                return "⫋︀";
+            case 0xe019:
+                return "⫌︀";
+            case 0xe010:
+                return "⩽̸";
+            case 0xe00f:
+                return "⩾̸";
+            case 0xe011:
+                return "≦̸";
+            case 0xe00e:
+                return "≧̸";
+            case 0xe016:
+                return "⫅̸";
+            case 0xe018:
+                return "⫆̸";
+            case 0xe006:
+                return "∤";
+            case 0xe007:
+                return "∦";
+            case 0xe131:
+                return "ı";
+            case 0xe237:
+                return "ȷ";
+            default:
+                return value;
+        }
+    }
+
     private static String alphabet(String value, String alphabet) {
-        if (alphabet.equals("mathrm")) return value;
-        boolean bold = alphabet.equals("mathbf");
+        int upper = 0, lower = 0, digit = 0, greekUpper = 0, greekLower = 0;
+        boolean normal = alphabet.equals("mathnormal") || alphabet.equals("mathit");
+        if (normal) {
+            upper = 0x1d434;
+            lower = 0x1d44e;
+            greekLower = 0x1d6fc;
+            if (alphabet.equals("mathit")) greekUpper = 0x1d6e2;
+        } else if (alphabet.equals("mathbf")) {
+            upper = 0x1d400;
+            lower = 0x1d41a;
+            digit = 0x1d7ce;
+            greekUpper = 0x1d6a8;
+            greekLower = 0x1d6c2;
+        } else if (alphabet.equals("boldsymbol") || alphabet.equals("mathbfit")) {
+            upper = 0x1d468;
+            lower = 0x1d482;
+            digit = 0x1d7ce;
+            greekUpper = 0x1d71c;
+            greekLower = 0x1d736;
+        } else if (alphabet.equals("mathbb")) {
+            upper = 0x1d538;
+            lower = 0x1d552;
+            digit = 0x1d7d8;
+        } else if (alphabet.equals("mathcal") || alphabet.equals("mathscr")) {
+            upper = 0x1d49c;
+            if (alphabet.equals("mathscr")) lower = 0x1d4b6;
+        } else if (alphabet.equals("mathfrak")) {
+            upper = 0x1d504;
+            lower = 0x1d51e;
+        } else if (alphabet.equals("mathsf")) {
+            upper = 0x1d5a0;
+            lower = 0x1d5ba;
+            digit = 0x1d7e2;
+        } else if (alphabet.equals("mathsfit")) {
+            upper = 0x1d608;
+            lower = 0x1d622;
+            digit = 0x1d7e2;
+        } else if (alphabet.equals("mathsfbf") || alphabet.equals("mathboldsf")) {
+            upper = 0x1d5d4;
+            lower = 0x1d5ee;
+            digit = 0x1d7ec;
+            greekUpper = 0x1d756;
+            greekLower = 0x1d770;
+        } else if (alphabet.equals("mathboldscr")) {
+            upper = 0x1d4d0;
+            lower = 0x1d4ea;
+        } else if (alphabet.equals("mathboldfrak")) {
+            upper = 0x1d56c;
+            lower = 0x1d586;
+        } else if (alphabet.equals("mathboldsfit")) {
+            upper = 0x1d63c;
+            lower = 0x1d656;
+            digit = 0x1d7ec;
+            greekUpper = 0x1d790;
+            greekLower = 0x1d7aa;
+        } else if (alphabet.equals("mathtt")) {
+            upper = 0x1d670;
+            lower = 0x1d68a;
+            digit = 0x1d7f6;
+        }
+        String capitals = "ΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡϴΣΤΥΦΧΨΩ",
+                small = "αβγδεζηθικλμνξοπρςστυφχψω",
+                symbols = "∂ϵϑϰϕϱϖ";
         StringBuilder mapped = new StringBuilder();
         for (int offset = 0; offset < value.length(); ) {
             int cp = value.codePointAt(offset);
             offset += Character.charCount(cp);
-            if (cp >= 'A' && cp <= 'Z') cp = (bold ? 0x1d400 : 0x1d434) + cp - 'A';
-            else if (cp >= 'a' && cp <= 'z')
-                cp = !bold && cp == 'h' ? 0x210e : (bold ? 0x1d41a : 0x1d44e) + cp - 'a';
-            else if (bold && cp >= '0' && cp <= '9') cp = 0x1d7ce + cp - '0';
-            else if (cp >= 0x3b1 && cp <= 0x3c9) cp = (bold ? 0x1d6c2 : 0x1d6fc) + cp - 0x3b1;
+            int original = cp;
+            if (cp >= 'A' && cp <= 'Z' && upper != 0) cp = upper + cp - 'A';
+            else if (cp >= 'a' && cp <= 'z' && lower != 0) cp = lower + cp - 'a';
+            else if (cp >= '0' && cp <= '9' && digit != 0) cp = digit + cp - '0';
+            else if (greekUpper != 0 && capitals.indexOf(cp) >= 0)
+                cp = greekUpper + capitals.indexOf(cp);
+            else if (greekLower != 0 && small.indexOf(cp) >= 0) cp = greekLower + small.indexOf(cp);
+            else if (greekLower != 0 && symbols.indexOf(cp) >= 0)
+                cp = greekLower + 25 + symbols.indexOf(cp);
+            else if (greekUpper != 0 && cp == 0x2207) cp = greekUpper + 25;
+            if (normal && original == 'h') cp = 0x210e;
+            if (normal && original == 0x0131) cp = 0x1d6a4;
+            if (normal && original == 0x0237) cp = 0x1d6a5;
+            if (upper == 0x1d49c) cp = hole(original, cp, "BEFHILMR", "ℬℰℱℋℐℒℳℛ");
+            if (lower == 0x1d4b6) cp = hole(original, cp, "ego", "ℯℊℴ");
+            if (upper == 0x1d504) cp = hole(original, cp, "CHIRZ", "ℭℌℑℜℨ");
+            if (upper == 0x1d538) cp = hole(original, cp, "CHNPQRZ", "ℂℍℕℙℚℝℤ");
             mapped.appendCodePoint(cp);
         }
         return mapped.toString();
+    }
+
+    private static int hole(int original, int mapped, String letters, String replacements) {
+        int index = letters.indexOf(original);
+        return index < 0 ? mapped : replacements.codePointAt(index);
     }
 }

@@ -8,12 +8,8 @@ import club.heiqi.uilib.ui.scene.text.font.nativefont.InkBounds;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.ShapeDirection;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.ShapeRun;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.ShapedGlyph;
+import club.heiqi.uilib.ui.scene.text.math.MathAxis;
 
-import java.nio.ByteBuffer;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Objects;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.system.MemoryUtil;
@@ -26,6 +22,12 @@ import org.lwjgl.util.harfbuzz.HarfBuzz;
 import org.lwjgl.util.harfbuzz.hb_glyph_info_t;
 import org.lwjgl.util.harfbuzz.hb_glyph_position_t;
 
+import java.nio.ByteBuffer;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Objects;
+
 /** 持有字体内存的固定字号 face；仅在所属服务的创建线程使用。无平台 GUI 依赖。 */
 public final class NativeFontFace implements FontFace {
     private final NativeFontService owner;
@@ -35,6 +37,7 @@ public final class NativeFontFace implements FontFace {
     private long font;
     private final float pixelScale;
     private final FontMetrics metrics;
+    private java.util.BitSet topAccentGlyphs;
 
     NativeFontFace(
             NativeFontService owner,
@@ -209,9 +212,9 @@ public final class NativeFontFace implements FontFace {
     }
 
     /**
-     * 只 shape [start,end)，完整 text 为前后文。边界及 cluster 为原串 UTF-16 索引，不能切开代理对。
-     * script 为可空 ISO 15924 标记；空时 HB 猜测。beginning/endOfText 指真正文本边界，非普通 run 边界。
-     * 输出保持 HB 顺序和向上为正的 Y；所有 advance/offset 均为请求 emSize 下的浮点单位。
+     * 只 shape [start,end)，完整 text 为前后文。边界及 cluster 为原串 UTF-16 索引，不能切开代理对。 script 为可空 ISO 15924
+     * 标记；空时 HB 猜测。beginning/endOfText 指真正文本边界，非普通 run 边界。 输出保持 HB 顺序和向上为正的 Y；所有 advance/offset 均为请求
+     * emSize 下的浮点单位。
      */
     public ShapeRun shape(
             String text,
@@ -306,27 +309,35 @@ public final class NativeFontFace implements FontFace {
 
     public List<club.heiqi.uilib.ui.scene.text.font.nativefont.MathData.Variant> mathVariants(
             int glyphId) {
+        return mathVariants(glyphId, MathAxis.VERTICAL);
+    }
+
+    public List<club.heiqi.uilib.ui.scene.text.font.nativefont.MathData.Variant> mathVariants(
+            int glyphId, MathAxis axis) {
         checkMath();
         checkGlyph(glyphId);
+        int direction = mathDirection(axis);
         List<club.heiqi.uilib.ui.scene.text.font.nativefont.MathData.Variant> result =
                 new ArrayList<club.heiqi.uilib.ui.scene.text.font.nativefont.MathData.Variant>();
         try (MemoryStack stack = MemoryStack.stackPush()) {
             java.nio.IntBuffer count = stack.ints(0);
             int total =
                     org.lwjgl.util.harfbuzz.OpenType.hb_ot_math_get_glyph_variants(
-                            font, glyphId, HarfBuzz.HB_DIRECTION_TTB, 0, count, null);
+                            font, glyphId, direction, 0, count, null);
             if (total == 0) return Collections.emptyList();
             // 数据先复制到 Java 值；返回结果不持有 stack 或被 LRU 关闭的 face。
             try (org.lwjgl.util.harfbuzz.hb_ot_math_glyph_variant_t.Buffer variants =
                     org.lwjgl.util.harfbuzz.hb_ot_math_glyph_variant_t.malloc(total)) {
                 count.put(0, total);
                 org.lwjgl.util.harfbuzz.OpenType.hb_ot_math_get_glyph_variants(
-                        font, glyphId, HarfBuzz.HB_DIRECTION_TTB, 0, count, variants);
+                        font, glyphId, direction, 0, count, variants);
                 for (int i = 0; i < count.get(0); i++) {
                     org.lwjgl.util.harfbuzz.hb_ot_math_glyph_variant_t variant = variants.get(i);
                     result.add(
                             new club.heiqi.uilib.ui.scene.text.font.nativefont.MathData.Variant(
-                                    variant.glyph(), variant.advance() * (pixelScale / 64.0f)));
+                                    variant.glyph(),
+                                    variant.advance() * (pixelScale / 64.0f),
+                                    axis));
                 }
             }
         }
@@ -335,13 +346,19 @@ public final class NativeFontFace implements FontFace {
 
     public club.heiqi.uilib.ui.scene.text.font.nativefont.MathData.Assembly mathAssembly(
             int glyphId) {
+        return mathAssembly(glyphId, MathAxis.VERTICAL);
+    }
+
+    public club.heiqi.uilib.ui.scene.text.font.nativefont.MathData.Assembly mathAssembly(
+            int glyphId, MathAxis axis) {
         checkMath();
         checkGlyph(glyphId);
+        int direction = mathDirection(axis);
         try (MemoryStack stack = MemoryStack.stackPush()) {
             java.nio.IntBuffer count = stack.ints(0), italic = stack.ints(0);
             int total =
                     org.lwjgl.util.harfbuzz.OpenType.hb_ot_math_get_glyph_assembly(
-                            font, glyphId, HarfBuzz.HB_DIRECTION_TTB, 0, count, null, italic);
+                            font, glyphId, direction, 0, count, null, italic);
             if (total == 0) return null;
             java.util.List<club.heiqi.uilib.ui.scene.text.font.nativefont.MathData.Part> result =
                     new ArrayList<club.heiqi.uilib.ui.scene.text.font.nativefont.MathData.Part>();
@@ -350,8 +367,8 @@ public final class NativeFontFace implements FontFace {
                     org.lwjgl.util.harfbuzz.hb_ot_math_glyph_part_t.malloc(total)) {
                 count.put(0, total);
                 org.lwjgl.util.harfbuzz.OpenType.hb_ot_math_get_glyph_assembly(
-                        font, glyphId, HarfBuzz.HB_DIRECTION_TTB, 0, count, parts, italic);
-                // HB 竖向部件保留 OpenType 的底到顶顺序，不因 TTB 方向反转。
+                        font, glyphId, direction, 0, count, parts, italic);
+                // HB 保留 OpenType 记录顺序：横向左到右、竖向底到顶，不因方向反转。
                 for (int i = 0; i < count.get(0); i++) {
                     org.lwjgl.util.harfbuzz.hb_ot_math_glyph_part_t part = parts.get(i);
                     result.add(
@@ -366,9 +383,73 @@ public final class NativeFontFace implements FontFace {
             return new club.heiqi.uilib.ui.scene.text.font.nativefont.MathData.Assembly(
                     result,
                     org.lwjgl.util.harfbuzz.OpenType.hb_ot_math_get_min_connector_overlap(
-                                    font, HarfBuzz.HB_DIRECTION_TTB)
+                                    font, direction)
                             * scale,
-                    italic.get(0) * scale);
+                    italic.get(0) * scale,
+                    axis);
+        }
+    }
+
+    private static int mathDirection(MathAxis axis) {
+        return Objects.requireNonNull(axis, "axis") == MathAxis.HORIZONTAL
+                ? HarfBuzz.HB_DIRECTION_LTR
+                : HarfBuzz.HB_DIRECTION_TTB;
+    }
+
+    public float mathTopAccentAttachment(int glyphId) {
+        checkGlyph(glyphId);
+        if (!hasMathData()) return Float.NaN;
+        if (topAccentGlyphs == null) topAccentGlyphs = readTopAccentCoverage();
+        // HB 对未覆盖字形会返回半个横向 advance；它是默认策略，不是真实附件点记录。
+        if (!topAccentGlyphs.get(glyphId)) return Float.NaN;
+        return org.lwjgl.util.harfbuzz.OpenType.hb_ot_math_get_glyph_top_accent_attachment(
+                        font, glyphId)
+                * (pixelScale / 64.0f);
+    }
+
+    /** 只复制 coverage 存在性；值及 device/variation 调整仍由同一 HB font 读取。 */
+    private java.util.BitSet readTopAccentCoverage() {
+        java.util.BitSet covered = new java.util.BitSet();
+        long blob =
+                HarfBuzz.hb_face_reference_table(
+                        HarfBuzz.hb_font_get_face(font), HarfBuzz.hb_tag_from_string("MATH"));
+        try {
+            ByteBuffer data = HarfBuzz.hb_blob_get_data(blob);
+            if (data == null || data.remaining() < 10) return covered;
+            data = data.duplicate().order(java.nio.ByteOrder.BIG_ENDIAN);
+            int info = data.getShort(6) & 65535;
+            if (info == 0) return covered;
+            int attachment = data.getShort(info + 2) & 65535;
+            if (attachment == 0) return covered;
+            attachment += info;
+            int coverageOffset = data.getShort(attachment) & 65535;
+            if (coverageOffset == 0) return covered;
+            int valueCount = data.getShort(attachment + 2) & 65535;
+            // 核查整个 MathValueRecord 数组，不能把只有 coverage 的损坏表视为有效数据。
+            if ((long) attachment + 4 + (long) valueCount * 4 > data.limit())
+                throw new UnsupportedOperationException("MATH top-accent 记录越界");
+            int coverage = attachment + coverageOffset;
+            int format = data.getShort(coverage) & 65535;
+            int count = data.getShort(coverage + 2) & 65535;
+            for (int i = 0; i < count; i++) {
+                if (format == 1) {
+                    int glyph = data.getShort(coverage + 4 + i * 2) & 65535;
+                    if (i < valueCount) covered.set(glyph);
+                } else if (format == 2) {
+                    int record = coverage + 4 + i * 6;
+                    int start = data.getShort(record) & 65535;
+                    int end = data.getShort(record + 2) & 65535;
+                    int first = data.getShort(record + 4) & 65535;
+                    for (int glyph = start;
+                            glyph <= end && first + glyph - start < valueCount;
+                            glyph++) covered.set(glyph);
+                } else throw new UnsupportedOperationException("MATH top-accent coverage 格式非法");
+            }
+            return covered;
+        } catch (IndexOutOfBoundsException error) {
+            throw new UnsupportedOperationException("MATH top-accent coverage 越界", error);
+        } finally {
+            HarfBuzz.hb_blob_destroy(blob);
         }
     }
 

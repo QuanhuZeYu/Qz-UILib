@@ -2,22 +2,24 @@ package club.heiqi.uilib.ui.scene.integration;
 
 import club.heiqi.uilib.testing.TestApplication;
 import club.heiqi.uilib.testing.TestResources;
-
-import java.awt.AlphaComposite;
-import java.awt.Color;
-import java.awt.Graphics2D;
-import java.awt.image.BufferedImage;
-import java.io.File;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Random;
-import javax.imageio.ImageIO;
-import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.render.batch.OrderedQuadBatch;
 import club.heiqi.uilib.ui.render.batch.OrderedQuadBatch.Draw;
 import club.heiqi.uilib.ui.render.batch.OrderedQuadBatch.Quad;
 import club.heiqi.uilib.ui.render.batch.OrderedQuadBatch.State;
 import club.heiqi.uilib.ui.render.batch.OrderedQuadCollector;
+import club.heiqi.uilib.ui.scene.layout.LayoutBox;
+
+import java.awt.AlphaComposite;
+import java.awt.Color;
+import java.awt.Graphics2D;
+import java.awt.geom.Path2D;
+import java.awt.image.BufferedImage;
+import java.io.File;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Random;
+
+import javax.imageio.ImageIO;
 
 /** 无MC真实收集器集成：透明跨资源重叠、裁剪、容量及委托屏障；出图用于agent直接检查。 */
 public final class OrderedBatchScenario extends TestApplication {
@@ -30,7 +32,13 @@ public final class OrderedBatchScenario extends TestApplication {
         else g.setClip(state.clip.x, state.clip.y, state.clip.width, state.clip.height);
         g.setComposite(AlphaComposite.SrcOver);
         g.setColor(new Color(q.color, true));
-        g.fillRect((int) q.x, (int) q.y, (int) q.width, (int) q.height);
+        Path2D.Float path = new Path2D.Float();
+        path.moveTo(q.x0, q.y0);
+        path.lineTo(q.x1, q.y1);
+        path.lineTo(q.x2, q.y2);
+        path.lineTo(q.x3, q.y3);
+        path.closePath();
+        g.fill(path);
     }
 
     public static void main(String[] args) throws Exception {

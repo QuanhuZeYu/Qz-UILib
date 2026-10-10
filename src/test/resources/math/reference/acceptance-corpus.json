@@ -1,0 +1,1521 @@
+{
+  "reference": {
+    "katex": "0.16.21",
+    "commit": "923f2aa15692d06ef77051bfb018c17339ef1ab4",
+    "vscode": "1.140.0",
+    "vscodeCommit": "07f806f999227108933c2e30515b26eecc1fda74",
+    "plugin": "1.1.2",
+    "bundleSha256": "65e825a9ca4ff2a8e85a52d765436f347c212a2241aed1f2ad1b13532e136c39"
+  },
+  "defaults": {
+    "mathEnabled": true,
+    "enableFencedBlocks": true,
+    "globalGroup": true,
+    "macros": {},
+    "trust": false,
+    "throwOnError": true,
+    "strict": "warn",
+    "maxExpand": 1000,
+    "maxSize": "Infinity",
+    "output": "htmlAndMathml",
+    "sources": [
+      {
+        "path": "extensions/markdown-math/src/extension.ts",
+        "lines": [
+          19,
+          34,
+          35,
+          36
+        ],
+        "commit": "07f806f999227108933c2e30515b26eecc1fda74"
+      },
+      {
+        "path": "src/Settings.js",
+        "lines": [
+          66,
+          114,
+          127,
+          170,
+          177,
+          182,
+          192
+        ],
+        "commit": "923f2aa15692d06ef77051bfb018c17339ef1ab4"
+      }
+    ]
+  },
+  "scope": "固定参照引擎输入，displayMode显式；不是插件Markdown定界识别测试",
+  "status": {
+    "semantic": "unverified",
+    "layout": "unverified",
+    "gpu": "unverified"
+  },
+  "cases": [
+    {
+      "id": "href",
+      "tex": "\\href{https://example.org}{x}",
+      "displayMode": false,
+      "result": "rendered",
+      "astTypes": [
+        "color"
+      ],
+      "warnings": [],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "unsupported-output",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "href:inline"
+    },
+    {
+      "id": "url",
+      "tex": "\\url{https://example.org}",
+      "displayMode": false,
+      "result": "rendered",
+      "astTypes": [
+        "color"
+      ],
+      "warnings": [],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "unsupported-output",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "url:inline"
+    },
+    {
+      "id": "image",
+      "tex": "\\includegraphics[height=1em]{https://example.org/a.png}",
+      "displayMode": false,
+      "result": "rendered",
+      "astTypes": [
+        "color"
+      ],
+      "warnings": [],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "unsupported-output",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "image:inline"
+    },
+    {
+      "id": "htmlClass",
+      "tex": "\\htmlClass{probe}{x}",
+      "displayMode": false,
+      "result": "rendered",
+      "astTypes": [
+        "color"
+      ],
+      "warnings": [
+        "LaTeX-incompatible input and strict mode is set to 'warn': HTML extension is disabled on strict mode [htmlExtension]",
+        "LaTeX-incompatible input and strict mode is set to 'warn': HTML extension is disabled on strict mode [htmlExtension]"
+      ],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "unsupported-output",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "htmlClass:inline"
+    },
+    {
+      "id": "htmlId",
+      "tex": "\\htmlId{probe}{x}",
+      "displayMode": false,
+      "result": "rendered",
+      "astTypes": [
+        "color"
+      ],
+      "warnings": [
+        "LaTeX-incompatible input and strict mode is set to 'warn': HTML extension is disabled on strict mode [htmlExtension]",
+        "LaTeX-incompatible input and strict mode is set to 'warn': HTML extension is disabled on strict mode [htmlExtension]"
+      ],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "unsupported-output",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "htmlId:inline"
+    },
+    {
+      "id": "htmlStyle",
+      "tex": "\\htmlStyle{color:red}{x}",
+      "displayMode": false,
+      "result": "rendered",
+      "astTypes": [
+        "color"
+      ],
+      "warnings": [
+        "LaTeX-incompatible input and strict mode is set to 'warn': HTML extension is disabled on strict mode [htmlExtension]",
+        "LaTeX-incompatible input and strict mode is set to 'warn': HTML extension is disabled on strict mode [htmlExtension]"
+      ],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "unsupported-output",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "htmlStyle:inline"
+    },
+    {
+      "id": "htmlData",
+      "tex": "\\htmlData{k=v}{x}",
+      "displayMode": false,
+      "result": "rendered",
+      "astTypes": [
+        "color"
+      ],
+      "warnings": [
+        "LaTeX-incompatible input and strict mode is set to 'warn': HTML extension is disabled on strict mode [htmlExtension]",
+        "LaTeX-incompatible input and strict mode is set to 'warn': HTML extension is disabled on strict mode [htmlExtension]"
+      ],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "unsupported-output",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "htmlData:inline"
+    },
+    {
+      "id": "htmlmathml",
+      "tex": "\\html@mathml{x}{y}",
+      "displayMode": false,
+      "result": "rendered",
+      "astTypes": [
+        "htmlmathml"
+      ],
+      "warnings": [],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "rendered",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "htmlmathml:inline"
+    },
+    {
+      "id": "unknown",
+      "tex": "\\notACommand{x}",
+      "displayMode": false,
+      "result": "error",
+      "error": "ParseError: KaTeX parse error: Undefined control sequence: \\notACommand at position 1: \\̲n̲o̲t̲A̲C̲o̲m̲m̲a̲n̲d̲{x}",
+      "warnings": [],
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "parse-error",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "unknown:inline"
+    },
+    {
+      "id": "package",
+      "tex": "\\usepackage{amsmath}",
+      "displayMode": false,
+      "result": "error",
+      "error": "ParseError: KaTeX parse error: Undefined control sequence: \\usepackage at position 1: \\̲u̲s̲e̲p̲a̲c̲k̲a̲g̲e̲{amsmath}",
+      "warnings": [],
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "parse-error",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "package:inline"
+    },
+    {
+      "id": "document",
+      "tex": "\\begin{document}x\\end{document}",
+      "displayMode": false,
+      "result": "error",
+      "error": "ParseError: KaTeX parse error: No such environment: document at position 7: \\begin{̲d̲o̲c̲u̲m̲e̲n̲t̲}̲x\\end{document}",
+      "warnings": [],
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "parse-error",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "document:inline"
+    },
+    {
+      "id": "newline",
+      "tex": "x\\\\y",
+      "displayMode": false,
+      "result": "rendered",
+      "astTypes": [
+        "mathord",
+        "cr"
+      ],
+      "warnings": [],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "rendered",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "newline:inline"
+    },
+    {
+      "id": "fraction-unbraced",
+      "tex": "\\frac12",
+      "displayMode": false,
+      "result": "rendered",
+      "astTypes": [
+        "genfrac"
+      ],
+      "warnings": [],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "rendered",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "fraction-unbraced:inline"
+    },
+    {
+      "id": "sqrt-unbraced",
+      "tex": "\\sqrt x",
+      "displayMode": false,
+      "result": "rendered",
+      "astTypes": [
+        "sqrt"
+      ],
+      "warnings": [],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "rendered",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "sqrt-unbraced:inline"
+    },
+    {
+      "id": "text-commands",
+      "tex": "\\text{a \\textbf{b} \\alpha}",
+      "displayMode": false,
+      "result": "error",
+      "error": "ParseError: KaTeX parse error: Undefined control sequence: \\alpha at position 20: …t{a \\textbf{b} \\̲a̲l̲p̲h̲a̲}",
+      "warnings": [],
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "parse-error",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "text-commands:inline"
+    },
+    {
+      "id": "limits-repeat",
+      "tex": "\\sum\\limits\\nolimits_{i}",
+      "displayMode": false,
+      "result": "rendered",
+      "astTypes": [
+        "supsub"
+      ],
+      "warnings": [],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "rendered",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "limits-repeat:inline"
+    },
+    {
+      "id": "unicode-unregistered",
+      "tex": "汉字",
+      "displayMode": false,
+      "result": "rendered",
+      "astTypes": [
+        "textord"
+      ],
+      "warnings": [
+        "LaTeX-incompatible input and strict mode is set to 'warn': Unicode text character \"汉\" used in math mode [unicodeTextInMathMode]",
+        "LaTeX-incompatible input and strict mode is set to 'warn': Unicode text character \"字\" used in math mode [unicodeTextInMathMode]",
+        "LaTeX-incompatible input and strict mode is set to 'warn': Unicode text character \"汉\" used in math mode [unicodeTextInMathMode]",
+        "LaTeX-incompatible input and strict mode is set to 'warn': Unicode text character \"字\" used in math mode [unicodeTextInMathMode]"
+      ],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "rendered",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "unicode-unregistered:inline"
+    },
+    {
+      "id": "comment",
+      "tex": "x%comment\ny",
+      "displayMode": false,
+      "result": "rendered",
+      "astTypes": [
+        "mathord"
+      ],
+      "warnings": [],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "rendered",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "comment:inline"
+    },
+    {
+      "id": "prime",
+      "tex": "x''",
+      "displayMode": false,
+      "result": "rendered",
+      "astTypes": [
+        "supsub"
+      ],
+      "warnings": [],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "rendered",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "prime:inline"
+    },
+    {
+      "id": "def-delimited",
+      "tex": "\\def\\f#1,#2{#1+#2}\\f a,b",
+      "displayMode": false,
+      "result": "rendered",
+      "astTypes": [
+        "mathord",
+        "atom"
+      ],
+      "warnings": [],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "rendered",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "def-delimited:inline"
+    },
+    {
+      "id": "newcommand",
+      "tex": "\\newcommand{\\f}[1]{#1^2}\\f{x}",
+      "displayMode": false,
+      "result": "rendered",
+      "astTypes": [
+        "supsub"
+      ],
+      "warnings": [],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "rendered",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "newcommand:inline"
+    },
+    {
+      "id": "tag-inline",
+      "tex": "x\\tag{A}",
+      "displayMode": false,
+      "result": "error",
+      "error": "ParseError: KaTeX parse error: \\tag works only in display equations",
+      "warnings": [],
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "parse-error",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "tag-inline:inline"
+    },
+    {
+      "id": "tag-display",
+      "tex": "x\\tag{A}",
+      "displayMode": true,
+      "result": "rendered",
+      "astTypes": [
+        "tag"
+      ],
+      "warnings": [],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "rendered",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "tag-display:display"
+    },
+    {
+      "id": "htmlStyle-bad",
+      "tex": "\\htmlStyle{color:red}{x}",
+      "displayMode": false,
+      "result": "error",
+      "error": "ParseError: KaTeX parse error: LaTeX-incompatible input and strict mode is set to 'error': HTML extension is disabled on strict mode [htmlExtension]",
+      "warnings": [],
+      "defaultSettings": false,
+      "settings": {
+        "strict": "error"
+      },
+      "outcome": "parse-error",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "htmlStyle-bad:inline"
+    },
+    {
+      "id": "image-invalid-option",
+      "tex": "\\includegraphics[height=1zz]{https://example.org/a.png}",
+      "displayMode": false,
+      "result": "error",
+      "error": "ParseError: KaTeX parse error: Invalid unit: 'zz' in \\includegraphics.",
+      "warnings": [],
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "parse-error",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "image-invalid-option:inline"
+    },
+    {
+      "id": "link-unsafe",
+      "tex": "\\href{javascript:alert(1)}{x}",
+      "displayMode": false,
+      "result": "rendered",
+      "astTypes": [
+        "color"
+      ],
+      "warnings": [],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "unsupported-output",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "link-unsafe:inline"
+    },
+    {
+      "id": "environment:align",
+      "tex": "\\begin{align}a&b\\\\c&d\\end{align}",
+      "displayMode": false,
+      "result": "error",
+      "error": "ParseError: KaTeX parse error: {align} can be used only in display mode.",
+      "warnings": [],
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "parse-error",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "environment:align:inline"
+    },
+    {
+      "id": "environment:align",
+      "tex": "\\begin{align}a&b\\\\c&d\\end{align}",
+      "displayMode": true,
+      "result": "rendered",
+      "astTypes": [
+        "array"
+      ],
+      "warnings": [],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "rendered",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "environment:align:display"
+    },
+    {
+      "id": "environment:align*",
+      "tex": "\\begin{align*}a&b\\\\c&d\\end{align*}",
+      "displayMode": false,
+      "result": "error",
+      "error": "ParseError: KaTeX parse error: {align*} can be used only in display mode.",
+      "warnings": [],
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "parse-error",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "environment:align*:inline"
+    },
+    {
+      "id": "environment:align*",
+      "tex": "\\begin{align*}a&b\\\\c&d\\end{align*}",
+      "displayMode": true,
+      "result": "rendered",
+      "astTypes": [
+        "array"
+      ],
+      "warnings": [],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "rendered",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "environment:align*:display"
+    },
+    {
+      "id": "environment:alignat",
+      "tex": "\\begin{alignat}{1}a&b\\\\c&d\\end{alignat}",
+      "displayMode": false,
+      "result": "error",
+      "error": "ParseError: KaTeX parse error: {alignat} can be used only in display mode.",
+      "warnings": [],
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "parse-error",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "environment:alignat:inline"
+    },
+    {
+      "id": "environment:alignat",
+      "tex": "\\begin{alignat}{1}a&b\\\\c&d\\end{alignat}",
+      "displayMode": true,
+      "result": "rendered",
+      "astTypes": [
+        "array"
+      ],
+      "warnings": [],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "rendered",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "environment:alignat:display"
+    },
+    {
+      "id": "environment:alignat*",
+      "tex": "\\begin{alignat*}{1}a&b\\\\c&d\\end{alignat*}",
+      "displayMode": false,
+      "result": "error",
+      "error": "ParseError: KaTeX parse error: {alignat*} can be used only in display mode.",
+      "warnings": [],
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "parse-error",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "environment:alignat*:inline"
+    },
+    {
+      "id": "environment:alignat*",
+      "tex": "\\begin{alignat*}{1}a&b\\\\c&d\\end{alignat*}",
+      "displayMode": true,
+      "result": "rendered",
+      "astTypes": [
+        "array"
+      ],
+      "warnings": [],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "rendered",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "environment:alignat*:display"
+    },
+    {
+      "id": "environment:aligned",
+      "tex": "\\begin{aligned}a&b\\\\c&d\\end{aligned}",
+      "displayMode": false,
+      "result": "rendered",
+      "astTypes": [
+        "array"
+      ],
+      "warnings": [],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "rendered",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "environment:aligned:inline"
+    },
+    {
+      "id": "environment:aligned",
+      "tex": "\\begin{aligned}a&b\\\\c&d\\end{aligned}",
+      "displayMode": true,
+      "result": "rendered",
+      "astTypes": [
+        "array"
+      ],
+      "warnings": [],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "rendered",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "environment:aligned:display"
+    },
+    {
+      "id": "environment:alignedat",
+      "tex": "\\begin{alignedat}{1}a&b\\\\c&d\\end{alignedat}",
+      "displayMode": false,
+      "result": "rendered",
+      "astTypes": [
+        "array"
+      ],
+      "warnings": [],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "rendered",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "environment:alignedat:inline"
+    },
+    {
+      "id": "environment:alignedat",
+      "tex": "\\begin{alignedat}{1}a&b\\\\c&d\\end{alignedat}",
+      "displayMode": true,
+      "result": "rendered",
+      "astTypes": [
+        "array"
+      ],
+      "warnings": [],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "rendered",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "environment:alignedat:display"
+    },
+    {
+      "id": "environment:array",
+      "tex": "\\begin{array}{lc}a&b\\\\c&d\\end{array}",
+      "displayMode": false,
+      "result": "rendered",
+      "astTypes": [
+        "array"
+      ],
+      "warnings": [],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "rendered",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "environment:array:inline"
+    },
+    {
+      "id": "environment:array",
+      "tex": "\\begin{array}{lc}a&b\\\\c&d\\end{array}",
+      "displayMode": true,
+      "result": "rendered",
+      "astTypes": [
+        "array"
+      ],
+      "warnings": [],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "rendered",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "environment:array:display"
+    },
+    {
+      "id": "environment:bmatrix",
+      "tex": "\\begin{bmatrix}a&b\\\\c&d\\end{bmatrix}",
+      "displayMode": false,
+      "result": "rendered",
+      "astTypes": [
+        "leftright"
+      ],
+      "warnings": [],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "rendered",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "environment:bmatrix:inline"
+    },
+    {
+      "id": "environment:bmatrix",
+      "tex": "\\begin{bmatrix}a&b\\\\c&d\\end{bmatrix}",
+      "displayMode": true,
+      "result": "rendered",
+      "astTypes": [
+        "leftright"
+      ],
+      "warnings": [],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "rendered",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "environment:bmatrix:display"
+    },
+    {
+      "id": "environment:Bmatrix",
+      "tex": "\\begin{Bmatrix}a&b\\\\c&d\\end{Bmatrix}",
+      "displayMode": false,
+      "result": "rendered",
+      "astTypes": [
+        "leftright"
+      ],
+      "warnings": [],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "rendered",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "environment:Bmatrix:inline"
+    },
+    {
+      "id": "environment:Bmatrix",
+      "tex": "\\begin{Bmatrix}a&b\\\\c&d\\end{Bmatrix}",
+      "displayMode": true,
+      "result": "rendered",
+      "astTypes": [
+        "leftright"
+      ],
+      "warnings": [],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "rendered",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "environment:Bmatrix:display"
+    },
+    {
+      "id": "environment:bmatrix*",
+      "tex": "\\begin{bmatrix*}a&b\\\\c&d\\end{bmatrix*}",
+      "displayMode": false,
+      "result": "rendered",
+      "astTypes": [
+        "leftright"
+      ],
+      "warnings": [],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "rendered",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "environment:bmatrix*:inline"
+    },
+    {
+      "id": "environment:bmatrix*",
+      "tex": "\\begin{bmatrix*}a&b\\\\c&d\\end{bmatrix*}",
+      "displayMode": true,
+      "result": "rendered",
+      "astTypes": [
+        "leftright"
+      ],
+      "warnings": [],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "rendered",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "environment:bmatrix*:display"
+    },
+    {
+      "id": "environment:Bmatrix*",
+      "tex": "\\begin{Bmatrix*}a&b\\\\c&d\\end{Bmatrix*}",
+      "displayMode": false,
+      "result": "rendered",
+      "astTypes": [
+        "leftright"
+      ],
+      "warnings": [],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "rendered",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "environment:Bmatrix*:inline"
+    },
+    {
+      "id": "environment:Bmatrix*",
+      "tex": "\\begin{Bmatrix*}a&b\\\\c&d\\end{Bmatrix*}",
+      "displayMode": true,
+      "result": "rendered",
+      "astTypes": [
+        "leftright"
+      ],
+      "warnings": [],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "rendered",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "environment:Bmatrix*:display"
+    },
+    {
+      "id": "environment:cases",
+      "tex": "\\begin{cases}a&b\\\\c&d\\end{cases}",
+      "displayMode": false,
+      "result": "rendered",
+      "astTypes": [
+        "leftright"
+      ],
+      "warnings": [],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "rendered",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "environment:cases:inline"
+    },
+    {
+      "id": "environment:cases",
+      "tex": "\\begin{cases}a&b\\\\c&d\\end{cases}",
+      "displayMode": true,
+      "result": "rendered",
+      "astTypes": [
+        "leftright"
+      ],
+      "warnings": [],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "rendered",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "environment:cases:display"
+    },
+    {
+      "id": "environment:CD",
+      "tex": "\\begin{CD}A @>f>> B \\\\ @VVgV @VhVV \\\\ C @>>k> D\\end{CD}",
+      "displayMode": false,
+      "result": "error",
+      "error": "ParseError: KaTeX parse error: {CD} can be used only in display mode.",
+      "warnings": [],
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "parse-error",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "environment:CD:inline"
+    },
+    {
+      "id": "environment:CD",
+      "tex": "\\begin{CD}A @>f>> B \\\\ @VVgV @VhVV \\\\ C @>>k> D\\end{CD}",
+      "displayMode": true,
+      "result": "rendered",
+      "astTypes": [
+        "array"
+      ],
+      "warnings": [],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "rendered",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "environment:CD:display"
+    },
+    {
+      "id": "environment:darray",
+      "tex": "\\begin{darray}{lc}a&b\\\\c&d\\end{darray}",
+      "displayMode": false,
+      "result": "rendered",
+      "astTypes": [
+        "array"
+      ],
+      "warnings": [],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "rendered",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "environment:darray:inline"
+    },
+    {
+      "id": "environment:darray",
+      "tex": "\\begin{darray}{lc}a&b\\\\c&d\\end{darray}",
+      "displayMode": true,
+      "result": "rendered",
+      "astTypes": [
+        "array"
+      ],
+      "warnings": [],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "rendered",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "environment:darray:display"
+    },
+    {
+      "id": "environment:dcases",
+      "tex": "\\begin{dcases}a&b\\\\c&d\\end{dcases}",
+      "displayMode": false,
+      "result": "rendered",
+      "astTypes": [
+        "leftright"
+      ],
+      "warnings": [],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "rendered",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "environment:dcases:inline"
+    },
+    {
+      "id": "environment:dcases",
+      "tex": "\\begin{dcases}a&b\\\\c&d\\end{dcases}",
+      "displayMode": true,
+      "result": "rendered",
+      "astTypes": [
+        "leftright"
+      ],
+      "warnings": [],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "rendered",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "environment:dcases:display"
+    },
+    {
+      "id": "environment:drcases",
+      "tex": "\\begin{drcases}a&b\\\\c&d\\end{drcases}",
+      "displayMode": false,
+      "result": "rendered",
+      "astTypes": [
+        "leftright"
+      ],
+      "warnings": [],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "rendered",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "environment:drcases:inline"
+    },
+    {
+      "id": "environment:drcases",
+      "tex": "\\begin{drcases}a&b\\\\c&d\\end{drcases}",
+      "displayMode": true,
+      "result": "rendered",
+      "astTypes": [
+        "leftright"
+      ],
+      "warnings": [],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "rendered",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "environment:drcases:display"
+    },
+    {
+      "id": "environment:equation",
+      "tex": "\\begin{equation}a\\\\b\\end{equation}",
+      "displayMode": false,
+      "result": "error",
+      "error": "ParseError: KaTeX parse error: {equation} can be used only in display mode.",
+      "warnings": [],
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "parse-error",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "environment:equation:inline"
+    },
+    {
+      "id": "environment:equation",
+      "tex": "\\begin{equation}a\\\\b\\end{equation}",
+      "displayMode": true,
+      "result": "rendered",
+      "astTypes": [
+        "array"
+      ],
+      "warnings": [
+        "LaTeX-incompatible input and strict mode is set to 'warn': In LaTeX, \\\\ or \\newline does nothing in display mode [newLineInDisplayMode]",
+        "LaTeX-incompatible input and strict mode is set to 'warn': In LaTeX, \\\\ or \\newline does nothing in display mode [newLineInDisplayMode]"
+      ],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "rendered",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "environment:equation:display"
+    },
+    {
+      "id": "environment:equation*",
+      "tex": "\\begin{equation*}a\\\\b\\end{equation*}",
+      "displayMode": false,
+      "result": "error",
+      "error": "ParseError: KaTeX parse error: {equation*} can be used only in display mode.",
+      "warnings": [],
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "parse-error",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "environment:equation*:inline"
+    },
+    {
+      "id": "environment:equation*",
+      "tex": "\\begin{equation*}a\\\\b\\end{equation*}",
+      "displayMode": true,
+      "result": "rendered",
+      "astTypes": [
+        "array"
+      ],
+      "warnings": [
+        "LaTeX-incompatible input and strict mode is set to 'warn': In LaTeX, \\\\ or \\newline does nothing in display mode [newLineInDisplayMode]",
+        "LaTeX-incompatible input and strict mode is set to 'warn': In LaTeX, \\\\ or \\newline does nothing in display mode [newLineInDisplayMode]"
+      ],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "rendered",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "environment:equation*:display"
+    },
+    {
+      "id": "environment:gather",
+      "tex": "\\begin{gather}a\\\\b\\end{gather}",
+      "displayMode": false,
+      "result": "error",
+      "error": "ParseError: KaTeX parse error: {gather} can be used only in display mode.",
+      "warnings": [],
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "parse-error",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "environment:gather:inline"
+    },
+    {
+      "id": "environment:gather",
+      "tex": "\\begin{gather}a\\\\b\\end{gather}",
+      "displayMode": true,
+      "result": "rendered",
+      "astTypes": [
+        "array"
+      ],
+      "warnings": [],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "rendered",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "environment:gather:display"
+    },
+    {
+      "id": "environment:gather*",
+      "tex": "\\begin{gather*}a\\\\b\\end{gather*}",
+      "displayMode": false,
+      "result": "error",
+      "error": "ParseError: KaTeX parse error: {gather*} can be used only in display mode.",
+      "warnings": [],
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "parse-error",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "environment:gather*:inline"
+    },
+    {
+      "id": "environment:gather*",
+      "tex": "\\begin{gather*}a\\\\b\\end{gather*}",
+      "displayMode": true,
+      "result": "rendered",
+      "astTypes": [
+        "array"
+      ],
+      "warnings": [],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "rendered",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "environment:gather*:display"
+    },
+    {
+      "id": "environment:gathered",
+      "tex": "\\begin{gathered}a\\\\b\\end{gathered}",
+      "displayMode": false,
+      "result": "rendered",
+      "astTypes": [
+        "array"
+      ],
+      "warnings": [],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "rendered",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "environment:gathered:inline"
+    },
+    {
+      "id": "environment:gathered",
+      "tex": "\\begin{gathered}a\\\\b\\end{gathered}",
+      "displayMode": true,
+      "result": "rendered",
+      "astTypes": [
+        "array"
+      ],
+      "warnings": [],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "rendered",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "environment:gathered:display"
+    },
+    {
+      "id": "environment:matrix",
+      "tex": "\\begin{matrix}a&b\\\\c&d\\end{matrix}",
+      "displayMode": false,
+      "result": "rendered",
+      "astTypes": [
+        "array"
+      ],
+      "warnings": [],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "rendered",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "environment:matrix:inline"
+    },
+    {
+      "id": "environment:matrix",
+      "tex": "\\begin{matrix}a&b\\\\c&d\\end{matrix}",
+      "displayMode": true,
+      "result": "rendered",
+      "astTypes": [
+        "array"
+      ],
+      "warnings": [],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "rendered",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "environment:matrix:display"
+    },
+    {
+      "id": "environment:matrix*",
+      "tex": "\\begin{matrix*}a&b\\\\c&d\\end{matrix*}",
+      "displayMode": false,
+      "result": "rendered",
+      "astTypes": [
+        "array"
+      ],
+      "warnings": [],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "rendered",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "environment:matrix*:inline"
+    },
+    {
+      "id": "environment:matrix*",
+      "tex": "\\begin{matrix*}a&b\\\\c&d\\end{matrix*}",
+      "displayMode": true,
+      "result": "rendered",
+      "astTypes": [
+        "array"
+      ],
+      "warnings": [],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "rendered",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "environment:matrix*:display"
+    },
+    {
+      "id": "environment:pmatrix",
+      "tex": "\\begin{pmatrix}a&b\\\\c&d\\end{pmatrix}",
+      "displayMode": false,
+      "result": "rendered",
+      "astTypes": [
+        "leftright"
+      ],
+      "warnings": [],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "rendered",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "environment:pmatrix:inline"
+    },
+    {
+      "id": "environment:pmatrix",
+      "tex": "\\begin{pmatrix}a&b\\\\c&d\\end{pmatrix}",
+      "displayMode": true,
+      "result": "rendered",
+      "astTypes": [
+        "leftright"
+      ],
+      "warnings": [],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "rendered",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "environment:pmatrix:display"
+    },
+    {
+      "id": "environment:pmatrix*",
+      "tex": "\\begin{pmatrix*}a&b\\\\c&d\\end{pmatrix*}",
+      "displayMode": false,
+      "result": "rendered",
+      "astTypes": [
+        "leftright"
+      ],
+      "warnings": [],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "rendered",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "environment:pmatrix*:inline"
+    },
+    {
+      "id": "environment:pmatrix*",
+      "tex": "\\begin{pmatrix*}a&b\\\\c&d\\end{pmatrix*}",
+      "displayMode": true,
+      "result": "rendered",
+      "astTypes": [
+        "leftright"
+      ],
+      "warnings": [],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "rendered",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "environment:pmatrix*:display"
+    },
+    {
+      "id": "environment:rcases",
+      "tex": "\\begin{rcases}a&b\\\\c&d\\end{rcases}",
+      "displayMode": false,
+      "result": "rendered",
+      "astTypes": [
+        "leftright"
+      ],
+      "warnings": [],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "rendered",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "environment:rcases:inline"
+    },
+    {
+      "id": "environment:rcases",
+      "tex": "\\begin{rcases}a&b\\\\c&d\\end{rcases}",
+      "displayMode": true,
+      "result": "rendered",
+      "astTypes": [
+        "leftright"
+      ],
+      "warnings": [],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "rendered",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "environment:rcases:display"
+    },
+    {
+      "id": "environment:smallmatrix",
+      "tex": "\\begin{smallmatrix}a&b\\\\c&d\\end{smallmatrix}",
+      "displayMode": false,
+      "result": "rendered",
+      "astTypes": [
+        "array"
+      ],
+      "warnings": [],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "rendered",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "environment:smallmatrix:inline"
+    },
+    {
+      "id": "environment:smallmatrix",
+      "tex": "\\begin{smallmatrix}a&b\\\\c&d\\end{smallmatrix}",
+      "displayMode": true,
+      "result": "rendered",
+      "astTypes": [
+        "array"
+      ],
+      "warnings": [],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "rendered",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "environment:smallmatrix:display"
+    },
+    {
+      "id": "environment:split",
+      "tex": "\\begin{split}a&b\\\\c&d\\end{split}",
+      "displayMode": false,
+      "result": "error",
+      "error": "ParseError: KaTeX parse error: {split} can be used only in display mode.",
+      "warnings": [],
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "parse-error",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "environment:split:inline"
+    },
+    {
+      "id": "environment:split",
+      "tex": "\\begin{split}a&b\\\\c&d\\end{split}",
+      "displayMode": true,
+      "result": "rendered",
+      "astTypes": [
+        "array"
+      ],
+      "warnings": [],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "rendered",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "environment:split:display"
+    },
+    {
+      "id": "environment:subarray",
+      "tex": "\\begin{subarray}{c}a\\\\b\\end{subarray}",
+      "displayMode": false,
+      "result": "rendered",
+      "astTypes": [
+        "array"
+      ],
+      "warnings": [],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "rendered",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "environment:subarray:inline"
+    },
+    {
+      "id": "environment:subarray",
+      "tex": "\\begin{subarray}{c}a\\\\b\\end{subarray}",
+      "displayMode": true,
+      "result": "rendered",
+      "astTypes": [
+        "array"
+      ],
+      "warnings": [],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "rendered",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "environment:subarray:display"
+    },
+    {
+      "id": "environment:vmatrix",
+      "tex": "\\begin{vmatrix}a&b\\\\c&d\\end{vmatrix}",
+      "displayMode": false,
+      "result": "rendered",
+      "astTypes": [
+        "leftright"
+      ],
+      "warnings": [],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "rendered",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "environment:vmatrix:inline"
+    },
+    {
+      "id": "environment:vmatrix",
+      "tex": "\\begin{vmatrix}a&b\\\\c&d\\end{vmatrix}",
+      "displayMode": true,
+      "result": "rendered",
+      "astTypes": [
+        "leftright"
+      ],
+      "warnings": [],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "rendered",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "environment:vmatrix:display"
+    },
+    {
+      "id": "environment:Vmatrix",
+      "tex": "\\begin{Vmatrix}a&b\\\\c&d\\end{Vmatrix}",
+      "displayMode": false,
+      "result": "rendered",
+      "astTypes": [
+        "leftright"
+      ],
+      "warnings": [],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "rendered",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "environment:Vmatrix:inline"
+    },
+    {
+      "id": "environment:Vmatrix",
+      "tex": "\\begin{Vmatrix}a&b\\\\c&d\\end{Vmatrix}",
+      "displayMode": true,
+      "result": "rendered",
+      "astTypes": [
+        "leftright"
+      ],
+      "warnings": [],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "rendered",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "environment:Vmatrix:display"
+    },
+    {
+      "id": "environment:vmatrix*",
+      "tex": "\\begin{vmatrix*}a&b\\\\c&d\\end{vmatrix*}",
+      "displayMode": false,
+      "result": "rendered",
+      "astTypes": [
+        "leftright"
+      ],
+      "warnings": [],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "rendered",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "environment:vmatrix*:inline"
+    },
+    {
+      "id": "environment:vmatrix*",
+      "tex": "\\begin{vmatrix*}a&b\\\\c&d\\end{vmatrix*}",
+      "displayMode": true,
+      "result": "rendered",
+      "astTypes": [
+        "leftright"
+      ],
+      "warnings": [],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "rendered",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "environment:vmatrix*:display"
+    },
+    {
+      "id": "environment:Vmatrix*",
+      "tex": "\\begin{Vmatrix*}a&b\\\\c&d\\end{Vmatrix*}",
+      "displayMode": false,
+      "result": "rendered",
+      "astTypes": [
+        "leftright"
+      ],
+      "warnings": [],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "rendered",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "environment:Vmatrix*:inline"
+    },
+    {
+      "id": "environment:Vmatrix*",
+      "tex": "\\begin{Vmatrix*}a&b\\\\c&d\\end{Vmatrix*}",
+      "displayMode": true,
+      "result": "rendered",
+      "astTypes": [
+        "leftright"
+      ],
+      "warnings": [],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "rendered",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "environment:Vmatrix*:display"
+    },
+    {
+      "id": "macro-cross-formula",
+      "result": "rendered",
+      "definedKeys": [
+        "\\persist"
+      ],
+      "markupOmitted": true,
+      "defaultSettings": true,
+      "settings": {},
+      "outcome": "rendered",
+      "source": "build/math-complete/reference/behavior-probes.json",
+      "caseId": "macro-cross-formula",
+      "sequence": [
+        "\\def\\persist{a}",
+        "\\persist"
+      ],
+      "sharedMacros": true
+    }
+  ]
+}

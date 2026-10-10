@@ -1,7 +1,5 @@
 package club.heiqi.uilib.ui.scene.control;
 
-import java.util.Collections;
-import java.util.List;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.scene.layout.ChildPlacements;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
@@ -11,6 +9,9 @@ import club.heiqi.uilib.ui.scene.layout.SceneGeometryView;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.PaintPlanBuilder;
 import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
+
+import java.util.Collections;
+import java.util.List;
 
 /** 自定义控件声明内容与区域；测量/排列/绘制不能写业务状态或回写布局。 */
 public interface SceneControl {
@@ -53,6 +54,10 @@ public interface SceneControl {
 
     void paint(SceneNode node, SceneGeometryView geometry, PaintPlanBuilder target);
 
+    /** 本节点当前有效几何子树结束后、下一兄弟内容之前的局部装饰。 与paint共用同代几何和失效生命周期；全页tooltip仍由paintOverlay处理。 */
+    default void paintAfterChildren(
+            SceneNode node, SceneGeometryView geometry, PaintPlanBuilder target) {}
+
     /** 只读呈现准备；仅在现有paint失效路径调用，动态文字缓存消费当前主题/资源/viewport。 */
     default void preparePaint(
             SceneNode node,
@@ -60,9 +65,7 @@ public interface SceneControl {
             SceneTextMeasurer text,
             long metricsRevision) {}
 
-    /** 返回已挂载的直属逻辑占位子树。框架捕获同代paint，不创建挂载或修改hidden声明。
-     * 主输入几何仍依显隐事实；捕获计划仅作本次资源不可用时的呈现分支。
-     */
+    /** 返回已挂载的直属逻辑占位子树。框架捕获同代paint，不创建挂载或修改hidden声明。 主输入几何仍依显隐事实；捕获计划仅作本次资源不可用时的呈现分支。 */
     default SceneNode paintFallbackChild(SceneNode node) {
         return null;
     }

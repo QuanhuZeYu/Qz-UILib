@@ -9,14 +9,26 @@ import club.heiqi.uilib.ui.scene.text.TextStyle;
 import club.heiqi.uilib.ui.scene.text.font.FontSource;
 import club.heiqi.uilib.ui.scene.text.font.FontTextService;
 import club.heiqi.uilib.ui.scene.text.font.MathAssembly;
-import club.heiqi.uilib.ui.scene.text.font.nativefont.InkBounds;
 import club.heiqi.uilib.ui.scene.text.font.glyph.GlyphKey;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.FontEngine;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.FontFace;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.FontSession;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.GlyphBitmap;
+import club.heiqi.uilib.ui.scene.text.font.nativefont.InkBounds;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.MathData;
+import club.heiqi.uilib.ui.scene.text.math.MathAxis;
 import club.heiqi.uilib.ui.scene.text.math.MathFont;
+
+import org.lwjgl.PointerBuffer;
+import org.lwjgl.system.MemoryStack;
+import org.lwjgl.system.MemoryUtil;
+import org.lwjgl.util.freetype.FT_Face;
+import org.lwjgl.util.freetype.FreeType;
+import org.lwjgl.util.harfbuzz.HarfBuzz;
+import org.lwjgl.util.harfbuzz.OpenType;
+import org.lwjgl.util.harfbuzz.hb_ot_math_glyph_part_t;
+import org.lwjgl.util.harfbuzz.hb_ot_math_glyph_variant_t;
+
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
@@ -29,15 +41,6 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
-import org.lwjgl.PointerBuffer;
-import org.lwjgl.system.MemoryStack;
-import org.lwjgl.system.MemoryUtil;
-import org.lwjgl.util.freetype.FT_Face;
-import org.lwjgl.util.freetype.FreeType;
-import org.lwjgl.util.harfbuzz.HarfBuzz;
-import org.lwjgl.util.harfbuzz.OpenType;
-import org.lwjgl.util.harfbuzz.hb_ot_math_glyph_variant_t;
-import org.lwjgl.util.harfbuzz.hb_ot_math_glyph_part_t;
 
 /** 真实 FT/HB 数学字体场景；独立 raw 探针核对单位、variant、光栅及资源生命周期，无 MC/GL。 */
 public final class MathFontScenario extends TestApplication {
@@ -58,6 +61,9 @@ public final class MathFontScenario extends TestApplication {
         scenario("官方字体MATH与完整许可", this::verifyResource);
         scenario("原始HB常量单位及真实variant光栅", this::verifyNative);
         scenario("真实assembly连接与多em大型根号圆花括号", this::verifyAssemblies);
+        scenario("真实横轴variants部件连接及无parts准确边界", this::verifyHorizontal);
+        scenario("真实top-accent附件点与无数据代际边界", this::verifyTopAccent);
+        scenario("长箭头双箭头鱼叉横向原始facts", this::verifyArrowFacts);
         scenario("零extender非法连接及等量伸展边界", this::verifyAssemblyEdges);
         scenario("显示算子建议高度与严格伸缩分离", this::verifyDisplayOperators);
         scenario("具名隔离缺字超限及显式链边界", this::verifyBoundaries);
@@ -396,6 +402,473 @@ public final class MathFontScenario extends TestApplication {
                         + Arrays.toString(overlaps));
     }
 
+    private void verifyHorizontal() throws Exception {
+        try (FontTextService service = new FontTextService(new LwjglFontEngine())) {
+            for (float em : new float[] {0.75f, 18, 32.3f, 64}) {
+                MathFont math = service.mathFont(style(em));
+                FontSource source = onlyGlyphSource(math.text("x"));
+                try (RawMath raw = new RawMath(bytes, em);
+                        FontSession session = new LwjglFontEngine().openSession();
+                        FontFace face = source.openFace(session, em)) {
+                    for (int cp :
+                            new int[] {
+                                0x0302, 0x0303, 0x23de, 0x23df, 0x20d7, 0x2190, 0x2192, 0x2194
+                            }) {
+                        int base = FreeType.FT_Get_Char_Index(raw.face, cp);
+                        List<MathData.Variant> expected = raw.variants(base, MathAxis.HORIZONTAL);
+                        List<MathData.Variant> snapshot =
+                                face.mathVariants(base, MathAxis.HORIZONTAL);
+                        require(
+                                !expected.isEmpty() && snapshot.size() == expected.size(),
+                                "横向variant缺失");
+                        float maximum = 0;
+                        for (int i = 0; i < expected.size(); i++) {
+                            MathData.Variant part = expected.get(i), actual = snapshot.get(i);
+                            require(
+                                    actual.glyphId == part.glyphId
+                                            && actual.axis == MathAxis.HORIZONTAL,
+                                    "横向variant身份或顺序错误");
+                            require(Float.isNaN(actual.verticalAdvance), "横向variant冒充旧竖向度量");
+                            near(
+                                    actual.stretchAdvance,
+                                    part.stretchAdvance,
+                                    "横向variant advance单位错误");
+                            maximum = Math.max(maximum, part.stretchAdvance);
+                            TextLayout complete =
+                                    math.stretch(cp, part.stretchAdvance, MathAxis.HORIZONTAL);
+                            TextLayout.Glyph chosen = onlyGlyph(complete);
+                            if (complete.advanceWidth < part.stretchAdvance - raw.scale
+                                    || cp == 0x2190
+                                    || cp == 0x2192
+                                    || cp == 0x2194
+                                    || (cp == 0x0302 || cp == 0x0303) && i == 0) {
+                                float rawHAdvance =
+                                        HarfBuzz.hb_font_get_glyph_h_advance(
+                                                        raw.font, chosen.glyphId)
+                                                * raw.scale;
+                                System.out.println(
+                                        "horizontal variant probe U+"
+                                                + Integer.toHexString(cp)
+                                                + " em="
+                                                + em
+                                                + " target="
+                                                + part.stretchAdvance
+                                                + " chosenVariant="
+                                                + chosen.glyphId
+                                                + " fullAdvance="
+                                                + part.stretchAdvance
+                                                + " text.width="
+                                                + complete.advanceWidth
+                                                + " cluster.advance="
+                                                + complete.lines().get(0).clusters().get(0).advance
+                                                + " glyph.x="
+                                                + chosen.x
+                                                + " glyph.hAdvance="
+                                                + chosen.xAdvance
+                                                + " rawHadvance="
+                                                + rawHAdvance
+                                                + " ink="
+                                                + chosen.inkBounds.left
+                                                + ","
+                                                + chosen.inkBounds.top
+                                                + ","
+                                                + chosen.inkBounds.right
+                                                + ","
+                                                + chosen.inkBounds.bottom
+                                                + " inkspan="
+                                                + (chosen.inkBounds.right - chosen.inkBounds.left));
+                            }
+                            require(chosen.glyphId == part.glyphId, "完整横向variant未优先使用");
+                            near(
+                                    onlyGlyph(complete).xAdvance,
+                                    HarfBuzz.hb_font_get_glyph_h_advance(raw.font, part.glyphId)
+                                            * raw.scale,
+                                    "横向variant未保留真实h advance");
+                            require(
+                                    complete.advanceWidth >= part.stretchAdvance,
+                                    "完整横向variant没有实际覆盖width目标");
+                            TextLayout.Cluster cluster = complete.lines().get(0).clusters().get(0);
+                            near(
+                                    cluster.advance,
+                                    part.stretchAdvance,
+                                    "横向MATH逻辑跨度被hinted h advance取代");
+                            near(cluster.x, 0, "横向MATH逻辑跨度再次叠加glyph负bearing");
+                            InkBounds originalInk = face.glyphInkBounds(part.glyphId);
+                            near(chosen.inkBounds.left, originalInk.left, "完整variant墨迹被改写");
+                            near(chosen.inkBounds.top, originalInk.top, "完整variant墨迹被改写");
+                            near(chosen.inkBounds.right, originalInk.right, "完整variant墨迹被改写");
+                            near(chosen.inkBounds.bottom, originalInk.bottom, "完整variant墨迹被改写");
+                            near(chosen.x, Math.max(0, -originalInk.left), "原字形负bearing定位被改变");
+                            float glyphEnvelope =
+                                    chosen.x + Math.max(chosen.xAdvance, originalInk.right);
+                            require(
+                                    complete.advanceWidth >= glyphEnvelope,
+                                    "真实glyph包络被MATH span裁掉");
+                            near(
+                                    complete.advanceWidth,
+                                    Math.max(part.stretchAdvance, glyphEnvelope),
+                                    "横向逻辑盒不是MATH跨度与glyph包络并集（可能重复叠加leftOffset）");
+                        }
+                        final float beyond = Math.nextUp(maximum);
+                        MathData.Assembly assembly = raw.assembly(base, MathAxis.HORIZONTAL);
+                        MathData.Assembly actual = face.mathAssembly(base, MathAxis.HORIZONTAL);
+                        System.out.println(
+                                "raw horizontal U+"
+                                        + Integer.toHexString(cp)
+                                        + " em="
+                                        + em
+                                        + " direction=HB_DIRECTION_LTR"
+                                        + " variants="
+                                        + expected.size()
+                                        + " maximum="
+                                        + maximum
+                                        + " parts="
+                                        + (assembly == null ? 0 : assembly.parts().size()));
+                        if (assembly == null) {
+                            require(
+                                    actual == null && (cp == 0x0302 || cp == 0x0303),
+                                    "无parts的准确字体边界丢失");
+                            expect(
+                                    UnsupportedOperationException.class,
+                                    () -> math.stretch(cp, beyond, MathAxis.HORIZONTAL));
+                            continue;
+                        }
+                        require(
+                                actual != null && actual.axis == MathAxis.HORIZONTAL,
+                                "横向assembly快照缺失");
+                        near(actual.minOverlap, assembly.minOverlap, "横向minOverlap轴或单位错误");
+                        near(
+                                actual.italicCorrection,
+                                assembly.italicCorrection,
+                                "横向assembly italic单位错误");
+                        MathData.Assembly design = assemblyDesign(bytes, base, MathAxis.HORIZONTAL);
+                        require(design.parts().size() == assembly.parts().size(), "原始SFNT部件数量错误");
+                        require(actual.parts().size() == assembly.parts().size(), "快照部件数量错误");
+                        for (int i = 0; i < assembly.parts().size(); i++) {
+                            MathData.Part part = assembly.parts().get(i),
+                                    saved = actual.parts().get(i),
+                                    sfnt = design.parts().get(i);
+                            require(
+                                    part.glyphId == sfnt.glyphId
+                                            && saved.glyphId == part.glyphId
+                                            && part.extender == sfnt.extender
+                                            && saved.extender == part.extender,
+                                    "HB LTR未保留字体左到右记录身份");
+                            near(saved.startConnector, part.startConnector, "横向startConnector单位错误");
+                            near(saved.endConnector, part.endConnector, "横向endConnector单位错误");
+                            near(saved.fullAdvance, part.fullAdvance, "横向fullAdvance单位错误");
+                            raw.nearHorizontalDesign(part.startConnector, sfnt.startConnector);
+                            raw.nearHorizontalDesign(part.endConnector, sfnt.endConnector);
+                            raw.nearHorizontalDesign(part.fullAdvance, sfnt.fullAdvance);
+                            System.out.println(
+                                    "raw horizontal part["
+                                            + i
+                                            + "] glyph="
+                                            + part.glyphId
+                                            + " start="
+                                            + part.startConnector
+                                            + " end="
+                                            + part.endConnector
+                                            + " full="
+                                            + part.fullAdvance
+                                            + " extender="
+                                            + part.extender);
+                        }
+                        raw.nearHorizontalDesign(assembly.minOverlap, design.minOverlap);
+                        // STIX v2.13b171 的右帽 start=0；上游 #289 明确记录此缺陷，不能猜测反转/交换。
+                        if (cp == 0x2192 || cp == 0x2194) {
+                            MathData.Part cap = assembly.parts().get(assembly.parts().size() - 1);
+                            require(
+                                    cap.startConnector == 0 && assembly.minOverlap > 0,
+                                    "STIX右箭头connector反例未命中");
+                            expect(
+                                    UnsupportedOperationException.class,
+                                    () -> math.stretch(cp, beyond, MathAxis.HORIZONTAL));
+                            continue;
+                        }
+                        for (float target :
+                                new float[] {
+                                    beyond, maximum + em, Math.max(maximum + em, 8 * em), 16 * em
+                                }) {
+                            TextLayout layout = math.stretch(cp, target, MathAxis.HORIZONTAL);
+                            verifyHorizontalLayout(
+                                    math, raw, face, assembly, layout, em, cp, target);
+                        }
+                        expect(UnsupportedOperationException.class, () -> actual.parts().clear());
+                        MathAssembly.Result copied = MathAssembly.build(actual, 16 * em);
+                        float copiedEnd =
+                                copied.placements().get(copied.placements().size() - 1).offset
+                                        + copied.placements()
+                                                .get(copied.placements().size() - 1)
+                                                .part
+                                                .fullAdvance;
+                        require(
+                                Math.abs(copied.stretchAdvance - copiedEnd)
+                                        <= Math.max(.0001f, copied.stretchAdvance * .000001f),
+                                "中性stretchAdvance未覆盖实际构建长度");
+                        require(Float.isNaN(copied.verticalAdvance), "横向Result冒充旧竖向advance");
+                    }
+                    expect(
+                            UnsupportedOperationException.class,
+                            () -> math.stretch(0x23de, Float.MAX_VALUE, MathAxis.HORIZONTAL));
+                }
+            }
+        }
+    }
+
+    /** 从实际glyph原点差反推overlap；包络与raw h advance分别核对。 */
+    private void verifyHorizontalLayout(
+            MathFont math,
+            RawMath raw,
+            FontFace face,
+            MathData.Assembly assembly,
+            TextLayout layout,
+            float em,
+            int cp,
+            float target) {
+        TextLayout.Line line = layout.lines().get(0);
+        List<TextLayout.Glyph> glyphs = line.glyphs();
+        require(layout.lines().size() == 1 && glyphs.size() > 1, "横向大型符号未构建真实parts");
+        int fixed = 0, extenders = 0;
+        for (MathData.Part part : assembly.parts()) {
+            if (part.extender) extenders++;
+            else fixed++;
+        }
+        require(extenders > 0 && (glyphs.size() - fixed) % extenders == 0, "横向extender重复次数不一致");
+        int repeats = (glyphs.size() - fixed) / extenders;
+        List<MathData.Part> expanded = new ArrayList<MathData.Part>();
+        for (MathData.Part part : assembly.parts())
+            for (int i = 0; i < (part.extender ? repeats : 1); i++) expanded.add(part);
+        float tolerance = Math.max(.0001f, target * .000001f);
+        float full =
+                glyphs.get(glyphs.size() - 1).x
+                        - glyphs.get(0).x
+                        + expanded.get(expanded.size() - 1).fullAdvance;
+        float left = 0, right = full, top = 0, bottom = 0;
+        for (int i = 0; i < glyphs.size(); i++) {
+            TextLayout.Glyph glyph = glyphs.get(i);
+            MathData.Part part = expanded.get(i);
+            require(
+                    glyph.glyphId == part.glyphId
+                            && glyph.size == em
+                            && glyph.logicalEm == em
+                            && glyph.rasterToLayout == 1
+                            && !glyph.replacement,
+                    "横向部件身份或轮廓被改变");
+            near(glyph.y, line.baseline, "横向parts没有统一baseline");
+            near(
+                    glyph.xAdvance,
+                    HarfBuzz.hb_font_get_glyph_h_advance(raw.font, glyph.glyphId) * raw.scale,
+                    "横向部件h advance被fullAdvance替换");
+            InkBounds ink = face.glyphInkBounds(part.glyphId);
+            near(glyph.inkBounds.left, ink.left, "横向part墨迹被改写");
+            near(glyph.inkBounds.top, ink.top, "横向part墨迹被改写");
+            near(glyph.inkBounds.right, ink.right, "横向part墨迹被改写");
+            near(glyph.inkBounds.bottom, ink.bottom, "横向part墨迹被改写");
+            float offset = glyph.x - glyphs.get(0).x;
+            left = Math.min(left, offset + ink.left);
+            right = Math.max(right, offset + ink.right);
+            top = Math.min(top, ink.top);
+            bottom = Math.max(bottom, ink.bottom);
+            GlyphKey key = GlyphKey.of(glyph);
+            require(
+                    key.source.equals(glyphs.get(0).source)
+                            && key.glyphId == part.glyphId
+                            && key.size == em,
+                    "横向parts没有复用原GlyphKey");
+            if (i > 0) {
+                MathData.Part previous = expanded.get(i - 1);
+                float distance = glyph.x - glyphs.get(i - 1).x;
+                float overlap = previous.fullAdvance - distance;
+                require(
+                        distance >= -tolerance
+                                && overlap + tolerance >= assembly.minOverlap
+                                && overlap
+                                        <= Math.min(previous.endConnector, part.startConnector)
+                                                + tolerance,
+                        "横向connector或原始parts方向错误");
+            }
+        }
+        require(full + tolerance >= target, "横向assembly实际长度没有覆盖width目标");
+        require(
+                Math.abs(line.clusters().get(0).advance - full) <= tolerance,
+                "横向assembly逻辑advance与ink包络混用");
+        require(Math.abs(layout.advanceWidth - (right - left)) <= tolerance, "横向ink并集没有纳入布局");
+        near(line.ascent, -top, "横向ascent不是实际ink");
+        near(line.descent, bottom, "横向descent不是实际ink");
+        near(math.italicCorrection(layout), assembly.italicCorrection, "横向italic取自末部件");
+        require(Float.isNaN(math.topAccentAttachment(layout)), "拼接结果伪造单字形附件点");
+        System.out.println(
+                "horizontal assembly U+"
+                        + Integer.toHexString(cp)
+                        + " em="
+                        + em
+                        + " target="
+                        + target
+                        + " full="
+                        + full
+                        + " inkWidth="
+                        + layout.advanceWidth
+                        + " parts="
+                        + glyphs.size()
+                        + " repeats="
+                        + repeats);
+    }
+
+    /** 仅输出真实能力，供数学布局选择正式字形；不把无数据或非法connector断成成功。 */
+    private void verifyArrowFacts() throws Exception {
+        try (FontTextService service = new FontTextService(new LwjglFontEngine())) {
+            float em = 32.3f;
+            MathFont math = service.mathFont(style(em));
+            try (RawMath raw = new RawMath(bytes, em)) {
+                for (int cp :
+                        new int[] {
+                            0x27f6, 0x27f7, 0x27f9, 0x27fa, 0x21d2, 0x21d4, 0x21c0, 0x21c1, 0x21cc
+                        }) {
+                    int glyph = FreeType.FT_Get_Char_Index(raw.face, cp);
+                    List<MathData.Variant> variants = raw.variants(glyph, MathAxis.HORIZONTAL);
+                    MathData.Assembly assembly = raw.assembly(glyph, MathAxis.HORIZONTAL);
+                    float maximum = 0;
+                    for (MathData.Variant variant : variants)
+                        maximum = Math.max(maximum, variant.stretchAdvance);
+                    boolean connected = assembly != null;
+                    if (assembly != null) {
+                        MathData.Assembly design =
+                                assemblyDesign(bytes, glyph, MathAxis.HORIZONTAL);
+                        for (int i = 0; i < assembly.parts().size(); i++) {
+                            MathData.Part part = assembly.parts().get(i),
+                                    sfnt = design.parts().get(i);
+                            require(
+                                    part.glyphId == sfnt.glyphId && part.extender == sfnt.extender,
+                                    "箭头探针原始记录顺序不一致");
+                            raw.nearHorizontalDesign(part.startConnector, sfnt.startConnector);
+                            raw.nearHorizontalDesign(part.endConnector, sfnt.endConnector);
+                            raw.nearHorizontalDesign(part.fullAdvance, sfnt.fullAdvance);
+                            if (i > 0)
+                                connected &=
+                                        Math.min(
+                                                        assembly.parts().get(i - 1).endConnector,
+                                                        part.startConnector)
+                                                >= assembly.minOverlap;
+                            System.out.println(
+                                    "raw arrow U+"
+                                            + Integer.toHexString(cp)
+                                            + " part="
+                                            + i
+                                            + " glyph="
+                                            + part.glyphId
+                                            + " start="
+                                            + part.startConnector
+                                            + " end="
+                                            + part.endConnector
+                                            + " full="
+                                            + part.fullAdvance
+                                            + " extender="
+                                            + part.extender);
+                        }
+                    }
+                    System.out.println(
+                            "raw arrow U+"
+                                    + Integer.toHexString(cp)
+                                    + " em="
+                                    + em
+                                    + " direction=HB_DIRECTION_LTR variants="
+                                    + variants.size()
+                                    + " maximum="
+                                    + maximum
+                                    + " parts="
+                                    + (assembly == null ? 0 : assembly.parts().size())
+                                    + " rawConnectionsLegal="
+                                    + connected);
+                    try {
+                        TextLayout result = math.stretch(cp, 16 * em, MathAxis.HORIZONTAL);
+                        System.out.println(
+                                "arrow stretch U+"
+                                        + Integer.toHexString(cp)
+                                        + " width="
+                                        + result.advanceWidth
+                                        + " glyphs="
+                                        + result.lines().get(0).glyphs().size());
+                    } catch (UnsupportedOperationException boundary) {
+                        System.out.println(
+                                "arrow boundary U+"
+                                        + Integer.toHexString(cp)
+                                        + ": "
+                                        + boundary.getMessage());
+                    }
+                }
+            }
+        }
+    }
+
+    private void verifyTopAccent() throws Exception {
+        try (FontTextService service = new FontTextService(new LwjglFontEngine())) {
+            for (float em : new float[] {0.75f, 18, 32.3f, 64}) {
+                MathFont math = service.mathFont(style(em));
+                try (RawMath raw = new RawMath(bytes, em);
+                        FontSession session = new LwjglFontEngine().openSession();
+                        FontFace face = onlyGlyphSource(math.text("x")).openFace(session, em)) {
+                    for (int cp : new int[] {0x1d465, 0x1d453, 0x0302}) {
+                        TextLayout layout =
+                                cp == 0x0302
+                                        ? math.stretch(cp, 0, MathAxis.HORIZONTAL)
+                                        : math.text(new String(Character.toChars(cp)));
+                        TextLayout.Glyph glyph = onlyGlyph(layout);
+                        require(
+                                Float.isFinite(topAccentDesign(bytes, glyph.glyphId)),
+                                "真实附件点反例未覆盖");
+                        float attachment =
+                                OpenType.hb_ot_math_get_glyph_top_accent_attachment(
+                                                raw.font, glyph.glyphId)
+                                        * raw.scale;
+                        near(
+                                face.mathTopAccentAttachment(glyph.glyphId),
+                                attachment,
+                                "原生附件点不是实际HB记录");
+                        near(math.topAccentAttachment(layout), glyph.x + attachment, "附件点丢失真实布局原点");
+                        near(
+                                math.italicCorrection(layout),
+                                OpenType.hb_ot_math_get_glyph_italics_correction(
+                                                raw.font, glyph.glyphId)
+                                        * raw.scale,
+                                "有附件点的字形italic改变");
+                        System.out.println(
+                                "top-accent U+"
+                                        + Integer.toHexString(cp)
+                                        + " em="
+                                        + em
+                                        + " glyph="
+                                        + glyph.glyphId
+                                        + " raw="
+                                        + attachment
+                                        + " x="
+                                        + glyph.x);
+                    }
+                    TextLayout absent = math.text("(");
+                    TextLayout.Glyph glyph = onlyGlyph(absent);
+                    require(Float.isNaN(topAccentDesign(bytes, glyph.glyphId)), "无附件点反例未命中");
+                    require(
+                            Float.isNaN(face.mathTopAccentAttachment(glyph.glyphId))
+                                    && Float.isNaN(math.topAccentAttachment(absent)),
+                            "HB默认半advance被冒充真实附件点");
+                    require(Float.isNaN(math.topAccentAttachment(math.text("xy"))), "多字形伪造单字形附件点");
+                    TextLayout differentSize = service.mathFont(style(em + 1)).text("x");
+                    expect(
+                            IllegalArgumentException.class,
+                            () -> math.topAccentAttachment(differentSize));
+                    TextLayout before = math.text("x");
+                    service.reload(service.defaultCandidates());
+                    expect(IllegalArgumentException.class, () -> math.topAccentAttachment(before));
+                    TextLayout after = math.text("x");
+                    require(
+                            after.generation == service.generation()
+                                    && Float.isFinite(math.topAccentAttachment(after)),
+                            "reload后附件点沿旧代际或丢失真实数据");
+                }
+            }
+        }
+    }
+
     private void verifyAssemblyEdges() {
         // 零次候选没有部件，必须继续加 extender；不能因这个候选不存在拒绝构建。
         MathData.Part extender = new MathData.Part(2, 4, 4, 10, true);
@@ -663,6 +1136,11 @@ public final class MathFontScenario extends TestApplication {
             FontFace originalFace = engine.opened.get(0);
             TextLayout original = math.stretch(0x222b, 40);
             GlyphKey oldKey = GlyphKey.of(onlyGlyph(original));
+            TextLayout originalAccent = math.text("x");
+            float originalAttachment = math.topAccentAttachment(originalAccent);
+            TextLayout originalHorizontal = math.stretch(0x23de, 512, MathAxis.HORIZONTAL);
+            GlyphKey oldHorizontalKey =
+                    GlyphKey.of(originalHorizontal.lines().get(0).glyphs().get(0));
             TextLayout originalAssembly = math.stretch(0x222b, 512);
             GlyphKey oldPartKey = GlyphKey.of(originalAssembly.lines().get(0).glyphs().get(0));
             int opened = engine.opened.size();
@@ -679,6 +1157,14 @@ public final class MathFontScenario extends TestApplication {
                     math.italicCorrection(originalAssembly),
                     math.italicCorrection(math.stretch(0x222b, 512)),
                     "LRU后assembly修正丢失");
+            near(
+                    math.topAccentAttachment(originalAccent),
+                    originalAttachment,
+                    "LRU后top-accent快照失效");
+            near(
+                    math.italicCorrection(originalHorizontal),
+                    math.italicCorrection(math.stretch(0x23de, 512, MathAxis.HORIZONTAL)),
+                    "LRU后横向assembly修正丢失");
             long before = service.generation();
             service.register(
                     "math",
@@ -692,6 +1178,13 @@ public final class MathFontScenario extends TestApplication {
             require(!oldKey.equals(GlyphKey.of(onlyGlyph(stretched))), "新旧source污染glyph key");
             expect(IllegalArgumentException.class, () -> math.italicCorrection(original));
             expect(IllegalArgumentException.class, () -> math.italicCorrection(originalAssembly));
+            expect(IllegalArgumentException.class, () -> math.topAccentAttachment(originalAccent));
+            expect(IllegalArgumentException.class, () -> math.italicCorrection(originalHorizontal));
+            TextLayout replacedHorizontal = math.stretch(0x23de, 512, MathAxis.HORIZONTAL);
+            require(
+                    !oldHorizontalKey.equals(
+                            GlyphKey.of(replacedHorizontal.lines().get(0).glyphs().get(0))),
+                    "横向parts新旧source混入同glyph身份");
             TextLayout replacedAssembly = math.stretch(0x222b, 512);
             require(
                     !oldPartKey.equals(
@@ -703,7 +1196,15 @@ public final class MathFontScenario extends TestApplication {
                 require(face.rasterize(oldKey.glyphId).width > 0, "旧source换代后不可重开");
                 List<MathData.Variant> copy = face.mathVariants(face.glyphIndex(0x222b));
                 MathData.Assembly assemblyCopy = face.mathAssembly(face.glyphIndex('('));
+                MathData.Assembly horizontalCopy =
+                        face.mathAssembly(face.glyphIndex(0x23de), MathAxis.HORIZONTAL);
+                List<MathData.Variant> horizontalVariants =
+                        face.mathVariants(face.glyphIndex(0x0302), MathAxis.HORIZONTAL);
                 face.close();
+                require(
+                        horizontalVariants.size() > 1
+                                && MathAssembly.build(horizontalCopy, 512).stretchAdvance >= 512,
+                        "横向快照依赖native生命周期");
                 require(copy.size() > 1 && copy.get(0).glyphId > 0, "variant副本依赖native生命周期");
                 require(
                         assemblyCopy != null
@@ -734,6 +1235,12 @@ public final class MathFontScenario extends TestApplication {
                     afterReload.generation == service.generation()
                             && onlyGlyphSource(afterReload).revision == 2,
                     "旧wrapper重载后assembly代际错误");
+            TextLayout horizontalReloaded = math.stretch(0x23de, 512, MathAxis.HORIZONTAL);
+            require(
+                    horizontalReloaded.generation == service.generation()
+                            && onlyGlyphSource(horizontalReloaded).revision == 2,
+                    "reload后横向assembly代际错误");
+            require(Float.isFinite(math.topAccentAttachment(reloaded)), "reload后真实top-accent丢失");
             service.close();
             expect(IllegalStateException.class, () -> math.constant(MathFont.Constant.AXIS_HEIGHT));
             System.out.println(
@@ -811,32 +1318,71 @@ public final class MathFontScenario extends TestApplication {
 
     /** 原始SFNT设计顺序独立校准HB方向，避免生产和raw探针一起错误反转。 */
     private static int[] assemblyGlyphOrder(byte[] bytes, int glyph) {
+        MathData.Assembly assembly = assemblyDesign(bytes, glyph, MathAxis.VERTICAL);
+        int[] glyphs = new int[assembly.parts().size()];
+        for (int i = 0; i < glyphs.length; i++) glyphs[i] = assembly.parts().get(i).glyphId;
+        return glyphs;
+    }
+
+    /** SFNT设计单位的部件记录，独立于HB方向与缩放。 */
+    private static MathData.Assembly assemblyDesign(byte[] bytes, int glyph, MathAxis axis) {
         ByteBuffer data = ByteBuffer.wrap(bytes).order(ByteOrder.BIG_ENDIAN);
         int math = table(bytes, "MATH");
         int variants = math + (data.getShort(math + 8) & 65535);
-        int coverage = variants + (data.getShort(variants + 2) & 65535);
+        boolean horizontal = axis == MathAxis.HORIZONTAL;
+        int coverage = variants + (data.getShort(variants + (horizontal ? 4 : 2)) & 65535);
+        int index = coverageIndex(data, coverage, glyph);
+        require(index >= 0, "原始SFNT没有对应轴的构建");
+        if (horizontal) index += data.getShort(variants + 6) & 65535;
+        int construction = variants + (data.getShort(variants + 10 + 2 * index) & 65535);
+        int offset = data.getShort(construction) & 65535;
+        require(offset > 0, "原始SFNT没有assembly");
+        int assembly = construction + offset;
+        int count = data.getShort(assembly + 4) & 65535;
+        List<MathData.Part> parts = new ArrayList<MathData.Part>();
+        for (int i = 0; i < count; i++) {
+            int record = assembly + 6 + 10 * i;
+            parts.add(
+                    new MathData.Part(
+                            data.getShort(record) & 65535,
+                            data.getShort(record + 2) & 65535,
+                            data.getShort(record + 4) & 65535,
+                            data.getShort(record + 6) & 65535,
+                            (data.getShort(record + 8) & 1) != 0));
+        }
+        return new MathData.Assembly(
+                parts, data.getShort(variants) & 65535, data.getShort(assembly), axis);
+    }
+
+    private static float topAccentDesign(byte[] bytes, int glyph) {
+        ByteBuffer data = ByteBuffer.wrap(bytes).order(ByteOrder.BIG_ENDIAN);
+        int math = table(bytes, "MATH");
+        int info = math + (data.getShort(math + 6) & 65535);
+        int offset = data.getShort(info + 2) & 65535;
+        if (offset == 0) return Float.NaN;
+        int attachment = info + offset;
+        int coverage = attachment + (data.getShort(attachment) & 65535);
+        int index = coverageIndex(data, coverage, glyph);
+        return index < 0 || index >= (data.getShort(attachment + 2) & 65535)
+                ? Float.NaN
+                : data.getShort(attachment + 4 + index * 4);
+    }
+
+    private static int coverageIndex(ByteBuffer data, int coverage, int glyph) {
         int format = data.getShort(coverage) & 65535;
-        int count = data.getShort(coverage + 2) & 65535, index = -1;
+        int count = data.getShort(coverage + 2) & 65535;
         for (int i = 0; i < count; i++) {
             if (format == 1) {
-                if ((data.getShort(coverage + 4 + 2 * i) & 65535) == glyph) index = i;
+                if ((data.getShort(coverage + 4 + 2 * i) & 65535) == glyph) return i;
             } else {
                 require(format == 2, "原始MATH coverage格式非法");
                 int record = coverage + 4 + 6 * i;
                 int start = data.getShort(record) & 65535, end = data.getShort(record + 2) & 65535;
                 if (glyph >= start && glyph <= end)
-                    index = (data.getShort(record + 4) & 65535) + glyph - start;
+                    return (data.getShort(record + 4) & 65535) + glyph - start;
             }
         }
-        require(index >= 0, "原始SFNT没有对应竖向构建");
-        int construction = variants + (data.getShort(variants + 10 + 2 * index) & 65535);
-        int offset = data.getShort(construction) & 65535;
-        require(offset > 0, "原始SFNT没有assembly");
-        int assembly = construction + offset;
-        int[] glyphs = new int[data.getShort(assembly + 4) & 65535];
-        for (int i = 0; i < glyphs.length; i++)
-            glyphs[i] = data.getShort(assembly + 6 + 10 * i) & 65535;
-        return glyphs;
+        return -1;
     }
 
     /** 仅观测真实native打开和关闭；不模拟face或MATH返回值。 */
@@ -903,18 +1449,26 @@ public final class MathFontScenario extends TestApplication {
         }
 
         MathData.Assembly assembly(int glyph) {
+            return assembly(glyph, MathAxis.VERTICAL);
+        }
+
+        MathData.Assembly assembly(int glyph, MathAxis axis) {
+            int direction =
+                    axis == MathAxis.HORIZONTAL
+                            ? HarfBuzz.HB_DIRECTION_LTR
+                            : HarfBuzz.HB_DIRECTION_TTB;
             try (MemoryStack stack = MemoryStack.stackPush()) {
                 IntBuffer count = stack.ints(0), italic = stack.ints(0);
                 int total =
                         OpenType.hb_ot_math_get_glyph_assembly(
-                                font, glyph, HarfBuzz.HB_DIRECTION_TTB, 0, count, null, italic);
+                                font, glyph, direction, 0, count, null, italic);
                 if (total == 0) return null;
                 List<MathData.Part> result = new ArrayList<MathData.Part>();
                 try (hb_ot_math_glyph_part_t.Buffer values =
                         hb_ot_math_glyph_part_t.malloc(total)) {
                     count.put(0, total);
                     OpenType.hb_ot_math_get_glyph_assembly(
-                            font, glyph, HarfBuzz.HB_DIRECTION_TTB, 0, count, values, italic);
+                            font, glyph, direction, 0, count, values, italic);
                     for (int i = 0; i < count.get(0); i++) {
                         hb_ot_math_glyph_part_t part = values.get(i);
                         result.add(
@@ -928,32 +1482,55 @@ public final class MathFontScenario extends TestApplication {
                 }
                 return new MathData.Assembly(
                         result,
-                        OpenType.hb_ot_math_get_min_connector_overlap(
-                                        font, HarfBuzz.HB_DIRECTION_TTB)
-                                * scale,
-                        italic.get(0) * scale);
+                        OpenType.hb_ot_math_get_min_connector_overlap(font, direction) * scale,
+                        italic.get(0) * scale,
+                        axis);
             }
         }
 
         List<MathData.Variant> variants(int glyph) {
+            return variants(glyph, MathAxis.VERTICAL);
+        }
+
+        List<MathData.Variant> variants(int glyph, MathAxis axis) {
+            int direction =
+                    axis == MathAxis.HORIZONTAL
+                            ? HarfBuzz.HB_DIRECTION_LTR
+                            : HarfBuzz.HB_DIRECTION_TTB;
             List<MathData.Variant> result = new ArrayList<MathData.Variant>();
             try (MemoryStack stack = MemoryStack.stackPush()) {
                 IntBuffer count = stack.ints(0);
                 int total =
                         OpenType.hb_ot_math_get_glyph_variants(
-                                font, glyph, HarfBuzz.HB_DIRECTION_TTB, 0, count, null);
+                                font, glyph, direction, 0, count, null);
                 try (hb_ot_math_glyph_variant_t.Buffer values =
                         hb_ot_math_glyph_variant_t.malloc(total)) {
                     count.put(0, total);
                     OpenType.hb_ot_math_get_glyph_variants(
-                            font, glyph, HarfBuzz.HB_DIRECTION_TTB, 0, count, values);
+                            font, glyph, direction, 0, count, values);
                     for (int i = 0; i < count.get(0); i++)
                         result.add(
                                 new MathData.Variant(
-                                        values.get(i).glyph(), values.get(i).advance() * scale));
+                                        values.get(i).glyph(),
+                                        values.get(i).advance() * scale,
+                                        axis));
                 }
             }
             return result;
+        }
+
+        void nearHorizontalDesign(float actual, float designUnits) {
+            try (MemoryStack stack = MemoryStack.stackPush()) {
+                IntBuffer x = stack.ints(0), y = stack.ints(0);
+                HarfBuzz.hb_font_get_scale(font, x, y);
+                float expected = designUnits * x.get(0) / face.units_per_EM() * scale;
+                require(
+                        Math.abs(actual - expected) <= scale + .0001f,
+                        "HB LTR的start/end/full与SFNT设计记录不一致: actual="
+                                + actual
+                                + " expected="
+                                + expected);
+            }
         }
 
         private static void check(int code) {

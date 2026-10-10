@@ -1,8 +1,37 @@
 package club.heiqi.uilib.ui.scene.text.font;
 
-import club.heiqi.uilib.ui.scene.text.font.nativefont.ShapedGlyph;
-import club.heiqi.uilib.ui.scene.text.font.nativefont.ShapeDirection;
+import club.heiqi.uilib.ui.scene.text.AttributedText;
+import club.heiqi.uilib.ui.scene.text.RasterSampling;
+import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
+import club.heiqi.uilib.ui.scene.text.StyleSpan;
+import club.heiqi.uilib.ui.scene.text.TextDecoration;
+import club.heiqi.uilib.ui.scene.text.TextEffects;
+import club.heiqi.uilib.ui.scene.text.TextInput;
+import club.heiqi.uilib.ui.scene.text.TextLayout;
+import club.heiqi.uilib.ui.scene.text.TextLayout.Diagnostic;
+import club.heiqi.uilib.ui.scene.text.TextPolicy;
+import club.heiqi.uilib.ui.scene.text.TextStyle;
+import club.heiqi.uilib.ui.scene.text.font.UnicodeText.Unit;
+import club.heiqi.uilib.ui.scene.text.font.nativefont.FontEngine;
+import club.heiqi.uilib.ui.scene.text.font.nativefont.FontFace;
+import club.heiqi.uilib.ui.scene.text.font.nativefont.FontMetrics;
+import club.heiqi.uilib.ui.scene.text.font.nativefont.FontSession;
+import club.heiqi.uilib.ui.scene.text.font.nativefont.GlyphBitmap;
+import club.heiqi.uilib.ui.scene.text.font.nativefont.GlyphRasterStyle;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.InkBounds;
+import club.heiqi.uilib.ui.scene.text.font.nativefont.MathData;
+import club.heiqi.uilib.ui.scene.text.font.nativefont.ShapeDirection;
+import club.heiqi.uilib.ui.scene.text.font.nativefont.ShapedGlyph;
+import club.heiqi.uilib.ui.scene.text.math.MathAxis;
+import club.heiqi.uilib.ui.scene.text.math.MathFont;
+import club.heiqi.uilib.ui.scene.text.unicode.EmojiData;
+import club.heiqi.uilib.ui.scene.text.unicode.UnicodeGraphemes;
+
+import com.ibm.icu.lang.UScript;
+import com.ibm.icu.text.Bidi;
+import com.ibm.icu.text.BidiRun;
+import com.ibm.icu.text.BreakIterator;
+import com.ibm.icu.util.ULocale;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -14,42 +43,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.TreeSet;
 import java.util.TreeMap;
-import com.ibm.icu.lang.UScript;
-import com.ibm.icu.text.Bidi;
-import com.ibm.icu.text.BidiRun;
-import com.ibm.icu.text.BreakIterator;
-import com.ibm.icu.util.ULocale;
-import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
-import club.heiqi.uilib.ui.scene.text.TextInput;
-import club.heiqi.uilib.ui.scene.text.TextLayout;
-import club.heiqi.uilib.ui.scene.text.TextLayout.Diagnostic;
-import club.heiqi.uilib.ui.scene.text.TextPolicy;
-import club.heiqi.uilib.ui.scene.text.TextStyle;
-import club.heiqi.uilib.ui.scene.text.AttributedText;
-import club.heiqi.uilib.ui.scene.text.RasterSampling;
-import club.heiqi.uilib.ui.scene.text.StyleSpan;
-import club.heiqi.uilib.ui.scene.text.TextDecoration;
-import club.heiqi.uilib.ui.scene.text.TextEffects;
-import club.heiqi.uilib.ui.scene.text.font.nativefont.GlyphRasterStyle;
-import club.heiqi.uilib.ui.scene.text.font.UnicodeText.Unit;
-import club.heiqi.uilib.ui.scene.text.unicode.EmojiData;
-import club.heiqi.uilib.ui.scene.text.unicode.UnicodeGraphemes;
-import club.heiqi.uilib.ui.scene.text.font.nativefont.FontFace;
-import club.heiqi.uilib.ui.scene.text.font.nativefont.GlyphBitmap;
-import club.heiqi.uilib.ui.scene.text.font.nativefont.FontSession;
-import club.heiqi.uilib.ui.scene.text.font.nativefont.FontEngine;
-import club.heiqi.uilib.ui.scene.text.font.nativefont.FontMetrics;
-import club.heiqi.uilib.ui.scene.text.font.nativefont.MathData;
-import club.heiqi.uilib.ui.scene.text.math.MathFont;
+import java.util.TreeSet;
 
 /**
- * ICU Unicode 算法 + 真实 FT/HB 共享排版服务。创建、测量、重载、关闭均在创建线程。
- * 度量不申请 GPU 资源；光栅消费者用 Glyph.source.openFace 在自己的 native 线程重开。
- * 有界 face/layout/color-probe 缓存。默认资源只是显式候选列表，不建立第二条 fallback 链。
- * 当前未实现省略、采用软连字符断点时的可见连字符和编辑器双向光标 affinity；
- * 软连字符断点暂禁用并诊断，不能把无连字符的结果冒充该合同。
+ * ICU Unicode 算法 + 真实 FT/HB 共享排版服务。创建、测量、重载、关闭均在创建线程。 度量不申请 GPU 资源；光栅消费者用 Glyph.source.openFace
+ * 在自己的 native 线程重开。 有界 face/layout/color-probe 缓存。默认资源只是显式候选列表，不建立第二条 fallback 链。
+ * 当前未实现省略、采用软连字符断点时的可见连字符和编辑器双向光标 affinity； 软连字符断点暂禁用并诊断，不能把无连字符的结果冒充该合同。
  */
 public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
     private final Thread thread = Thread.currentThread();
@@ -118,6 +118,8 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
         unicodeRules = Objects.requireNonNull(rules, "rules");
         unicodeProfile = Objects.requireNonNull(rules.snapshot(), "profile");
         emojiData = unicodeProfile.emoji;
+        // 初始化具名正文源不走 register，保留初始 generation；配置的默认候选列表不变。
+        named.putAll(MathTextFontSources.namedSources(1, this.defaults));
         nativeService = Objects.requireNonNull(engine, "engine").openSession();
         // 数学资源是独立具名链；懒加载沿 FontSource，不引入 MC/GL 或普通文字隐式回退。
         named.put(
@@ -341,10 +343,7 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
         for (Runnable listener : new ArrayList<Runnable>(invalidation)) listener.run();
     }
 
-    /**
-     * 默认数学声明使用具名 math；显式候选完整覆盖它，不向普通文本链添加数学字体。
-     * 端口仅持有服务和样式；LRU/reload 后每次重新取得当前 source/face。
-     */
+    /** 默认数学声明使用具名 math；显式候选完整覆盖它，不向普通文本链添加数学字体。 端口仅持有服务和样式；LRU/reload 后每次重新取得当前 source/face。 */
     @Override
     public MathFont mathFont(TextStyle style) {
         check();
@@ -459,62 +458,77 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
         }
 
         public TextLayout stretch(int codepoint, float minimumHeight) {
-            return variantLayout(codepoint, minimumHeight, true);
+            return stretch(codepoint, minimumHeight, MathAxis.VERTICAL);
+        }
+
+        public TextLayout stretch(int codepoint, float minimumAdvance, MathAxis axis) {
+            return variantLayout(
+                    codepoint, minimumAdvance, Objects.requireNonNull(axis, "axis"), true);
         }
 
         @Override
         public TextLayout displayOperator(int codepoint, float preferredHeight) {
-            return variantLayout(codepoint, preferredHeight, false);
+            return variantLayout(codepoint, preferredHeight, MathAxis.VERTICAL, false);
         }
 
-        /** 定高伸缩必须满足高度；大算子建议高度允许选完整的最大真实字形。 */
-        private TextLayout variantLayout(int codepoint, float minimumHeight, boolean strict) {
+        /** 轴向伸缩必须满足目标；大算子建议高度允许选完整的最大真实字形。 */
+        private TextLayout variantLayout(
+                int codepoint, float minimumAdvance, MathAxis axis, boolean strict) {
             if (!Character.isValidCodePoint(codepoint)
                     || codepoint >= 0xd800 && codepoint <= 0xdfff)
                 throw new IllegalArgumentException("无效数学码点");
-            if (!Float.isFinite(minimumHeight) || minimumHeight < 0)
-                throw new IllegalArgumentException("数学伸缩高度必须有限且非负");
+            if (!Float.isFinite(minimumAdvance) || minimumAdvance < 0)
+                throw new IllegalArgumentException("数学伸缩目标必须有限且非负");
             MathSelection selected = current();
             int base = selected.face.glyphIndex(codepoint);
             if (base == 0)
                 throw new UnsupportedOperationException(
                         "数学字体缺字 U+" + Integer.toHexString(codepoint));
-            List<MathData.Variant> variants = selected.face.mathVariants(base);
+            List<MathData.Variant> variants = selected.face.mathVariants(base, axis);
             MathData.Variant chosen = null;
             MathData.Variant largest = null;
             float maximum = 0;
             for (MathData.Variant variant : variants) {
-                maximum = Math.max(maximum, variant.verticalAdvance);
-                if (largest == null || variant.verticalAdvance > largest.verticalAdvance)
+                maximum = Math.max(maximum, variant.stretchAdvance);
+                if (largest == null || variant.stretchAdvance > largest.stretchAdvance)
                     largest = variant;
-                if (variant.verticalAdvance >= minimumHeight
-                        && (chosen == null || variant.verticalAdvance < chosen.verticalAdvance))
+                if (variant.stretchAdvance >= minimumAdvance
+                        && (chosen == null || variant.stretchAdvance < chosen.stretchAdvance))
                     chosen = variant;
             }
-            // 没有变体时仅使用原字形的真实能力，不用 fontsize/拉伸假造竖向能力。
+            // 没有变体时仅使用原字形的真实能力，不用 fontsize/拉伸假造伸缩能力。
             if (variants.isEmpty()) {
                 InkBounds baseInk = selected.face.glyphInkBounds(base);
                 if (baseInk.known) {
-                    maximum = baseInk.bottom - baseInk.top;
-                    if (!strict || maximum >= minimumHeight)
-                        chosen = new MathData.Variant(base, maximum);
+                    maximum =
+                            axis == MathAxis.VERTICAL
+                                    ? baseInk.bottom - baseInk.top
+                                    : selected.face.glyphHorizontalAdvance(base);
+                    if (!strict || maximum >= minimumAdvance)
+                        chosen = new MathData.Variant(base, maximum, axis);
                 }
             }
             if (chosen == null && !strict) chosen = largest;
             if (chosen == null && strict) {
                 try {
                     return buildMathAssembly(
-                            selected, codepoint, selected.face.mathAssembly(base), minimumHeight);
+                            selected,
+                            codepoint,
+                            selected.face.mathAssembly(base, axis),
+                            minimumAdvance,
+                            axis);
                 } catch (UnsupportedOperationException error) {
                     throw new UnsupportedOperationException(
-                            "数学竖向伸缩不可构建 U+"
+                            "数学伸缩不可构建 axis="
+                                    + axis
+                                    + " U+"
                                     + Integer.toHexString(codepoint)
                                     + " font="
                                     + selected.source
                                     + " em="
                                     + requested.logicalEm
                                     + ": requested="
-                                    + minimumHeight
+                                    + minimumAdvance
                                     + ", maximumVariant="
                                     + maximum
                                     + "; "
@@ -528,12 +542,15 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                                 + Integer.toHexString(codepoint)
                                 + " font="
                                 + selected.source);
-            return buildMathGlyph(selected, codepoint, chosen.glyphId);
+            return buildMathGlyph(selected, codepoint, chosen);
         }
 
         /** 两种大小语义共享同一真实字形度量、资源诊断与绘制身份。 */
-        private TextLayout buildMathGlyph(MathSelection selected, int codepoint, int glyphId) {
-            // 竖向 advance 只控制高度；横向字宽必须查询实际 variant 的 HB 横向 advance。
+        private TextLayout buildMathGlyph(
+                MathSelection selected, int codepoint, MathData.Variant variant) {
+            int glyphId = variant.glyphId;
+            boolean horizontal = variant.axis == MathAxis.HORIZONTAL;
+            // glyph 的 hinted h advance 保留；横向 MATH nominal span 是另一份逻辑盒事实。
             float advance = selected.face.glyphHorizontalAdvance(glyphId);
             InkBounds bounds = selected.face.glyphInkBounds(glyphId);
             if (!bounds.known) throw new UnsupportedOperationException("数学 variant 墨迹边界不可用");
@@ -541,6 +558,9 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
             float height = ascent + descent;
             float left = Math.min(0, bounds.left);
             float width = Math.max(advance, bounds.right) - left;
+            float logicalAdvance = horizontal ? variant.stretchAdvance : advance;
+            // MATH span 与已归一的 glyph 包络取并集，不能再把负 bearing 的左移加到 span。
+            if (horizontal) width = Math.max(width, logicalAdvance);
             String value = new String(Character.toChars(codepoint));
             int end = value.length();
             TextLayout.Glyph glyph =
@@ -565,7 +585,16 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                             selected.style,
                             0);
             TextLayout.Cluster cluster =
-                    new TextLayout.Cluster(0, end, 0, end, 0, 1, -left, advance, selected.style);
+                    new TextLayout.Cluster(
+                            0,
+                            end,
+                            0,
+                            end,
+                            0,
+                            1,
+                            horizontal ? 0 : -left,
+                            logicalAdvance,
+                            selected.style);
             TextLayout.Line line =
                     new TextLayout.Line(
                             value,
@@ -600,13 +629,17 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                     TextInput.string(value));
         }
 
-        /** 所有部件共用横向原点；纵向原点只由 fullAdvance 和 connector overlap 决定。 */
+        /** 部件轴向原点由 fullAdvance/overlap 决定；横向共用 baseline，竖向共用 X 原点。 */
         private TextLayout buildMathAssembly(
                 MathSelection selected,
                 int codepoint,
                 MathData.Assembly assembly,
-                float minimumHeight) {
-            MathAssembly.Result result = MathAssembly.build(assembly, minimumHeight);
+                float minimumAdvance,
+                MathAxis axis) {
+            if (assembly != null && assembly.axis != axis)
+                throw new UnsupportedOperationException("assembly 轴与请求不一致");
+            MathAssembly.Result result = MathAssembly.build(assembly, minimumAdvance);
+            boolean horizontal = axis == MathAxis.HORIZONTAL;
             List<MathAssembly.Placement> positions = result.placements();
             List<InkBounds> bounds = new ArrayList<InkBounds>(positions.size());
             float[] advances = new float[positions.size()];
@@ -625,11 +658,18 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                 }
                 bounds.add(ink);
                 advances[i] = partAdvance.get(id);
-                advance = Math.max(advance, advances[i]);
-                left = Math.min(left, ink.left);
-                right = Math.max(right, Math.max(advances[i], ink.right));
-                top = Math.min(top, ink.top - position.offset);
-                bottom = Math.max(bottom, ink.bottom - position.offset);
+                float x = horizontal ? position.offset : 0;
+                float y = horizontal ? 0 : -position.offset;
+                advance = horizontal ? result.stretchAdvance : Math.max(advance, advances[i]);
+                left = Math.min(left, x + ink.left);
+                right =
+                        Math.max(
+                                right,
+                                horizontal
+                                        ? Math.max(result.stretchAdvance, x + ink.right)
+                                        : Math.max(advances[i], ink.right));
+                top = Math.min(top, y + ink.top);
+                bottom = Math.max(bottom, y + ink.bottom);
             }
             // 墨迹只决定整体包围盒及基线平移，不能拿每个部件的 ink 高度当连接锚点。
             float ascent = -top, descent = bottom, height = ascent + descent, width = right - left;
@@ -647,8 +687,8 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                                 end,
                                 0,
                                 end,
-                                -left,
-                                ascent - position.offset,
+                                -left + (horizontal ? position.offset : 0),
+                                ascent - (horizontal ? 0 : position.offset),
                                 advances[i],
                                 0,
                                 false,
@@ -698,6 +738,28 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                             TextInput.string(value));
             assemblyItalic.put(layout, assembly.italicCorrection);
             return layout;
+        }
+
+        public float topAccentAttachment(TextLayout layout) {
+            Objects.requireNonNull(layout, "layout");
+            MathSelection selected = current();
+            if (layout.generation != generation)
+                throw new IllegalArgumentException("数学布局已换代，须重新布局后查询附件点");
+            TextLayout.Glyph single = null;
+            int count = 0;
+            for (TextLayout.Line line : layout.lines()) {
+                for (TextLayout.Glyph glyph : line.glyphs()) {
+                    if (!glyph.source.equals(selected.source)
+                            || glyph.logicalEm != requested.logicalEm)
+                        throw new IllegalArgumentException("数学布局不是当前字体实例");
+                    single = glyph;
+                    count++;
+                }
+            }
+            if (count != 1 || layout.lines().size() != 1 || assemblyItalic.containsKey(layout))
+                return Float.NaN;
+            float attachment = selected.face.mathTopAccentAttachment(single.glyphId);
+            return Float.isNaN(attachment) ? Float.NaN : single.x + attachment;
         }
 
         public float italicCorrection(TextLayout layout) {
@@ -1501,7 +1563,8 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
         throw new IllegalStateException("显式候选没有可用于完整簇混淆的实际单色glyph");
     }
 
-    /** 混淆只替换完整安全簇；复杂脚本的连续必要face范围整体替换为单色中性cell。
+    /**
+     * 混淆只替换完整安全簇；复杂脚本的连续必要face范围整体替换为单色中性cell。
      * 独立字素优先真实等advance桶；无精确桶/复杂range使用完整cell等比收纳并居中，绝不假称仍保原连接形态。
      * tick/salt由宿主捕获，逻辑advance/断行/source/style保持原计划；不重新整形原字符串。
      */

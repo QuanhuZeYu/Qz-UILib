@@ -1,12 +1,14 @@
 package club.heiqi.uilib.ui.scene.text.font;
 
 import club.heiqi.uilib.ui.scene.text.font.nativefont.MathData;
+import club.heiqi.uilib.ui.scene.text.math.MathAxis;
+
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
-/** OpenType MATH 竖向连接算法；只消费 Java 快照，不读取墨迹、不缩放字形。 */
+/** OpenType MATH 一维连接算法；只消费 Java 快照，不读取墨迹、不缩放字形。 */
 public final class MathAssembly {
     // 限制单个构建的需求数量和浮点坐标范围；超限沿数学字体诊断，不无界增加部件。
     private static final int MAX_PARTS = 4096;
@@ -17,7 +19,7 @@ public final class MathAssembly {
     public static final class Placement {
         public final MathData.Part part;
 
-        /** 从最底部字形原点向上的距离，布局转换为 Y 向下。 */
+        /** 从轴起点的字形原点向前的距离；竖向向上，横向向右。 */
         public final float offset;
 
         private Placement(MathData.Part part, double offset) {
@@ -28,11 +30,18 @@ public final class MathAssembly {
 
     public static final class Result {
         private final List<Placement> placements;
+        public final float stretchAdvance;
+
+        /** 旧竖向字段；横向结果返回 NaN。 */
         public final float verticalAdvance;
 
-        private Result(List<Placement> placements, double advance) {
+        public final MathAxis axis;
+
+        private Result(List<Placement> placements, double advance, MathAxis axis) {
             this.placements = Collections.unmodifiableList(placements);
-            this.verticalAdvance = (float) advance;
+            this.axis = axis;
+            this.stretchAdvance = (float) advance;
+            this.verticalAdvance = axis == MathAxis.VERTICAL ? stretchAdvance : Float.NaN;
         }
 
         public List<Placement> placements() {
@@ -43,7 +52,7 @@ public final class MathAssembly {
     public static Result build(MathData.Assembly assembly, float target) {
         if (!Float.isFinite(target) || target < 0)
             throw new IllegalArgumentException("数学伸缩目标必须有限且非负");
-        if (assembly == null || assembly.parts().isEmpty()) throw unavailable("字体没有竖向 assembly");
+        if (assembly == null || assembly.parts().isEmpty()) throw unavailable("字体没有轴向 assembly");
         if (target > MAX_ADVANCE) throw unavailable("目标超过浮点几何能力");
         if (!Float.isFinite(assembly.minOverlap)
                 || assembly.minOverlap < 0
@@ -110,12 +119,13 @@ public final class MathAssembly {
                         offset += parts.get(i).fullAdvance - overlap;
                     }
                 }
-                return new Result(positions, offset + parts.get(parts.size() - 1).fullAdvance);
+                return new Result(
+                        positions, offset + parts.get(parts.size() - 1).fullAdvance, assembly.axis);
             }
             if (extenders == 0) throw unavailable("assembly 无 extender，无法达到目标");
             // 第一轮含 extender 可能增加此前非法的连接，不能与零 extender 的结果比较。
             if (repeats > 1 && maximum <= previousMaximum)
-                throw unavailable("assembly extender 不能继续增加高度");
+                throw unavailable("assembly extender 不能继续增加轴向长度");
             previousMaximum = maximum;
         }
     }

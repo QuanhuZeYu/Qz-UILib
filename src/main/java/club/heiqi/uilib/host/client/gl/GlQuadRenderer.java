@@ -2,18 +2,19 @@ package club.heiqi.uilib.host.client.gl;
 
 import static club.heiqi.uilib.host.client.gl.GlTokens.*;
 
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
-import java.util.Objects;
 import club.heiqi.uilib.host.client.font.context.FontRenderContext;
 import club.heiqi.uilib.ui.render.batch.OrderedQuadBatch;
 import club.heiqi.uilib.ui.render.batch.OrderedQuadBatch.Draw;
 import club.heiqi.uilib.ui.render.batch.OrderedQuadBatch.Quad;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 
-/** GL3.2/GLSL150 的正式有序载荷消费者；所有操作及 close 必须在所属上下文线程执行。
- * 宿主在变换、深度、pass 或外部委托屏障处结束 Scope；不捕获 GL 矩阵，不管理 scene。
- * 资源提供者只解析已准备并存活的 resource/generation，不得在消费中修改 GL 状态。
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.util.Objects;
+
+/**
+ * GL3.2/GLSL150 的正式有序载荷消费者；所有操作及 close 必须在所属上下文线程执行。 宿主在变换、深度、pass 或外部委托屏障处结束 Scope；不捕获 GL 矩阵，不管理
+ * scene。 资源提供者只解析已准备并存活的 resource/generation，不得在消费中修改 GL 状态。
  */
 public final class GlQuadRenderer implements AutoCloseable {
     /** ARGB 顶点颜色为直通颜色；输出为 premult RGBA。 */
@@ -69,24 +70,33 @@ public final class GlQuadRenderer implements AutoCloseable {
     private long draws, uploads, bytes, bindings, indexUploads;
     private static final String VERTEX =
             "#version 150\n"
-                    + "in vec2 position; in vec2 uv; in float layer; in vec4 color; uniform mat4 mvp; "
-                    + "out vec2 texUv; flat out float texLayer; out vec4 tint; "
-                    + "void main(){gl_Position=mvp*vec4(position,0,1);texUv=uv;texLayer=layer;tint=color;}";
+                    + "in vec2 position; in vec2 uv; in float layer; in vec4 color; uniform mat4 mvp;"
+                    + " out vec2 texUv; flat out float texLayer; out vec4 tint; void"
+                    + " main(){gl_Position=mvp*vec4(position,0,1);texUv=uv;texLayer=layer;tint=color;}";
 
     private static String fragment(boolean array) {
         return "#version 150\n"
                 + "uniform "
                 + (array ? "sampler2DArray" : "sampler2D")
-                + " image; uniform int material; uniform vec3 hostLighting; uniform float hostAlpha; "
-                + "uniform int alphaEnabled,alphaFunction,lightmapEnabled,outputStraight; uniform float alphaReference; uniform sampler2D lightmapImage; uniform vec2 lightmapUv; "
-                + "in vec2 texUv; flat in float texLayer; in vec4 tint; out vec4 result; "
-                + "bool alphaPass(float a){if(alphaFunction==512)return false;if(alphaFunction==513)return a<alphaReference;if(alphaFunction==514)return a==alphaReference;"
-                + "if(alphaFunction==515)return a<=alphaReference;if(alphaFunction==516)return a>alphaReference;if(alphaFunction==517)return a!=alphaReference;if(alphaFunction==518)return a>=alphaReference;return true;} "
-                + "void main(){if(material==0){result=vec4(tint.rgb*tint.a,tint.a);}else{vec4 s=texture(image,"
+                + " image; uniform int material; uniform vec3 hostLighting; uniform float"
+                + " hostAlpha; uniform int"
+                + " alphaEnabled,alphaFunction,lightmapEnabled,outputStraight; uniform float"
+                + " alphaReference; uniform sampler2D lightmapImage; uniform vec2 lightmapUv; in"
+                + " vec2 texUv; flat in float texLayer; in vec4 tint; out vec4 result; bool"
+                + " alphaPass(float a){if(alphaFunction==512)return"
+                + " false;if(alphaFunction==513)return"
+                + " a<alphaReference;if(alphaFunction==514)return"
+                + " a==alphaReference;if(alphaFunction==515)return"
+                + " a<=alphaReference;if(alphaFunction==516)return"
+                + " a>alphaReference;if(alphaFunction==517)return"
+                + " a!=alphaReference;if(alphaFunction==518)return a>=alphaReference;return true;}"
+                + " void main(){if(material==0){result=vec4(tint.rgb*tint.a,tint.a);}else{vec4"
+                + " s=texture(image,"
                 + (array ? "vec3(texUv,texLayer)" : "texUv")
-                + ");if(material==1){float a=s.a*tint.a;result=vec4(tint.rgb*a,a);}else{result=s*tint.a;}}"
-                + "result*=hostAlpha;result.rgb*=hostLighting;if(lightmapEnabled!=0)result.rgb*=texture(lightmapImage,lightmapUv).rgb;"
-                + "if(alphaEnabled!=0&&!alphaPass(result.a))discard;if(outputStraight!=0){if(material==0||material==1){result.rgb=tint.rgb*hostLighting;if(lightmapEnabled!=0)result.rgb*=texture(lightmapImage,lightmapUv).rgb;}else result.rgb=result.a>0.0?result.rgb/result.a:vec3(0.0);}}";
+                + ");if(material==1){float"
+                + " a=s.a*tint.a;result=vec4(tint.rgb*a,a);}else{result=s*tint.a;}}"
+                + "result*=hostAlpha;result.rgb*=hostLighting;if(lightmapEnabled!=0)result.rgb*=texture(lightmapImage,lightmapUv).rgb;if(alphaEnabled!=0&&!alphaPass(result.a))discard;if(outputStraight!=0){if(material==0||material==1){result.rgb=tint.rgb*hostLighting;if(lightmapEnabled!=0)result.rgb*=texture(lightmapImage,lightmapUv).rgb;}else"
+                + " result.rgb=result.a>0.0?result.rgb/result.a:vec3(0.0);}}";
     }
 
     public GlQuadRenderer(
@@ -180,8 +190,9 @@ public final class GlQuadRenderer implements AutoCloseable {
         return new Counters(this);
     }
 
-    /** clip 是宿主转换完成的 framebuffer 像素，左上原点；MVP 为列主序快照。
-     * framebuffer、viewport、depth function/write mask 与 pass 由宿主固定，本范围仅指定 depth enable。
+    /**
+     * clip 是宿主转换完成的 framebuffer 像素，左上原点；MVP 为列主序快照。 framebuffer、viewport、depth function/write mask
+     * 与 pass 由宿主固定，本范围仅指定 depth enable。
      */
     public Scope begin(float[] mvp, int framebufferHeight, boolean depthEnabled) {
         if (closed || active != null) throw new IllegalStateException("backend 已关闭或范围重入");
@@ -340,10 +351,10 @@ public final class GlQuadRenderer implements AutoCloseable {
             }
             staging.clear();
             for (Quad q : batch.quads()) {
-                vertex(q, q.x, q.y, q.u0, q.v0);
-                vertex(q, q.x + q.width, q.y, q.u1, q.v0);
-                vertex(q, q.x + q.width, q.y + q.height, q.u1, q.v1);
-                vertex(q, q.x, q.y + q.height, q.u0, q.v1);
+                vertex(q, q.x0, q.y0, q.u0, q.v0);
+                vertex(q, q.x1, q.y1, q.u1, q.v0);
+                vertex(q, q.x2, q.y2, q.u1, q.v1);
+                vertex(q, q.x3, q.y3, q.u0, q.v1);
             }
             staging.flip();
             gl.glBufferSubData(GL_ARRAY_BUFFER, 0, staging);

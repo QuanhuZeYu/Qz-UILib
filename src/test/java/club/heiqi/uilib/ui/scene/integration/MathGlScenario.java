@@ -2,21 +2,12 @@ package club.heiqi.uilib.ui.scene.integration;
 
 import static org.lwjgl.glfw.GLFW.*;
 import static org.lwjgl.opengl.GL11.*;
-import java.awt.image.BufferedImage;
-import java.nio.ByteBuffer;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.util.Collections;
-import javax.imageio.ImageIO;
-import org.lwjgl.glfw.GLFWErrorCallback;
-import org.lwjgl.opengl.GL;
-import org.lwjgl.system.MemoryUtil;
+
 import club.heiqi.uilib.host.client.font.ClientFontServices;
 import club.heiqi.uilib.host.client.font.FramebufferCoordinates;
-import club.heiqi.uilib.host.client.gl.GlProgramProvider;
 import club.heiqi.uilib.host.client.gl.GlApi;
 import club.heiqi.uilib.host.client.gl.GlPaintPlanRenderer;
+import club.heiqi.uilib.host.client.gl.GlProgramProvider;
 import club.heiqi.uilib.host.client.gl.Lwjgl3GlApi;
 import club.heiqi.uilib.host.client.image.ClientImageServices;
 import club.heiqi.uilib.host.font.freetype.LwjglFontEngine;
@@ -44,6 +35,20 @@ import club.heiqi.uilib.ui.scene.text.math.MathEmbedMetrics;
 import club.heiqi.uilib.ui.scene.text.math.MathLayout;
 import club.heiqi.uilib.ui.scene.text.math.MathStyle;
 
+import org.lwjgl.glfw.GLFWErrorCallback;
+import org.lwjgl.opengl.GL;
+import org.lwjgl.system.MemoryUtil;
+
+import java.awt.image.BufferedImage;
+import java.nio.ByteBuffer;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.Collections;
+import java.util.Map;
+
+import javax.imageio.ImageIO;
+
 /** 隐藏真实GL上下文：正式ClientFontServices wrapper测量到同PaintPlan的nativeglyph/图像/rule像素。 */
 public final class MathGlScenario extends TestApplication {
     private static final int W = 640, H = 320;
@@ -56,8 +61,10 @@ public final class MathGlScenario extends TestApplication {
     private ScenePageSession page;
     private Signal<MathContent> content;
     private Signal<SceneTheme> theme;
+    private Signal<MathContent> inlineContent;
     private Signal<ImageOptions> imageOptions;
-    private SceneNode math, image, healthy, hiddenMath, hiddenImage;
+    private SceneNode math, image, image2, healthy, hiddenMath, hiddenImage;
+    private Signal<Integer> viewportWidth;
     private PaintPlan plan;
     private int ready, demand;
     private Path output;
@@ -65,7 +72,9 @@ public final class MathGlScenario extends TestApplication {
     private final StringBuilder evidence = new StringBuilder();
 
     private static String tex(String source) {
-        return source.replace('@', (char) 92);
+        return source.replace('@', (char) 92)
+                .replace("html!mathml", "html@mathml")
+                .replace("!not", "@not");
     }
 
     private static final String FORMULA = tex("@frac{x}{2}+@embed{ore}");
@@ -173,6 +182,7 @@ public final class MathGlScenario extends TestApplication {
                                 fonts,
                                 ctx -> {
                                     content = domain.signal(MathContent.parse(FORMULA));
+                                    viewportWidth = domain.signal(W);
                                     theme =
                                             domain.signal(
                                                     SceneTheme.dark()
@@ -196,28 +206,47 @@ public final class MathGlScenario extends TestApplication {
                                     image =
                                             SceneImage.themed(
                                                     images.images(), source, imageOptions, theme);
+                                    image2 =
+                                            SceneImage.themed(
+                                                    images.images(), source, imageOptions, theme);
+                                    Map<String, SceneMath.Embed> mathSlots =
+                                            new java.util.LinkedHashMap<>();
+                                    mathSlots.put(
+                                            "ore",
+                                            new SceneMath.Embed(
+                                                    image, new MathEmbedMetrics(1, 1, .8f)));
+                                    mathSlots.put(
+                                            "ore2",
+                                            new SceneMath.Embed(
+                                                    image2, new MathEmbedMetrics(1, 1, .8f)));
                                     math =
                                             SceneMath.create(
                                                     ctx,
                                                     content,
                                                     theme,
                                                     MathStyle.DISPLAY,
-                                                    Collections.singletonMap(
-                                                            "ore",
-                                                            new SceneMath.Embed(
-                                                                    image,
-                                                                    new MathEmbedMetrics(
-                                                                            1, 1, 0.8f))));
+                                                    mathSlots);
+                                    inlineContent =
+                                            domain.signal(
+                                                    MathContent.parse(
+                                                            tex(
+                                                                    "@displaystyle"
+                                                                            + " @sum@limits_{n=1}^{5}x_n+@sqrt{1+x^2}")));
+                                    SceneNode inlineItem =
+                                            SceneImage.themed(
+                                                    images.images(), source, imageOptions, theme);
                                     healthy =
                                             SceneMath.create(
                                                     ctx,
-                                                    domain.signal(
-                                                            MathContent.parse(
-                                                                    tex(
-                                                                            "@sum@limits_{n=1}^{5}x_n+@sqrt{1+x^2}"))),
+                                                    inlineContent,
                                                     theme,
-                                                    MathStyle.DISPLAY,
-                                                    Collections.emptyMap());
+                                                    MathStyle.TEXT,
+                                                    Collections.singletonMap(
+                                                            "ore",
+                                                            new SceneMath.Embed(
+                                                                    inlineItem,
+                                                                    new MathEmbedMetrics(
+                                                                            1, 1, .8f))));
                                     hiddenImage =
                                             SceneImage.themed(
                                                     images.images(),
@@ -242,6 +271,16 @@ public final class MathGlScenario extends TestApplication {
                                             new SceneNode()
                                                     .size(Size.fill(1), Size.fill(1))
                                                     .padding(14)
+                                                    .clip(true)
+                                                    .bind(
+                                                            club.heiqi.uilib.ui.scene.runtime
+                                                                    .NodeBinding.value(
+                                                                    viewportWidth,
+                                                                    (node, width) ->
+                                                                            node.size(
+                                                                                    Size.fixed(
+                                                                                            width),
+                                                                                    Size.fill(1))))
                                                     .gap(20)
                                                     .add(math)
                                                     .add(healthy)
@@ -259,7 +298,8 @@ public final class MathGlScenario extends TestApplication {
     }
 
     private static final club.heiqi.uilib.ui.scene.image.ItemImageFacts FACTS =
-            new club.heiqi.uilib.ui.scene.image.ItemImageFacts("32", "", false, 1, 0xffffffff);
+            new club.heiqi.uilib.ui.scene.image.ItemImageFacts(
+                    "32", "装饰Item提示", false, 1, 0xffffffff);
 
     private static ImageContent red() {
         byte[] rgba = new byte[16 * 16 * 4];
@@ -591,6 +631,9 @@ public final class MathGlScenario extends TestApplication {
                     save("stretch-reloaded.png", renderReady());
                     domain.execute(() -> require(!SceneMath.layout(math).fallback, "重载后伸缩公式失效"));
                 });
+        scenario("所有装饰family多em真实GL图像", this::decorationPixels);
+        scenario("多个Item背景斜线邻text及全页tooltip真实叠压", this::orderedDecorationPixels);
+        scenario("顶层换行双入口实际GL可选间距Item", this::lineBreakPixels);
         scenario(
                 "字号主题更新及框架整式降级实际PNG",
                 () -> {
@@ -637,6 +680,281 @@ public final class MathGlScenario extends TestApplication {
                     evidence.append("fallback=whole-source no-visible-image").append((char) 10);
                     saveEvidence();
                 });
+    }
+
+    private void decorationPixels() throws Exception {
+        String[] names = {
+            "narrow-accent",
+            "wide-hat",
+            "wide-check",
+            "wide-tilde",
+            "arrow-accent",
+            "under-accent",
+            "over-under",
+            "stack-labels",
+            "xarrow",
+            "paired-arrow",
+            "double-arrow",
+            "brace",
+            "color",
+            "size-class",
+            "phantom",
+            "boxes",
+            "raise-rule",
+            "choice",
+            "vcenter-lap",
+            "smash",
+            "enclose",
+            "pmb",
+            "htmlmathml",
+            "verb",
+            "tag",
+            "linebreak",
+            "text-accent",
+            "rejected-command",
+            "negation-symbol",
+            "negation-overlay",
+            "alignedat"
+        };
+        String[] formulas = {
+            "@hat{x}+@acute{y}",
+            "@widehat{xyz}",
+            "@widecheck{xyz}",
+            "@widetilde{xyz}",
+            "@overleftrightarrow{xyz}+@vec{x}",
+            "@utilde{xyz}+@underleftarrow{xyz}",
+            "@overline{xy}+@underline{xy}",
+            "@overset{a}{x}+@underset{b}{y}+@stackrel{!}{=}",
+            "@xrightarrow[b]{abc}",
+            "@xrightleftharpoons[b]{abc}",
+            "@xLeftrightarrow[b]{abc}",
+            "@overbrace{xyz}^{n}+@underbrace{xyz}_{m}",
+            "@textcolor{red}{x}+@textcolor{blue}{y}+@textcolor{currentColor}{z}",
+            "{@Huge x}+@mathrel{y}",
+            "x+@phantom{yyyy}+@hphantom{x}+@vphantom{y}",
+            "@boxed{x}+@colorbox{yellow}{x}+@fcolorbox{blue}{cyan}{y}",
+            "@raisebox{.2em}{x}+@rule[.1em]{.5em}{.08em}",
+            "@mathchoice{D}{T}{S}{s}",
+            "@vcenter{x}+@mathllap{x}+@mathrlap{y}+@mathclap{z}",
+            "@smash[t]{x}+@smash[b]{y}",
+            "@cancel{x}+@bcancel{x}+@xcancel{x}+@angl{x}+@sout{x}+@phase{x}",
+            "@pmb{x+y}",
+            "@html!mathml{x}{y}",
+            "@verb|a b|",
+            "x@tag{label}",
+            "x@@y",
+            "@c{x}+@text{@^{x}@.{x}@c{x}@H{x}}",
+            "x+@href{https://example.org}{hidden}",
+            "@!not x+@not=+@not@subset",
+            "@colorbox{yellow}{$@textcolor{lime}{@not=+@not@subset}$}",
+            "@begin{alignedat}{2}@embed{ore}+a&=b&c&=d@@x&=y&z&=w@end{alignedat}"
+        };
+        for (float em : new float[] {18, 31.5f})
+            for (int i = 0; i < formulas.length; i++) {
+                final boolean alignedat = names[i].equals("alignedat");
+                final String formula = tex(formulas[i] + (alignedat ? "" : "+@embed{ore}"));
+                domain.execute(
+                        () -> {
+                            theme.set(
+                                    SceneTheme.dark()
+                                            .withTextStyle(
+                                                    new TextStyle(
+                                                            "default",
+                                                            em,
+                                                            0xffeaeaea,
+                                                            null,
+                                                            club.heiqi.uilib.ui.scene.text
+                                                                    .TextEffects.NORMAL,
+                                                            club.heiqi.uilib.ui.scene.text
+                                                                    .TextDecoration.NONE)));
+                            imageOptions.set(ImageOptions.defaults());
+                            content.set(MathContent.parse(formula));
+                        });
+                BufferedImage result = renderReady();
+                save("decoration-" + names[i] + "-" + em + ".png", result);
+                final LayoutBox[] area = {null};
+                domain.execute(
+                        () -> {
+                            MathLayout value = SceneMath.layout(math);
+                            require(
+                                    !value.fallback,
+                                    "真实GL装饰整式降级: " + formula + " " + value.diagnostics);
+                            area[0] = page.pipeline().current().geometry.get(math).box;
+                            require(value.embeds.size() == 1, "family fixture重复Item");
+                            if (alignedat) {
+                                require(value.diagnostics.isEmpty(), "合法alignedat有数学诊断");
+                                require(
+                                        Float.isFinite(value.width + value.height + value.baseline),
+                                        "alignedat几何非有限");
+                            }
+                        });
+                changed("decoration-" + names[i] + "-" + em, area[0], result, true);
+                require(glGetError() == GL_NO_ERROR, "装饰GL错误");
+            }
+    }
+
+    private void lineBreakPixels() throws Exception {
+        String[] formulas = {"x@@[1pt]y", "@displaystyle x@@[-1pt]y+@embed{ore}"};
+        for (float em : new float[] {18, 31.5f})
+            for (int i = 0; i < formulas.length; i++) {
+                String formula = tex(formulas[i]);
+                domain.execute(
+                        () -> {
+                            viewportWidth.set(W);
+                            theme.set(
+                                    SceneTheme.dark()
+                                            .withTextStyle(
+                                                    new TextStyle(
+                                                            "default",
+                                                            em,
+                                                            0xffeaeaea,
+                                                            null,
+                                                            club.heiqi.uilib.ui.scene.text
+                                                                    .TextEffects.NORMAL,
+                                                            club.heiqi.uilib.ui.scene.text
+                                                                    .TextDecoration.NONE)));
+                            imageOptions.set(ImageOptions.defaults().tooltip(true));
+                            content.set(MathContent.parse(formula));
+                            inlineContent.set(MathContent.parse(formula));
+                        });
+                BufferedImage pixels = renderReady();
+                save("linebreak-" + i + "-" + em + ".png", pixels);
+                domain.execute(
+                        () -> {
+                            for (SceneNode node : new SceneNode[] {math, healthy}) {
+                                MathLayout layout = SceneMath.layout(node);
+                                require(!layout.fallback, "双入口换行降级");
+                                float first = Float.NaN, second = Float.NaN;
+                                for (MathLayout.TextPiece piece : layout.pieces) {
+                                    String original =
+                                            formula.substring(piece.sourceStart, piece.sourceEnd);
+                                    if (original.equals("x"))
+                                        first = piece.y + piece.text.lines().get(0).baseline;
+                                    if (original.equals("y"))
+                                        second = piece.y + piece.text.lines().get(0).baseline;
+                                }
+                                require(second > first, "实际GPU换行未生成两个基线");
+                                require(
+                                        layout.embeds.size() == (formula.contains("embed") ? 1 : 0),
+                                        "多行Item资格错误");
+                            }
+                        });
+                final LayoutBox[] area = {null};
+                domain.execute(() -> area[0] = page.pipeline().current().geometry.get(math).box);
+                changed("linebreak-" + i + "-" + em, area[0], pixels, true);
+                require(glGetError() == GL_NO_ERROR, "换行GL错误");
+            }
+        domain.execute(
+                () ->
+                        inlineContent.set(
+                                MathContent.parse(
+                                        tex(
+                                                "@displaystyle"
+                                                        + " @sum@limits_{n=1}^{5}x_n+@sqrt{1+x^2}"))));
+        renderReady();
+    }
+
+    private void orderedDecorationPixels() throws Exception {
+        String formula =
+                tex(
+                        "@colorbox{yellow}{$@textcolor{lime}{@cancel{@embed{ore}}}$}x@fcolorbox{blue}{cyan}{$@embed{ore2}$}y");
+        domain.execute(
+                () -> {
+                    theme.set(
+                            SceneTheme.dark()
+                                    .withTextStyle(
+                                            new TextStyle(
+                                                    "default",
+                                                    31.5f,
+                                                    0xffeeeeee,
+                                                    null,
+                                                    club.heiqi.uilib.ui.scene.text.TextEffects
+                                                            .NORMAL,
+                                                    club.heiqi.uilib.ui.scene.text.TextDecoration
+                                                            .NONE)));
+                    content.set(MathContent.parse(formula));
+                    imageOptions.set(ImageOptions.defaults().quantity(true).tooltip(true));
+                });
+        BufferedImage pixels = renderReady();
+        save("decoration-ordered.png", pixels);
+        final LayoutBox[] item = {null};
+        final long[] generation = {0};
+        domain.execute(
+                () -> {
+                    require(!SceneMath.layout(math).fallback, "有序装饰降级");
+                    java.util.List<PaintCommand> commands = plan.commands();
+                    int bg = -1, a = -1, line = -1, text = -1, b = -1;
+                    for (int i = 0; i < commands.size(); i++) {
+                        PaintCommand c = commands.get(i);
+                        if (c.kind == PaintCommand.Kind.RECT && c.color == 0xffffff00) bg = i;
+                        if (c.kind == PaintCommand.Kind.IMAGE
+                                && c.clip != null
+                                && c.box.intersect(c.clip).width == 0) continue;
+                        if (c.kind == PaintCommand.Kind.IMAGE) {
+                            if (a < 0) a = i;
+                            else b = i;
+                        }
+                        if (c.kind == PaintCommand.Kind.LINE && c.color == 0xff00ff00) line = i;
+                        if (c.kind == PaintCommand.Kind.TEXT && a >= 0 && b < 0) text = i;
+                    }
+                    require(bg < a && a < line && line < text && text < b, "GPU计划未保持Item之间有序绘制");
+                    item[0] = page.pipeline().current().geometry.get(image).box;
+                    generation[0] = SceneMath.layout(math).pieces.get(0).text.generation;
+                });
+        LayoutBox box = item[0];
+        int green = 0;
+        for (int y = box.y; y < box.y + box.height; y++)
+            for (int x = box.x; x < box.x + box.width; x++) {
+                int rgb = pixels.getRGB(x, y),
+                        r = (rgb >>> 16) & 255,
+                        g = (rgb >>> 8) & 255,
+                        b = rgb & 255;
+                if (g > 100 && g > r * 1.5 && g > b * 1.5) green++;
+            }
+        require(green > 0, "cancel实际LINE像素被Item覆盖");
+        evidence.append("ordered-cancel-green=").append(green).append((char) 10);
+        page.pointer(
+                club.heiqi.uilib.ui.scene.input.ScenePointerEvent.move(
+                        box.x + box.width / 2, box.y + box.height / 2));
+        BufferedImage tip = renderReady();
+        save("decoration-ordered-tooltip.png", tip);
+        domain.execute(
+                () -> {
+                    require(
+                            page.runtime()
+                                            .pointerRouter()
+                                            .passiveHovered(page.pipeline().current().geometry)
+                                    == image,
+                            "绘制段窃取passivehover");
+                    int lastLine = -1, tooltip = -1;
+                    for (int i = 0; i < plan.commands().size(); i++) {
+                        PaintCommand c = plan.commands().get(i);
+                        if (c.kind == PaintCommand.Kind.LINE) lastLine = i;
+                        if (c.kind == PaintCommand.Kind.TEXT
+                                && c.text.logicalText.equals("装饰Item提示")) tooltip = i;
+                    }
+                    require(tooltip > lastLine, "公式suffix盖过全页tooltip");
+                });
+        page.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.move(W - 1, H - 1));
+        domain.execute(() -> viewportWidth.set(95));
+        save("decoration-width-signal.png", renderReady());
+        domain.execute(
+                () -> {
+                    viewportWidth.set(W);
+                    theme.set(
+                            SceneTheme.light()
+                                    .withTextStyle(new TextStyle("default", 24, 0xff663399)));
+                });
+        save("decoration-theme-signal.png", renderReady());
+        fonts.reload(MathGlScenario.class.getClassLoader(), System.nanoTime());
+        save("decoration-generation.png", renderReady());
+        domain.execute(
+                () ->
+                        require(
+                                SceneMath.layout(math).pieces.get(0).text.generation
+                                        != generation[0],
+                                "重载保留旧字形generation"));
+        saveEvidence();
     }
 
     private void assemblyPixels(

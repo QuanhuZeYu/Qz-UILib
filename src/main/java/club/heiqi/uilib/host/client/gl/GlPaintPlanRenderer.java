@@ -2,8 +2,6 @@ package club.heiqi.uilib.host.client.gl;
 
 import static club.heiqi.uilib.host.client.gl.GlTokens.*;
 
-import java.util.LinkedHashSet;
-import java.util.Objects;
 import club.heiqi.uilib.host.client.font.context.FontRenderContext;
 import club.heiqi.uilib.ui.render.batch.OrderedQuadBatch.Quad;
 import club.heiqi.uilib.ui.render.batch.OrderedQuadBatch.State;
@@ -16,10 +14,13 @@ import club.heiqi.uilib.ui.scene.text.font.glyph.AsyncGlyphRasterizer;
 import club.heiqi.uilib.ui.scene.text.font.glyph.GlyphKey;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.InkBounds;
 
-/** 正式 PaintPlan 回放：位置只消费不可变 Glyph，不重新布局、读取 scene 或等待字形。
- * 调用方先 prepare（资源上传/失效通知边界），再 replay（固定MVP/depth/pass），最后关闭 Prepared。
- * plan.box/clip、glyph定位及 prepare.viewport 均为原生 framebuffer 像素（左上原点）。
- * 旧UI重载MVP将framebuffer XY映到clip，不再次GUI scale。FontRenderContext重载直接接受caller XY，
+import java.util.LinkedHashSet;
+import java.util.Objects;
+
+/**
+ * 正式 PaintPlan 回放：位置只消费不可变 Glyph，不重新布局、读取 scene 或等待字形。 调用方先 prepare（资源上传/失效通知边界），再
+ * replay（固定MVP/depth/pass），最后关闭 Prepared。 plan.box/clip、glyph定位及 prepare.viewport 均为原生 framebuffer
+ * 像素（左上原点）。 旧UI重载MVP将framebuffer XY映到clip，不再次GUI scale。FontRenderContext重载直接接受caller XY，
  * 保留P/MV/viewport/FBO与齐次w；只使用context outer scissor，不把callerclip矩形近似成screenrect。
  * CPU与atlas由宿主持有，可跨renderer复用；本类仅拥有自己的quad backend。
  */
@@ -163,8 +164,7 @@ public final class GlPaintPlanRenderer implements AutoCloseable {
                 plan, viewport, budget, collectVisibleDemand(plan, viewport), true, null);
     }
 
-    /** 显式资源准备入口；共享owner传入已裁决的epoch需求与剩余预算，不能重新扩张需求。
-     * onClose仅归还owner生命周期，不控制渲染或上传。 */
+    /** 显式资源准备入口；共享owner传入已裁决的epoch需求与剩余预算，不能重新扩张需求。 onClose仅归还owner生命周期，不控制渲染或上传。 */
     public Prepared prepareDemand(
             PaintPlan plan,
             LayoutBox viewport,
@@ -196,7 +196,8 @@ public final class GlPaintPlanRenderer implements AutoCloseable {
         Objects.requireNonNull(viewport, "viewport");
         boolean needsSolid = false;
         for (PaintCommand command : plan.resourceCommands())
-            if (command.kind == PaintCommand.Kind.RECT) needsSolid = true;
+            if (command.kind == PaintCommand.Kind.RECT || command.kind == PaintCommand.Kind.LINE)
+                needsSolid = true;
             else if (command.kind == PaintCommand.Kind.IMAGE) needsSolid = true;
             else if (command.text != null)
                 for (TextLayout.Line line : command.text.lines())
@@ -426,6 +427,35 @@ public final class GlPaintPlanRenderer implements AutoCloseable {
                         command.box.height,
                         command.color,
                         clip);
+            } else if (command.kind == PaintCommand.Kind.LINE) {
+                if (command.line.empty()) return;
+                GlGlyphAtlas.Resident white =
+                        prepared.frame.view == GlGlyphAtlas.SamplingView.STRAIGHT_RGBA
+                                ? prepared.frame.solid()
+                                : null;
+                if (prepared.frame.view == GlGlyphAtlas.SamplingView.STRAIGHT_RGBA && white == null)
+                    return;
+                PaintCommand.Line line = command.line;
+                collector.add(
+                        white == null
+                                ? new State(GlQuadRenderer.SOLID, 0, 0, clip)
+                                : new State(
+                                        GlQuadRenderer.MONOCHROME_COVERAGE,
+                                        white.resource,
+                                        white.generation,
+                                        clip),
+                        Quad.line(
+                                line.x0,
+                                line.y0,
+                                line.x1,
+                                line.y1,
+                                line.thickness,
+                                white == null ? 0 : white.u0,
+                                white == null ? 0 : white.v0,
+                                white == null ? 0 : white.u1,
+                                white == null ? 0 : white.v1,
+                                0,
+                                command.color));
             } else if (command.kind == PaintCommand.Kind.IMAGE) {
                 club.heiqi.uilib.ui.scene.image.ImagePlacement image = command.image;
                 if (context != null) throw new IllegalStateException("图像只支持framebuffer scene回放");
