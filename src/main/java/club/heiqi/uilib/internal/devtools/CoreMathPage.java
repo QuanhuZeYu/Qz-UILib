@@ -148,6 +148,42 @@ public final class CoreMathPage extends MinecraftSceneScreen {
                                 MathStyle.TEXT,
                                 slots(ctx, theme, item, "up", "down", "top"))
                         .padding(5);
+        SceneNode fences =
+                SceneMath.create(
+                                ctx,
+                                ctx.domain()
+                                        .signal(
+                                                MathContent.parse(
+                                                        tex(
+                                                                "@left@{@frac{1}{@frac{1}{@frac{@embed{fence}}{1+x}}}@middle|@binom{n}{k}@right@}^{2}"))),
+                                theme,
+                                MathStyle.DISPLAY,
+                                slots(ctx, theme, item, "fence"))
+                        .padding(5);
+        SceneNode tallRoot =
+                SceneMath.create(
+                                ctx,
+                                ctx.domain()
+                                        .signal(
+                                                MathContent.parse(
+                                                        tex(
+                                                                "@sqrt{@frac{1}{@frac{1}{@frac{1}{@frac{@embed{tall}}{1+x}}}}}"))),
+                                theme,
+                                MathStyle.DISPLAY,
+                                slots(ctx, theme, item, "tall"))
+                        .padding(5);
+        SceneNode binomial =
+                SceneMath.create(
+                                ctx,
+                                ctx.domain()
+                                        .signal(
+                                                MathContent.parse(
+                                                        tex(
+                                                                "@binom{@embed{chooseTop}+n}{@embed{chooseBottom}}+@left.@frac{x}{1+x}@right|_{x=0}"))),
+                                theme,
+                                MathStyle.DISPLAY,
+                                slots(ctx, theme, item, "chooseTop", "chooseBottom"))
+                        .padding(5);
         SceneNode viewport =
                 new SceneNode()
                         .size(Size.fill(1), Size.fixed(210))
@@ -161,7 +197,10 @@ public final class CoreMathPage extends MinecraftSceneScreen {
                         .add(integral)
                         .add(sum)
                         .add(root)
-                        .add(scripts);
+                        .add(scripts)
+                        .add(fences)
+                        .add(tallRoot)
+                        .add(binomial);
         SceneNode actions =
                 new SceneNode()
                         .axis(SceneNode.Axis.ROW)
@@ -232,8 +271,17 @@ public final class CoreMathPage extends MinecraftSceneScreen {
                                                                         SceneMath.layout(root))
                                                                 + " 脚本："
                                                                 + diagnostics(
+                                                                        SceneMath.layout(scripts))
+                                                                + " 定界符："
+                                                                + diagnostics(
+                                                                        SceneMath.layout(fences))
+                                                                + " 大根式："
+                                                                + diagnostics(
+                                                                        SceneMath.layout(tallRoot))
+                                                                + " 二项式："
+                                                                + diagnostics(
                                                                         SceneMath.layout(
-                                                                                scripts)))));
+                                                                                binomial)))));
         SceneNode page =
                 new SceneNode()
                         .size(Size.fill(1), Size.fill(1))
@@ -243,7 +291,7 @@ public final class CoreMathPage extends MinecraftSceneScreen {
                         .bind(
                                 NodeBinding.value(
                                         theme, (node, value) -> node.background(value.panel)))
-                        .add(SceneLabel.create(ctx, () -> "数学与物品：积分分子、求和上下限、根指数与双脚本", theme))
+                        .add(SceneLabel.create(ctx, () -> "数学与物品：积分、脚本、伸缩定界符、大根式与二项式", theme))
                         .add(actions)
                         .add(controls)
                         .add(viewport)

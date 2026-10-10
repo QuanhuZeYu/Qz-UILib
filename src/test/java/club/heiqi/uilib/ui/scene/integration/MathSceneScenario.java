@@ -63,6 +63,7 @@ public final class MathSceneScenario extends TestApplication {
         // 旧实现可能在小盒收敛循环挂起；独立探针模式只测三个固定字号，父代理先取证再跑回归。
         if (java.util.Arrays.asList(arguments()).contains("--quantity-decoration-probe")) return;
         scenario("真实公式同代glyph浮点投影与分式脚本图像", this::geometry);
+        scenario("伸缩定界符二项式和大根式动态Item同代投影", this::stretchStructures);
         scenario("数量32真实墨迹随公式盒缩放及提示独立字号", this::quantity);
         scenario("三像素小盒带装饰数量完整保留与有界缩小", this::quantityDecoration);
         scenario("被动hover祖先clip窄视口滚动", this::input);
@@ -244,6 +245,84 @@ public final class MathSceneScenario extends TestApplication {
         public void close() {
             page.close();
             images.close();
+        }
+    }
+
+    private void stretchStructures() throws Exception {
+        String[] formulas = {
+            tex("@left@{@frac{1}{@frac{1}{@frac{@embed{ore}}{x}}}@middle|@binom{n}{k}@right@}^{2}"),
+            tex("@sqrt{@frac{1}{@frac{1}{@frac{1}{@frac{@embed{ore}}{x}}}}}"),
+            tex("@binom{@embed{ore}+n}{k}+@left.@frac{x}{1+x}@right|_{x=0}")
+        };
+        for (String formula : formulas) {
+            try (Fixture f = new Fixture(formula, MathStyle.DISPLAY, 28, "32", "ore")) {
+                f.ready();
+                f.domain.execute(
+                        () -> {
+                            healthy(f.layout());
+                            placement(f, "ore");
+                            require(f.layout().embeds.size() == 1, "结构式丢失Item绑定");
+                            if (formula.startsWith(tex("@sqrt")))
+                                require(
+                                        f.layout().pieces.stream()
+                                                .anyMatch(
+                                                        p ->
+                                                                p.text.lines().stream()
+                                                                        .anyMatch(
+                                                                                line ->
+                                                                                        line.glyphs()
+                                                                                                                .size()
+                                                                                                        > 1
+                                                                                                && p
+                                                                                                        .text
+                                                                                                        .logicalText
+                                                                                                        .equals(
+                                                                                                                "√"))),
+                                        "大型根式未用真实部件");
+                        });
+                f.domain.execute(() -> quantityFits(quantityObservations(f, "stretch-normal")));
+                f.domain.execute(
+                        () ->
+                                f.theme.set(
+                                        SceneTheme.light()
+                                                .withTextStyle(new TextStyle("default", 38, -1))));
+                f.frame();
+                f.domain.execute(
+                        () -> {
+                            healthy(f.layout());
+                            placement(f, "ore");
+                        });
+                f.domain.execute(() -> quantityFits(quantityObservations(f, "stretch-light38")));
+                fonts.reload(fonts.defaultCandidates());
+                f.frame();
+                f.domain.execute(
+                        () -> {
+                            healthy(f.layout());
+                            placement(f, "ore");
+                            for (MathLayout.TextPiece piece : f.layout().pieces)
+                                require(
+                                        piece.text.generation == fonts.generation(),
+                                        "伸缩结构重载数学facts混代");
+                            require(
+                                    f.geometry().get(f.math).text.generation == fonts.generation(),
+                                    "伸缩结构重载投影混代");
+                        });
+                f.domain.execute(() -> f.content.set(MathContent.parse(tex("@left(@embed{ore}"))));
+                f.frame();
+                f.domain.execute(
+                        () ->
+                                require(
+                                        f.layout().fallback
+                                                && f.geometry().get(f.nodes.get("ore")) == null,
+                                        "错配伸缩公式未整式诊断或残留Item"));
+                f.domain.execute(() -> f.content.set(MathContent.parse(formula)));
+                f.frame();
+                f.domain.execute(
+                        () -> {
+                            healthy(f.layout());
+                            placement(f, "ore");
+                        });
+            }
         }
     }
 

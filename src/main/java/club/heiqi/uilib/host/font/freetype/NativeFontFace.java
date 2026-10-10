@@ -333,6 +333,45 @@ public final class NativeFontFace implements FontFace {
         return Collections.unmodifiableList(result);
     }
 
+    public club.heiqi.uilib.ui.scene.text.font.nativefont.MathData.Assembly mathAssembly(
+            int glyphId) {
+        checkMath();
+        checkGlyph(glyphId);
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            java.nio.IntBuffer count = stack.ints(0), italic = stack.ints(0);
+            int total =
+                    org.lwjgl.util.harfbuzz.OpenType.hb_ot_math_get_glyph_assembly(
+                            font, glyphId, HarfBuzz.HB_DIRECTION_TTB, 0, count, null, italic);
+            if (total == 0) return null;
+            java.util.List<club.heiqi.uilib.ui.scene.text.font.nativefont.MathData.Part> result =
+                    new ArrayList<club.heiqi.uilib.ui.scene.text.font.nativefont.MathData.Part>();
+            float scale = pixelScale / 64.0f;
+            try (org.lwjgl.util.harfbuzz.hb_ot_math_glyph_part_t.Buffer parts =
+                    org.lwjgl.util.harfbuzz.hb_ot_math_glyph_part_t.malloc(total)) {
+                count.put(0, total);
+                org.lwjgl.util.harfbuzz.OpenType.hb_ot_math_get_glyph_assembly(
+                        font, glyphId, HarfBuzz.HB_DIRECTION_TTB, 0, count, parts, italic);
+                // HB 竖向部件保留 OpenType 的底到顶顺序，不因 TTB 方向反转。
+                for (int i = 0; i < count.get(0); i++) {
+                    org.lwjgl.util.harfbuzz.hb_ot_math_glyph_part_t part = parts.get(i);
+                    result.add(
+                            new club.heiqi.uilib.ui.scene.text.font.nativefont.MathData.Part(
+                                    part.glyph(),
+                                    part.start_connector_length() * scale,
+                                    part.end_connector_length() * scale,
+                                    part.full_advance() * scale,
+                                    (part.flags() & 1) != 0));
+                }
+            }
+            return new club.heiqi.uilib.ui.scene.text.font.nativefont.MathData.Assembly(
+                    result,
+                    org.lwjgl.util.harfbuzz.OpenType.hb_ot_math_get_min_connector_overlap(
+                                    font, HarfBuzz.HB_DIRECTION_TTB)
+                            * scale,
+                    italic.get(0) * scale);
+        }
+    }
+
     private void checkGlyph(int glyphId) {
         checkOpen();
         if (glyphId <= 0 || glyphId >= face.num_glyphs())

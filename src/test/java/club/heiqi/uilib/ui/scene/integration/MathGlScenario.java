@@ -526,6 +526,72 @@ public final class MathGlScenario extends TestApplication {
                     require(glGetError() == GL_NO_ERROR, "数量覆盖层GL错误");
                 });
         scenario(
+                "真实MATH部件连续像素与定界符二项式Item",
+                () -> {
+                    String[] formulas = {
+                        tex(
+                                "@left@{@dfrac{1}{@dfrac{1}{@dfrac{@embed{ore}}{1+x}}}@middle|@binom{n}{k}@right@}"),
+                        tex("@sqrt{@dfrac{1}{@dfrac{1}{@dfrac{@embed{ore}}{1+x}}}}"),
+                        tex("@binom{@embed{ore}+n}{k}+@left.@frac{x}{1+x}@right|_{x=0}")
+                    };
+                    for (int f = 0; f < formulas.length; f++) {
+                        final String formula = formulas[f];
+                        for (float em : new float[] {18, 28}) {
+                            domain.execute(
+                                    () -> {
+                                        theme.set(
+                                                SceneTheme.dark()
+                                                        .withTextStyle(
+                                                                new TextStyle(
+                                                                        "default",
+                                                                        em,
+                                                                        -1,
+                                                                        null,
+                                                                        club.heiqi.uilib.ui.scene
+                                                                                .text.TextEffects
+                                                                                .NORMAL,
+                                                                        club.heiqi.uilib.ui.scene
+                                                                                .text.TextDecoration
+                                                                                .NONE)));
+                                        content.set(MathContent.parse(formula));
+                                        imageOptions.set(ImageOptions.defaults().quantity(true));
+                                    });
+                            BufferedImage rendered = renderReady();
+                            save("stretch-" + f + "-" + (int) em + ".png", rendered);
+                            final int[] assemblies = {0};
+                            domain.execute(
+                                    () -> {
+                                        MathLayout value = SceneMath.layout(math);
+                                        require(
+                                                !value.fallback,
+                                                "伸缩结构实际GPU降为原文: " + value.diagnostics);
+                                        require(value.embeds.size() == 1, "伸缩结构丢失Item");
+                                        LayoutBox origin =
+                                                page.pipeline().current().geometry.get(math).box;
+                                        for (MathLayout.TextPiece piece : value.pieces) {
+                                            String symbol = piece.text.logicalText;
+                                            if (!(symbol.equals("{")
+                                                    || symbol.equals("}")
+                                                    || symbol.equals("√")
+                                                    || symbol.equals("|"))) continue;
+                                            int glyphCount =
+                                                    piece.text.lines().stream()
+                                                            .mapToInt(line -> line.glyphs().size())
+                                                            .sum();
+                                            if (glyphCount <= 1) continue;
+                                            assemblies[0]++;
+                                            assemblyPixels(piece, origin, rendered, em);
+                                        }
+                                    });
+                            if (f < 2) require(assemblies[0] > 0, "代表性高内容没有进入真实部件构建");
+                            require(glGetError() == GL_NO_ERROR, "伸缩部件GL错误");
+                        }
+                    }
+                    fonts.reload(MathGlScenario.class.getClassLoader(), System.nanoTime());
+                    save("stretch-reloaded.png", renderReady());
+                    domain.execute(() -> require(!SceneMath.layout(math).fallback, "重载后伸缩公式失效"));
+                });
+        scenario(
                 "字号主题更新及框架整式降级实际PNG",
                 () -> {
                     domain.execute(
@@ -571,6 +637,65 @@ public final class MathGlScenario extends TestApplication {
                     evidence.append("fallback=whole-source no-visible-image").append((char) 10);
                     saveEvidence();
                 });
+    }
+
+    private void assemblyPixels(
+            MathLayout.TextPiece piece, LayoutBox origin, BufferedImage rendered, float em) {
+        float left = Float.POSITIVE_INFINITY, top = Float.POSITIVE_INFINITY;
+        float right = Float.NEGATIVE_INFINITY, bottom = Float.NEGATIVE_INFINITY;
+        int glyphs = 0;
+        for (TextLayout.Line line : piece.text.lines())
+            for (TextLayout.Glyph glyph : line.glyphs()) {
+                require(glyph.inkBounds.known && glyph.source != null, "拼接部件没有真实native墨迹");
+                left = Math.min(left, origin.x + piece.x + glyph.x + glyph.inkBounds.left);
+                top = Math.min(top, origin.y + piece.y + glyph.y + glyph.inkBounds.top);
+                right = Math.max(right, origin.x + piece.x + glyph.x + glyph.inkBounds.right);
+                bottom = Math.max(bottom, origin.y + piece.y + glyph.y + glyph.inkBounds.bottom);
+                glyphs++;
+            }
+        LayoutBox area = bounds(left, top, right - left, bottom - top);
+        require(
+                area.x >= 0 && area.y >= 0 && area.x + area.width <= W && area.y + area.height <= H,
+                "拼接像素证据被视口裁断");
+        int first = -1, last = -1, empty = 0, pixels = 0;
+        boolean[] rows = new boolean[area.height];
+        for (int y = 0; y < area.height; y++)
+            for (int x = area.x; x < area.x + area.width; x++) {
+                int pixel = rendered.getRGB(x, area.y + y);
+                // 白色真实数学字形，不把背景或中性红色Item算作连接像素。
+                if (((pixel >> 16) & 255) > 80 && ((pixel >> 8) & 255) > 80 && (pixel & 255) > 80) {
+                    rows[y] = true;
+                    pixels++;
+                }
+            }
+        for (int y = 0; y < rows.length; y++)
+            if (rows[y]) {
+                if (first < 0) first = y;
+                last = y;
+            }
+        for (int y = first; y <= last && y >= 0; y++) if (!rows[y]) empty++;
+        require(
+                first >= 0 && empty == 0,
+                "真实拼接存在整行裂缝: " + piece.text.logicalText + " emptyRows=" + empty);
+        evidence.append("assembly symbol=")
+                .append(piece.text.logicalText)
+                .append(" em=")
+                .append(em)
+                .append(" glyphs=")
+                .append(glyphs)
+                .append(" ink=")
+                .append(area.x)
+                .append(',')
+                .append(area.y)
+                .append(',')
+                .append(area.width)
+                .append(',')
+                .append(area.height)
+                .append(" pixels=")
+                .append(pixels)
+                .append(" emptyRows=")
+                .append(empty)
+                .append((char) 10);
     }
 
     private BufferedImage renderReady() throws Exception {

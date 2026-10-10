@@ -4,6 +4,44 @@ package club.heiqi.uilib.ui.scene.text.font.nativefont;
 public final class MathData {
     private MathData() {}
 
+    /** 同一请求 em 的竖向部件；start 为底端、end 为顶端，fullAdvance 以字形原点定位。 */
+    public static final class Part {
+        public final int glyphId;
+        public final float startConnector, endConnector, fullAdvance;
+        public final boolean extender;
+
+        public Part(
+                int glyphId,
+                float startConnector,
+                float endConnector,
+                float fullAdvance,
+                boolean extender) {
+            this.glyphId = glyphId;
+            this.startConnector = startConnector;
+            this.endConnector = endConnector;
+            this.fullAdvance = fullAdvance;
+            this.extender = extender;
+        }
+    }
+
+    /** 不可变竖向构建事实；所有长度与倾斜修正均为请求 em 的逻辑像素。 */
+    public static final class Assembly {
+        private final java.util.List<Part> parts;
+        public final float minOverlap, italicCorrection;
+
+        public Assembly(java.util.List<Part> parts, float minOverlap, float italicCorrection) {
+            java.util.ArrayList<Part> copy = new java.util.ArrayList<Part>(parts);
+            for (Part part : copy) java.util.Objects.requireNonNull(part, "part");
+            this.parts = java.util.Collections.unmodifiableList(copy);
+            this.minOverlap = minOverlap;
+            this.italicCorrection = italicCorrection;
+        }
+
+        public java.util.List<Part> parts() {
+            return parts;
+        }
+    }
+
     /** MATH 竖向 variant 的完整高度 advance；横向 advance 必须另查同一 HB font。 */
     public static final class Variant {
         public final int glyphId;

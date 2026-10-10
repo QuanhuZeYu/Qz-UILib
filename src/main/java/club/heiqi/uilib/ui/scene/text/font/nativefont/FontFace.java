@@ -51,6 +51,11 @@ public interface FontFace extends AutoCloseable {
         throw new UnsupportedOperationException("字体后端不支持 OpenType MATH variants");
     }
 
+    /** 竖向部件按底到顶排列；无构建能力返回 null，快照不持有 native 地址。 */
+    default MathData.Assembly mathAssembly(int glyphId) {
+        return null;
+    }
+
     default float mathItalicCorrection(int glyphId) {
         throw new UnsupportedOperationException("字体后端不支持 OpenType MATH");
     }

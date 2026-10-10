@@ -67,6 +67,11 @@ public final class MathLayoutScenario extends TestApplication {
         scenario("MATH净空脚本层级根指数及作用域", this::geometry);
         scenario("源码复用动态主题字号原子间距", this::dynamic);
         scenario("完整源文降级UTF16定位与邻式隔离", this::failures);
+        scenario("同分组定界配对与UTF16完整源诊断", this::delimiterFailures);
+        scenario("真实定界字形数学轴多middle与嵌套Item", this::delimiters);
+        scenario("定界token矩阵及不可见边界四样式", this::delimiterTokens);
+        scenario("二项式真实stack净空居中与外侧脚本", this::binomial);
+        scenario("真实定界字形原点平移后墨迹仍居数学轴", this::delimiterOrigins);
     }
 
     private void representative() {
@@ -383,10 +388,14 @@ public final class MathLayoutScenario extends TestApplication {
         require(rejected, "全空候选没有保持普通文字严格失败");
         String huge = tex("@sqrt{@embed{huge}}");
         Map<String, MathEmbedMetrics> hugeSlot = slots("huge");
-        hugeSlot.put("huge", new MathEmbedMetrics(1, 100, 80));
-        fallback(layout(huge, MathStyle.TEXT, hugeSlot), huge, "font", 0, huge.length());
-        for (String malformed :
-                new String[] {"x^2^3", "x_1_2", "{x", "@frac{x}", "@left(x@right)"}) {
+        hugeSlot.put("huge", new MathEmbedMetrics(1, Float.MAX_VALUE, 0.8f));
+        fallback(
+                layout(huge, MathStyle.TEXT, hugeSlot),
+                huge,
+                "layout",
+                huge.indexOf(tex("@embed")),
+                huge.length() - 1);
+        for (String malformed : new String[] {"x^2^3", "x_1_2", "{x", "@frac{x}", "@left(x"}) {
             String source = tex(malformed);
             MathLayout result = layout(source, MathStyle.TEXT, slots());
             require(
@@ -456,6 +465,469 @@ public final class MathLayoutScenario extends TestApplication {
                 "空式不合法");
     }
 
+    /** 这些反例经过生产解析和整式降级入口，不访问内部 AST。 */
+    private void delimiterFailures() {
+        String[][] cases = {
+            {"𝑥@left", "", "缺少定界token"},
+            {"𝑥@left😀x@right)", "😀", "无效码点token"},
+            {"@left a x@right)", "a", "普通字母不能作token"},
+            {"@left@unknown x@right)", "@unknown", "未知命令token"},
+            {"x@middle|y", "@middle", "middle没有本组left"},
+            {"x@right)", "@right", "right没有本组left"},
+            {"@left({x@right)}", "@right", "right不可跨花括号"},
+            {"@left({x@middle|y}@right)", "@middle", "middle不可串入内分组"},
+            {"{@left(x}@right)", "}", "left不可跨花括号闭合"},
+            {"@sqrt[@left(x]@right){y}", "]", "left不可跨根指数闭合"},
+            {"@left(x@middle@right)", "@right", "middle缺少token"},
+            {"@left(x@right", "", "right缺少token"},
+            {"@left(x@middle|y", "@left", "围合组未闭合"},
+            {"@left(@left[x@right)@right]@right)", "@right", "嵌套结束后多余right"}
+        };
+        for (String[] item : cases) {
+            String source = tex(item[0]), token = tex(item[1]);
+            int start = token.isEmpty() ? source.length() : source.lastIndexOf(token);
+            int end = token.isEmpty() ? start : start + token.length();
+            // 未闭合围合结构把诊断归到发起的left，避免丢失配对来源。
+            if (item[2].equals("围合组未闭合")) end = source.length();
+            fallback(layout(source, MathStyle.TEXT, slots()), source, "parse", start, end);
+        }
+        String missing = tex("@left(@embed{missing}@right)");
+        int start = missing.indexOf(tex("@embed"));
+        fallback(
+                layout(missing, MathStyle.TEXT, slots()),
+                missing,
+                "layout",
+                start,
+                missing.indexOf(tex("@right")));
+        String duplicate = tex("@left(@embed{ore}@middle|@embed{ore}@right)");
+        int repeated = duplicate.lastIndexOf(tex("@embed"));
+        fallback(
+                layout(duplicate, MathStyle.TEXT, slots("ore")),
+                duplicate,
+                "parse",
+                repeated,
+                duplicate.indexOf(tex("@right")));
+        healthy(layout("@left(x@right)", MathStyle.TEXT, slots()));
+    }
+
+    private void delimiters() {
+        Map<String, MathEmbedMetrics> items = slots("deep", "up", "lo");
+        items.put("deep", new MathEmbedMetrics(1.3f, 9, 1.2f));
+        String source =
+                tex(
+                        "a@left(@embed{deep}@middle|x@middle@Vert y@right@rfloor^{@embed{up}}_{@embed{lo}}");
+        MathLayout layout = layout(source, MathStyle.TEXT, items);
+        healthy(layout);
+        float axis = layout.baseline - metric(5, EM);
+        MathLayout.Embed deep = embed(layout, "deep");
+        float maxDist = Math.max(axis - deep.y, deep.y + deep.height - axis);
+        // 固定KaTeX0.16.21 delimiter.js独立公式；实际glyph可以超过建议高度。
+        float target = Math.max(maxDist / 500 * 901, 2 * maxDist - 0.5f * EM);
+        for (String command : new String[] {"@left", "@middle|", "@middle@Vert", "@right"}) {
+            MathLayout.TextPiece p = piece(layout, source.indexOf(tex(command)));
+            float[] bounds = ink(p);
+            near((bounds[1] + bounds[3]) / 2, axis, "每个真实glyph必须各自居中数学轴");
+            require(bounds[3] - bounds[1] + 0.003f >= target, "真实定界墨迹未覆盖共同目标");
+            require(p.text.lines().get(0).glyphs().size() > 1, "高Item未进入真实assembly");
+        }
+        MathLayout.TextPiece left = piece(layout, source.indexOf(tex("@left")));
+        MathLayout.TextPiece right = piece(layout, source.indexOf(tex("@right")));
+        require(
+                Math.abs((ink(left)[3] - ink(left)[1]) - (ink(right)[3] - ink(right)[1])) > 0.003f,
+                "此反例没有触发左右实际height不同");
+        MathLayout.Embed upper = embed(layout, "up"), lower = embed(layout, "lo");
+        require(
+                upper.x >= ink(right)[2] - 0.003f && lower.x >= ink(right)[2] - 0.003f,
+                "脚本未跟随整个围合结构");
+        require(lower.y - upper.y - upper.height + 0.003f >= metric(15, EM), "围合组双脚本净空不足");
+        near(left.x - layout("a", MathStyle.TEXT, slots()).width, EM * 3 / 18, "围合结构外侧不是INNER间距");
+
+        String simple = tex("@left(@embed{deep}x y@right)");
+        String middle = tex("@left(@embed{deep}@middle|x@middle@Vert y@right)");
+        MathLayout before = layout(simple, MathStyle.TEXT, items),
+                after = layout(middle, MathStyle.TEXT, items);
+        healthy(before);
+        healthy(after);
+        near(
+                ink(piece(before, 0))[3] - ink(piece(before, 0))[1],
+                ink(piece(after, 0))[3] - ink(piece(after, 0))[1],
+                "middle参与了自身定高");
+        MathLayout.TextPiece mid = piece(after, middle.indexOf(tex("@middle|")));
+        near(
+                mid.x - embed(after, "deep").x - embed(after, "deep").width,
+                EM * 5 / 18,
+                "middle前不是REL间距");
+        MathLayout.TextPiece x = piece(after, middle.indexOf('x'));
+        float xOrigin = layout("x", MathStyle.TEXT, slots()).pieces.get(0).x;
+        near(x.x - xOrigin - mid.x - mid.text.advanceWidth, EM * 5 / 18, "middle后不是REL间距");
+        MathLayout nested =
+                layout(
+                        "@left(@frac{@left[@embed{deep}@middle|x@right]}{1+@frac{x}{y}}@right)",
+                        MathStyle.DISPLAY,
+                        items);
+        healthy(nested);
+        require(nested.rules.size() == 2 && nested.embeds.size() == 1, "嵌套分式围合结构丢失内部内容");
+        require(
+                ink(piece(nested, 0))[3] - ink(piece(nested, 0))[1]
+                        > ink(piece(nested, tex("@left(@frac{").length()))[3]
+                                - ink(piece(nested, tex("@left(@frac{").length()))[1],
+                "外层未覆盖内部围合结构");
+        System.out.println(
+                "delimiter target="
+                        + target
+                        + " axis="
+                        + axis
+                        + " leftHeight="
+                        + (ink(left)[3] - ink(left)[1])
+                        + " rightHeight="
+                        + (ink(right)[3] - ink(right)[1]));
+    }
+
+    private void delimiterTokens() {
+        String[] tokens = {
+            "(",
+            ")",
+            "[",
+            "]",
+            "@lparen",
+            "@rparen",
+            "@lbrack",
+            "@rbrack",
+            "@{",
+            "@}",
+            "@lbrace",
+            "@rbrace",
+            "|",
+            "@vert",
+            "@lvert",
+            "@rvert",
+            "@|",
+            "@Vert",
+            "@lVert",
+            "@rVert",
+            "<",
+            ">",
+            "@lt",
+            "@gt",
+            "⟨",
+            "⟩",
+            "@langle",
+            "@rangle",
+            "@lfloor",
+            "@rfloor",
+            "@lceil",
+            "@rceil",
+            "@uparrow",
+            "@downarrow",
+            "@updownarrow",
+            "@Uparrow",
+            "@Downarrow",
+            "@Updownarrow"
+        };
+        for (String token : tokens) {
+            String source = tex("@left" + token + " x@right" + token);
+            MathLayout result = layout(source, MathStyle.TEXT, slots());
+            healthy(result);
+            require(result.pieces.size() == 3, "合法token没有实际glyph: " + token);
+            require(piece(result, 0).sourceEnd == tex("@left" + token).length(), "定界token来源范围不完整");
+            // 空/短围合可以选择基本字形，必须仍以真实墨迹中线居轴，不能把基线空白当墨迹。
+            for (MathStyle currentStyle : MathStyle.values()) {
+                float currentEm =
+                        EM
+                                * (currentStyle == MathStyle.SCRIPT
+                                        ? percent(0)
+                                        : currentStyle == MathStyle.SCRIPT_SCRIPT ? percent(1) : 1);
+                try (RawMath raw =
+                        new RawMath(
+                                resource("assets/qz_uilib/fonts/math/STIXTwoMath-Regular.otf"),
+                                currentEm)) {
+                    float rawAxis = OpenType.hb_ot_math_get_constant(raw.font, 5) * raw.scale;
+                    for (String body : new String[] {"", "x"}) {
+                        String small = tex("@left" + token + " " + body + "@right" + token);
+                        MathLayout actual = layout(small, currentStyle, slots());
+                        healthy(actual);
+                        for (int marker : new int[] {0, small.indexOf(tex("@right"))}) {
+                            float[] realInk = ink(piece(actual, marker));
+                            near(
+                                    (realInk[1] + realInk[3]) / 2,
+                                    actual.baseline - rawAxis,
+                                    "小围合真实墨迹未居轴: " + token + " " + currentStyle + " body=" + body);
+                        }
+                    }
+                } catch (Exception failure) {
+                    throw new AssertionError(failure);
+                }
+            }
+        }
+        for (MathStyle style : MathStyle.values()) {
+            String source = tex("a@left.x@middle.y@right.b");
+            MathLayout result = layout(source, style, slots());
+            MathLayout plain = layout("axyb", style, slots());
+            healthy(result);
+            healthy(plain);
+            float em =
+                    EM
+                            * (style == MathStyle.SCRIPT
+                                    ? percent(0)
+                                    : style == MathStyle.SCRIPT_SCRIPT ? percent(1) : 1);
+            float mu = style == MathStyle.DISPLAY || style == MathStyle.TEXT ? 16f / 18 : 0;
+            // 固定KaTeX的null边界重置到基准em；INNER/REL间距仍随当前style。
+            near(result.width - plain.width, 3 * 0.12f * EM + em * mu, "null定界符间距或样式缩放错误");
+            require(result.pieces.size() == 4, "null定界符产生墨迹");
+            Map<String, MathEmbedMetrics> tall = slots("tall");
+            tall.put("tall", new MathEmbedMetrics(1, 6, 1.2f));
+            MathLayout stretched = layout("@left(@embed{tall}@right)", style, tall);
+            healthy(stretched);
+            try (RawMath current =
+                    new RawMath(
+                            resource("assets/qz_uilib/fonts/math/STIXTwoMath-Regular.otf"), em)) {
+                float axis = OpenType.hb_ot_math_get_constant(current.font, 5) * current.scale;
+                float distance = Math.max(1.2f * em - axis, 4.8f * em + axis);
+                float target = Math.max(distance / 500 * 901, 2 * distance - 0.5f * EM);
+                MathFont expectedFont = text.mathFont(style(em));
+                TextLayout expected = expectedFont.stretch('(', target);
+                float[] expectedInk = ink(expected);
+                float[] actualInk = ink(piece(stretched, 0));
+                near(
+                        actualInk[3] - actualInk[1],
+                        expectedInk[3] - expectedInk[1],
+                        "四style的共同目标未使用基准em短缺量");
+                near(
+                        (actualInk[1] + actualInk[3]) / 2,
+                        stretched.baseline - axis,
+                        "四style定界符未按当前MATH轴居中");
+                if (style == MathStyle.SCRIPT || style == MathStyle.SCRIPT_SCRIPT) {
+                    float wrongTarget = Math.max(distance / 500 * 901, 2 * distance - 0.5f * em);
+                    TextLayout wrong = expectedFont.stretch('(', wrongTarget);
+                    float[] wrongInk = ink(wrong);
+                    require(
+                            Math.abs(wrongInk[3] - wrongInk[1] - expectedInk[3] + expectedInk[1])
+                                    > 0.003f,
+                            "此反例没有区分当前em与基准em短缺量");
+                }
+                System.out.println(
+                        "delimiter style="
+                                + style
+                                + " em="
+                                + em
+                                + " target="
+                                + target
+                                + " nullWidth="
+                                + 0.12f * EM);
+            } catch (Exception failure) {
+                throw new AssertionError(failure);
+            }
+        }
+    }
+
+    private void delimiterOrigins() {
+        // 保留正式FT/HB字形source、ink与尺寸，仅移动stretch的局部原点到基线一侧。
+        // 定界居中是墨迹性质，不能因字体局部原点不同而改变最终墨迹中线。
+        for (final float dy : new float[] {-4 * EM, 4 * EM}) {
+            club.heiqi.uilib.ui.scene.text.SceneTextMeasurer shifted =
+                    new club.heiqi.uilib.ui.scene.text.SceneTextMeasurer() {
+                        public TextLayout layout(String value, TextStyle style, int width) {
+                            return text.layout(value, style, width);
+                        }
+
+                        public MathFont mathFont(TextStyle style) {
+                            final MathFont real = text.mathFont(style);
+                            return new MathFont() {
+                                public float constant(Constant c) {
+                                    return real.constant(c);
+                                }
+
+                                public TextLayout text(String value) {
+                                    return real.text(value);
+                                }
+
+                                public TextLayout stretch(int cp, float height) {
+                                    return shiftedGlyphs(real.stretch(cp, height), dy);
+                                }
+
+                                public TextLayout displayOperator(int cp, float height) {
+                                    return real.displayOperator(cp, height);
+                                }
+
+                                public float italicCorrection(TextLayout value) {
+                                    return 0;
+                                }
+                            };
+                        }
+                    };
+            for (String source :
+                    new String[] {
+                        "@left(x@middle|y@right)",
+                        "@binom{x}{y}",
+                        "@left(x@middle|y@right)^{@embed{up}}_{@embed{lo}}",
+                        "@binom{x}{y}^{@embed{up}}_{@embed{lo}}"
+                    }) {
+                MathLayout actual =
+                        engine.layout(
+                                MathContent.parse(tex(source)),
+                                style(EM),
+                                MathStyle.TEXT,
+                                shifted,
+                                slots("up", "lo"));
+                healthy(actual);
+                MathLayout unshifted = layout(source, MathStyle.TEXT, slots("up", "lo"));
+                healthy(unshifted);
+                System.out.println(
+                        "delimiter origin dy="
+                                + dy
+                                + " height="
+                                + actual.height
+                                + " referenceHeight="
+                                + unshifted.height
+                                + " baseline="
+                                + actual.baseline
+                                + " referenceBaseline="
+                                + unshifted.baseline);
+                near(actual.height, unshifted.height, "定界原点改变了公式height");
+                near(actual.baseline, unshifted.baseline, "定界原点改变了公式baseline");
+                for (int i = 0; i < actual.embeds.size(); i++) {
+                    near(actual.embeds.get(i).x, unshifted.embeds.get(i).x, "定界原点改变了脚本x");
+                    near(actual.embeds.get(i).y, unshifted.embeds.get(i).y, "定界原点改变了脚本y");
+                }
+                for (MathLayout.TextPiece piece : actual.pieces) {
+                    if (!"()|".contains(piece.text.logicalText)) continue;
+                    float[] bounds = ink(piece);
+                    near(
+                            (bounds[1] + bounds[3]) / 2,
+                            actual.baseline - metric(5, EM),
+                            "单侧墨迹定界符未居轴 dy=" + dy);
+                }
+            }
+        }
+    }
+
+    private static TextLayout shiftedGlyphs(TextLayout original, float dy) {
+        java.util.List<TextLayout.Line> lines = new java.util.ArrayList<>();
+        for (TextLayout.Line line : original.lines()) {
+            java.util.List<TextLayout.Glyph> glyphs = new java.util.ArrayList<>();
+            for (TextLayout.Glyph g : line.glyphs())
+                glyphs.add(
+                        new TextLayout.Glyph(
+                                g.source,
+                                g.size,
+                                g.glyphId,
+                                g.logicalStart,
+                                g.logicalEnd,
+                                g.sourceStart,
+                                g.sourceEnd,
+                                g.x,
+                                g.y + dy,
+                                g.xAdvance,
+                                g.yAdvance,
+                                g.color,
+                                g.replacement,
+                                g.inkBounds));
+            lines.add(
+                    new TextLayout.Line(
+                            line.text,
+                            line.x,
+                            line.y,
+                            line.logicalStart,
+                            line.logicalEnd,
+                            line.sourceStart,
+                            line.sourceEnd,
+                            line.advance,
+                            line.baseline,
+                            line.ascent,
+                            line.descent,
+                            line.lineHeight,
+                            glyphs,
+                            line.clusters(),
+                            line.decorations(),
+                            line.paragraphRtl));
+        }
+        return new TextLayout(
+                original.width,
+                original.height,
+                original.advanceWidth,
+                original.advanceHeight,
+                original.style,
+                lines,
+                original.logicalText,
+                original.originalText,
+                original.generation,
+                original.diagnostics(),
+                original.input);
+    }
+
+    private void binomial() {
+        for (MathStyle style : MathStyle.values()) {
+            Map<String, MathEmbedMetrics> items = slots("top", "bottom", "up", "lo");
+            items.put("top", new MathEmbedMetrics(1.7f, 4, 3.1f));
+            items.put("bottom", new MathEmbedMetrics(0.9f, 3, 1.3f));
+            String source = tex("a@binom{@embed{top}}{@embed{bottom}}^{@embed{up}}_{@embed{lo}}b");
+            MathLayout result = layout(source, style, items);
+            healthy(result);
+            require(result.rules.isEmpty(), "binom生成了分式横线");
+            MathLayout.Embed top = embed(result, "top"), bottom = embed(result, "bottom");
+            near(top.x + top.width / 2, bottom.x + bottom.width / 2, "binom上下部未居中");
+            float parentEm =
+                    EM
+                            * (style == MathStyle.SCRIPT
+                                    ? percent(0)
+                                    : style == MathStyle.SCRIPT_SCRIPT ? percent(1) : 1);
+            float childEm =
+                    EM
+                            * (style == MathStyle.DISPLAY
+                                    ? 1
+                                    : style == MathStyle.TEXT ? percent(0) : percent(1));
+            near(top.width, 1.7f * childEm, "binom未使用fraction子style");
+            // raw实例独立读MATH stack；em变化时重新建立FT/HB探针。
+            try (RawMath current =
+                    new RawMath(
+                            resource("assets/qz_uilib/fonts/math/STIXTwoMath-Regular.otf"),
+                            parentEm)) {
+                int topId = style == MathStyle.DISPLAY ? 23 : 22;
+                int bottomId = style == MathStyle.DISPLAY ? 25 : 24;
+                int gapId = style == MathStyle.DISPLAY ? 27 : 26;
+                float minimum =
+                        OpenType.hb_ot_math_get_constant(current.font, gapId) * current.scale;
+                require(bottom.y - top.y - top.height + 0.003f >= minimum, "binom stack净空不足");
+                float up = result.baseline - top.y - top.baseline;
+                float down = bottom.y + bottom.baseline - result.baseline;
+                require(
+                        up + 0.003f
+                                >= OpenType.hb_ot_math_get_constant(current.font, topId)
+                                        * current.scale,
+                        "binom上移小于stack常量");
+                require(
+                        down + 0.003f
+                                >= OpenType.hb_ot_math_get_constant(current.font, bottomId)
+                                        * current.scale,
+                        "binom下移小于stack常量");
+                float axis =
+                        result.baseline
+                                - OpenType.hb_ot_math_get_constant(current.font, 5) * current.scale;
+                int start = source.indexOf(tex("@binom"));
+                int delimiters = 0;
+                for (MathLayout.TextPiece p : result.pieces)
+                    if (p.sourceStart == start) {
+                        float[] bounds = ink(p);
+                        near((bounds[1] + bounds[3]) / 2, axis, "binom括号未居中轴");
+                        require(
+                                bounds[1] <= top.y + 0.003f
+                                        && bounds[3] + 0.003f >= bottom.y + bottom.height,
+                                "binom括号未覆盖实际stack");
+                        delimiters++;
+                    }
+                require(delimiters == 2, "binom缺少两侧真实括号");
+            } catch (Exception failure) {
+                throw new AssertionError(failure);
+            }
+            MathLayout bare = layout("a@binom{x}{y}b", style, slots());
+            MathLayout alone = layout("@binom{x}{y}", style, slots());
+            MathLayout ab = layout("ab", style, slots());
+            healthy(bare);
+            healthy(alone);
+            near(bare.width, alone.width + ab.width, "binom外侧不是ORD间距");
+        }
+    }
+
     private MathLayout layout(
             String source, MathStyle style, Map<String, MathEmbedMetrics> embeds) {
         return engine.layout(MathContent.parse(tex(source)), style(EM), style, text, embeds);
@@ -487,16 +959,25 @@ public final class MathLayoutScenario extends TestApplication {
     }
 
     private static float[] ink(MathLayout.TextPiece piece) {
+        float[] bounds = ink(piece.text);
+        bounds[0] += piece.x;
+        bounds[2] += piece.x;
+        bounds[1] += piece.y;
+        bounds[3] += piece.y;
+        return bounds;
+    }
+
+    private static float[] ink(TextLayout layout) {
         float left = Float.POSITIVE_INFINITY, top = Float.POSITIVE_INFINITY;
         float right = Float.NEGATIVE_INFINITY, bottom = Float.NEGATIVE_INFINITY;
-        for (TextLayout.Line line : piece.text.lines())
+        for (TextLayout.Line line : layout.lines())
             for (TextLayout.Glyph glyph : line.glyphs()) {
                 InkBounds ink = glyph.inkBounds;
                 require(ink.known, "没有真实已知字形墨迹");
-                left = Math.min(left, piece.x + glyph.x + ink.left);
-                right = Math.max(right, piece.x + glyph.x + ink.right);
-                top = Math.min(top, piece.y + glyph.y + ink.top);
-                bottom = Math.max(bottom, piece.y + glyph.y + ink.bottom);
+                left = Math.min(left, glyph.x + ink.left);
+                right = Math.max(right, glyph.x + ink.right);
+                top = Math.min(top, glyph.y + ink.top);
+                bottom = Math.max(bottom, glyph.y + ink.bottom);
             }
         return new float[] {left, top, right, bottom};
     }

@@ -240,6 +240,10 @@ public final class MathLayoutEngine {
                         return scripts(node, context);
                     case FRAC:
                         return fraction(node, context);
+                    case BINOM:
+                        return binomial(node, context);
+                    case DELIMITED:
+                        return row(node.second, context, node);
                     case ROOT:
                         return radical(node, context);
                     default:
@@ -323,16 +327,40 @@ public final class MathLayoutEngine {
         }
 
         Box row(Node node, Context initial) {
+            return row(node, initial, null);
+        }
+
+        Box row(Node node, Context initial, Node fence) {
             List<Box> boxes = new ArrayList<Box>();
             List<Context> contexts = new ArrayList<Context>();
+            List<Node> sources = new ArrayList<Node>();
             Context context = initial;
             for (Node child : node.children) {
                 if (child.kind == MathContent.Kind.STYLE) {
                     context = context.style(style(child.value));
                     continue;
                 }
-                boxes.add(box(child, context));
+                // middle只先参与原子类别，不让本层定界墨迹反过来抬高共同目标。
+                Box value;
+                if (child.kind == MathContent.Kind.MIDDLE) {
+                    value = new Box();
+                    value.atom = Atom.REL;
+                } else value = box(child, context);
+                boxes.add(value);
                 contexts.add(context);
+                sources.add(child);
+            }
+            if (fence != null) {
+                Box content = new Box();
+                for (Box value : boxes) content.add(value, 0, 0);
+                float target = delimiterTarget(content, initial, fence);
+                for (int i = 0; i < boxes.size(); i++)
+                    if (sources.get(i).kind == MathContent.Kind.MIDDLE)
+                        boxes.set(i, delimiter(sources.get(i), contexts.get(i), target, Atom.REL));
+                boxes.add(0, delimiter(fence.first, initial, target, Atom.OPEN));
+                contexts.add(0, initial);
+                boxes.add(delimiter(fence.third, initial, target, Atom.CLOSE));
+                contexts.add(initial);
             }
             // TeX BIN 归一化忽略显式 kern，按实际原子序列判定。
             Atom previous = Atom.NONE;
@@ -381,7 +409,8 @@ public final class MathLayoutEngine {
             }
             value.width = Math.max(right, cursor) - left;
             if (left < 0) value = value.shifted(-left, 0, value.width);
-            value.atom = Atom.ORD;
+            value.atom = fence == null ? Atom.ORD : Atom.INNER;
+            if (fence != null) value.italic = 0;
             return value;
         }
 
@@ -576,6 +605,114 @@ public final class MathLayoutEngine {
             value.rule(0, -axis - rule / 2, width, rule);
             value.width = width;
             value.atom = Atom.INNER;
+            return value;
+        }
+
+        /** KaTeX0.16.21 makeLeftRightDelim：短缺量使用基准em，脚本只缩放axis与内容。 */
+        float delimiterTarget(Box content, Context context, Node node) {
+            float axis = c(context, node, AXIS_HEIGHT);
+            float distance = Math.max(content.ascent - axis, content.descent + axis);
+            float target = Math.max(distance / 500f * 901f, 2 * distance - 0.5f * base.logicalEm);
+            if (!Float.isFinite(target)) throw new LayoutFailure("layout", node, "定界目标超出有限范围");
+            return target;
+        }
+
+        Box delimiter(Node node, Context context, float target, Atom atom) {
+            if (node.value.equals(".")) {
+                Box invisible = new Box();
+                // 固定KaTeX makeNullDelimiter的baseSizing重置到基准字号。
+                invisible.width = 0.12f * base.logicalEm;
+                invisible.atom = atom;
+                return invisible;
+            }
+            Box value =
+                    glyph(
+                            font(context, node).stretch(node.value.codePointAt(0), target),
+                            node,
+                            context,
+                            true);
+            // TextLayout的glyph.y已含其本地baseline；glyph()已转成数学基线坐标。
+            // 不复用另一侧的height：左右完整变体及assembly可具有不同实际墨迹高度。
+            // 普通数学盒包络含基线空白；定界符须按有符号的真实墨迹居中。
+            // 字体局部原点移动到基线一侧时，也不能把空白计入墨迹中线。
+            float top = Float.POSITIVE_INFINITY, bottom = Float.NEGATIVE_INFINITY;
+            for (MathLayout.TextPiece piece : value.pieces) {
+                for (TextLayout.Line line : piece.text.lines()) {
+                    for (TextLayout.Glyph glyph : line.glyphs()) {
+                        top = Math.min(top, piece.y + glyph.y + glyph.inkBounds.top);
+                        bottom = Math.max(bottom, piece.y + glyph.y + glyph.inkBounds.bottom);
+                    }
+                }
+            }
+            float center = (top + bottom) / 2;
+            // 先去掉字体原始基线空白；shifted()再包络公式基线与居中的墨迹。
+            value.ascent = -top;
+            value.descent = bottom;
+            value = value.shifted(0, -c(context, node, AXIS_HEIGHT) - center, value.width);
+            value.atom = atom;
+            value.italic = 0;
+            return value;
+        }
+
+        Box binomial(Node node, Context context) {
+            Box top = box(node.first, context.style(context.style.fraction()));
+            Box bottom = box(node.second, context.style(context.style.fraction()).cramped());
+            boolean display = context.style == MathStyle.DISPLAY;
+            float up =
+                    c(
+                            context,
+                            node,
+                            display ? STACK_TOP_DISPLAY_STYLE_SHIFT_UP : STACK_TOP_SHIFT_UP);
+            float down =
+                    c(
+                            context,
+                            node,
+                            display
+                                    ? STACK_BOTTOM_DISPLAY_STYLE_SHIFT_DOWN
+                                    : STACK_BOTTOM_SHIFT_DOWN);
+            float gap = c(context, node, display ? STACK_DISPLAY_STYLE_GAP_MIN : STACK_GAP_MIN);
+            float deficit = gap - (up + down - top.descent - bottom.ascent);
+            if (deficit > 0) {
+                up += deficit / 2;
+                down += deficit / 2;
+            }
+            float width = Math.max(top.width, bottom.width);
+            Box stack = new Box();
+            stack.add(top, (width - top.width) / 2, -up);
+            stack.add(bottom, (width - bottom.width) / 2, down);
+            stack.width = width;
+            // binom圆括号须完整覆盖stack，而非left/right允许的TeX短缺量。
+            float axis = c(context, node, AXIS_HEIGHT);
+            float target = 2 * Math.max(stack.ascent - axis, stack.descent + axis);
+            if (!Float.isFinite(target)) throw new LayoutFailure("layout", node, "二项式定界目标超出有限范围");
+            Node leftNode =
+                    new Node(
+                            MathContent.Kind.DELIMITER,
+                            node.start,
+                            node.end,
+                            "(",
+                            null,
+                            null,
+                            null,
+                            null);
+            Node rightNode =
+                    new Node(
+                            MathContent.Kind.DELIMITER,
+                            node.start,
+                            node.end,
+                            ")",
+                            null,
+                            null,
+                            null,
+                            null);
+            Box left = delimiter(leftNode, context, target, Atom.OPEN);
+            Box right = delimiter(rightNode, context, target, Atom.CLOSE);
+            Box value = new Box();
+            value.add(left, 0, 0);
+            value.add(stack, left.width, 0);
+            value.add(right, left.width + width, 0);
+            value.width = left.width + width + right.width;
+            value.atom = Atom.ORD;
             return value;
         }
 

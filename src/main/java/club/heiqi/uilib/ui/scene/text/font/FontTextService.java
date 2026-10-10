@@ -68,6 +68,9 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
             new LinkedHashMap<InkKey, InkBounds>(16, .75f, true);
     private final LinkedHashMap<LayoutKey, TextLayout> layouts =
             new LinkedHashMap<LayoutKey, TextLayout>(16, .75f, true);
+    // 构建结果的修正来自 assembly 而非末部件；弱键只随调用方持有的布局存活。
+    private final Map<TextLayout, Float> assemblyItalic =
+            new java.util.WeakHashMap<TextLayout, Float>();
     private final Map<String, List<FontSource>> named = new HashMap<String, List<FontSource>>();
     private final List<Runnable> invalidation = new ArrayList<Runnable>();
     private List<FontSource> defaults;
@@ -328,6 +331,7 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
     private void invalidate() {
         generation++;
         layouts.clear();
+        assemblyItalic.clear();
         colors.clear();
         ink.clear();
         failures.clear();
@@ -497,15 +501,33 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                 }
             }
             if (chosen == null && !strict) chosen = largest;
+            if (chosen == null && strict) {
+                try {
+                    return buildMathAssembly(
+                            selected, codepoint, selected.face.mathAssembly(base), minimumHeight);
+                } catch (UnsupportedOperationException error) {
+                    throw new UnsupportedOperationException(
+                            "数学竖向伸缩不可构建 U+"
+                                    + Integer.toHexString(codepoint)
+                                    + " font="
+                                    + selected.source
+                                    + " em="
+                                    + requested.logicalEm
+                                    + ": requested="
+                                    + minimumHeight
+                                    + ", maximumVariant="
+                                    + maximum
+                                    + "; "
+                                    + error.getMessage(),
+                            error);
+                }
+            }
             if (chosen == null)
                 throw new UnsupportedOperationException(
-                        "数学竖向 variant 超限 U+"
+                        "数学完整字形不可用 U+"
                                 + Integer.toHexString(codepoint)
-                                + ": requested="
-                                + minimumHeight
-                                + ", maximum="
-                                + maximum
-                                + "；当前未支持 assembly");
+                                + " font="
+                                + selected.source);
             return buildMathGlyph(selected, codepoint, chosen.glyphId);
         }
 
@@ -578,6 +600,106 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                     TextInput.string(value));
         }
 
+        /** 所有部件共用横向原点；纵向原点只由 fullAdvance 和 connector overlap 决定。 */
+        private TextLayout buildMathAssembly(
+                MathSelection selected,
+                int codepoint,
+                MathData.Assembly assembly,
+                float minimumHeight) {
+            MathAssembly.Result result = MathAssembly.build(assembly, minimumHeight);
+            List<MathAssembly.Placement> positions = result.placements();
+            List<InkBounds> bounds = new ArrayList<InkBounds>(positions.size());
+            float[] advances = new float[positions.size()];
+            Map<Integer, InkBounds> partInk = new HashMap<Integer, InkBounds>();
+            Map<Integer, Float> partAdvance = new HashMap<Integer, Float>();
+            float left = 0, right = 0, top = 0, bottom = 0, advance = 0;
+            for (int i = 0; i < positions.size(); i++) {
+                MathAssembly.Placement position = positions.get(i);
+                int id = position.part.glyphId;
+                InkBounds ink = partInk.get(id);
+                if (ink == null) {
+                    ink = selected.face.glyphInkBounds(id);
+                    if (!ink.known) throw new UnsupportedOperationException("assembly 部件墨迹不可用");
+                    partInk.put(id, ink);
+                    partAdvance.put(id, selected.face.glyphHorizontalAdvance(id));
+                }
+                bounds.add(ink);
+                advances[i] = partAdvance.get(id);
+                advance = Math.max(advance, advances[i]);
+                left = Math.min(left, ink.left);
+                right = Math.max(right, Math.max(advances[i], ink.right));
+                top = Math.min(top, ink.top - position.offset);
+                bottom = Math.max(bottom, ink.bottom - position.offset);
+            }
+            // 墨迹只决定整体包围盒及基线平移，不能拿每个部件的 ink 高度当连接锚点。
+            float ascent = -top, descent = bottom, height = ascent + descent, width = right - left;
+            String value = new String(Character.toChars(codepoint));
+            int end = value.length();
+            List<TextLayout.Glyph> glyphs = new ArrayList<TextLayout.Glyph>(positions.size());
+            for (int i = 0; i < positions.size(); i++) {
+                MathAssembly.Placement position = positions.get(i);
+                glyphs.add(
+                        new TextLayout.Glyph(
+                                selected.source,
+                                requested.logicalEm,
+                                position.part.glyphId,
+                                0,
+                                end,
+                                0,
+                                end,
+                                -left,
+                                ascent - position.offset,
+                                advances[i],
+                                0,
+                                false,
+                                false,
+                                bounds.get(i),
+                                requested.logicalEm,
+                                1,
+                                GlyphRasterStyle.NORMAL,
+                                selected.style,
+                                0));
+            }
+            TextLayout.Cluster cluster =
+                    new TextLayout.Cluster(
+                            0, end, 0, end, 0, glyphs.size(), -left, advance, selected.style);
+            TextLayout.Line line =
+                    new TextLayout.Line(
+                            value,
+                            0,
+                            0,
+                            0,
+                            end,
+                            0,
+                            end,
+                            width,
+                            ascent,
+                            ascent,
+                            descent,
+                            height,
+                            glyphs,
+                            Collections.singletonList(cluster),
+                            Collections.<TextLayout.Decoration>emptyList());
+            UnicodeText doc = new UnicodeText(TextInput.string(value), TextPolicy.NO_WRAP);
+            doc.diagnostics.addAll(selected.diagnostics);
+            styleDiagnostic(selected.source, selected.style, doc, 0, end);
+            TextLayout layout =
+                    new TextLayout(
+                            ceil(width),
+                            ceil(height),
+                            width,
+                            height,
+                            selected.style,
+                            Collections.singletonList(line),
+                            value,
+                            value,
+                            generation,
+                            doc.diagnostics,
+                            TextInput.string(value));
+            assemblyItalic.put(layout, assembly.italicCorrection);
+            return layout;
+        }
+
         public float italicCorrection(TextLayout layout) {
             Objects.requireNonNull(layout, "layout");
             MathSelection selected = current();
@@ -592,7 +714,10 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                     terminal = glyph;
                 }
             }
-            return terminal == null ? 0 : selected.face.mathItalicCorrection(terminal.glyphId);
+            Float correction = assemblyItalic.get(layout);
+            return correction != null
+                    ? correction
+                    : terminal == null ? 0 : selected.face.mathItalicCorrection(terminal.glyphId);
         }
     }
 
@@ -2018,6 +2143,7 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
         if (closed) return;
         closed = true;
         layouts.clear();
+        assemblyItalic.clear();
         colors.clear();
         ink.clear();
         failures.clear();

@@ -8,6 +8,8 @@ import club.heiqi.uilib.ui.scene.text.TextLayout;
 import club.heiqi.uilib.ui.scene.text.TextStyle;
 import club.heiqi.uilib.ui.scene.text.font.FontSource;
 import club.heiqi.uilib.ui.scene.text.font.FontTextService;
+import club.heiqi.uilib.ui.scene.text.font.MathAssembly;
+import club.heiqi.uilib.ui.scene.text.font.nativefont.InkBounds;
 import club.heiqi.uilib.ui.scene.text.font.glyph.GlyphKey;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.FontEngine;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.FontFace;
@@ -35,6 +37,7 @@ import org.lwjgl.util.freetype.FreeType;
 import org.lwjgl.util.harfbuzz.HarfBuzz;
 import org.lwjgl.util.harfbuzz.OpenType;
 import org.lwjgl.util.harfbuzz.hb_ot_math_glyph_variant_t;
+import org.lwjgl.util.harfbuzz.hb_ot_math_glyph_part_t;
 
 /** 真实 FT/HB 数学字体场景；独立 raw 探针核对单位、variant、光栅及资源生命周期，无 MC/GL。 */
 public final class MathFontScenario extends TestApplication {
@@ -54,6 +57,8 @@ public final class MathFontScenario extends TestApplication {
     protected void runTests() throws Exception {
         scenario("官方字体MATH与完整许可", this::verifyResource);
         scenario("原始HB常量单位及真实variant光栅", this::verifyNative);
+        scenario("真实assembly连接与多em大型根号圆花括号", this::verifyAssemblies);
+        scenario("零extender非法连接及等量伸展边界", this::verifyAssemblyEdges);
         scenario("显示算子建议高度与严格伸缩分离", this::verifyDisplayOperators);
         scenario("具名隔离缺字超限及显式链边界", this::verifyBoundaries);
         scenario("损坏候选资源诊断与后继数学字形", this::verifyResourceWarnings);
@@ -199,7 +204,257 @@ public final class MathFontScenario extends TestApplication {
                         + ","
                         + glyph.inkBounds.bottom);
         final float beyond = largest.verticalAdvance + Math.max(1, em);
-        expect(UnsupportedOperationException.class, () -> math.stretch(cp, beyond));
+        if (raw.assembly(base) == null)
+            expect(UnsupportedOperationException.class, () -> math.stretch(cp, beyond));
+        else
+            require(
+                    math.stretch(cp, beyond).lines().get(0).glyphs().size() > 1,
+                    "超过完整variant后没有使用真实assembly");
+    }
+
+    private void verifyAssemblies() throws Exception {
+        try (FontTextService service = new FontTextService(new LwjglFontEngine())) {
+            for (float em : new float[] {0.75f, 18, 32.3f, 64}) {
+                MathFont math = service.mathFont(style(em));
+                FontSource source = onlyGlyphSource(math.text("x"));
+                try (RawMath raw = new RawMath(bytes, em);
+                        FontSession session = new LwjglFontEngine().openSession();
+                        FontFace face = source.openFace(session, em)) {
+                    for (int cp : new int[] {'(', ')', '{', '}', 0x221a, 0x222b}) {
+                        int base = FreeType.FT_Get_Char_Index(raw.face, cp);
+                        MathData.Assembly expected = raw.assembly(base);
+                        MathData.Assembly snapshot = face.mathAssembly(base);
+                        require(expected != null && snapshot != null, "正式字体没有需要的assembly");
+                        near(
+                                snapshot.minOverlap,
+                                expected.minOverlap,
+                                "minOverlap没有按logical 26.6缩放");
+                        near(
+                                snapshot.italicCorrection,
+                                expected.italicCorrection,
+                                "assembly italic单位错误");
+                        require(snapshot.parts().size() == expected.parts().size(), "部件快照数量错误");
+                        int[] designOrder = assemblyGlyphOrder(bytes, base);
+                        require(designOrder.length == expected.parts().size(), "原始SFNT部件数量不一致");
+                        if (cp == 0x222b)
+                            require(expected.italicCorrection > 0, "真实非零assembly italic反例未命中");
+                        for (int i = 0; i < expected.parts().size(); i++) {
+                            MathData.Part actual = snapshot.parts().get(i),
+                                    part = expected.parts().get(i);
+                            require(
+                                    actual.glyphId == part.glyphId
+                                            && actual.glyphId == designOrder[i]
+                                            && actual.extender == part.extender,
+                                    "HB底到顶部件顺序或extender身份错误");
+                            near(actual.startConnector, part.startConnector, "startConnector单位错误");
+                            near(actual.endConnector, part.endConnector, "endConnector单位错误");
+                            near(actual.fullAdvance, part.fullAdvance, "fullAdvance单位错误");
+                        }
+                        expect(UnsupportedOperationException.class, () -> snapshot.parts().clear());
+                        List<MathData.Variant> variants = raw.variants(base);
+                        float maximum = 0;
+                        for (MathData.Variant variant : variants)
+                            maximum = Math.max(maximum, variant.verticalAdvance);
+                        require(
+                                onlyGlyph(math.stretch(cp, maximum)).glyphId
+                                        == variants.get(variants.size() - 1).glyphId,
+                                "完整variant可用时错误进入assembly");
+                        for (float target :
+                                new float[] {
+                                    maximum + em * .25f,
+                                    maximum + em,
+                                    Math.max(maximum + em, 8 * em),
+                                    16 * em
+                                }) {
+                            TextLayout layout = math.stretch(cp, target);
+                            verifyAssemblyLayout(math, raw, face, expected, layout, em, cp, target);
+                        }
+                    }
+                    expect(
+                            UnsupportedOperationException.class,
+                            () -> math.stretch('(', Float.MAX_VALUE));
+                }
+            }
+        }
+    }
+
+    /** 预期连接来自独立raw HB，按原点差反推实际overlap，不能由生产算法自证。 */
+    private void verifyAssemblyLayout(
+            MathFont math,
+            RawMath raw,
+            FontFace face,
+            MathData.Assembly assembly,
+            TextLayout layout,
+            float em,
+            int cp,
+            float target) {
+        require(layout.lines().size() == 1, "assembly不是单行文本事实");
+        TextLayout.Line line = layout.lines().get(0);
+        List<TextLayout.Glyph> glyphs = line.glyphs();
+        require(glyphs.size() > 1, "大型符号仍是单一字形");
+        int fixed = 0, extenders = 0;
+        for (MathData.Part part : assembly.parts()) {
+            if (part.extender) extenders++;
+            else fixed++;
+        }
+        require(extenders > 0 && (glyphs.size() - fixed) % extenders == 0, "多个extender没有等次数增长");
+        int repeats = (glyphs.size() - fixed) / extenders;
+        List<MathData.Part> expanded = new ArrayList<MathData.Part>();
+        for (MathData.Part part : assembly.parts())
+            for (int i = 0, copies = part.extender ? repeats : 1; i < copies; i++)
+                expanded.add(part);
+        float tolerance = Math.max(.0001f, target * .000001f);
+        float top = 0, bottom = 0, left = 0, right = 0;
+        float[] overlaps = new float[glyphs.size() - 1];
+        for (int i = 0; i < glyphs.size(); i++) {
+            TextLayout.Glyph glyph = glyphs.get(i);
+            MathData.Part part = expanded.get(i);
+            require(glyph.glyphId == part.glyphId, "部件没有按底到顶顺序重复");
+            require(
+                    glyph.size == em
+                            && glyph.logicalEm == em
+                            && glyph.rasterToLayout == 1
+                            && !glyph.replacement
+                            && !glyph.color,
+                    "assembly缩放轮廓或丢失真实字形身份");
+            require(glyph.source.equals(glyphs.get(0).source), "assembly混入其他字体source");
+            near(glyph.x, glyphs.get(0).x, "部件按ink各自硬对齐而非共用字形横向原点");
+            near(
+                    glyph.xAdvance,
+                    HarfBuzz.hb_font_get_glyph_h_advance(raw.font, glyph.glyphId) * raw.scale,
+                    "部件横向advance不是raw HB事实");
+            InkBounds ink = face.glyphInkBounds(part.glyphId);
+            near(glyph.inkBounds.left, ink.left, "部件left ink被改写");
+            near(glyph.inkBounds.top, ink.top, "部件top ink被改写");
+            near(glyph.inkBounds.right, ink.right, "部件right ink被改写");
+            near(glyph.inkBounds.bottom, ink.bottom, "部件bottom ink被改写");
+            top = Math.min(top, glyph.y - line.baseline + ink.top);
+            bottom = Math.max(bottom, glyph.y - line.baseline + ink.bottom);
+            left = Math.min(left, ink.left);
+            right = Math.max(right, Math.max(glyph.xAdvance, ink.right));
+            require(
+                    glyph.sourceStart == 0
+                            && glyph.sourceEnd == Character.charCount(cp)
+                            && glyph.clusterIndex == 0,
+                    "部件未保留原符号来源/cluster");
+            GlyphKey key = GlyphKey.of(glyph);
+            require(
+                    key.glyphId == part.glyphId
+                            && key.source.equals(glyph.source)
+                            && key.size == em,
+                    "部件没有进入正式GlyphKey身份");
+            if (i > 0) {
+                MathData.Part lower = expanded.get(i - 1);
+                float distance = glyphs.get(i - 1).y - glyph.y;
+                float overlap = lower.fullAdvance - distance;
+                float maximum = Math.min(lower.endConnector, part.startConnector);
+                require(
+                        distance >= -tolerance
+                                && overlap + tolerance >= assembly.minOverlap
+                                && overlap <= maximum + tolerance,
+                        "连接原点没有遵守fullAdvance和合法overlap: overlap="
+                                + overlap
+                                + " min="
+                                + assembly.minOverlap
+                                + " max="
+                                + maximum);
+                overlaps[i - 1] = overlap;
+            }
+        }
+        float fullHeight =
+                glyphs.get(0).y
+                        - glyphs.get(glyphs.size() - 1).y
+                        + expanded.get(expanded.size() - 1).fullAdvance;
+        require(fullHeight + tolerance >= target, "assembly实际advance未覆盖目标");
+        require(Math.abs(line.ascent + top) <= tolerance, "assembly上extent不是所有真实ink并集");
+        require(Math.abs(line.descent - bottom) <= tolerance, "assembly下extent不是所有真实ink并集");
+        near(layout.advanceWidth, right - left, "assembly横向extent丢失advance或ink");
+        near(math.italicCorrection(layout), assembly.italicCorrection, "assembly italic错误取了末部件的修正");
+        if (cp == '{' || cp == '}')
+            for (int i = 0; i < overlaps.length; i++)
+                require(
+                        Math.abs(overlaps[i] - overlaps[overlaps.length - 1 - i]) <= tolerance,
+                        "花括号两半连接伸展不对称");
+        System.out.println(
+                "assembly U+"
+                        + Integer.toHexString(cp)
+                        + " em="
+                        + em
+                        + " target="
+                        + target
+                        + " full="
+                        + fullHeight
+                        + " ink="
+                        + layout.advanceHeight
+                        + " glyphs="
+                        + glyphs.size()
+                        + " repeats="
+                        + repeats
+                        + " minOverlap="
+                        + assembly.minOverlap
+                        + " overlaps="
+                        + Arrays.toString(overlaps));
+    }
+
+    private void verifyAssemblyEdges() {
+        // 零次候选没有部件，必须继续加 extender；不能因这个候选不存在拒绝构建。
+        MathData.Part extender = new MathData.Part(2, 4, 4, 10, true);
+        MathData.Assembly onlyExtender =
+                new MathData.Assembly(Collections.singletonList(extender), 2, 3);
+        MathAssembly.Result grown = MathAssembly.build(onlyExtender, 15);
+        require(grown.placements().size() == 2, "零部件候选没有进入有效extender构建");
+        near(grown.verticalAdvance, 16, "最小合法overlap构建高度错误");
+        near(grown.placements().get(1).offset, 6, "fullAdvance/overlap原点错误");
+
+        // 两个连接容量不同：先达到最小overlap的连接停止，其余继续等量伸展。
+        MathData.Assembly unequal =
+                new MathData.Assembly(
+                        Arrays.asList(
+                                new MathData.Part(1, 0, 3, 10, false),
+                                new MathData.Part(2, 3, 6, 10, false),
+                                new MathData.Part(3, 6, 0, 10, false)),
+                        2,
+                        0);
+        MathAssembly.Result saturated = MathAssembly.build(unequal, 24);
+        near(saturated.verticalAdvance, 24, "不同连接容量求解错误");
+        near(saturated.placements().get(1).offset, 8, "首连接未在最小overlap停止");
+        near(saturated.placements().get(2).offset, 14, "其余连接没有继续均分伸展");
+        expect(UnsupportedOperationException.class, () -> MathAssembly.build(unequal, 27));
+
+        MathData.Part bar = new MathData.Part(2, 4, 4, 8, true);
+        MathData.Assembly brace =
+                new MathData.Assembly(
+                        Arrays.asList(
+                                new MathData.Part(1, 0, 3, 10, false),
+                                bar,
+                                new MathData.Part(3, 3, 3, 6, false),
+                                bar,
+                                new MathData.Part(4, 3, 0, 10, false)),
+                        2,
+                        0);
+        MathAssembly.Result symmetric = MathAssembly.build(brace, 41);
+        require(symmetric.placements().size() == 7, "多extender没有按相等次数增长");
+        near(symmetric.verticalAdvance, 41, "对称构建未到目标");
+        near(symmetric.placements().get(1).offset, 7.5f, "对称连接分配错误");
+        near(symmetric.placements().get(6).offset, 31, "对称连接最终原点错误");
+
+        MathData.Assembly invalid =
+                new MathData.Assembly(
+                        Arrays.asList(
+                                new MathData.Part(1, 0, 1, 10, false),
+                                extender,
+                                new MathData.Part(3, 4, 0, 10, false)),
+                        2,
+                        0);
+        expect(UnsupportedOperationException.class, () -> MathAssembly.build(invalid, 30));
+        MathData.Assembly noGrowth =
+                new MathData.Assembly(
+                        Collections.singletonList(new MathData.Part(1, 2, 2, 2, true)), 2, 0);
+        expect(UnsupportedOperationException.class, () -> MathAssembly.build(noGrowth, 3));
+        expect(UnsupportedOperationException.class, () -> MathAssembly.build(onlyExtender, 100000));
+        expect(
+                UnsupportedOperationException.class,
+                () -> MathAssembly.build(onlyExtender, Float.MAX_VALUE));
     }
 
     private void verifyDisplayOperators() throws Exception {
@@ -408,6 +663,8 @@ public final class MathFontScenario extends TestApplication {
             FontFace originalFace = engine.opened.get(0);
             TextLayout original = math.stretch(0x222b, 40);
             GlyphKey oldKey = GlyphKey.of(onlyGlyph(original));
+            TextLayout originalAssembly = math.stretch(0x222b, 512);
+            GlyphKey oldPartKey = GlyphKey.of(originalAssembly.lines().get(0).glyphs().get(0));
             int opened = engine.opened.size();
             MathFont otherSize = service.mathFont(style(21));
             require(otherSize != null && service.cachedFaceCount() == 1, "没有触发真实face淘汰");
@@ -418,6 +675,10 @@ public final class MathFontScenario extends TestApplication {
                     math.italicCorrection(original),
                     math.italicCorrection(math.stretch(0x222b, 40)),
                     "LRU后真实修正不一致");
+            near(
+                    math.italicCorrection(originalAssembly),
+                    math.italicCorrection(math.stretch(0x222b, 512)),
+                    "LRU后assembly修正丢失");
             long before = service.generation();
             service.register(
                     "math",
@@ -430,18 +691,35 @@ public final class MathFontScenario extends TestApplication {
             TextLayout stretched = math.stretch(0x222b, 40);
             require(!oldKey.equals(GlyphKey.of(onlyGlyph(stretched))), "新旧source污染glyph key");
             expect(IllegalArgumentException.class, () -> math.italicCorrection(original));
+            expect(IllegalArgumentException.class, () -> math.italicCorrection(originalAssembly));
+            TextLayout replacedAssembly = math.stretch(0x222b, 512);
+            require(
+                    !oldPartKey.equals(
+                            GlyphKey.of(replacedAssembly.lines().get(0).glyphs().get(0))),
+                    "assembly新旧source混入同glyph身份");
             // 旧布局source仍是不可变字节；换代不能让既有绘制事实失去光栅资格。
             try (FontSession session = new LwjglFontEngine().openSession();
                     FontFace face = oldKey.source.openFace(session, oldKey.size)) {
                 require(face.rasterize(oldKey.glyphId).width > 0, "旧source换代后不可重开");
                 List<MathData.Variant> copy = face.mathVariants(face.glyphIndex(0x222b));
+                MathData.Assembly assemblyCopy = face.mathAssembly(face.glyphIndex('('));
                 face.close();
                 require(copy.size() > 1 && copy.get(0).glyphId > 0, "variant副本依赖native生命周期");
+                require(
+                        assemblyCopy != null
+                                && assemblyCopy.parts().get(0).glyphId > 0
+                                && MathAssembly.build(assemblyCopy, 512).verticalAdvance >= 512,
+                        "assembly快照依赖native生命周期");
+                expect(IllegalStateException.class, () -> face.mathAssembly(oldKey.glyphId));
                 expect(IllegalStateException.class, face::hasMathData);
                 expect(IllegalStateException.class, () -> face.mathConstant(5));
                 expect(
                         IllegalStateException.class,
                         () -> face.glyphHorizontalAdvance(oldKey.glyphId));
+            }
+            try (FontSession session = new LwjglFontEngine().openSession();
+                    FontFace face = oldPartKey.source.openFace(session, oldPartKey.size)) {
+                require(face.rasterize(oldPartKey.glyphId).width > 0, "换代后旧部件source不可光栅");
             }
             FontFace beforeReload = engine.opened.get(engine.opened.size() - 1);
             long registered = service.generation();
@@ -451,6 +729,11 @@ public final class MathFontScenario extends TestApplication {
             require(
                     reloaded.generation > registered && onlyGlyphSource(reloaded).revision == 2,
                     "reload没有清理face/布局，或覆盖独立math链");
+            TextLayout afterReload = math.stretch(0x222b, 512);
+            require(
+                    afterReload.generation == service.generation()
+                            && onlyGlyphSource(afterReload).revision == 2,
+                    "旧wrapper重载后assembly代际错误");
             service.close();
             expect(IllegalStateException.class, () -> math.constant(MathFont.Constant.AXIS_HEIGHT));
             System.out.println(
@@ -526,6 +809,36 @@ public final class MathFontScenario extends TestApplication {
         return 0;
     }
 
+    /** 原始SFNT设计顺序独立校准HB方向，避免生产和raw探针一起错误反转。 */
+    private static int[] assemblyGlyphOrder(byte[] bytes, int glyph) {
+        ByteBuffer data = ByteBuffer.wrap(bytes).order(ByteOrder.BIG_ENDIAN);
+        int math = table(bytes, "MATH");
+        int variants = math + (data.getShort(math + 8) & 65535);
+        int coverage = variants + (data.getShort(variants + 2) & 65535);
+        int format = data.getShort(coverage) & 65535;
+        int count = data.getShort(coverage + 2) & 65535, index = -1;
+        for (int i = 0; i < count; i++) {
+            if (format == 1) {
+                if ((data.getShort(coverage + 4 + 2 * i) & 65535) == glyph) index = i;
+            } else {
+                require(format == 2, "原始MATH coverage格式非法");
+                int record = coverage + 4 + 6 * i;
+                int start = data.getShort(record) & 65535, end = data.getShort(record + 2) & 65535;
+                if (glyph >= start && glyph <= end)
+                    index = (data.getShort(record + 4) & 65535) + glyph - start;
+            }
+        }
+        require(index >= 0, "原始SFNT没有对应竖向构建");
+        int construction = variants + (data.getShort(variants + 10 + 2 * index) & 65535);
+        int offset = data.getShort(construction) & 65535;
+        require(offset > 0, "原始SFNT没有assembly");
+        int assembly = construction + offset;
+        int[] glyphs = new int[data.getShort(assembly + 4) & 65535];
+        for (int i = 0; i < glyphs.length; i++)
+            glyphs[i] = data.getShort(assembly + 6 + 10 * i) & 65535;
+        return glyphs;
+    }
+
     /** 仅观测真实native打开和关闭；不模拟face或MATH返回值。 */
     private static final class RecordingEngine implements FontEngine {
         final List<FontFace> opened = new ArrayList<FontFace>();
@@ -586,6 +899,39 @@ public final class MathFontScenario extends TestApplication {
             } catch (RuntimeException | Error failure) {
                 close();
                 throw failure;
+            }
+        }
+
+        MathData.Assembly assembly(int glyph) {
+            try (MemoryStack stack = MemoryStack.stackPush()) {
+                IntBuffer count = stack.ints(0), italic = stack.ints(0);
+                int total =
+                        OpenType.hb_ot_math_get_glyph_assembly(
+                                font, glyph, HarfBuzz.HB_DIRECTION_TTB, 0, count, null, italic);
+                if (total == 0) return null;
+                List<MathData.Part> result = new ArrayList<MathData.Part>();
+                try (hb_ot_math_glyph_part_t.Buffer values =
+                        hb_ot_math_glyph_part_t.malloc(total)) {
+                    count.put(0, total);
+                    OpenType.hb_ot_math_get_glyph_assembly(
+                            font, glyph, HarfBuzz.HB_DIRECTION_TTB, 0, count, values, italic);
+                    for (int i = 0; i < count.get(0); i++) {
+                        hb_ot_math_glyph_part_t part = values.get(i);
+                        result.add(
+                                new MathData.Part(
+                                        part.glyph(),
+                                        part.start_connector_length() * scale,
+                                        part.end_connector_length() * scale,
+                                        part.full_advance() * scale,
+                                        (part.flags() & 1) != 0));
+                    }
+                }
+                return new MathData.Assembly(
+                        result,
+                        OpenType.hb_ot_math_get_min_connector_overlap(
+                                        font, HarfBuzz.HB_DIRECTION_TTB)
+                                * scale,
+                        italic.get(0) * scale);
             }
         }
 

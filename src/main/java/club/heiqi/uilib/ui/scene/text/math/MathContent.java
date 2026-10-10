@@ -41,6 +41,10 @@ public final class MathContent {
         TEXT,
         EMBED,
         FRAC,
+        BINOM,
+        DELIMITED,
+        DELIMITER,
+        MIDDLE,
         ROOT,
         SCRIPTS,
         FONT,
@@ -90,9 +94,11 @@ public final class MathContent {
 
     private static final class Parser {
         private static final Map<String, String> SYMBOLS = symbols();
+        private static final Map<String, String> DELIMITERS = delimiters();
         final String source;
         final Set<String> embeds = new HashSet<String>();
         int index, depth;
+        char terminator;
 
         Parser(String source) {
             this.source = source;
@@ -119,25 +125,66 @@ public final class MathContent {
         }
 
         Node row(boolean grouped, boolean degree) {
+            return row(grouped ? '}' : degree ? ']' : (char) 0, -1);
+        }
+
+        /** 围合结构继承当前分组终点，middle只属于直接所在的围合层。 */
+        Node row(char endToken, int leftStart) {
             int start = index;
             if (++depth > 64) throw error(start, index, "公式嵌套超过64层");
+            char previousTerminator = terminator;
+            terminator = endToken;
             List<Node> nodes = new ArrayList<Node>();
             while (true) {
                 space();
                 if (index == source.length()) {
-                    if (grouped || degree) throw error(start, index, "分组未闭合");
+                    if (leftStart >= 0) throw error(leftStart, index, "left缺少同组right");
+                    if (endToken != 0) throw error(start, index, "分组未闭合");
                     break;
                 }
                 char ch = source.charAt(index);
-                if (ch == '}' && grouped || ch == ']' && degree) {
+                if (ch == endToken && endToken != 0) {
+                    if (leftStart >= 0) throw error(index, index + 1, "left/right不能跨分组配对");
                     index++;
                     break;
+                }
+                if (leftStart >= 0 && commandAt("right")) break;
+                if (leftStart >= 0 && commandAt("middle")) {
+                    int marker = index;
+                    command();
+                    nodes.add(delimiter(Kind.MIDDLE, marker));
+                    continue;
                 }
                 if (ch == '}') throw error(index, index + 1, "多余的闭合分组");
                 nodes.add(postfix(atom()));
             }
+            terminator = previousTerminator;
             depth--;
             return new Node(Kind.ROW, start, index, "", nodes, null, null, null);
+        }
+
+        Node delimited(int start) {
+            Node left = delimiter(Kind.DELIMITER, start);
+            Node body = row(terminator, start);
+            int rightStart = index;
+            command();
+            Node right = delimiter(Kind.DELIMITER, rightStart);
+            return node(Kind.DELIMITED, start, "", left, body, right);
+        }
+
+        Node delimiter(Kind kind, int marker) {
+            space();
+            int start = index;
+            if (index == source.length()) throw error(start, start, "缺少定界token");
+            String token;
+            if (source.charAt(index) == (char) 92) token = String.valueOf((char) 92) + command();
+            else {
+                index = nextCodePointEnd();
+                token = source.substring(start, index);
+            }
+            String value = DELIMITERS.get(token);
+            if (value == null) throw error(start, index, "无效定界token: " + token);
+            return node(kind, marker, value, null, null, null);
         }
 
         Node argument() {
@@ -244,9 +291,21 @@ public final class MathContent {
                 return node(Kind.GLYPH, start, new String(Character.toChars(cp)), null, null, null);
             }
             String name = command();
-            if (name.equals("frac") || name.equals("dfrac") || name.equals("tfrac")) {
+            if (name.equals("left")) return delimited(start);
+            if (name.equals("middle") || name.equals("right"))
+                throw error(start, index, name + "缺少本组left");
+            if (name.equals("frac")
+                    || name.equals("dfrac")
+                    || name.equals("tfrac")
+                    || name.equals("binom")) {
                 Node numerator = group(), denominator = group();
-                return node(Kind.FRAC, start, name, numerator, denominator, null);
+                return node(
+                        name.equals("binom") ? Kind.BINOM : Kind.FRAC,
+                        start,
+                        name,
+                        numerator,
+                        denominator,
+                        null);
             }
             if (name.equals("sqrt")) {
                 space();
@@ -312,6 +371,52 @@ public final class MathContent {
 
         static boolean asciiLetter(char ch) {
             return ch >= 'a' && ch <= 'z' || ch >= 'A' && ch <= 'Z';
+        }
+
+        /** 每项对应一个明确token；普通花括号仍是分组，必须转义后用作定界符。 */
+        static Map<String, String> delimiters() {
+            Map<String, String> values = new HashMap<String, String>();
+            String[][] aliases = {
+                {".", "."},
+                {"(", "(", "lparen"},
+                {")", ")", "rparen"},
+                {"[", "[", "lbrack"},
+                {"]", "]", "rbrack"},
+                {"{", "lbrace", "{"},
+                {"}", "rbrace", "}"},
+                {"|", "|", "vert", "lvert", "rvert"},
+                {"‖", "‖", "Vert", "lVert", "rVert", "|"},
+                {"⟨", "⟨", "<", "langle", "lt"},
+                {"⟩", "⟩", ">", "rangle", "gt"},
+                {"⌊", "⌊", "lfloor"},
+                {"⌋", "⌋", "rfloor"},
+                {"⌈", "⌈", "lceil"},
+                {"⌉", "⌉", "rceil"},
+                {"↑", "↑", "uparrow"},
+                {"↓", "↓", "downarrow"},
+                {"↕", "↕", "updownarrow"},
+                {"⇑", "⇑", "Uparrow"},
+                {"⇓", "⇓", "Downarrow"},
+                {"⇕", "⇕", "Updownarrow"}
+            };
+            for (String[] item : aliases) {
+                String glyph = item[0];
+                for (int i = 1; i < item.length; i++) {
+                    String alias = item[i];
+                    // 花括号及第二个bar别名只接受控制符，避免把分组/单bar改成另一语义。
+                    if (!alias.equals("{")
+                            && !alias.equals("}")
+                            && !(glyph.equals("‖") && alias.equals("|"))
+                            && !asciiLetter(alias.charAt(0))) values.put(alias, glyph);
+                    if (!alias.equals(".")
+                            && (asciiLetter(alias.charAt(0))
+                                    || alias.equals("{")
+                                    || alias.equals("}")
+                                    || glyph.equals("‖") && alias.equals("|")))
+                        values.put(String.valueOf((char) 92) + alias, glyph);
+                }
+            }
+            return Collections.unmodifiableMap(values);
         }
 
         static Map<String, String> symbols() {
