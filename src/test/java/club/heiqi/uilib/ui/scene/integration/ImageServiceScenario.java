@@ -809,6 +809,7 @@ public final class ImageServiceScenario extends TestApplication {
                                             club.heiqi.uilib.host.font.IsolatedFontEngine
                                                     .shared()));
                     AtomicInteger tooltipLayouts = new AtomicInteger();
+                    AtomicInteger quantityLayouts = new AtomicInteger();
                     club.heiqi.uilib.ui.scene.text.SceneTextMeasurer measured =
                             new club.heiqi.uilib.ui.scene.text.SceneTextMeasurer() {
                                 @Override
@@ -825,6 +826,7 @@ public final class ImageServiceScenario extends TestApplication {
                                         club.heiqi.uilib.ui.scene.text.TextStyle style,
                                         int width,
                                         club.heiqi.uilib.ui.scene.text.TextPolicy policy) {
+                                    if ("32".equals(value)) quantityLayouts.incrementAndGet();
                                     return actualText.layout(value, style, width, policy);
                                 }
 
@@ -1040,10 +1042,64 @@ public final class ImageServiceScenario extends TestApplication {
                                                                     && cmd.color == 0xff80ff00),
                                                     "数量耐久泄漏到未成功分支");
                             });
+                    // 同来源/字体代际先缩成零盒再恢复：空求解不能命中旧成功key并留下null数量。
+                    ImageOptions[] previousOptions = {null};
+                    domain.execute(
+                            () -> {
+                                previousOptions[0] = opts[0].get();
+                                opts[0].set(previousOptions[0].size(Size.fixed(0), Size.fixed(0)));
+                            });
+                    page.frame();
+                    domain.execute(
+                            () ->
+                                    require(
+                                            page.pipeline()
+                                                                    .current()
+                                                                    .geometry
+                                                                    .get(image[0])
+                                                                    .box
+                                                                    .width
+                                                            == 0
+                                                    && page.pipeline()
+                                                                    .current()
+                                                                    .geometry
+                                                                    .get(image[0])
+                                                                    .box
+                                                                    .height
+                                                            == 0,
+                                            "数量恢复反例没有进入真实零盒"));
+                    domain.execute(() -> opts[0].set(previousOptions[0]));
+                    page.frame();
+                    domain.execute(
+                            () ->
+                                    require(
+                                            page.pipeline().current().paint.commands().stream()
+                                                    .filter(
+                                                            cmd ->
+                                                                    cmd.kind
+                                                                            == PaintCommand.Kind
+                                                                                    .IMAGE)
+                                                    .anyMatch(
+                                                            cmd ->
+                                                                    cmd
+                                                                            .readyOverlay
+                                                                            .commands()
+                                                                            .stream()
+                                                                            .anyMatch(
+                                                                                    overlay ->
+                                                                                            overlay.text
+                                                                                                            != null
+                                                                                                    && "32"
+                                                                                                            .equals(
+                                                                                                                    overlay.text
+                                                                                                                            .logicalText))),
+                                            "零盒恢复后旧cache key丢失数量"));
+                    int oldQuantityLayouts = quantityLayouts.get();
                     int oldLayouts = tooltipLayouts.get();
                     page.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.move(12, 10));
                     page.frame();
                     require(tooltipLayouts.get() == oldLayouts, "hover重复解析/排版同一tooltip");
+                    require(quantityLayouts.get() == oldQuantityLayouts, "hover重复排版同一数量");
                     domain.execute(
                             () ->
                                     theme[0].set(

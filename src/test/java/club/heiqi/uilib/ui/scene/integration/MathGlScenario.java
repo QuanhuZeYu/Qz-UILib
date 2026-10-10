@@ -56,6 +56,7 @@ public final class MathGlScenario extends TestApplication {
     private ScenePageSession page;
     private Signal<MathContent> content;
     private Signal<SceneTheme> theme;
+    private Signal<ImageOptions> imageOptions;
     private SceneNode math, image, healthy, hiddenMath, hiddenImage;
     private PaintPlan plan;
     private int ready, demand;
@@ -191,12 +192,10 @@ public final class MathGlScenario extends TestApplication {
                                                                                     .NONE)));
                                     Signal<ImageSource> source =
                                             domain.signal(ImageSource.bitmap(red()));
+                                    imageOptions = domain.signal(ImageOptions.defaults());
                                     image =
                                             SceneImage.themed(
-                                                    images.images(),
-                                                    source,
-                                                    domain.signal(ImageOptions.defaults()),
-                                                    theme);
+                                                    images.images(), source, imageOptions, theme);
                                     math =
                                             SceneMath.create(
                                                     ctx,
@@ -259,6 +258,9 @@ public final class MathGlScenario extends TestApplication {
         save("baseline.png", baseline);
     }
 
+    private static final club.heiqi.uilib.ui.scene.image.ItemImageFacts FACTS =
+            new club.heiqi.uilib.ui.scene.image.ItemImageFacts("32", "", false, 1, 0xffffffff);
+
     private static ImageContent red() {
         byte[] rgba = new byte[16 * 16 * 4];
         for (int i = 0; i < rgba.length; i += 4) {
@@ -267,7 +269,12 @@ public final class MathGlScenario extends TestApplication {
             rgba[i + 2] = 60;
             rgba[i + 3] = (byte) 255;
         }
-        return new ImageContent(16, 16, rgba);
+        return new ImageContent(16, 16, rgba) {
+            @Override
+            public club.heiqi.uilib.ui.scene.image.ItemImageFacts itemFacts() {
+                return FACTS;
+            }
+        };
     }
 
     @Override
@@ -396,6 +403,127 @@ public final class MathGlScenario extends TestApplication {
                     changed("fraction-rule", regions[2], rendered, true);
                     changed("clipped-image", regions[3], rendered, false);
                     require(glGetError() == GL_NO_ERROR, "真实数学GL错误");
+                });
+        scenario(
+                "数量32真实GPU像素随积分分子和脚本图像缩放",
+                () -> {
+                    domain.execute(
+                            () ->
+                                    theme.set(
+                                            SceneTheme.dark()
+                                                    .withTextStyle(
+                                                            new TextStyle(
+                                                                    "default", 28, 0xffffffff))));
+                    for (String formula :
+                            new String[] {
+                                tex("@int_0^1 @frac{@embed{ore}}{1+x^2}@,@mathrm{d}x"),
+                                tex("x^{@embed{ore}}")
+                            }) {
+                        domain.execute(
+                                () -> {
+                                    content.set(MathContent.parse(formula));
+                                    imageOptions.set(ImageOptions.defaults());
+                                });
+                        BufferedImage without = renderReady();
+                        String label = formula.startsWith(tex("@int")) ? "integral" : "script";
+                        save("quantity-" + label + "-without.png", without);
+                        domain.execute(
+                                () -> imageOptions.set(ImageOptions.defaults().quantity(true)));
+                        BufferedImage with = renderReady();
+                        save("quantity-" + label + ".png", with);
+                        final LayoutBox[] inkBox = {null};
+                        domain.execute(
+                                () -> {
+                                    PaintCommand item =
+                                            plan.commands().stream()
+                                                    .filter(
+                                                            c ->
+                                                                    c.kind
+                                                                                    == PaintCommand
+                                                                                            .Kind
+                                                                                            .IMAGE
+                                                                            && c.image.content
+                                                                                            .itemFacts()
+                                                                                    != null
+                                                                            && c.box.width > 0
+                                                                            && (c.clip == null
+                                                                                    || c.box
+                                                                                                    .intersect(
+                                                                                                            c.clip)
+                                                                                                    .width
+                                                                                            > 0))
+                                                    .findFirst()
+                                                    .get();
+                                    PaintCommand count =
+                                            item.readyOverlay.commands().stream()
+                                                    .filter(c -> c.kind == PaintCommand.Kind.TEXT)
+                                                    .findFirst()
+                                                    .get();
+                                    float left = Float.POSITIVE_INFINITY,
+                                            top = Float.POSITIVE_INFINITY;
+                                    float right = Float.NEGATIVE_INFINITY,
+                                            bottom = Float.NEGATIVE_INFINITY;
+                                    for (TextLayout.Line line : count.text.lines())
+                                        for (TextLayout.Glyph glyph : line.glyphs()) {
+                                            require(glyph.inkBounds.known, "数量缺少真实墨迹");
+                                            left =
+                                                    Math.min(
+                                                            left,
+                                                            count.box.x
+                                                                    + glyph.x
+                                                                    + glyph.inkBounds.left);
+                                            top =
+                                                    Math.min(
+                                                            top,
+                                                            count.box.y
+                                                                    + glyph.y
+                                                                    + glyph.inkBounds.top);
+                                            right =
+                                                    Math.max(
+                                                            right,
+                                                            count.box.x
+                                                                    + glyph.x
+                                                                    + glyph.inkBounds.right);
+                                            bottom =
+                                                    Math.max(
+                                                            bottom,
+                                                            count.box.y
+                                                                    + glyph.y
+                                                                    + glyph.inkBounds.bottom);
+                                        }
+                                    require(bottom - top <= item.image.height * .5f, "GPU数量盖住物品图像");
+                                    inkBox[0] = bounds(left, top, right - left, bottom - top);
+                                });
+                        int changedInside = 0, changedOutside = 0;
+                        LayoutBox region = inkBox[0];
+                        for (int y = 0; y < H; y++)
+                            for (int x = 0; x < W; x++)
+                                if (with.getRGB(x, y) != without.getRGB(x, y)) {
+                                    if (x >= region.x
+                                            && y >= region.y
+                                            && x < region.x + region.width
+                                            && y < region.y + region.height) changedInside++;
+                                    else changedOutside++;
+                                }
+                        require(changedInside > 0, "数量覆盖层未产生实际GPU像素");
+                        require(changedOutside == 0, "数量切换污染公式或图像外区域: " + changedOutside);
+                        evidence.append("quantity-")
+                                .append(label)
+                                .append(" ink=")
+                                .append(region.x)
+                                .append(',')
+                                .append(region.y)
+                                .append(',')
+                                .append(region.width)
+                                .append(',')
+                                .append(region.height)
+                                .append(" changedInside=")
+                                .append(changedInside)
+                                .append(" changedOutside=")
+                                .append(changedOutside)
+                                .append((char) 10);
+                    }
+                    require(glGetError() == GL_NO_ERROR, "数量覆盖层GL错误");
                 });
         scenario(
                 "字号主题更新及框架整式降级实际PNG",

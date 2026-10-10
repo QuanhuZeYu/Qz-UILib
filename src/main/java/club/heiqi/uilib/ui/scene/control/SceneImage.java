@@ -23,6 +23,12 @@ import club.heiqi.uilib.ui.scene.paint.PaintPlanBuilder;
 import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
 import club.heiqi.uilib.ui.scene.runtime.BindingActivation;
 import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
+import club.heiqi.uilib.ui.scene.text.TextLayout;
+import club.heiqi.uilib.ui.scene.text.TextStyle;
+import club.heiqi.uilib.ui.scene.text.TextPolicy;
+import club.heiqi.uilib.ui.scene.text.TextEffects;
+import club.heiqi.uilib.ui.scene.text.TextDecoration;
+import club.heiqi.uilib.ui.scene.text.font.nativefont.InkBounds;
 
 /** 正式图像控件；来源/结果订阅只在NodeBinding挂载期获取，measure/paint纯读不可变内容。 */
 public final class SceneImage implements SceneControl {
@@ -39,6 +45,11 @@ public final class SceneImage implements SceneControl {
     private club.heiqi.uilib.ui.scene.text.TextStyle tooltipStyle;
     private int tooltipWidth = -1;
     private long tooltipMetrics = -1;
+    private club.heiqi.uilib.ui.scene.image.ItemImageFacts quantityFacts;
+    private TextStyle quantityStyle;
+    private float quantityWidth = -1, quantityHeight = -1;
+    private long quantityMetrics = -1;
+    private InkBounds quantityInk;
 
     /** 可选主题绑定与其他正式控件一致，字号/提示背景变化自动失效。 */
     public static SceneNode themed(
@@ -137,6 +148,9 @@ public final class SceneImage implements SceneControl {
                             control.tooltipStyle = null;
                             control.tooltipText = null;
                             control.quantityText = null;
+                            control.quantityFacts = null;
+                            control.quantityStyle = null;
+                            control.quantityInk = null;
                         }
                     };
                 });
@@ -210,26 +224,6 @@ public final class SceneImage implements SceneControl {
         return options.tooltip;
     }
 
-    @Override
-    public club.heiqi.uilib.ui.scene.text.TextLayout presentText(
-            SceneNode node,
-            club.heiqi.uilib.ui.scene.text.TextLayout full,
-            int width,
-            int height,
-            SceneTextMeasurer text) {
-        club.heiqi.uilib.ui.scene.image.ItemImageFacts facts =
-                state == null || state.content == null ? null : state.content.itemFacts();
-        quantityText =
-                facts != null && options.quantity && !facts.quantity.isEmpty()
-                        ? text.layout(
-                                facts.quantity,
-                                node.style(),
-                                width,
-                                club.heiqi.uilib.ui.scene.text.TextPolicy.SINGLE_LINE)
-                        : null;
-        return full;
-    }
-
     /** 只缓存最近事实/当前样式/空间/度量代际；hover与其他paint变化不重新resolve或整形。 */
     @Override
     public void preparePaint(
@@ -239,6 +233,16 @@ public final class SceneImage implements SceneControl {
             long metricsRevision) {
         club.heiqi.uilib.ui.scene.image.ItemImageFacts facts =
                 state == null || state.content == null ? null : state.content.itemFacts();
+        SceneGeometryView.Entry entry = geometry.get(node);
+        if (facts == null || !options.quantity || facts.quantity.isEmpty() || entry == null) {
+            quantityText = null;
+            quantityFacts = null;
+            quantityStyle = null;
+            quantityInk = null;
+        } else {
+            ImagePlacement placement = ImagePlacement.fit(state.content, entry.box, options);
+            prepareQuantity(facts, node.style(), placement, text, metricsRevision);
+        }
         if (facts == null || !options.tooltip || facts.tooltip.source.isEmpty()) {
             tooltipFacts = null;
             tooltipStyle = null;
@@ -267,6 +271,107 @@ public final class SceneImage implements SceneControl {
             tooltipWidth = width;
             tooltipMetrics = metricsRevision;
         }
+    }
+
+    /** 数量随最终适配图像缩放。数学脚本只缩小图像盒，不改节点的主题字号；
+     * 用字号上限和真实墨迹约束覆盖层，不能让完整行高吞掉小图标。 */
+    private void prepareQuantity(
+            club.heiqi.uilib.ui.scene.image.ItemImageFacts facts,
+            TextStyle style,
+            ImagePlacement placement,
+            SceneTextMeasurer text,
+            long metricsRevision) {
+        if (quantityText != null
+                && quantityFacts == facts
+                && style.equals(quantityStyle)
+                && quantityWidth == placement.width
+                && quantityHeight == placement.height
+                && quantityMetrics == metricsRevision) return;
+        quantityText = null;
+        quantityInk = null;
+        if (placement.width <= 0 || placement.height <= 0) return;
+        // 沿图像盒派生，保留声明字体/颜色/效果；提示仍使用独立的完整主题字号。
+        float em = Math.min(style.logicalEm, placement.height * .5f);
+        while (em > 0) {
+            float ratio = em / style.logicalEm;
+            TextDecoration d = style.decoration;
+            TextEffects e = style.effects;
+            // 装饰的绝对长度也属于文字几何；只缩字号会留下无法放入小物品盒的粗线。
+            TextDecoration decoration =
+                    new TextDecoration(
+                            d.underlineTop * ratio,
+                            d.underlineThickness * ratio,
+                            d.underlineStartOffset * ratio,
+                            d.strikeTop * ratio,
+                            d.strikeThickness * ratio);
+            TextEffects effects =
+                    new TextEffects(
+                            e.bold,
+                            e.italic,
+                            e.underline,
+                            e.strike,
+                            e.obfuscated,
+                            e.boldAdvance * ratio,
+                            e.italicShear);
+            TextStyle scaled =
+                    new TextStyle(
+                            style.font,
+                            em,
+                            style.color,
+                            style.candidates(),
+                            effects,
+                            decoration,
+                            style.fontStyle);
+            TextLayout layout =
+                    text.layout(facts.quantity, scaled, Integer.MAX_VALUE, TextPolicy.SINGLE_LINE);
+            InkBounds ink = quantityInk(layout);
+            float width = ink.right - ink.left, height = ink.bottom - ink.top;
+            float scale =
+                    Math.min(
+                            1,
+                            Math.min(
+                                    width > 0 ? placement.width / width : 1,
+                                    height > 0 ? placement.height * .5f / height : 1));
+            if (scale >= 1) {
+                quantityText = layout;
+                quantityInk = ink;
+                quantityFacts = facts;
+                quantityStyle = style;
+                quantityWidth = placement.width;
+                quantityHeight = placement.height;
+                quantityMetrics = metricsRevision;
+                return;
+            }
+            // 字体量化后重测真实墨迹；留出采样量化余量，逐次严格缩小且只在依赖变化时执行。
+            float next = em * scale * .95f;
+            if (next <= 0 || next >= em) throw new IllegalStateException("数量字形墨迹无法随字号适配图像区域");
+            em = next;
+        }
+    }
+
+    private static InkBounds quantityInk(TextLayout layout) {
+        float left = Float.POSITIVE_INFINITY, top = Float.POSITIVE_INFINITY;
+        float right = Float.NEGATIVE_INFINITY, bottom = Float.NEGATIVE_INFINITY;
+        for (TextLayout.Line line : layout.lines()) {
+            for (TextLayout.Glyph glyph : line.glyphs()) {
+                InkBounds ink = glyph.inkBounds;
+                if (!ink.known) return new InkBounds(true, 0, 0, layout.width, layout.height);
+                if (ink.right <= ink.left || ink.bottom <= ink.top) continue;
+                left = Math.min(left, glyph.x + ink.left);
+                top = Math.min(top, glyph.y + ink.top);
+                right = Math.max(right, glyph.x + ink.right);
+                bottom = Math.max(bottom, glyph.y + ink.bottom);
+            }
+            for (TextLayout.Decoration d : line.decorations()) {
+                left = Math.min(left, d.x);
+                top = Math.min(top, d.y);
+                right = Math.max(right, d.x + d.width);
+                bottom = Math.max(bottom, d.y + d.height);
+            }
+        }
+        return left == Float.POSITIVE_INFINITY
+                ? new InkBounds(true, 0, 0, 0, 0)
+                : new InkBounds(true, left, top, right, bottom);
     }
 
     @Override
@@ -354,8 +459,16 @@ public final class SceneImage implements SceneControl {
                 overlay.add(
                         PaintCommand.text(
                                 new LayoutBox(
-                                        right - quantityText.width,
-                                        bottom - quantityText.height,
+                                        (int)
+                                                Math.floor(
+                                                        placement.x
+                                                                + placement.width
+                                                                - quantityInk.right),
+                                        (int)
+                                                Math.floor(
+                                                        placement.y
+                                                                + placement.height
+                                                                - quantityInk.bottom),
                                         quantityText.width,
                                         quantityText.height),
                                 overlayClip,

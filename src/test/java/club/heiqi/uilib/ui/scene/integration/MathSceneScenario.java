@@ -59,13 +59,22 @@ public final class MathSceneScenario extends TestApplication {
 
     @Override
     protected void runTests() throws Exception {
+        scenario("真实native数量装饰固定字号探针", this::quantityDecorationProbe);
+        // 旧实现可能在小盒收敛循环挂起；独立探针模式只测三个固定字号，父代理先取证再跑回归。
+        if (java.util.Arrays.asList(arguments()).contains("--quantity-decoration-probe")) return;
         scenario("真实公式同代glyph浮点投影与分式脚本图像", this::geometry);
+        scenario("数量32真实墨迹随公式盒缩放及提示独立字号", this::quantity);
+        scenario("三像素小盒带装饰数量完整保留与有界缩小", this::quantityDecoration);
         scenario("被动hover祖先clip窄视口滚动", this::input);
         scenario("来源主题字号字体重载与整式错误恢复", this::dynamic);
         scenario("绑定唯一身份passive资格及卸载释放", this::lifecycle);
     }
 
     private static ImageContent bitmap() {
+        return bitmap("");
+    }
+
+    private static ImageContent bitmap(String quantity) {
         byte[] rgba = new byte[16 * 16 * 4];
         for (int i = 0; i < rgba.length; i += 4) {
             rgba[i] = (byte) 230;
@@ -75,7 +84,7 @@ public final class MathSceneScenario extends TestApplication {
         return new ImageContent(16, 16, rgba) {
             @Override
             public ItemImageFacts itemFacts() {
-                return new ItemImageFacts("", "中性图像提示", false, 1, -1);
+                return new ItemImageFacts(quantity, "中性图像提示", false, 1, -1);
             }
         };
     }
@@ -145,6 +154,30 @@ public final class MathSceneScenario extends TestApplication {
         final ScenePageSession page;
 
         Fixture(String formula, MathStyle mathStyle, String... ids) {
+            this(formula, mathStyle, EM, "", ids);
+        }
+
+        Fixture(String formula, MathStyle mathStyle, float em, String quantity, String... ids) {
+            this(
+                    formula,
+                    mathStyle,
+                    new TextStyle(
+                            "default",
+                            em,
+                            -1,
+                            null,
+                            club.heiqi.uilib.ui.scene.text.TextEffects.NORMAL,
+                            club.heiqi.uilib.ui.scene.text.TextDecoration.NONE),
+                    quantity,
+                    ids);
+        }
+
+        Fixture(
+                String formula,
+                MathStyle mathStyle,
+                TextStyle textStyle,
+                String quantity,
+                String... ids) {
             page =
                     ScenePageSession.open(
                             domain,
@@ -152,22 +185,8 @@ public final class MathSceneScenario extends TestApplication {
                             fonts,
                             ctx -> {
                                 content = domain.signal(MathContent.parse(formula));
-                                theme =
-                                        domain.signal(
-                                                SceneTheme.dark()
-                                                        .withTextStyle(
-                                                                new TextStyle(
-                                                                        "default",
-                                                                        EM,
-                                                                        -1,
-                                                                        null,
-                                                                        club.heiqi.uilib.ui.scene
-                                                                                .text.TextEffects
-                                                                                .NORMAL,
-                                                                        club.heiqi.uilib.ui.scene
-                                                                                .text.TextDecoration
-                                                                                .NONE)));
-                                source = domain.signal(ImageSource.bitmap(bitmap()));
+                                theme = domain.signal(SceneTheme.dark().withTextStyle(textStyle));
+                                source = domain.signal(ImageSource.bitmap(bitmap(quantity)));
                                 Map<String, SceneMath.Embed> bindings = new LinkedHashMap<>();
                                 for (String id : ids) {
                                     SceneNode image =
@@ -175,7 +194,9 @@ public final class MathSceneScenario extends TestApplication {
                                                     counted,
                                                     source,
                                                     domain.signal(
-                                                            ImageOptions.defaults().tooltip(true)),
+                                                            ImageOptions.defaults()
+                                                                    .quantity(!quantity.isEmpty())
+                                                                    .tooltip(true)),
                                                     theme);
                                     nodes.put(id, image);
                                     bindings.put(
@@ -304,6 +325,399 @@ public final class MathSceneScenario extends TestApplication {
                         "ore")) {
             f.ready();
             f.domain.execute(() -> healthy(f.layout()));
+        }
+    }
+
+    private void quantity() throws Exception {
+        // 同一来源供多个独立身份使用；数量必须实际进入 IMAGE.readyOverlay，不能只检查样式值。
+        String formula =
+                tex(
+                        "@embed{body}+@frac{@embed{frac}}{2}+@sum@limits_{@embed{lower}}^{@embed{upper}}+x^{@embed{script}}");
+        for (float em : new float[] {28, 38}) {
+            try (Fixture f =
+                    new Fixture(
+                            formula,
+                            MathStyle.TEXT,
+                            em,
+                            "32",
+                            "body",
+                            "frac",
+                            "lower",
+                            "upper",
+                            "script")) {
+                f.ready();
+                Map<String, QuantityInk> normal = new LinkedHashMap<>();
+                f.domain.execute(
+                        () -> {
+                            normal.putAll(quantityObservations(f, "normal"));
+                            quantityFits(normal);
+                            for (String id : normal.keySet()) {
+                                if (!id.equals("body")) {
+                                    require(
+                                            normal.get(id).image.image.height
+                                                    < normal.get("body").image.image.height,
+                                            id + "未命中分式/limits/script缩小盒");
+                                    require(
+                                            normal.get(id).height() < normal.get("body").height(),
+                                            id + "数量墨迹未随公式脚本盒缩小");
+                                }
+                            }
+                        });
+                quantityTooltip(f, "upper", em);
+                f.domain.execute(
+                        () -> f.content.set(MathContent.parse(tex("@scriptstyle ") + formula)));
+                f.frame();
+                f.domain.execute(
+                        () -> {
+                            Map<String, QuantityInk> small = quantityObservations(f, "scriptstyle");
+                            quantityFits(small);
+                            for (String id : normal.keySet()) {
+                                require(
+                                        small.get(id).image.image.height
+                                                < normal.get(id).image.image.height,
+                                        id + "公式缩小没有进入图像placement");
+                                require(
+                                        small.get(id).height() < normal.get(id).height(),
+                                        id + "缩小后数量仍保留原墨迹大小");
+                            }
+                        });
+                quantityTooltip(f, "upper", em);
+                f.domain.execute(
+                        () -> {
+                            f.content.set(MathContent.parse(formula));
+                            f.theme.set(
+                                    SceneTheme.light()
+                                            .withTextStyle(
+                                                    new TextStyle(
+                                                            "default",
+                                                            em,
+                                                            0xff123456,
+                                                            null,
+                                                            club.heiqi.uilib.ui.scene.text
+                                                                    .TextEffects.NORMAL,
+                                                            club.heiqi.uilib.ui.scene.text
+                                                                    .TextDecoration.NONE)));
+                        });
+                f.frame();
+                f.domain.execute(
+                        () -> {
+                            Map<String, QuantityInk> restored =
+                                    quantityObservations(f, "normal-light");
+                            quantityFits(restored);
+                            for (String id : normal.keySet()) {
+                                near(
+                                        restored.get(id).height(),
+                                        normal.get(id).height(),
+                                        id + "normal恢复数量墨迹");
+                                near(
+                                        restored.get(id).image.image.height,
+                                        normal.get(id).image.image.height,
+                                        id + "normal恢复图像盒");
+                            }
+                        });
+                quantityTooltip(f, "upper", em);
+            }
+        }
+    }
+
+    private static TextStyle underlinedQuantityStyle(float em) {
+        return new TextStyle(
+                "default",
+                em,
+                -1,
+                null,
+                new club.heiqi.uilib.ui.scene.text.TextEffects(
+                        false, false, true, false, false, 0, 0),
+                new club.heiqi.uilib.ui.scene.text.TextDecoration(1, 2, 0, 0, 0));
+    }
+
+    private void quantityDecorationProbe() {
+        // 三个固定输入直接调用真实FT/HB；不进入SceneImage，也不执行任何收敛循环。
+        for (float em : new float[] {1.5f, .1f, .001f}) {
+            TextLayout text =
+                    fonts.layout(
+                            "32",
+                            underlinedQuantityStyle(em),
+                            Integer.MAX_VALUE,
+                            club.heiqi.uilib.ui.scene.text.TextPolicy.SINGLE_LINE);
+            QuantityInk ink =
+                    new QuantityInk(
+                            null,
+                            PaintCommand.text(
+                                    new LayoutBox(0, 0, text.width, text.height), null, text));
+            int decorations = 0;
+            for (TextLayout.Line line : text.lines())
+                for (TextLayout.Decoration decoration : line.decorations()) {
+                    decorations++;
+                    require(decoration.height >= 2, "探针未命中绝对2px装饰");
+                }
+            require(decorations > 0, "真实probe未生成underline");
+            System.out.println(
+                    "quantity-decoration-probe em="
+                            + em
+                            + " glyphAndDecorationInk="
+                            + ink.left
+                            + ","
+                            + ink.top
+                            + ","
+                            + ink.right
+                            + ","
+                            + ink.bottom
+                            + " height="
+                            + ink.height()
+                            + " maxSmallBoxInkHeight="
+                            + (3f * .5f)
+                            + " decorationCount="
+                            + decorations);
+        }
+    }
+
+    private void quantityDecoration() throws Exception {
+        String formula = tex("@embed{body}+@frac{@embed{frac}}{2}");
+        for (String quantity : new String[] {"32"}) {
+            try (Fixture f =
+                    new Fixture(
+                            formula,
+                            MathStyle.TEXT,
+                            underlinedQuantityStyle(3),
+                            quantity,
+                            "body",
+                            "frac")) {
+                f.ready();
+                f.domain.execute(
+                        () -> {
+                            Map<String, QuantityInk> values =
+                                    quantityObservations(f, "tiny-underlined-" + quantity);
+                            quantityFits(values);
+                            near(values.get("body").image.image.height, 3, "未命中3px宿主图像盒");
+                            for (Map.Entry<String, QuantityInk> entry : values.entrySet()) {
+                                QuantityInk ink = entry.getValue();
+                                require(quantity.equals(ink.count.text.logicalText), "小盒截断数量");
+                                near(
+                                        f.nodes
+                                                .get(entry.getKey())
+                                                .style()
+                                                .decoration
+                                                .underlineThickness,
+                                        2,
+                                        "小盒缩放改写声明装饰");
+                                float scale = ink.count.text.style.logicalEm / 3;
+                                require(scale > 0 && scale < 1, "小盒数量没有选择有限正缩放");
+                                int decorations = 0;
+                                for (TextLayout.Line line : ink.count.text.lines())
+                                    for (TextLayout.Decoration decoration : line.decorations()) {
+                                        decorations++;
+                                        require(
+                                                decoration.kind
+                                                        == TextLayout.Decoration.Kind.UNDERLINE,
+                                                "声明underline丢失");
+                                        near(decoration.height, 2 * scale, "数量装饰厚度未随数量缩小");
+                                    }
+                                require(decorations > 0, "小盒以删除装饰绕过收敛");
+                            }
+                        });
+            }
+        }
+    }
+
+    private void quantityTooltip(Fixture f, String id, float em) {
+        LayoutBox[] box = {null};
+        f.domain.execute(() -> box[0] = f.geometry().get(f.nodes.get(id)).box);
+        f.page.pointer(
+                ScenePointerEvent.move(box[0].x + box[0].width / 2, box[0].y + box[0].height / 2));
+        f.frame();
+        f.domain.execute(
+                () -> {
+                    PaintCommand tip =
+                            f.paint.commands().stream()
+                                    .filter(
+                                            cmd ->
+                                                    cmd.kind == PaintCommand.Kind.TEXT
+                                                            && "中性图像提示"
+                                                                    .equals(cmd.text.logicalText))
+                                    .findFirst()
+                                    .orElseThrow(() -> new AssertionError("数量场景提示没有沿正式hover出现"));
+                    near(tip.text.style.logicalEm, em, "提示不应继承数量或公式script字号");
+                    require(!tip.text.lines().isEmpty(), "提示没有真实字体行");
+                    for (TextLayout.Line line : tip.text.lines())
+                        for (TextLayout.Glyph glyph : line.glyphs())
+                            near(glyph.logicalEm, em, "提示glyph沿独立主题字号");
+                });
+    }
+
+    /** 观测正式计划的实际字形墨迹，不重写控件的字号选择、排版或锚定算法。 */
+    private static final class QuantityInk {
+        final PaintCommand image, count;
+        float left = Float.POSITIVE_INFINITY, top = Float.POSITIVE_INFINITY;
+        float right = Float.NEGATIVE_INFINITY, bottom = Float.NEGATIVE_INFINITY;
+
+        QuantityInk(PaintCommand image, PaintCommand count) {
+            this.image = image;
+            this.count = count;
+            boolean[] sourceSeen = new boolean[count.text.logicalText.length()];
+            int glyphs = 0;
+            for (TextLayout.Line line : count.text.lines()) {
+                for (TextLayout.Glyph glyph : line.glyphs()) {
+                    require(glyph.inkBounds.known && !glyph.replacement, "数量没有真实字体墨迹");
+                    require(
+                            glyph.source != null
+                                    && glyph.sourceStart >= 0
+                                    && glyph.sourceEnd <= sourceSeen.length
+                                    && glyph.sourceStart < glyph.sourceEnd,
+                            "数量glyph源位置丢失");
+                    for (int i = glyph.sourceStart; i < glyph.sourceEnd; i++) sourceSeen[i] = true;
+                    left = Math.min(left, count.box.x + glyph.x + glyph.inkBounds.left);
+                    top = Math.min(top, count.box.y + glyph.y + glyph.inkBounds.top);
+                    right = Math.max(right, count.box.x + glyph.x + glyph.inkBounds.right);
+                    bottom = Math.max(bottom, count.box.y + glyph.y + glyph.inkBounds.bottom);
+                    glyphs++;
+                    System.out.println(
+                            "quantity32 glyph source=["
+                                    + glyph.sourceStart
+                                    + ","
+                                    + glyph.sourceEnd
+                                    + ") font="
+                                    + glyph.source
+                                    + " metadata="
+                                    + glyph.source.metadata()
+                                    + " em="
+                                    + glyph.logicalEm
+                                    + " baseline="
+                                    + (count.box.y + glyph.y)
+                                    + " lineHeight="
+                                    + line.lineHeight);
+                }
+            }
+            for (TextLayout.Line line : count.text.lines()) {
+                for (TextLayout.Decoration decoration : line.decorations()) {
+                    require(
+                            decoration.sourceStart >= 0
+                                    && decoration.sourceEnd <= sourceSeen.length,
+                            "数量装饰来源位置丢失");
+                    left = Math.min(left, count.box.x + decoration.x);
+                    top = Math.min(top, count.box.y + decoration.y);
+                    right = Math.max(right, count.box.x + decoration.x + decoration.width);
+                    bottom = Math.max(bottom, count.box.y + decoration.y + decoration.height);
+                    System.out.println(
+                            "quantity decoration="
+                                    + decoration.kind
+                                    + " source=["
+                                    + decoration.sourceStart
+                                    + ","
+                                    + decoration.sourceEnd
+                                    + ")"
+                                    + " width="
+                                    + decoration.width
+                                    + " height="
+                                    + decoration.height);
+                }
+            }
+            require(glyphs > 0, "数量未生成实际glyph");
+            for (int i = 0; i < sourceSeen.length; i++) require(sourceSeen[i], "数量来源位置未完整保留: " + i);
+            require(right > left && bottom > top, "数量墨迹为空");
+        }
+
+        float height() {
+            return bottom - top;
+        }
+    }
+
+    private static Map<String, QuantityInk> quantityObservations(Fixture f, String phase) {
+        healthy(f.layout());
+        Map<String, QuantityInk> result = new LinkedHashMap<>();
+        int quantityCommands = 0;
+        for (MathLayout.Embed embed : f.layout().embeds) {
+            placement(f, embed.id);
+            LayoutBox box = f.geometry().get(f.nodes.get(embed.id)).box;
+            PaintCommand image =
+                    f.paint.commands().stream()
+                            .filter(
+                                    cmd ->
+                                            cmd.kind == PaintCommand.Kind.IMAGE
+                                                    && cmd.box.x == box.x
+                                                    && cmd.box.y == box.y
+                                                    && cmd.box.width == box.width
+                                                    && cmd.box.height == box.height)
+                            .findFirst()
+                            .orElseThrow(() -> new AssertionError(embed.id + "缺少实际IMAGE"));
+            require(image.readyOverlay != null, embed.id + "数量未进入成功分支");
+            List<PaintCommand> counts =
+                    image.readyOverlay.commands().stream()
+                            .filter(
+                                    cmd ->
+                                            cmd.kind == PaintCommand.Kind.TEXT
+                                                    && f.source
+                                                            .get()
+                                                            .bitmap
+                                                            .itemFacts()
+                                                            .quantity
+                                                            .equals(cmd.text.logicalText))
+                            .collect(java.util.stream.Collectors.toList());
+            require(counts.size() == 1, embed.id + "成功分支数量TEXT计数=" + counts.size());
+            quantityCommands += counts.size();
+            QuantityInk ink = new QuantityInk(image, counts.get(0));
+            result.put(embed.id, ink);
+            System.out.println(
+                    "quantity32 phase="
+                            + phase
+                            + " id="
+                            + embed.id
+                            + " themeEm="
+                            + f.nodes.get(embed.id).style().logicalEm
+                            + " formulaBox="
+                            + embed.width
+                            + "x"
+                            + embed.height
+                            + " image="
+                            + image.image.x
+                            + ","
+                            + image.image.y
+                            + ","
+                            + image.image.width
+                            + ","
+                            + image.image.height
+                            + " ink="
+                            + ink.left
+                            + ","
+                            + ink.top
+                            + ","
+                            + ink.right
+                            + ","
+                            + ink.bottom);
+        }
+        require(
+                result.size() == f.nodes.size() && quantityCommands == f.nodes.size(),
+                "独立绑定与实际quantity TEXT数量不一致: " + quantityCommands);
+        return result;
+    }
+
+    private static void quantityFits(Map<String, QuantityInk> values) {
+        for (Map.Entry<String, QuantityInk> entry : values.entrySet()) {
+            String id = entry.getKey();
+            QuantityInk ink = entry.getValue();
+            float right = ink.image.image.x + ink.image.image.width;
+            float bottom = ink.image.image.y + ink.image.image.height;
+            // 上限来自实机反馈；一像素余量只容纳场景整数原点量化，不能用font lineheight冒充墨迹。
+            require(
+                    ink.height() <= ink.image.image.height * .5f + .003f,
+                    id
+                            + "数量32盖住图像：inkHeight="
+                            + ink.height()
+                            + " imageHeight="
+                            + ink.image.image.height);
+            require(
+                    ink.left >= ink.image.image.x - .003f
+                            && ink.top >= ink.image.image.y - .003f
+                            && ink.right <= right + .003f
+                            && ink.bottom <= bottom + .003f,
+                    id + "数量可见墨迹越过ImagePlacement");
+            require(
+                    right - ink.right <= 1.01f && bottom - ink.bottom <= 1.01f,
+                    id
+                            + "数量没有按可见墨迹锚定图像底右：rightGap="
+                            + (right - ink.right)
+                            + " bottomGap="
+                            + (bottom - ink.bottom));
         }
     }
 
