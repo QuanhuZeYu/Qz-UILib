@@ -8,6 +8,8 @@
   "mixins": [],
   "client": [
     "client.MinecraftLifecycleMixin",
+    "client.LocaleAccessor",
+    "client.LanguageManagerMixin",
     "client.VanillaFontRendererMixin",
     "client.AngelicaFontOrderMixin"
   ],

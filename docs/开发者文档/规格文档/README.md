@@ -4,6 +4,7 @@
 
 | 模块 | 规格 |
 | --- | --- |
+| 语言事实、翻译键与动态文案 | [语言与翻译规格](<../../superpowers/specs/2026-10-07-uilib-localization-spec.md>) |
 | 主题与控件文案 | [主题规格](<../../superpowers/specs/2026-10-07-uilib-theme-spec.md>) |
 | 草稿、提交、撤销与输入法 | [编辑规格](<../../superpowers/specs/2026-10-07-uilib-editing-spec.md>) |
 | 声明式页面与宿主生命周期 | [页面接入规格](<../../superpowers/specs/2026-10-07-uilib-page-host-spec.md>) |

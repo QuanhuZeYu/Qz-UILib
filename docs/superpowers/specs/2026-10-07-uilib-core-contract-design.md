@@ -200,6 +200,7 @@ Tab/Shift+Tab 默认按当前范围内逻辑树声明顺序前进/后退，跳�
 
 | 模块 | 规格 |
 | --- | --- |
+| 语言事实与翻译文案 | [语言与翻译规格](<2026-10-07-uilib-localization-spec.md>) |
 | 主题与控件文案 | [UILib 主题与控件文案规格](<2026-10-07-uilib-theme-spec.md>) |
 | 编辑状态与输入法 | [UILib 编辑状态与输入法规格](<2026-10-07-uilib-editing-spec.md>) |
 | 测试应用 | [UILib 测试应用规格](<2026-10-07-uilib-testing-spec.md>) |

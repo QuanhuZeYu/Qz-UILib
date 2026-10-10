@@ -1,0 +1,12 @@
+qz_uilib.lang.title=Localization: operation %s
+qz_uilib.lang.title.long=Localization: this longer natural heading wraps automatically and the scrolling body receives the remaining space. Operation %s
+qz_uilib.lang.status=Loaded language: %1$s; observed table updates: %2$s
+qz_uilib.lang.switch=English / Chinese
+qz_uilib.lang.parameter=Change parameter
+qz_uilib.lang.key=Change heading key
+qz_uilib.lang.reload=Reload resources
+qz_uilib.lang.theme=Change theme
+qz_uilib.lang.font=Change text size
+qz_uilib.lang.back=Back to core page
+qz_uilib.lang.instructions=Keep this page open: switch language, change the parameter and heading key, then resize the window or change theme/text size. Scroll the body: the natural heading and controls stay in place. To verify a same-language table change, edit this translation in an active resource pack and press Reload resources. No font configuration is changed.
+qz_uilib.lang.row=Row %1$s: parameter %2$s, progress 100%%. Literal arguments are never translated again; labels and buttons share the same localization signals.

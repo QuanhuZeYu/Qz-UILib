@@ -8,11 +8,11 @@ import net.minecraft.command.ICommandSender;
 import net.minecraftforge.client.ClientCommandHandler;
 /** 仅开发 classpath 中注册；场景不进入发布包。 */
 public final class CoreLoopBootstrap {
-    private static boolean installed, pendingOpen;
+    private static boolean installed, pendingOpen, pendingLanguage;
     @SubscribeEvent public void tick(TickEvent.ClientTickEvent event) {
         if (event.phase != TickEvent.Phase.END || !pendingOpen) return;
         pendingOpen = false;
-        Minecraft.getMinecraft().displayGuiScreen(new CoreLoopScreen());
+        Minecraft.getMinecraft().displayGuiScreen(pendingLanguage ? new CoreLocalizationPage() : new CoreLoopScreen());
     }
     private CoreLoopBootstrap() { }
     public static void install() {
@@ -21,10 +21,10 @@ public final class CoreLoopBootstrap {
         FMLCommonHandler.instance().bus().register(new CoreLoopBootstrap());
         ClientCommandHandler.instance.registerCommand(new CommandBase() {
             @Override public String getCommandName() { return "qzcore"; }
-            @Override public String getCommandUsage(ICommandSender sender) { return "/qzcore"; }
+            @Override public String getCommandUsage(ICommandSender sender) { return "/qzcore [lang]"; }
             @Override public int getRequiredPermissionLevel() { return 0; }
             @Override public void processCommand(ICommandSender sender, String[] args) { // GuiChat 在命令返回后会关闭当前界面，必须等聊天输入收尾后再打开。
-                pendingOpen = true; }
+                pendingLanguage = args.length > 0 && "lang".equals(args[0]); pendingOpen = true; }
         });
     }
 }

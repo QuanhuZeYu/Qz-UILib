@@ -11,8 +11,16 @@ public final class ScenePageContext {
     private final ReactiveDomain domain;
     private final Owner scope;
     private final SceneRuntime runtime;
-    ScenePageContext(ReactiveDomain domain, Owner scope, SceneRuntime runtime) {
-        this.domain = domain; this.scope = scope; this.runtime = runtime;
+    private final SceneHost host;
+    private club.heiqi.uilib.ui.scene.localization.LocalizationBinding localization;
+    ScenePageContext(ReactiveDomain domain, Owner scope, SceneRuntime runtime, SceneHost host) {
+        this.domain = domain; this.scope = scope; this.runtime = runtime; this.host = host;
+    }
+    /** 每次页面惰性拥有一个绑定；共享宿主来源仍归宿主生命周期。 */
+    public club.heiqi.uilib.ui.scene.localization.LocalizationBinding localization() {
+        domain.checkWrite();
+        if (localization == null) localization = new club.heiqi.uilib.ui.scene.localization.LocalizationBinding(domain, scope, host.localization());
+        return localization;
     }
     public ReactiveDomain domain() { return domain; }
     public Owner scope() { domain.checkAccess(); return scope; }

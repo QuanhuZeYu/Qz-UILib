@@ -1,0 +1,12 @@
+qz_uilib.lang.title=语言动态接入：第%s次操作
+qz_uilib.lang.title.long=语言动态接入：这段较长的自然标题自动换行，滚动正文自动获得剩余空间，无需重开页面或计算标题高度。第%s次操作
+qz_uilib.lang.status=已加载语言：%1$s；已观察资料更新：%2$s次
+qz_uilib.lang.switch=中文 / English
+qz_uilib.lang.parameter=改变参数
+qz_uilib.lang.key=切换标题键
+qz_uilib.lang.reload=重载资源
+qz_uilib.lang.theme=切换主题
+qz_uilib.lang.font=切换字号
+qz_uilib.lang.back=返回核心页
+qz_uilib.lang.instructions=保持本页打开：切换语言、改变参数和标题键，再调整窗口或切换主题/字号。滚动正文时自然标题及操作区保持在原位。验证同语言换表：在已启用资源包中修改本段译文，然后点击重载资源。此页不修改字体配置。
+qz_uilib.lang.row=第%1$s行：参数%2$s，进度100%%。字面参数不再翻译；标签和按钮使用同一语言信号，变化由正式布局与绘制管线协调。
