@@ -47,10 +47,15 @@ public final class InlineBoxScenario extends TestApplication {
                     require(c.glyphIndexStart == c.glyphIndexEnd, "对象伪造glyph");
                     require(c.advance == width, "对象宽度未保留");
                     float top = line.baseline - baseline;
-                    require(
-                            top >= line.y - 0.001f
-                                    && top + height <= line.y + line.lineHeight + 1.001f,
-                            "对象不在实际行高内");
+                    // 显式行高允许真实对象溢出；只有默认行高需要容纳本行联合度量。
+                    if (policy.lineHeight > 0) {
+                        require(line.lineHeight == policy.lineHeight, "对象隐式覆盖显式行高");
+                    } else {
+                        require(
+                                top >= line.y - 0.001f
+                                        && top + height <= line.y + line.lineHeight + 1.001f,
+                                "默认行高未容纳对象");
+                    }
                     require(
                             line.ascent >= baseline && line.descent >= height - baseline,
                             "对象ascent/descent遗漏");
@@ -188,8 +193,88 @@ public final class InlineBoxScenario extends TestApplication {
                     require(over.advanceWidth >= 73, "超宽对象被裁成小advance");
                 });
         scenario(
-                "显式小行高容纳对象",
-                () -> check(fonts, "explicit-line-height", "x ￼ y", 100, 20, 75, 10, tight, style));
+                "显式小行高保留声明与真实溢出对象",
+                () -> {
+                    TextStyle large = new TextStyle("default", 28, -1);
+                    TextLayout plain =
+                            fonts.layout(
+                                    AttributedText.plain(TextInput.string("xy"), large),
+                                    500,
+                                    tight);
+                    TextLayout explicit =
+                            check(
+                                    fonts,
+                                    "explicit-line-height",
+                                    "x￼y",
+                                    500,
+                                    20,
+                                    75,
+                                    10,
+                                    tight,
+                                    large);
+                    TextLayout automatic =
+                            check(
+                                    fonts,
+                                    "default-line-height",
+                                    "x￼y",
+                                    500,
+                                    20,
+                                    75,
+                                    10,
+                                    TextPolicy.NORMAL,
+                                    large);
+                    TextLayout.Line e = explicit.lines().get(0), a = automatic.lines().get(0);
+                    require(
+                            plain.height == 3
+                                    && explicit.height == 3
+                                    && explicit.advanceHeight == 3,
+                            "显式行高因对象改变布局高度");
+                    require(
+                            e.ascent == a.ascent
+                                    && e.descent == a.descent
+                                    && e.baseline == a.baseline,
+                            "显式行高压缩真实度量或基线");
+                    require(e.glyphs().size() == a.glyphs().size(), "显式行高改变字形数量");
+                    for (int i = 0; i < e.glyphs().size(); i++) {
+                        TextLayout.Glyph eg = e.glyphs().get(i), ag = a.glyphs().get(i);
+                        require(
+                                eg.glyphId == ag.glyphId
+                                        && eg.x == ag.x
+                                        && eg.y == ag.y
+                                        && eg.inkBounds.known == ag.inkBounds.known
+                                        && eg.inkBounds.left == ag.inkBounds.left
+                                        && eg.inkBounds.top == ag.inkBounds.top
+                                        && eg.inkBounds.right == ag.inkBounds.right
+                                        && eg.inkBounds.bottom == ag.inkBounds.bottom,
+                                "显式行高改变真实字形位置或墨迹边界");
+                    }
+                    InlineBox box = input("x￼y", large, 20, 75, 10).inlineBoxes().get(0);
+                    float top = e.baseline - box.baseline, bottom = top + box.height;
+                    require(
+                            box.height == 75 && bottom - top == 75 && bottom > e.y + e.lineHeight,
+                            "溢出对象未保留真实高度");
+                    require(a.lineHeight >= a.ascent + a.descent, "默认行高遗漏联合度量");
+                    System.out.println(
+                            "line-height-regression input=x\uFFFCy em=28 explicit=3"
+                                    + " box=(1,20,75,10) plainHeight="
+                                    + plain.height
+                                    + " explicitHeight="
+                                    + explicit.height
+                                    + " defaultHeight="
+                                    + automatic.height
+                                    + " ascent="
+                                    + e.ascent
+                                    + " descent="
+                                    + e.descent
+                                    + " baseline="
+                                    + e.baseline
+                                    + " boxHeight="
+                                    + box.height
+                                    + " visibleTop="
+                                    + top
+                                    + " visibleBottom="
+                                    + bottom);
+                });
         scenario(
                 "Arabic连接文字与对象断行",
                 () ->
@@ -231,7 +316,16 @@ public final class InlineBoxScenario extends TestApplication {
                                             Arrays.asList(
                                                     new InlineBox(0, 30, 50, 45),
                                                     new InlineBox(1, 40, 60, 5)));
-                    TextLayout value = fonts.layout(pair, 100, tight);
+                    TextLayout explicit = fonts.layout(pair, 100, tight);
+                    TextLayout value = fonts.layout(pair, 100, TextPolicy.NORMAL);
+                    TextLayout.Line e = explicit.lines().get(0), a = value.lines().get(0);
+                    require(
+                            e.lineHeight == 3
+                                    && explicit.height == 3
+                                    && e.ascent == a.ascent
+                                    && e.descent == a.descent
+                                    && e.baseline == a.baseline,
+                            "相邻对象覆盖显式行高或损坏联合度量");
                     require(
                             value.lines().size() == 1
                                     && value.lines().get(0).clusters().size() == 2

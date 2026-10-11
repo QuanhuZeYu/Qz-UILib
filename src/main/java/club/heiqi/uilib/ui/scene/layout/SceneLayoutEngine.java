@@ -24,7 +24,7 @@ public final class SceneLayoutEngine {
     private long metricsRevision, measureRevision;
     private int measuredWidth, measuredHeight;
 
-    private SceneTextMeasurer textFor(SceneNode node) {
+    private BatchTextMeasurer textFor(SceneNode node) {
         BatchTextMeasurer batch =
                 batchText.computeIfAbsent(
                         node,
@@ -120,7 +120,9 @@ public final class SceneLayoutEngine {
                                                         node.style(),
                                                         width,
                                                         node.textPolicy())
-                                        : node.control().layoutText(node, textFor(node), width));
+                                        : node.control()
+                                                .layoutText(
+                                                        node, textFor(node), width, textFor(node)));
     }
 
     private int[] measure(SceneNode node, int availableWidth, int availableHeight) {
@@ -157,6 +159,7 @@ public final class SceneLayoutEngine {
                             .measure(
                                     node,
                                     new Constraints(contentWidth, contentHeight),
+                                    textFor(node),
                                     textFor(node));
             return new int[] {
                 node.width()
@@ -277,7 +280,15 @@ public final class SceneLayoutEngine {
                         : ownClip == null ? ancestorClip : ancestorClip.intersect(ownClip);
         TextLayout lines = textLayout(node, innerWidth);
         if (node.control() != null)
-            lines = node.control().presentText(node, lines, innerWidth, innerHeight, textFor(node));
+            lines =
+                    node.control()
+                            .presentText(
+                                    node,
+                                    lines,
+                                    innerWidth,
+                                    innerHeight,
+                                    textFor(node),
+                                    textFor(node));
         int entryIndex = entries.size();
         entries.add(new SceneGeometryView.Entry(node, box, clip, lines));
         if (node.control() != null) {

@@ -5,6 +5,7 @@ import club.heiqi.uilib.ui.scene.layout.ChildPlacements;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.MeasuredSize;
+import club.heiqi.uilib.ui.scene.layout.SceneChildMeasurer;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometryView;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.PaintPlanBuilder;
@@ -26,6 +27,12 @@ public interface SceneControl {
         return text.layout(node.text(), node.style(), width, node.textPolicy());
     }
 
+    /** 复合内容显式接收同批直属子测量能力；文字服务本身不持scene节点。 */
+    default club.heiqi.uilib.ui.scene.text.TextLayout layoutText(
+            SceneNode node, SceneTextMeasurer text, int width, SceneChildMeasurer children) {
+        return layoutText(node, text, width);
+    }
+
     /** 内部目标身份与资格；几何仅来自当前 Entry，输入阶段不解析或重排。 */
     default Object pointerTarget(SceneNode node, SceneGeometryView geometry, int x, int y) {
         return null;
@@ -40,6 +47,15 @@ public interface SceneControl {
 
     MeasuredSize measure(SceneNode node, Constraints constraints, SceneTextMeasurer text);
 
+    /** 布局引擎为组合控件提供子测量能力；既有纯文字控件沿原入口执行。 */
+    default MeasuredSize measure(
+            SceneNode node,
+            Constraints constraints,
+            SceneTextMeasurer text,
+            SceneChildMeasurer children) {
+        return measure(node, constraints, text);
+    }
+
     ChildPlacements arrange(SceneNode node, LayoutBox allocated);
 
     /** 内容受实际文字区域限制后的不可变定位；不回写文本或几何。 */
@@ -50,6 +66,17 @@ public interface SceneControl {
             int height,
             SceneTextMeasurer text) {
         return full;
+    }
+
+    /** 缓存命中也消费传入的本次文字事实，子项排列不能沿用其它宽度的残留。 */
+    default club.heiqi.uilib.ui.scene.text.TextLayout presentText(
+            SceneNode node,
+            club.heiqi.uilib.ui.scene.text.TextLayout full,
+            int width,
+            int height,
+            SceneTextMeasurer text,
+            SceneChildMeasurer children) {
+        return presentText(node, full, width, height, text);
     }
 
     void paint(SceneNode node, SceneGeometryView geometry, PaintPlanBuilder target);

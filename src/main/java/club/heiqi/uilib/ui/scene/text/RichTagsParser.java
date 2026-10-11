@@ -53,10 +53,8 @@ final class RichTagsParser {
     }
 
     static final class Parsed {
-        final StyledText text;
-        final List<TextContent.LinkSpan> links;
+        final ParagraphContent content;
         final String canonical;
-        final List<InlineContent> inline;
 
         Parsed(StyledText text, List<TextContent.LinkSpan> links, String canonical) {
             this(text, links, canonical, Collections.<InlineContent>emptyList());
@@ -67,14 +65,8 @@ final class RichTagsParser {
                 List<TextContent.LinkSpan> links,
                 String canonical,
                 List<InlineContent> inline) {
-            this.inline = Collections.unmodifiableList(new ArrayList<>(inline));
-            this.text = text;
-            this.links = Collections.unmodifiableList(new ArrayList<>(links));
+            content = new ParagraphContent(text, links, inline);
             this.canonical = canonical;
-        }
-
-        TextContent.Resolved resolve(TextStyle base) {
-            return new TextContent.Resolved(text.resolve(base), links, canonical, inline);
         }
     }
 

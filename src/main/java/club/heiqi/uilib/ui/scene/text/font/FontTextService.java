@@ -1413,8 +1413,7 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                         policy.lineHeight > 0
                                 ? policy.lineHeight
                                 : Math.max(chosen.ascent + chosen.descent, chosen.metricHeight);
-                // 显式行高也不能压掉对象或使其与下一行重叠。
-                if (chosen.inlineHeight > 0) h = Math.max(h, chosen.ascent + chosen.descent);
+                // 字体规格2.5：显式行高按声明布局；真实度量与基线保留，溢出/裁剪归呈现层。
                 if (h <= 0) h = style.logicalEm;
                 float baseline = y + chosen.ascent;
                 List<TextLayout.Glyph> glyphs = new ArrayList<TextLayout.Glyph>();
@@ -1977,7 +1976,6 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                     draft.spaces.add(new Gap(span.start, span.end, box.width));
                     draft.ascent = Math.max(draft.ascent, box.baseline);
                     draft.descent = Math.max(draft.descent, box.height - box.baseline);
-                    draft.inlineHeight = Math.max(draft.inlineHeight, box.height);
                     pen += box.width;
                     continue;
                 }
@@ -2507,7 +2505,7 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
         final List<Placed> glyphs = new ArrayList<Placed>();
         final List<Gap> spaces = new ArrayList<Gap>();
         final List<Cell> cells = new ArrayList<Cell>();
-        float width, ascent, descent, metricHeight, inlineHeight;
+        float width, ascent, descent, metricHeight;
 
         void metrics(FontMetrics m) {
             ascent = Math.max(ascent, m.ascent);

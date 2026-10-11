@@ -83,7 +83,8 @@ public final class SceneDocument {
         Objects.requireNonNull(content, "content");
         Objects.requireNonNull(theme, "theme");
         Objects.requireNonNull(activate, "activate");
-        Paragraph control = new Paragraph(activate, resources);
+        ResolvedContent shared = new ResolvedContent(content, theme);
+        Paragraph control = new Paragraph(activate, resources, shared);
         SceneNode root = new SceneNode().control(control);
         root.bind(
                 NodeBinding.value(
@@ -109,10 +110,7 @@ public final class SceneDocument {
                                     () ->
                                             theme.get()
                                                     .withTextStyle(
-                                                            content.get()
-                                                                    .resolve(theme.get().textStyle)
-                                                                    .text
-                                                                    .styleAt(item.offset));
+                                                            shared.get().text.styleAt(item.offset));
                             SceneNode child;
                             if (item.kind == InlineContent.Kind.MATH) {
                                 child =
@@ -168,25 +166,57 @@ public final class SceneDocument {
         return root;
     }
 
+    /** 同一声明与基础样式的纯内容派生只归段落一处，父测量和子主题共享；不持节点或租约。 */
+    private static final class ResolvedContent {
+        final ReadableSignal<TextContent> source;
+        final ReadableSignal<SceneTheme> theme;
+        TextContent declaration;
+        TextStyle style;
+        TextContent.Resolved value;
+
+        ResolvedContent(ReadableSignal<TextContent> source, ReadableSignal<SceneTheme> theme) {
+            this.source = source;
+            this.theme = theme;
+        }
+
+        TextContent.Resolved get() {
+            TextContent current = source.get();
+            TextStyle base = theme.get().textStyle;
+            if (current != declaration || !base.equals(style)) {
+                value = current.resolve(base);
+                declaration = current;
+                style = base;
+            }
+            return value;
+        }
+
+        void clear() {
+            declaration = null;
+            style = null;
+            value = null;
+        }
+    }
+
     private static final class Paragraph implements SceneControl {
         final Consumer<String> activate;
         final DocumentResources resources;
         final Map<InlineContent, SceneNode> items = new IdentityHashMap<>();
         TextContent declaration, cachedDeclaration;
-        TextStyle cachedStyle;
+        final ResolvedContent shared;
         TextContent.Resolved resolved;
         AttributedText measuredText;
         List<InlineBox> boxes = Collections.emptyList();
         List<ChildPlacements.Entry> placements = Collections.emptyList();
 
-        Paragraph(Consumer<String> activate, DocumentResources resources) {
+        Paragraph(Consumer<String> activate, DocumentResources resources, ResolvedContent shared) {
             this.activate = activate;
             this.resources = resources;
+            this.shared = shared;
         }
 
         void invalidate() {
             cachedDeclaration = null;
-            cachedStyle = null;
+            shared.clear();
             resolved = null;
             measuredText = null;
             boxes = Collections.emptyList();
@@ -195,26 +225,41 @@ public final class SceneDocument {
 
         @Override
         public TextLayout layoutText(SceneNode node, SceneTextMeasurer text, int width) {
+            return layoutText(node, text, width, null);
+        }
+
+        private void resolveContent() {
             if (declaration == null) throw new IllegalStateException("文档尚未激活");
-            if (cachedDeclaration != declaration || !node.style().equals(cachedStyle)) {
-                resolved = declaration.resolve(node.style());
+            TextContent.Resolved current = shared.get();
+            if (current != resolved) {
+                resolved = current;
                 cachedDeclaration = declaration;
-                cachedStyle = node.style();
                 measuredText = null;
             }
-            List<InlineBox> next = new ArrayList<>();
+        }
+
+        private List<InlineBox> measureBoxes(SceneChildMeasurer children, int width) {
+            List<InlineBox> result = new ArrayList<>();
             for (InlineContent item : resolved.inlineContents()) {
+                if (children == null) throw new IllegalArgumentException("行内子内容需要scene子测量能力");
                 SceneNode child = items.get(item);
                 if (child == null) throw new IllegalStateException("内联声明没有同树子项");
                 MeasuredSize size =
-                        ((SceneChildMeasurer) text)
-                                .measureChild(child, new Constraints(width, Integer.MAX_VALUE));
+                        children.measureChild(child, new Constraints(width, Integer.MAX_VALUE));
                 float baseline =
                         item.kind == InlineContent.Kind.MATH
                                 ? SceneMath.presentationBaseline(child)
                                 : size.height;
-                next.add(new InlineBox(item.offset, size.width, size.height, baseline));
+                result.add(new InlineBox(item.offset, size.width, size.height, baseline));
             }
+            return result;
+        }
+
+        @Override
+        public TextLayout layoutText(
+                SceneNode node, SceneTextMeasurer text, int width, SceneChildMeasurer children) {
+            resolveContent();
+            List<InlineBox> next = measureBoxes(children, width);
             boolean same = next.size() == boxes.size();
             for (int i = 0; same && i < next.size(); i++) {
                 InlineBox a = next.get(i), b = boxes.get(i);
@@ -229,28 +274,7 @@ public final class SceneDocument {
                 measuredText = resolved.text.withInlineBoxes(boxes);
             }
             TextLayout layout = text.layout(measuredText, width, node.textPolicy());
-            List<ChildPlacements.Entry> arranged = new ArrayList<>();
-            for (int i = 0; i < boxes.size(); i++) {
-                InlineBox box = boxes.get(i);
-                InlineContent item = resolved.inlineContents().get(i);
-                for (TextLayout.Line line : layout.lines())
-                    for (TextLayout.Cluster cluster : line.clusters()) {
-                        if (cluster.logicalStart == box.offset
-                                && cluster.logicalEnd == box.offset + 1) {
-                            float x = cluster.x, y = line.baseline - box.baseline;
-                            int left = (int) Math.floor(x), top = (int) Math.floor(y);
-                            arranged.add(
-                                    new ChildPlacements.Entry(
-                                            items.get(item),
-                                            new LayoutBox(
-                                                    left,
-                                                    top,
-                                                    (int) Math.ceil(x + box.width) - left,
-                                                    (int) Math.ceil(y + box.height) - top)));
-                        }
-                    }
-            }
-            placements = arranged;
+            placements = place(layout, boxes);
             List<TextLayout.Diagnostic> diagnostics = new ArrayList<>(layout.diagnostics());
             for (TextLayout.Line line : layout.lines())
                 for (TextLayout.Cluster cluster : line.clusters())
@@ -279,10 +303,58 @@ public final class SceneDocument {
                             layout.input);
         }
 
+        private List<ChildPlacements.Entry> place(TextLayout layout, List<InlineBox> layoutBoxes) {
+            List<ChildPlacements.Entry> arranged = new ArrayList<>();
+            for (int i = 0; i < layoutBoxes.size(); i++) {
+                InlineBox box = layoutBoxes.get(i);
+                InlineContent item = resolved.inlineContents().get(i);
+                for (TextLayout.Line line : layout.lines())
+                    for (TextLayout.Cluster cluster : line.clusters()) {
+                        if (cluster.logicalStart == box.offset
+                                && cluster.logicalEnd == box.offset + 1) {
+                            float x = cluster.x, y = line.baseline - box.baseline;
+                            int left = (int) Math.floor(x), top = (int) Math.floor(y);
+                            arranged.add(
+                                    new ChildPlacements.Entry(
+                                            items.get(item),
+                                            new LayoutBox(
+                                                    left,
+                                                    top,
+                                                    (int) Math.ceil(x + box.width) - left,
+                                                    (int) Math.ceil(y + box.height) - top)));
+                        }
+                    }
+            }
+            return arranged;
+        }
+
+        @Override
+        public TextLayout presentText(
+                SceneNode node,
+                TextLayout full,
+                int width,
+                int height,
+                SceneTextMeasurer text,
+                SceneChildMeasurer children) {
+            resolveContent();
+            // 每次呈现以本次full定位，即使引擎命中另一宽度的文字缓存，也不消费最后一次排列。
+            placements = place(full, measureBoxes(children, width));
+            return full;
+        }
+
         @Override
         public MeasuredSize measure(
                 SceneNode node, Constraints constraints, SceneTextMeasurer text) {
-            TextLayout layout = layoutText(node, text, constraints.availableWidth);
+            return measure(node, constraints, text, null);
+        }
+
+        @Override
+        public MeasuredSize measure(
+                SceneNode node,
+                Constraints constraints,
+                SceneTextMeasurer text,
+                SceneChildMeasurer children) {
+            TextLayout layout = layoutText(node, text, constraints.availableWidth, children);
             float right = layout.width, bottom = layout.height;
             for (TextLayout.Line line : layout.lines()) {
                 right = Math.max(right, SceneTextPresentation.right(line));
@@ -335,6 +407,16 @@ public final class SceneDocument {
                     || cachedDeclaration != declaration
                     || resolved == null
                     || entry.clip != null && !entry.clip.contains(x, y)) return null;
+            // 显式行高允许对象超出行带：对象链接消费正式子几何，不能只用文字行高判断资格。
+            List<InlineContent> inline = resolved.inlineContents();
+            for (int i = inline.size() - 1; i >= 0; i--) {
+                InlineContent item = inline.get(i);
+                SceneGeometryView.Entry child = geometry.get(items.get(item));
+                if (child != null
+                        && child.box.contains(x, y)
+                        && (child.clip == null || child.clip.contains(x, y)))
+                    return resolved.linkAt(item.offset);
+            }
             float localX = x - entry.box.x - node.padding(),
                     localY = y - entry.box.y - node.padding();
             for (TextLayout.Line line : entry.text.lines()) {

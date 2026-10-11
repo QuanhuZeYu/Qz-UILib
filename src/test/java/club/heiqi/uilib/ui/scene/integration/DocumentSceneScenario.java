@@ -18,6 +18,7 @@ import club.heiqi.uilib.ui.scene.image.SharedImageService;
 import club.heiqi.uilib.ui.scene.input.ScenePointerEvent;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometryView;
+import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.layout.Size;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.PaintCommand;
@@ -62,6 +63,9 @@ public final class DocumentSceneScenario extends TestApplication {
         scenario("同帧滚轮提示裁剪与纯滚动复用度量", this::scroll);
         scenario("结构化图像来源更新保持节点并重新测量", this::imageUpdate);
         scenario("段落公式块与后续正文使用同树布局", this::blocks);
+        scenario("同段落多宽度捕获返回缓存文字时排列仍一致", this::captureRequests);
+        scenario("typed共同段落来源映射与同树对象链接动态呈现", this::typedFlow);
+        scenario("显式小行高对象保留溢出呈现与链接几何", this::tightObjects);
     }
 
     private static String tex(String text) {
@@ -125,6 +129,7 @@ public final class DocumentSceneScenario extends TestApplication {
         Signal<ImageSource> image;
         Signal<String> base;
         Signal<Boolean> enabled;
+        Signal<TextPolicy> policy;
         SceneNode paragraph, viewport;
         PaintPlan paint;
         final List<String> clicks = new ArrayList<>();
@@ -168,6 +173,7 @@ public final class DocumentSceneScenario extends TestApplication {
                                 image = domain.signal(ImageSource.bitmap(bitmap(24, 16)));
                                 base = domain.signal("https://example.test/docs/");
                                 enabled = domain.signal(true);
+                                policy = domain.signal(TextPolicy.NORMAL);
                                 Map<String, DocumentResources.ImageReference> refs =
                                         new LinkedHashMap<>();
                                 refs.put(
@@ -176,6 +182,7 @@ public final class DocumentSceneScenario extends TestApplication {
                                                 image,
                                                 domain.signal(
                                                         ImageOptions.defaults().tooltip(true))));
+                                refs.put("test:typed", refs.get("ore"));
                                 DocumentResources resources =
                                         new DocumentResources(images, base, refs, null);
                                 paragraph =
@@ -186,6 +193,9 @@ public final class DocumentSceneScenario extends TestApplication {
                                 paragraph.bind(
                                         club.heiqi.uilib.ui.scene.runtime.NodeBinding.value(
                                                 enabled, (node, value) -> node.enabled(value)));
+                                paragraph.bind(
+                                        club.heiqi.uilib.ui.scene.runtime.NodeBinding.value(
+                                                policy, (node, value) -> node.textPolicy(value)));
                                 viewport =
                                         new SceneNode()
                                                 .size(Size.fill(1), Size.fill(1))
@@ -506,14 +516,163 @@ public final class DocumentSceneScenario extends TestApplication {
         }
     }
 
+    private void tightObjects() throws Exception {
+        try (Fixture f =
+                new Fixture(
+                        "<a href=\"next\"><latex>"
+                                + tex("@frac{a}{b}")
+                                + "</latex><img src=\"ore\" width=\"40\" height=\"75\"/></a>")) {
+            f.domain.execute(
+                    () ->
+                            f.policy.set(
+                                    new TextPolicy(
+                                            TextPolicy.Direction.AUTO,
+                                            TextPolicy.Wrap.EMERGENCY,
+                                            "und",
+                                            0,
+                                            3)));
+            f.ready();
+            SceneNode[] children = new SceneNode[2];
+            f.domain.execute(
+                    () -> {
+                        children[0] = f.paragraph.children().get(0);
+                        children[1] = f.paragraph.children().get(1);
+                        TextLayout.Line line = f.geometry().get(f.paragraph).text.lines().get(0);
+                        require(line.lineHeight == 3, "段落重新覆盖显式行高");
+                        require(f.geometry().get(children[1]).box.height == 75, "显式行高削掉图像真实盒");
+                    });
+            for (SceneNode child : children) {
+                int[] point = center(f, child);
+                f.domain.execute(
+                        () -> {
+                            SceneGeometryView.Entry entry = f.geometry().get(f.paragraph);
+                            TextLayout.Line line = entry.text.lines().get(0);
+                            require(
+                                    point[1] - entry.box.y - f.paragraph.padding()
+                                            >= line.y + line.lineHeight,
+                                    "没有命中显式行高外的对象区域");
+                        });
+                f.page.pointer(ScenePointerEvent.syntheticActivation(point[0], point[1]));
+                f.frame();
+            }
+            f.domain.execute(
+                    () ->
+                            require(
+                                    f.clicks.equals(
+                                            Arrays.asList(
+                                                    "https://example.test/docs/next",
+                                                    "https://example.test/docs/next")),
+                                    "可见溢出对象链接未使用正式子几何"));
+        }
+    }
+
+    private void typedFlow() throws Exception {
+        for (boolean bytes : new boolean[] {false, true}) {
+            try (Fixture f = new Fixture("初始正文")) {
+                f.domain.execute(() -> f.content.set(TypedParagraphScenario.typedContent(bytes)));
+                f.ready();
+                final SceneNode[] children = new SceneNode[2];
+                f.domain.execute(
+                        () -> {
+                            verify(f);
+                            children[0] = f.paragraph.children().get(0);
+                            children[1] = f.paragraph.children().get(1);
+                            TextLayout text = f.geometry().get(f.paragraph).text;
+                            require(text.logicalText.equals("甲\ufffc\ufffc链"), "typed正文被送回DSL解析");
+                            require(
+                                    text.input.sourceUnit
+                                            == (bytes
+                                                    ? club.heiqi.uilib.ui.scene.text.TextInput
+                                                            .SourceUnit.BYTE
+                                                    : club.heiqi.uilib.ui.scene.text.TextInput
+                                                            .SourceUnit.UTF16),
+                                    "typed来源单位丢失");
+                            f.theme.set(
+                                    SceneTheme.light()
+                                            .withTextStyle(new TextStyle("default", 38, -1)));
+                            f.image.set(ImageSource.bitmap(bitmap(48, 24)));
+                        });
+                f.ready();
+                f.domain.execute(
+                        () -> {
+                            verify(f);
+                            require(
+                                    f.paragraph.children().get(0) == children[0]
+                                            && f.paragraph.children().get(1) == children[1],
+                                    "typed动态输入重建对象身份");
+                        });
+                for (SceneNode child : children) {
+                    int[] point = center(f, child);
+                    f.page.pointer(ScenePointerEvent.syntheticActivation(point[0], point[1]));
+                    f.frame();
+                }
+                f.domain.execute(
+                        () ->
+                                require(
+                                        f.clicks.equals(
+                                                Arrays.asList(
+                                                        "https://example.test/docs/target",
+                                                        "https://example.test/docs/target")),
+                                        "typed公式/图像没有复用正式链接路由"));
+            }
+        }
+    }
+
+    private void captureRequests() throws Exception {
+        try (Fixture f =
+                new Fixture(
+                        "前置正文足够长，观察自动换行<latex>"
+                                + tex("@frac{a}{b}")
+                                + "</latex><img src=\"ore\"/>尾段文字")) {
+            f.ready();
+            f.domain.execute(
+                    () -> {
+                        SceneLayoutEngine engine = new SceneLayoutEngine(f.counted);
+                        SceneGeometryView wide =
+                                engine.layout(
+                                        java.util.Collections.singletonList(f.paragraph),
+                                        480,
+                                        1000,
+                                        fonts.generation(),
+                                        f.page.runtime().measureRevision());
+                        verify(f, wide);
+                        SceneGeometryView narrow =
+                                engine.captureSubtree(
+                                        f.paragraph,
+                                        new LayoutBox(0, 0, 120, 1000),
+                                        null,
+                                        new LayoutBox(0, 0, 120, 1000));
+                        verify(f, narrow);
+                        require(
+                                narrow.get(f.paragraph).text.lines().size()
+                                        > wide.get(f.paragraph).text.lines().size(),
+                                "多请求反例没有触发不同换行");
+                        SceneGeometryView again =
+                                engine.captureSubtree(
+                                        f.paragraph,
+                                        new LayoutBox(0, 0, 480, 1000),
+                                        null,
+                                        new LayoutBox(0, 0, 480, 1000));
+                        require(
+                                again.get(f.paragraph).text == wide.get(f.paragraph).text,
+                                "没有命中原宽度文字缓存");
+                        verify(f, again);
+                    });
+        }
+    }
+
     private void verify(Fixture f) {
-        TextLayout text = f.geometry().get(f.paragraph).text;
+        verify(f, f.geometry());
+    }
+
+    private void verify(Fixture f, SceneGeometryView geometry) {
+        TextLayout text = geometry.get(f.paragraph).text;
         List<InlineContent> content = f.content.get().inlineContents();
         for (int i = 0; i < content.size(); i++) {
             InlineContent item = content.get(i);
             SceneNode child = f.paragraph.children().get(i);
-            SceneGeometryView.Entry actual = f.geometry().get(child),
-                    parent = f.geometry().get(f.paragraph);
+            SceneGeometryView.Entry actual = geometry.get(child),
+                    parent = geometry.get(f.paragraph);
             require(actual != null, "有效原子项没有同代几何");
             boolean found = false;
             for (TextLayout.Line line : text.lines())

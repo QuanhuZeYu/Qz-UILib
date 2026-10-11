@@ -15,7 +15,8 @@ public final class TextContent {
     public final Mode mode;
     public final String source;
     private final TextInput input;
-    private StyledText styled;
+    private ParagraphContent paragraph;
+    private boolean typed;
     private RichTagsParser.Parsed parsed;
 
     private synchronized RichTagsParser.Parsed parsed() {
@@ -60,13 +61,24 @@ public final class TextContent {
 
     /** typed 声明使用 PLAIN 源码语法，属性载荷不新增宿主格式模式。 */
     public static TextContent styled(StyledText value) {
+        return paragraph(
+                new ParagraphContent(
+                        value,
+                        Collections.<LinkSpan>emptyList(),
+                        Collections.<InlineContent>emptyList()));
+    }
+
+    /** 完整 typed 声明；来源映射由 value.text.input 显式提供，不经 DSL 转换。 */
+    public static TextContent paragraph(ParagraphContent value) {
         Objects.requireNonNull(value, "value");
+        StyledText text = value.text;
         TextContent content =
                 new TextContent(
                         Mode.PLAIN,
-                        value.originalText == null ? value.input.text : value.originalText,
-                        value.input);
-        content.styled = value;
+                        text.originalText == null ? text.input.text : text.originalText,
+                        text.input);
+        content.paragraph = value;
+        content.typed = true;
         return content;
     }
 
@@ -74,8 +86,8 @@ public final class TextContent {
     public static final class Link {
         public final String target;
 
-        Link(String target) {
-            this.target = target;
+        public Link(String target) {
+            this.target = Objects.requireNonNull(target, "target");
         }
     }
 
@@ -83,10 +95,11 @@ public final class TextContent {
         public final int start, end;
         public final Link link;
 
-        LinkSpan(int start, int end, Link link) {
+        public LinkSpan(int start, int end, Link link) {
+            if (start < 0 || end <= start) throw new IllegalArgumentException("无效链接范围");
             this.start = start;
             this.end = end;
-            this.link = link;
+            this.link = Objects.requireNonNull(link, "link");
         }
     }
 
@@ -157,19 +170,45 @@ public final class TextContent {
         }
     }
 
+    private synchronized ParagraphContent paragraph() {
+        if (paragraph == null) {
+            if (mode == Mode.RICH_TAGS) paragraph = parsed().content;
+            else
+                paragraph =
+                        new ParagraphContent(
+                                new StyledText(
+                                        input,
+                                        null,
+                                        input.text.isEmpty()
+                                                ? Collections.<TextStyleOverrideSpan>emptyList()
+                                                : Collections.singletonList(
+                                                        new TextStyleOverrideSpan(
+                                                                0,
+                                                                input.text.length(),
+                                                                TextStyleOverride.INHERIT)),
+                                        TextStyleOverride.INHERIT,
+                                        Collections.<TextLayout.Diagnostic>emptyList()),
+                                Collections.<LinkSpan>emptyList(),
+                                Collections.<InlineContent>emptyList());
+        }
+        return paragraph;
+    }
+
     /** 稳定声明身份随源码替换；主题及宽度变化不重新解析或重建子内容。 */
     public List<InlineContent> inlineContents() {
-        return mode == Mode.RICH_TAGS ? parsed().inline : Collections.<InlineContent>emptyList();
+        return paragraph().inlineContents();
     }
 
     public Resolved resolve(TextStyle style) {
         Objects.requireNonNull(style, "style");
-        if (styled != null)
-            return new Resolved(styled.resolve(style), Collections.<LinkSpan>emptyList(), null);
-        if (mode == Mode.RICH_TAGS) return parsed().resolve(style);
+        ParagraphContent value = paragraph();
+        String serialized =
+                typed
+                        ? null
+                        : mode == Mode.RICH_TAGS
+                                ? parsed().canonical
+                                : RichTagsParser.escape(input.text);
         return new Resolved(
-                AttributedText.plain(input, style),
-                Collections.<LinkSpan>emptyList(),
-                RichTagsParser.escape(input.text));
+                value.text.resolve(style), value.links(), serialized, value.inlineContents());
     }
 }

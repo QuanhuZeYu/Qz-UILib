@@ -352,6 +352,11 @@ val documentGlScenario = registerTestApplication("documentGlScenario", "共同�
     classpath = sourceSets.getByName("main").output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime
     args(layout.buildDirectory.dir("document-gl").get().asFile.absolutePath)
 }
+val typedParagraphScenario = registerTestApplication("typedParagraphScenario", "typed共同声明、来源映射与DSL转换边界", "club.heiqi.uilib.ui.scene.integration.TypedParagraphScenario") {
+    dependsOn(tasks.named("testClasses"))
+    classpath = sourceSets.getByName("main").output + sourceSets.getByName("test").output + fontUnicodeRuntime
+}
+tasks.named("check") { dependsOn(typedParagraphScenario) }
 val inlineBoxScenario = registerTestApplication("inlineBoxScenario", "真实Unicode/Bidi原子对象、安全断行与同代行高", "club.heiqi.uilib.ui.scene.integration.InlineBoxScenario") {
     classpath = sourceSets.getByName("main").output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime
 }
