@@ -454,5 +454,17 @@ val mcArtifactIsolationScenario = registerTestApplication("mcArtifactIsolationSc
             + hostArtifacts.map { it.get().asFile.absolutePath })
     }
 }
+val desktopArtifact = tasks.named<Jar>("desktopJar").flatMap { it.archiveFile }
+val desktopArtifactScenario = registerTestApplication("desktopArtifactScenario", "扫描正式桌面发行组合的平台与模块字节码隔离", "club.heiqi.uilib.ui.scene.integration.CoreArtifactScenario") {
+    dependsOn(compileCoreArtifactScenario, tasks.named("coreJar"), tasks.named("fontAdapterJar"), tasks.named("desktopJar"))
+    classpath = files(artifactScenarioClasses)
+    inputs.files(coreArtifact, fontAdapterArtifact, desktopArtifact)
+    doFirst {
+        args("--desktop", coreArtifact.get().asFile.absolutePath, fontAdapterArtifact.get().asFile.absolutePath,
+            desktopArtifact.get().asFile.absolutePath)
+    }
+}
+tasks.named("desktopVerify") { dependsOn(desktopArtifactScenario) }
+tasks.named("check") { dependsOn(desktopArtifactScenario) }
 tasks.named("coreSceneCheck") { dependsOn(coreArtifactScenario) }
 tasks.named("check") { dependsOn(coreArtifactScenario, mcArtifactIsolationScenario, packagedUnicodeScenario) }

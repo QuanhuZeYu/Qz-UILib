@@ -33,7 +33,7 @@ public final class SceneFramePipeline implements AutoCloseable {
         final Runnable fallback;
         club.heiqi.uilib.ui.scene.input.SceneEditEvent edit;
         SceneNavigationEvent navigationFallback;
-        boolean consumed;
+        boolean consumed, focusLost;
 
         QueuedInput(ScenePointerEvent pointer, SceneNavigationEvent navigation) {
             this(pointer, navigation, null);
@@ -84,6 +84,16 @@ public final class SceneFramePipeline implements AutoCloseable {
         synchronized (inputs) {
             checkOpen();
             inputs.add(new QueuedInput(Objects.requireNonNull(event, "event"), null));
+        }
+    }
+
+    /** 宿主失焦与指针、编辑共享采集顺序，不能立即清焦点越过待结算输入。 */
+    public void focusLost() {
+        synchronized (inputs) {
+            checkOpen();
+            QueuedInput event = new QueuedInput(null, null);
+            event.focusLost = true;
+            inputs.add(event);
         }
     }
 
@@ -171,7 +181,11 @@ public final class SceneFramePipeline implements AutoCloseable {
                             return;
                         }
                         SceneGeometryView geometry = prepare().geometry;
-                        if (event.edit != null) event.consumed = runtime.dispatchEdit(event.edit);
+                        if (event.focusLost) {
+                            try { router.route(ScenePointerEvent.cancel(), geometry); }
+                            finally { runtime.focusRouter().clear(); }
+                        }
+                        else if (event.edit != null) event.consumed = runtime.dispatchEdit(event.edit);
                         else if (event.pointer != null) router.route(event.pointer, geometry);
                         else if (event.navigation == SceneNavigationEvent.ACTIVATE)
                             runtime.focusRouter().activate();

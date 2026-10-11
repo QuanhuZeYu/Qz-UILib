@@ -16,6 +16,7 @@ import java.util.jar.JarFile;
 
 /** 成品隔离启动：场景仅提供消费者代码，生产定义与资源必须来自正式 coreJar。 */
 public final class CoreArtifactScenario extends TestApplication {
+    private boolean desktopMode;
     private static final String[] CORE = {
         "club/heiqi/uilib/ui/scene/", "club/heiqi/uilib/ui/reactive/", "club/heiqi/uilib/ui/config/"
     };
@@ -30,6 +31,16 @@ public final class CoreArtifactScenario extends TestApplication {
     @Override
     protected void runTests() throws Exception {
         String[] args = arguments();
+        if (args.length > 0 && "--desktop".equals(args[0])) {
+            require(args.length == 4, "桌面隔离需要 core、fontAdapter 与 desktop 成品");
+            scenario("桌面正式成品隔离核心字体及MC平台引用", () -> {
+                verifyCore(new File(args[1]));
+                verifyAdapter(new File(args[2]));
+                desktopMode = true;
+                verifyDesktop(new File(args[3]));
+            });
+            return;
+        }
         if (args.length > 0 && "--host".equals(args[0])) {
             require(args.length >= 4, "宿主隔离需要 core、fontAdapter 与 MC 成品");
             scenario("宿主成品不重复定义核心、ICU、YAML或字体适配", () -> {
@@ -140,10 +151,41 @@ public final class CoreArtifactScenario extends TestApplication {
                 require(!(name.endsWith(".class") && (startsWith(name, CORE) || name.startsWith(ADAPTER)
                         || name.startsWith(ICU) || name.startsWith("com/ibm/icu/")
                         || name.startsWith(YAML) || name.startsWith("org/yaml/snakeyaml/"))), "MC成品重复定义独立模块：" + name);
+                require(!name.startsWith("club/heiqi/uilib/host/desktop/"), "MC成品嵌入桌面宿主：" + name);
                 require(!name.startsWith("assets/qz_uilib/runtime/font/")
                         && !name.startsWith("assets/qz_uilib/fonts/") && !name.startsWith("assets/qz_uilib/unicode/"),
                         "MC成品重复持有独立模块资源：" + name);
             }
+        }
+    }
+
+    private void verifyDesktop(File file) throws Exception {
+        try (JarFile jar = new JarFile(file)) {
+            require(jar.getJarEntry("club/heiqi/uilib/host/desktop/DesktopApplication.class") != null, "桌面入口缺失");
+            require(jar.getJarEntry("org/lwjgl/glfw/GLFW.class") != null
+                    && jar.getJarEntry("org/lwjgl/opengl/GL.class") != null, "桌面窗口/GL绑定缺失");
+            Enumeration<JarEntry> entries = jar.entries();
+            boolean nativeLibrary = false;
+            while (entries.hasMoreElements()) {
+                JarEntry entry = entries.nextElement();
+                String name = entry.getName();
+                nativeLibrary |= name.endsWith(".dll") || name.endsWith(".so") || name.endsWith(".dylib");
+                require(!name.startsWith("assets/qz_uilib/runtime/font/")
+                        && !name.startsWith("assets/qz_uilib/fonts/") && !name.startsWith("assets/qz_uilib/unicode/"),
+                        "桌面重复持有核心或字体适配资源：" + name);
+                if (!name.endsWith(".class")) continue;
+                require(!name.startsWith("club/heiqi/uilib/testing/")
+                        && !name.startsWith("club/heiqi/uilib/internal/devtools/")
+                        && !name.startsWith("club/heiqi/uilib/host/desktop/DesktopVerification"),
+                        "桌面成品夹带测试或开发工具：" + name);
+                require(!startsWith(name, CORE) && !name.startsWith(ADAPTER)
+                        && !name.startsWith(ICU) && !name.startsWith(YAML)
+                        && !name.startsWith("com/ibm/icu/") && !name.startsWith("org/yaml/snakeyaml/"),
+                        "桌面重复定义独立模块：" + name);
+                verifyTypeReference(name, name);
+                try (InputStream input = jar.getInputStream(entry)) { verifyBytecode(input, name); }
+            }
+            require(nativeLibrary, "桌面成品缺少当前平台native");
         }
     }
 
@@ -191,8 +233,16 @@ public final class CoreArtifactScenario extends TestApplication {
     }
 
     private void verifyTypeReference(String value, String name) {
-        for (String forbidden : new String[] {"net/minecraft/", "net/minecraftforge/", "cpw/mods/", "org/lwjgl/", "club/heiqi/uilib/host/"})
-            require(!value.contains(forbidden), "核心字节码引用平台实现：" + name + " -> " + value);
+        String[] forbiddenTypes = desktopMode
+                ? new String[] {"net/minecraft/", "net/minecraftforge/", "cpw/mods/", "me/eigenraven/",
+                    "com/ibm/icu/", "org/yaml/snakeyaml/"}
+                : new String[] {"net/minecraft/", "net/minecraftforge/", "cpw/mods/", "org/lwjgl/", "club/heiqi/uilib/host/"};
+        for (String forbidden : forbiddenTypes) {
+            // 核心供应的私有重定位引用有效；原始依赖类型不能由开发classpath补齐。
+            String checked = desktopMode && (forbidden.equals("com/ibm/icu/") || forbidden.equals("org/yaml/snakeyaml/"))
+                    ? value.replace("club/heiqi/uilib/shadow/" + forbidden, "uilib-private/") : value;
+            require(!checked.contains(forbidden), "成品字节码引用边界外实现：" + name + " -> " + value);
+        }
     }
 
     private void verifyMemberTypes(DataInputStream data, String[] utf8, String name) throws Exception {

@@ -79,6 +79,11 @@ public final class ScenePageSession implements AutoCloseable {
         dispatch(() -> pipeline().pointer(event));
     }
 
+    /** 原生窗口失焦按输入采集顺序取消手势并清理键盘焦点。 */
+    public void focusLost() {
+        dispatch(() -> pipeline().focusLost());
+    }
+
     public void navigation(SceneNavigationEvent event) {
         Objects.requireNonNull(event, "event");
         dispatch(() -> pipeline().navigation(event));

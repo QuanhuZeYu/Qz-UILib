@@ -8,6 +8,7 @@
 | --- | --- |
 | 确认目标与验收 | [核心与模块规格](<开发者文档/规格文档/README.md>) |
 | 接入正式页面与控件 | [接入指南](<使用文档/README.md>) |
+| 独立桌面启动与分发 | [桌面宿主指南](<使用文档/独立桌面宿主.md>) |
 | 修改框架和编写场景 | [开发者文档](<开发者文档/README.md>) |
 | 执行人工验收 | [双实例清单](<开发者文档/标准控件双实例验证清单.md>) |
 | 多行编辑与本轮字体调整验收 | [多行双实例清单](<开发者文档/多行编辑接入与双实例验证.md>) |
@@ -23,6 +24,7 @@
 | --- | --- |
 | 字体依赖、运行时资源与LWJGL2源集 | [font-runtime](<../gradle/font-runtime.gradle.kts>) |
 | 独立核心与字体适配生产源集、产物及宿主依赖 | [core](<../gradle/core.gradle.kts>) |
+| 独立桌面源集、当前平台分发及窗口验收 | [desktop](<../gradle/desktop.gradle.kts>) |
 | 自动验收、隔离编译与宿主类路径 | [verification](<../gradle/verification.gradle.kts>) |
 | 人工包、正式包排除与产物隔离 | [packaging](<../gradle/packaging.gradle.kts>) |
 | headless native与类路径导出 | [headless](<../gradle/headless.gradle.kts>) |
@@ -36,6 +38,9 @@
 | 任务 | 命令 |
 | --- | --- |
 | 完整构建 | `gradlew.bat --no-configuration-cache build` |
+| 桌面发行组合真实窗口验收 | `gradlew.bat --no-configuration-cache desktopVerify` |
+| 独立桌面启动 | `gradlew.bat --no-configuration-cache desktopRun` |
+| 当前平台桌面分发 | `gradlew.bat --no-configuration-cache desktopDist` |
 | 核心与MC成品隔离验收 | `gradlew.bat --no-configuration-cache coreArtifactScenario mcArtifactIsolationScenario` |
 | 无平台核心场景 | `gradlew.bat --no-configuration-cache coreSceneCheck` |
 | 真实GPU字体与页面场景 | `gradlew.bat --no-configuration-cache clientFontServicesScenario` |
