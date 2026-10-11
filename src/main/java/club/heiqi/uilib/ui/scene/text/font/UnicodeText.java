@@ -1,24 +1,26 @@
 package club.heiqi.uilib.ui.scene.text.font;
 
-import java.util.ArrayList;
+import club.heiqi.uilib.ui.scene.text.InlineBox;
+import club.heiqi.uilib.ui.scene.text.TextInput;
+import club.heiqi.uilib.ui.scene.text.TextLayout.Diagnostic;
 import club.heiqi.uilib.ui.scene.text.unicode.EmojiData;
 import club.heiqi.uilib.ui.scene.text.unicode.UnicodeGraphemes;
-import java.util.List;
-import java.util.TreeSet;
-import java.util.BitSet;
+
 import com.ibm.icu.lang.UCharacter;
 import com.ibm.icu.lang.UProperty;
 import com.ibm.icu.lang.UScript;
-import com.ibm.icu.text.BreakIterator;
-import com.ibm.icu.util.ULocale;
-import club.heiqi.uilib.ui.scene.text.TextInput;
-import club.heiqi.uilib.ui.scene.text.TextLayout.Diagnostic;
+
+import java.util.ArrayList;
+import java.util.BitSet;
+import java.util.List;
+import java.util.TreeSet;
 
 /** 控制可视化与 Unicode 分段；所有范围回到 TextInput，显示串不成为新的 source。 */
 final class UnicodeText {
     final TextInput input;
     final String display;
     final int[] logical;
+    private final java.util.Map<Integer, InlineBox> boxes = new java.util.HashMap<>();
     final List<Diagnostic> diagnostics = new ArrayList<Diagnostic>();
 
     UnicodeText(TextInput input) {
@@ -26,7 +28,15 @@ final class UnicodeText {
     }
 
     UnicodeText(TextInput input, club.heiqi.uilib.ui.scene.text.TextPolicy policy) {
+        this(input, policy, java.util.Collections.emptyList());
+    }
+
+    UnicodeText(
+            TextInput input,
+            club.heiqi.uilib.ui.scene.text.TextPolicy policy,
+            List<InlineBox> inlineBoxes) {
         this.input = input;
+        for (InlineBox box : inlineBoxes) boxes.put(box.offset, box);
         for (TextInput.InvalidRange r : input.invalidRanges())
             diagnostics.add(
                     new Diagnostic(
@@ -85,6 +95,13 @@ final class UnicodeText {
             if ((d == start || logical[d] != logical[d - 1])
                     && logicalBoundaries.contains(logical[d])) boundaries.add(d - start);
 
+        // 对象边界不与后继 Extend/ZWJ 合成文字字素；普通文字仍使用共同 Unicode 规则。
+        for (int d = start; d < end; d++)
+            if (boxes.containsKey(logical[d])) {
+                boundaries.add(d - start);
+                boundaries.add(d + 1 - start);
+            }
+
         List<Unit> result = new ArrayList<Unit>();
         int previousScript = UScript.COMMON;
         for (int a = 0; a < text.length(); ) {
@@ -109,13 +126,16 @@ final class UnicodeText {
                             || UCharacter.getType(first) == UCharacter.COMBINING_SPACING_MARK))
                 script = previousScript;
             if (script != UScript.COMMON) previousScript = script;
-            result.add(
+            Unit unit =
                     new Unit(
                             start + a,
                             start + b,
                             script,
                             !vs15 && (vs16 && emojiLike || emoji),
-                            emojiLike));
+                            emojiLike);
+            unit.inlineBox = boxes.get(logical[start + a]);
+            if (unit.inlineBox != null) previousScript = UScript.COMMON;
+            result.add(unit);
             a = b;
         }
         resolveConnectingScripts(result);
@@ -129,6 +149,10 @@ final class UnicodeText {
         for (int i = units.size() - 1; i >= 0; i--) {
             Unit u = units.get(i);
             following[i] = script;
+            if (u.inlineBox != null) {
+                script = UScript.COMMON;
+                continue;
+            }
             if (UCharacter.isUWhiteSpace(display.codePointAt(u.start))) script = UScript.COMMON;
             else if (u.script != UScript.COMMON && u.script != UScript.INHERITED) script = u.script;
         }
@@ -137,6 +161,10 @@ final class UnicodeText {
         for (int i = 0; i < units.size(); i++) {
             Unit u = units.get(i);
             int cp = display.codePointAt(u.start);
+            if (u.inlineBox != null) {
+                script = UScript.COMMON;
+                continue;
+            }
             if (UCharacter.isUWhiteSpace(cp)) {
                 script = UScript.COMMON;
                 continue;
@@ -208,6 +236,7 @@ final class UnicodeText {
         int script;
         final boolean emoji, emojiLike;
         FontSource source;
+        InlineBox inlineBox;
         club.heiqi.uilib.ui.scene.text.TextStyle style, shapeStyle;
         boolean replacement;
         int replacementId;

@@ -1,16 +1,22 @@
 package club.heiqi.uilib.internal.devtools;
 
-import net.minecraft.client.Minecraft;
 import cpw.mods.fml.common.FMLCommonHandler;
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 import cpw.mods.fml.common.gameevent.TickEvent;
+
+import net.minecraft.client.Minecraft;
 import net.minecraft.command.CommandBase;
 import net.minecraft.command.ICommandSender;
 import net.minecraftforge.client.ClientCommandHandler;
 
 /** 仅开发 classpath 中注册；场景不进入发布包。 */
 public final class CoreLoopBootstrap {
-    private static boolean installed, pendingOpen, pendingLanguage, pendingRich, pendingMath;
+    private static boolean installed,
+            pendingOpen,
+            pendingLanguage,
+            pendingRich,
+            pendingMath,
+            pendingDocument;
 
     @SubscribeEvent
     public void tick(TickEvent.ClientTickEvent event) {
@@ -18,13 +24,15 @@ public final class CoreLoopBootstrap {
         pendingOpen = false;
         Minecraft.getMinecraft()
                 .displayGuiScreen(
-                        pendingMath
-                                ? new CoreMathPage()
-                                : pendingRich
-                                        ? new CoreRichTextPage()
-                                        : pendingLanguage
-                                                ? new CoreLocalizationPage()
-                                                : new CoreLoopScreen());
+                        pendingDocument
+                                ? new CoreDocumentPage()
+                                : pendingMath
+                                        ? new CoreMathPage()
+                                        : pendingRich
+                                                ? new CoreRichTextPage()
+                                                : pendingLanguage
+                                                        ? new CoreLocalizationPage()
+                                                        : new CoreLoopScreen());
     }
 
     private CoreLoopBootstrap() {}
@@ -42,7 +50,7 @@ public final class CoreLoopBootstrap {
 
                     @Override
                     public String getCommandUsage(ICommandSender sender) {
-                        return "/qzcore [lang|rich|math]";
+                        return "/qzcore [lang|rich|math|document]";
                     }
 
                     @Override
@@ -57,6 +65,7 @@ public final class CoreLoopBootstrap {
                         pendingLanguage = args.length > 0 && "lang".equals(args[0]);
                         pendingRich = args.length > 0 && "rich".equals(args[0]);
                         pendingMath = args.length > 0 && "math".equals(args[0]);
+                        pendingDocument = args.length > 0 && "document".equals(args[0]);
                         pendingOpen = true;
                     }
                 });

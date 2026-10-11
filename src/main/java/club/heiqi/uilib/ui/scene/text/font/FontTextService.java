@@ -1,6 +1,7 @@
 package club.heiqi.uilib.ui.scene.text.font;
 
 import club.heiqi.uilib.ui.scene.text.AttributedText;
+import club.heiqi.uilib.ui.scene.text.InlineBox;
 import club.heiqi.uilib.ui.scene.text.RasterSampling;
 import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
 import club.heiqi.uilib.ui.scene.text.StyleSpan;
@@ -1018,9 +1019,14 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
         Map<MatchKey, FontSource> independent = new HashMap<MatchKey, FontSource>();
         for (int i = 0; i < units.size(); ) {
             Unit first = units.get(i);
+            if (first.inlineBox != null) {
+                i++;
+                continue;
+            }
             int j = i + 1;
             if (UnicodeText.complex(first.script)) {
                 while (j < units.size()
+                        && units.get(j).inlineBox == null
                         && units.get(j).script == first.script
                         && !units.get(j).emoji
                         && bidi.getLevelAt(units.get(j).start - paragraphStart)
@@ -1260,12 +1266,13 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                             value.input.sourceRight(value.input.text.length()),
                             "属性布局不支持混淆动画，保留空正文"));
         return new AttributedText(
-                value.input,
-                value.originalText,
-                withoutObfuscation(value.baseStyle),
-                spans,
-                withoutObfuscation(value.trailingStyle),
-                diagnostics);
+                        value.input,
+                        value.originalText,
+                        withoutObfuscation(value.baseStyle),
+                        spans,
+                        withoutObfuscation(value.trailingStyle),
+                        diagnostics)
+                .withInlineBoxes(value.inlineBoxes());
     }
 
     private static TextStyle withoutObfuscation(TextStyle style) {
@@ -1289,7 +1296,7 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
         TextInput input = attributed.input;
         TextStyle style = attributed.baseStyle;
         List<FontSource> sources = candidates(style);
-        UnicodeText doc = new UnicodeText(input, policy);
+        UnicodeText doc = new UnicodeText(input, policy, attributed.inlineBoxes());
         doc.diagnostics.addAll(attributed.diagnostics());
         List<TextLayout.Line> lines = new ArrayList<TextLayout.Line>();
         float y = 0, maxWidth = 0;
@@ -1406,6 +1413,8 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                         policy.lineHeight > 0
                                 ? policy.lineHeight
                                 : Math.max(chosen.ascent + chosen.descent, chosen.metricHeight);
+                // 显式行高也不能压掉对象或使其与下一行重叠。
+                if (chosen.inlineHeight > 0) h = Math.max(h, chosen.ascent + chosen.descent);
                 if (h <= 0) h = style.logicalEm;
                 float baseline = y + chosen.ascent;
                 List<TextLayout.Glyph> glyphs = new ArrayList<TextLayout.Glyph>();
@@ -1933,6 +1942,7 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                         doc.display.charAt(s) == '	'
                                 || !UnicodeText.visible(doc.display, s, e)
                                 || u.replacement
+                                || u.inlineBox != null
                                 || u.source == null;
                 Span last = spans.isEmpty() ? null : spans.get(spans.size() - 1);
                 if (!special
@@ -1951,6 +1961,26 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                 sources = candidates(style);
                 int glyphBegin = draft.glyphs.size();
                 float spanPen = pen;
+                if (u.inlineBox != null) {
+                    // 中性对象参与当前视觉 run，但内部内容不进入 HB 或字体回退。
+                    InlineBox box = u.inlineBox;
+                    draft.cells.add(
+                            new Cell(
+                                    span.start,
+                                    span.end,
+                                    pen,
+                                    box.width,
+                                    u.style,
+                                    glyphBegin,
+                                    glyphBegin));
+                    // prefix 对无字形 advance 使用同一 Gap 事实，只累计一次对象宽度。
+                    draft.spaces.add(new Gap(span.start, span.end, box.width));
+                    draft.ascent = Math.max(draft.ascent, box.baseline);
+                    draft.descent = Math.max(draft.descent, box.height - box.baseline);
+                    draft.inlineHeight = Math.max(draft.inlineHeight, box.height);
+                    pen += box.width;
+                    continue;
+                }
                 if (doc.display.charAt(span.start) == '	') {
                     float tab =
                             policy.tabSize > 0
@@ -2477,7 +2507,7 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
         final List<Placed> glyphs = new ArrayList<Placed>();
         final List<Gap> spaces = new ArrayList<Gap>();
         final List<Cell> cells = new ArrayList<Cell>();
-        float width, ascent, descent, metricHeight;
+        float width, ascent, descent, metricHeight, inlineHeight;
 
         void metrics(FontMetrics m) {
             ascent = Math.max(ascent, m.ascent);

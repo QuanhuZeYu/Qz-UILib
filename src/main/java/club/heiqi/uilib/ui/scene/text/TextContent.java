@@ -5,8 +5,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
-/** 显式内容声明。实例身份也是链接手势的声明代际，不能以源码相等替代。
- * 语法及失败合同见文本规格 §0 与富文本 DSL 正常内容合同。 */
+/** 显式内容声明。实例身份也是链接手势的声明代际，不能以源码相等替代。 语法及失败合同见文本规格 §0 与富文本 DSL 正常内容合同。 */
 public final class TextContent {
     public enum Mode {
         PLAIN,
@@ -94,12 +93,26 @@ public final class TextContent {
     public static final class Resolved {
         public final AttributedText text;
         private final List<LinkSpan> links;
+        private final List<InlineContent> inline;
         private final String serialized;
 
         Resolved(AttributedText text, List<LinkSpan> links, String serialized) {
+            this(text, links, serialized, Collections.<InlineContent>emptyList());
+        }
+
+        Resolved(
+                AttributedText text,
+                List<LinkSpan> links,
+                String serialized,
+                List<InlineContent> inline) {
+            this.inline = Collections.unmodifiableList(new ArrayList<>(inline));
             this.text = text;
             this.links = Collections.unmodifiableList(new ArrayList<LinkSpan>(links));
             this.serialized = serialized;
+        }
+
+        public List<InlineContent> inlineContents() {
+            return inline;
         }
 
         public List<LinkSpan> links() {
@@ -142,6 +155,11 @@ public final class TextContent {
             if (serialized == null) throw new UnsupportedOperationException("typed属性意图不提供DSL往返序列化");
             return serialized;
         }
+    }
+
+    /** 稳定声明身份随源码替换；主题及宽度变化不重新解析或重建子内容。 */
+    public List<InlineContent> inlineContents() {
+        return mode == Mode.RICH_TAGS ? parsed().inline : Collections.<InlineContent>emptyList();
     }
 
     public Resolved resolve(TextStyle style) {

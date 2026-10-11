@@ -13,13 +13,27 @@ import java.util.Objects;
 import java.util.Set;
 
 /** 同节点、同字体度量代际的测量入口；本次排列及备用捕获共享请求。 纯视图位置重排复用当前请求；测量输入换代前清空，不积累动态内容。 */
-final class BatchTextMeasurer implements SceneTextMeasurer {
+final class BatchTextMeasurer implements SceneTextMeasurer, SceneChildMeasurer {
     private final SceneTextMeasurer delegate;
+    private final java.util.function.BiFunction<
+                    club.heiqi.uilib.ui.scene.node.SceneNode, Constraints, MeasuredSize>
+            children;
     private final Map<Request, TextLayout> layouts = new HashMap<>();
     private final Set<Request> activeRequests = new HashSet<>();
 
-    BatchTextMeasurer(SceneTextMeasurer delegate) {
+    BatchTextMeasurer(
+            SceneTextMeasurer delegate,
+            java.util.function.BiFunction<
+                            club.heiqi.uilib.ui.scene.node.SceneNode, Constraints, MeasuredSize>
+                    children) {
         this.delegate = delegate;
+        this.children = children;
+    }
+
+    @Override
+    public MeasuredSize measureChild(
+            club.heiqi.uilib.ui.scene.node.SceneNode child, Constraints constraints) {
+        return children.apply(child, constraints);
     }
 
     void resetRequests() {

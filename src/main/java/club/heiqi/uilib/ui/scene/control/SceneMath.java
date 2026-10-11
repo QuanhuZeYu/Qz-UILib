@@ -233,6 +233,15 @@ public final class SceneMath implements SceneControl {
                 : Collections.<ReadableSignal<?>>singletonList(equationNumberDependency);
     }
 
+    /** 最近正式测量的外层呈现基线；同数学逻辑基线一起平移，供共同文档行内对齐。 */
+    public static float presentationBaseline(SceneNode node) {
+        if (!(node.control() instanceof SceneMath)) throw new IllegalArgumentException("不是数学控件");
+        SceneMath math = (SceneMath) node.control();
+        if (math.cachedLayout == null || math.presentationBounds == null)
+            throw new IllegalStateException("公式尚未测量");
+        return math.cachedLayout.baseline - math.presentationBounds.y;
+    }
+
     private MathLayout resolve(SceneNode node, SceneTextMeasurer text) {
         MathContent current = Objects.requireNonNull(content, "数学内容尚未绑定");
         if (batch.get() != text

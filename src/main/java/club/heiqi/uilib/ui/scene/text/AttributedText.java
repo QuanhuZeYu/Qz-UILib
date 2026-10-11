@@ -12,6 +12,7 @@ public final class AttributedText {
     public final TextStyle baseStyle, trailingStyle;
     private final List<StyleSpan> spans;
     private final List<TextLayout.Diagnostic> diagnostics;
+    private final List<InlineBox> inlineBoxes;
 
     public AttributedText(
             TextInput input, String originalText, TextStyle base, List<StyleSpan> spans) {
@@ -31,6 +32,24 @@ public final class AttributedText {
             List<StyleSpan> spans,
             TextStyle trailing,
             List<TextLayout.Diagnostic> diagnostics) {
+        this(
+                input,
+                originalText,
+                base,
+                spans,
+                trailing,
+                diagnostics,
+                Collections.<InlineBox>emptyList());
+    }
+
+    private AttributedText(
+            TextInput input,
+            String originalText,
+            TextStyle base,
+            List<StyleSpan> spans,
+            TextStyle trailing,
+            List<TextLayout.Diagnostic> diagnostics,
+            List<InlineBox> boxes) {
         this.input = Objects.requireNonNull(input, "input");
         this.originalText = originalText;
         baseStyle = Objects.requireNonNull(base, "base");
@@ -49,6 +68,20 @@ public final class AttributedText {
         this.spans = Collections.unmodifiableList(copy);
         this.diagnostics =
                 Collections.unmodifiableList(new ArrayList<TextLayout.Diagnostic>(diagnostics));
+        ArrayList<InlineBox> ordered =
+                new ArrayList<InlineBox>(Objects.requireNonNull(boxes, "boxes"));
+        for (InlineBox box : ordered) {
+            Objects.requireNonNull(box, "inline box");
+            if (box.offset >= input.text.length() || input.text.charAt(box.offset) != '\ufffc')
+                throw new IllegalArgumentException("行内对象必须指向 U+FFFC");
+        }
+        ordered.sort(java.util.Comparator.comparingInt(box -> box.offset));
+        int previous = -1;
+        for (InlineBox box : ordered) {
+            if (box.offset == previous) throw new IllegalArgumentException("行内对象位置重复");
+            previous = box.offset;
+        }
+        inlineBoxes = Collections.unmodifiableList(ordered);
     }
 
     public static AttributedText plain(TextInput input, TextStyle style) {
@@ -59,6 +92,16 @@ public final class AttributedText {
                 input.text.isEmpty()
                         ? Collections.<StyleSpan>emptyList()
                         : Collections.singletonList(new StyleSpan(0, input.text.length(), style)));
+    }
+
+    /** 用不可变度量替换本次对象声明；未声明的字面 U+FFFC 仍按普通文字处理。 */
+    public AttributedText withInlineBoxes(List<InlineBox> boxes) {
+        return new AttributedText(
+                input, originalText, baseStyle, spans, trailingStyle, diagnostics, boxes);
+    }
+
+    public List<InlineBox> inlineBoxes() {
+        return inlineBoxes;
     }
 
     public List<StyleSpan> spans() {

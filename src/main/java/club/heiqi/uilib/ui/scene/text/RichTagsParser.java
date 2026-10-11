@@ -18,6 +18,7 @@ final class RichTagsParser {
     private final List<TextInput.SourceSegment> gaps = new ArrayList<TextInput.SourceSegment>();
     private final List<TextStyleOverrideSpan> spans = new ArrayList<TextStyleOverrideSpan>();
     private final List<TextContent.LinkSpan> links = new ArrayList<TextContent.LinkSpan>();
+    private final List<InlineContent> inline = new ArrayList<>();
     private final Deque<Scope> scopes = new ArrayDeque<Scope>();
     private TextStyleOverride style;
     private TextContent.Link link;
@@ -55,15 +56,25 @@ final class RichTagsParser {
         final StyledText text;
         final List<TextContent.LinkSpan> links;
         final String canonical;
+        final List<InlineContent> inline;
 
         Parsed(StyledText text, List<TextContent.LinkSpan> links, String canonical) {
+            this(text, links, canonical, Collections.<InlineContent>emptyList());
+        }
+
+        Parsed(
+                StyledText text,
+                List<TextContent.LinkSpan> links,
+                String canonical,
+                List<InlineContent> inline) {
+            this.inline = Collections.unmodifiableList(new ArrayList<>(inline));
             this.text = text;
             this.links = Collections.unmodifiableList(new ArrayList<>(links));
             this.canonical = canonical;
         }
 
         TextContent.Resolved resolve(TextStyle base) {
-            return new TextContent.Resolved(text.resolve(base), links, canonical);
+            return new TextContent.Resolved(text.resolve(base), links, canonical, inline);
         }
     }
 
@@ -134,7 +145,8 @@ final class RichTagsParser {
                 new StyledText(
                         mapped, raw, spans, style, Collections.<TextLayout.Diagnostic>emptyList()),
                 links,
-                canonical.toString());
+                canonical.toString(),
+                inline);
     }
 
     private void append(String value, int start, int end) {
@@ -228,6 +240,89 @@ final class RichTagsParser {
             canonical.append("<br/>");
             return;
         }
+        if (name.equals("latex")) {
+            if (selfClosing
+                    || attributes.size() > 1
+                    || !attributes.isEmpty() && !attributes.containsKey("math-style"))
+                fail(start, position, "latex仅接受math-style及成对闭合");
+            String mode = attributes.getOrDefault("math-style", "text");
+            club.heiqi.uilib.ui.scene.text.math.MathStyle mathStyle;
+            switch (mode) {
+                case "display":
+                    mathStyle = club.heiqi.uilib.ui.scene.text.math.MathStyle.DISPLAY;
+                    break;
+                case "text":
+                    mathStyle = club.heiqi.uilib.ui.scene.text.math.MathStyle.TEXT;
+                    break;
+                case "script":
+                    mathStyle = club.heiqi.uilib.ui.scene.text.math.MathStyle.SCRIPT;
+                    break;
+                case "scriptscript":
+                    mathStyle = club.heiqi.uilib.ui.scene.text.math.MathStyle.SCRIPT_SCRIPT;
+                    break;
+                default:
+                    fail(start, position, "未知数学样式：" + mode);
+                    return;
+            }
+            int body = position, close = original.text.indexOf("</latex>", body);
+            if (close < 0) fail(start, position, "latex缺少闭合标签");
+            String formula = original.text.substring(body, close);
+            position = close + 8;
+            inline.add(
+                    new InlineContent(
+                            logical.length(),
+                            original.sourceRight(start),
+                            original.sourceLeft(position),
+                            club.heiqi.uilib.ui.scene.text.math.MathContent.parse(formula),
+                            mathStyle));
+            append("\ufffc", start, position);
+            // 数学正文按捕获语义原样往返，不把尖括号或与号送回DSL实体解析。
+            canonical.append(original.text, start, position);
+            return;
+        }
+        if (name.equals("img")) {
+            if (!selfClosing || !attributes.containsKey("src") || attributes.get("src").isEmpty())
+                fail(start, position, "img须自闭合且声明src");
+            for (String key : attributes.keySet())
+                if (!key.equals("src")
+                        && !key.equals("alt")
+                        && !key.equals("width")
+                        && !key.equals("height")
+                        && !key.equals("fit")) fail(start, position, "未知图像属性：" + key);
+            Integer width = imageSize(attributes.get("width"), start),
+                    height = imageSize(attributes.get("height"), start);
+            club.heiqi.uilib.ui.scene.image.ImageOptions.Fit fit;
+            switch (attributes.getOrDefault("fit", "contain")) {
+                case "contain":
+                    fit = club.heiqi.uilib.ui.scene.image.ImageOptions.Fit.CONTAIN;
+                    break;
+                case "cover":
+                    fit = club.heiqi.uilib.ui.scene.image.ImageOptions.Fit.COVER;
+                    break;
+                case "stretch":
+                    fit = club.heiqi.uilib.ui.scene.image.ImageOptions.Fit.STRETCH;
+                    break;
+                case "original":
+                    fit = club.heiqi.uilib.ui.scene.image.ImageOptions.Fit.NATIVE;
+                    break;
+                default:
+                    fail(start, position, "未知图像适配");
+                    return;
+            }
+            inline.add(
+                    new InlineContent(
+                            logical.length(),
+                            original.sourceRight(start),
+                            original.sourceLeft(position),
+                            attributes.get("src"),
+                            attributes.getOrDefault("alt", ""),
+                            width,
+                            height,
+                            fit));
+            append("\ufffc", start, position);
+            canonical.append(original.text, start, position);
+            return;
+        }
         if (selfClosing) fail(start, position, "成对标签不能自闭合：" + name);
         String expected =
                 name.equals("color") || name.equals("size")
@@ -271,6 +366,19 @@ final class RichTagsParser {
         canonical.append('>');
     }
 
+    private Integer imageSize(String value, int start) {
+        if (value == null) return null;
+        try {
+            double number = Double.parseDouble(value);
+            if (!Double.isFinite(number) || number < 0 || number > Integer.MAX_VALUE)
+                throw new NumberFormatException();
+            return (int) Math.ceil(number);
+        } catch (NumberFormatException invalid) {
+            fail(start, position, "无效图像logical px尺寸");
+            return null;
+        }
+    }
+
     private boolean supported(String name) {
         return name.equals("b")
                 || name.equals("i")
@@ -279,7 +387,9 @@ final class RichTagsParser {
                 || name.equals("color")
                 || name.equals("size")
                 || name.equals("br")
-                || name.equals("a");
+                || name.equals("a")
+                || name.equals("latex")
+                || name.equals("img");
     }
 
     private void gap(int start, int end) {
@@ -289,8 +399,8 @@ final class RichTagsParser {
     private String name() {
         int start = position;
         while (position < original.text.length()
-                && original.text.charAt(position) >= 'a'
-                && original.text.charAt(position) <= 'z') position++;
+                && (original.text.charAt(position) >= 'a' && original.text.charAt(position) <= 'z'
+                        || original.text.charAt(position) == '-')) position++;
         return original.text.substring(start, position);
     }
 

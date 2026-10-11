@@ -133,6 +133,7 @@ tasks.named("check") { dependsOn(richTextScenario) }
 val coreFontClasses = layout.buildDirectory.dir("classes/core-font")
 val compileCoreFontScenario by tasks.registering(JavaCompile::class) {
     source(fileTree("src/main/java/club/heiqi/uilib/ui/scene/text") { include("**/*.java") })
+    source("src/main/java/club/heiqi/uilib/ui/scene/image/ImageOptions.java", "src/main/java/club/heiqi/uilib/ui/scene/layout/Size.java")
     source("src/test/java/club/heiqi/uilib/ui/scene/integration/CoreFontEngineScenario.java")
     classpath = fontUnicodeRuntime + testSupportSources.output
     destinationDirectory.set(coreFontClasses)
@@ -347,6 +348,18 @@ val mathLayoutScenario = registerTestApplication("mathLayoutScenario", "自有�
     dependsOn(tasks.named("testClasses"))
     classpath = sourceSets.getByName("main").output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime
 }
+val documentGlScenario = registerTestApplication("documentGlScenario", "共同文档正文公式图像真实GPU与短视口裁剪（需要设备）", "club.heiqi.uilib.ui.scene.integration.DocumentGlScenario") {
+    classpath = sourceSets.getByName("main").output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime
+    args(layout.buildDirectory.dir("document-gl").get().asFile.absolutePath)
+}
+val inlineBoxScenario = registerTestApplication("inlineBoxScenario", "真实Unicode/Bidi原子对象、安全断行与同代行高", "club.heiqi.uilib.ui.scene.integration.InlineBoxScenario") {
+    classpath = sourceSets.getByName("main").output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime
+}
+tasks.named("check") { dependsOn(inlineBoxScenario) }
+val documentSceneScenario = registerTestApplication("documentSceneScenario", "共同文档真实字体、数学图像基线换行与裁剪输入", "club.heiqi.uilib.ui.scene.integration.DocumentSceneScenario") {
+    classpath = sourceSets.getByName("main").output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime
+}
+tasks.named("check") { dependsOn(documentSceneScenario) }
 val mathSceneScenario = registerTestApplication("mathSceneScenario", "正式数学图像控件同代几何输入与生命周期验收", "club.heiqi.uilib.ui.scene.integration.MathSceneScenario") {
     dependsOn(tasks.named("testClasses"))
     classpath = sourceSets.getByName("main").output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime

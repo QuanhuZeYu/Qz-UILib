@@ -26,7 +26,21 @@ public final class SceneLayoutEngine {
 
     private SceneTextMeasurer textFor(SceneNode node) {
         BatchTextMeasurer batch =
-                batchText.computeIfAbsent(node, key -> new BatchTextMeasurer(text));
+                batchText.computeIfAbsent(
+                        node,
+                        key ->
+                                new BatchTextMeasurer(
+                                        text,
+                                        (child, constraints) -> {
+                                            if (child.parent() != key)
+                                                throw new IllegalArgumentException("只能测量直属子内容");
+                                            int[] size =
+                                                    measure(
+                                                            child,
+                                                            constraints.availableWidth,
+                                                            constraints.availableHeight);
+                                            return new MeasuredSize(size[0], size[1]);
+                                        }));
         if (activeText.add(batch)) batch.beginRequests();
         return batch;
     }
