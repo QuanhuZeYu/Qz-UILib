@@ -150,7 +150,7 @@ tasks.register("coreSceneCheck") {
 }
 val lwjgl2TestSources = sourceSets.create("lwjgl2Test") {
     java.srcDir("src/lwjgl2Test/java")
-    compileClasspath = sourceSets.getByName("main").output + coreSources.output + fontAdapterSources.output + lwjgl2Sources.output + lwjgl2Bindings + testSupportSources.output + yamlRuntime
+    compileClasspath = sourceSets.getByName("main").output + coreSources.output + fontAdapterSources.output + lwjgl2Sources.output + lwjgl2Bindings + testSupportSources.output + yamlRuntime + sourceSets.getByName("main").compileClasspath.filter { !it.name.contains("jabel") }
     runtimeClasspath = output + compileClasspath + fontUnicodeRuntime
 }
 tasks.named<JavaCompile>(lwjgl2TestSources.compileJavaTaskName) {
@@ -158,6 +158,7 @@ tasks.named<JavaCompile>(lwjgl2TestSources.compileJavaTaskName) {
     sourceCompatibility = "1.8"
     targetCompatibility = "1.8"
     options.compilerArgs.add("-proc:none")
+    options.annotationProcessorPath = files()
 }
 val lwjgl2HostScenario = registerTestApplication("lwjgl2HostScenario", "原LWJGL2默认Display context、正式字体owner和共享GPU像素验收", "club.heiqi.uilib.ui.scene.integration.Lwjgl2HostScenario", useDefaultLauncher = false) {
     dependsOn(tasks.named(lwjgl2TestSources.classesTaskName), "extractHeadlessNatives")
@@ -168,6 +169,14 @@ val lwjgl2HostScenario = registerTestApplication("lwjgl2HostScenario", "原LWJGL
     args(providers.gradleProperty("fontWorldAtlasMode").getOrElse("2d"))
     jvmArgs("-Dfile.encoding=UTF-8", "-Djava.library.path=" + layout.buildDirectory.dir("headless/natives").get().asFile.absolutePath)
 }
+val minecraftScreenSwitchScenario = registerTestApplication("minecraftScreenSwitchScenario", "实际MC屏幕当帧切页与旧输入隔离回归", "club.heiqi.uilib.ui.scene.integration.MinecraftScreenSwitchScenario", useDefaultLauncher = false) {
+    dependsOn(tasks.named(lwjgl2TestSources.classesTaskName), "extractHeadlessNatives")
+    classpath = fontUnicodeRuntime + lwjgl2TestSources.runtimeClasspath + sourceSets.getByName("patchedMc").output
+    javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(8)) })
+    jvmArgs("-Dfile.encoding=UTF-8", "-Djava.library.path=" + layout.buildDirectory.dir("headless/natives").get().asFile.absolutePath)
+}
+tasks.named("check") { dependsOn(minecraftScreenSwitchScenario) }
+
 val imageLwjgl2Scenario = registerTestApplication("imageLwjgl2Scenario", "原LWJGL2 actual IMAGE像素与compat item scope正常异常状态（不启动MC）", "club.heiqi.uilib.ui.scene.integration.ImageLwjgl2Scenario", useDefaultLauncher = false) {
     dependsOn(tasks.named(lwjgl2TestSources.classesTaskName), "extractHeadlessNatives")
     classpath = lwjgl2TestSources.runtimeClasspath
@@ -324,7 +333,13 @@ val minecraftDurabilityScenario = registerTestApplication("minecraftDurabilitySc
     dependsOn(tasks.named("testClasses"))
     classpath = sourceSets.getByName("test").runtimeClasspath + sourceSets.getByName("patchedMc").output
 }
-tasks.named("check") { dependsOn(minecraftDurabilityScenario) }
+val coreAssetResourceScenario = registerTestApplication("coreAssetResourceScenario", "MC资源链的独立Core资产、Emoji及用户覆盖重载回归", "club.heiqi.uilib.host.client.font.CoreAssetResourceScenario") {
+    dependsOn(tasks.named("testClasses"))
+    // 未重定位开发输出使用Core的ICU版本，不能先加载原版随附的ICU51。
+    classpath = fontUnicodeRuntime + yamlRuntime + sourceSets.getByName("test").runtimeClasspath + sourceSets.getByName("patchedMc").output
+}
+
+tasks.named("check") { dependsOn(minecraftDurabilityScenario, coreAssetResourceScenario) }
 
 val imageServiceScenario = registerTestApplication("imageServiceScenario", "真实本地HTTP与图像共享、来源切换和scene文档策略", "club.heiqi.uilib.ui.scene.integration.ImageServiceScenario") {
     dependsOn(tasks.named("testClasses"))

@@ -171,6 +171,13 @@ public class MinecraftSceneScreen extends GuiScreen {
         if (session == null) return;
         syncInputAvailability();
         session.frame();
+        // 按钮在本次 frame 内换页时旧会话已结束，不能回放旧计划。
+        // MC 此次仍调用旧 screen；交给当前 UILib screen 完成本次绘制，避免先 present 游戏世界。
+        GuiScreen active = mc.currentScreen;
+        if (active != this) {
+            if (active instanceof MinecraftSceneScreen) active.drawScreen(mouseX, mouseY, partialTicks);
+            return;
+        }
         syncNativeTextFocus();
     }
 

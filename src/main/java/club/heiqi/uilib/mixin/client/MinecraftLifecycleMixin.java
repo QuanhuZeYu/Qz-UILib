@@ -10,6 +10,14 @@ import club.heiqi.uilib.host.client.font.MinecraftFontServices;
 /** 在宿主GL上下文销毁之前，同一client线程释放字体owner；不能用shutdownhook代替。 */
 @Mixin(Minecraft.class)
 public abstract class MinecraftLifecycleMixin {
+    @org.spongepowered.asm.mixin.Shadow
+    private java.util.List<net.minecraft.client.resources.IResourcePack> defaultResourcePacks;
+
+    @Inject(method = "refreshResources", at = @At("HEAD"))
+    private void qz$registerCoreAssets(CallbackInfo callback) {
+        club.heiqi.uilib.host.client.font.CoreAssetResourcePack.install(defaultResourcePacks);
+    }
+
     // LWJGL3ify排除org.lwjgl类转换；此处仅转交present，不使用MC尺寸/绘制包装。
     @Inject(
             method = "func_147120_f",
