@@ -21,7 +21,10 @@ public final class InlineContent {
     public final Integer width, height;
     public final ImageOptions.Fit fit;
 
-    /** 来源范围沿共同段落 TextInput 的 BYTE/UTF16 单位，不是公式自身的局部坐标。 */
+    /**
+     * 来源范围沿共同段落 TextInput 的 BYTE/UTF16 单位；DSL 覆盖整个 latex 标签。 MathContent 诊断使用公式正文内的局部
+     * UTF16，不能直接与此范围相加。
+     */
     public static InlineContent formula(
             int offset, int sourceStart, int sourceEnd, MathContent math, MathStyle style) {
         return new InlineContent(offset, sourceStart, sourceEnd, math, style);

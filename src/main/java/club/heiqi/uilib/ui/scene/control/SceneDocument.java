@@ -53,23 +53,7 @@ public final class SceneDocument {
                 NodeBinding.repeat(
                         () -> content.get().blocks(),
                         block -> block,
-                        signal -> {
-                            DocumentContent.Block block = signal.get();
-                            return block.paragraph != null
-                                    ? paragraph(
-                                                    context,
-                                                    () -> signal.get().paragraph,
-                                                    theme,
-                                                    resources,
-                                                    activate)
-                                            .size(Size.fill(1), Size.natural())
-                                    : SceneMath.create(
-                                            context,
-                                            () -> signal.get().math,
-                                            theme,
-                                            block.style,
-                                            Collections.emptyMap());
-                        }));
+                        signal -> createBlockChild(context, signal, theme, resources, activate)));
         return root;
     }
 
@@ -83,7 +67,7 @@ public final class SceneDocument {
         Objects.requireNonNull(content, "content");
         Objects.requireNonNull(theme, "theme");
         Objects.requireNonNull(activate, "activate");
-        ResolvedContent shared = new ResolvedContent(content, theme);
+        ScopedResolved shared = new ScopedResolved(content, theme);
         Paragraph control = new Paragraph(activate, resources, shared);
         SceneNode root = new SceneNode().control(control);
         root.bind(
@@ -106,51 +90,8 @@ public final class SceneDocument {
                         item -> item,
                         signal -> {
                             InlineContent item = signal.get();
-                            ReadableSignal<SceneTheme> scoped =
-                                    () ->
-                                            theme.get()
-                                                    .withTextStyle(
-                                                            shared.get().text.styleAt(item.offset));
-                            SceneNode child;
-                            if (item.kind == InlineContent.Kind.MATH) {
-                                child =
-                                        SceneMath.create(
-                                                context,
-                                                () -> item.math,
-                                                scoped,
-                                                item.mathStyle,
-                                                Collections.emptyMap());
-                            } else {
-                                if (resources == null)
-                                    throw new IllegalArgumentException(
-                                            "img声明需要DocumentResources图像服务");
-                                DocumentResources.ImageReference reference =
-                                        resources.reference(item.source);
-                                ReadableSignal<ImageSource> source =
-                                        reference == null
-                                                ? () -> resources.source(item.source)
-                                                : reference.source;
-                                ReadableSignal<ImageOptions> options =
-                                        () -> {
-                                            ImageOptions original =
-                                                    reference == null
-                                                            ? ImageOptions.defaults()
-                                                            : reference.options.get();
-                                            return original.document()
-                                                    .size(
-                                                            item.width == null
-                                                                    ? Size.natural()
-                                                                    : Size.fixed(item.width),
-                                                            item.height == null
-                                                                    ? Size.natural()
-                                                                    : Size.fixed(item.height))
-                                                    .fit(item.fit)
-                                                    .alt(item.alt);
-                                        };
-                                child =
-                                        SceneImage.themed(
-                                                resources.images, source, options, scoped);
-                            }
+                            SceneNode child =
+                                    createInlineChild(context, item, theme, resources, shared);
                             control.items.put(item, child);
                             return child;
                         }));
@@ -166,15 +107,64 @@ public final class SceneDocument {
         return root;
     }
 
+    private static SceneNode createBlockChild(
+            ScenePageContext context,
+            ReadableSignal<DocumentContent.Block> signal,
+            ReadableSignal<SceneTheme> theme,
+            DocumentResources resources,
+            Consumer<String> activate) {
+        DocumentContent.Block block = signal.get();
+        if (block.paragraph != null)
+            return paragraph(context, () -> signal.get().paragraph, theme, resources, activate)
+                    .size(Size.fill(1), Size.natural());
+        return SceneMath.create(
+                context, () -> signal.get().math, theme, block.style, Collections.emptyMap());
+    }
+
+    private static ReadableSignal<SceneTheme> scopedTheme(
+            ReadableSignal<SceneTheme> theme, ScopedResolved shared, InlineContent item) {
+        return () -> theme.get().withTextStyle(shared.get().text.styleAt(item.offset));
+    }
+
+    private static SceneNode createInlineChild(
+            ScenePageContext context,
+            InlineContent item,
+            ReadableSignal<SceneTheme> theme,
+            DocumentResources resources,
+            ScopedResolved shared) {
+        ReadableSignal<SceneTheme> scoped = scopedTheme(theme, shared, item);
+        if (item.kind == InlineContent.Kind.MATH)
+            return SceneMath.create(
+                    context, () -> item.math, scoped, item.mathStyle, Collections.emptyMap());
+        if (resources == null) throw new IllegalArgumentException("img声明需要DocumentResources图像服务");
+        DocumentResources.ImageReference reference = resources.reference(item.source);
+        ReadableSignal<ImageSource> source =
+                reference == null ? () -> resources.source(item.source) : reference.source;
+        return SceneImage.themed(
+                resources.images, source, () -> imageOptions(item, reference), scoped);
+    }
+
+    private static ImageOptions imageOptions(
+            InlineContent item, DocumentResources.ImageReference reference) {
+        ImageOptions original =
+                reference == null ? ImageOptions.defaults() : reference.options.get();
+        return original.document()
+                .size(
+                        item.width == null ? Size.natural() : Size.fixed(item.width),
+                        item.height == null ? Size.natural() : Size.fixed(item.height))
+                .fit(item.fit)
+                .alt(item.alt);
+    }
+
     /** 同一声明与基础样式的纯内容派生只归段落一处，父测量和子主题共享；不持节点或租约。 */
-    private static final class ResolvedContent {
+    private static final class ScopedResolved {
         final ReadableSignal<TextContent> source;
         final ReadableSignal<SceneTheme> theme;
         TextContent declaration;
         TextStyle style;
         TextContent.Resolved value;
 
-        ResolvedContent(ReadableSignal<TextContent> source, ReadableSignal<SceneTheme> theme) {
+        ScopedResolved(ReadableSignal<TextContent> source, ReadableSignal<SceneTheme> theme) {
             this.source = source;
             this.theme = theme;
         }
@@ -197,35 +187,88 @@ public final class SceneDocument {
         }
     }
 
+    /** 本次子测量的关联事实；字体层只消费其纯盒投影。 */
+    private static final class MeasuredInline {
+        final InlineContent item;
+        final SceneNode child;
+        final InlineBox box;
+
+        MeasuredInline(InlineContent item, SceneNode child, InlineBox box) {
+            this.item = item;
+            this.child = child;
+            this.box = box;
+        }
+
+        boolean sameMetrics(MeasuredInline other) {
+            return item == other.item
+                    && child == other.child
+                    && box.offset == other.box.offset
+                    && box.width == other.box.width
+                    && box.height == other.box.height
+                    && box.baseline == other.box.baseline;
+        }
+    }
+
+    /** 最近一次字体请求：同值度量复用文字身份，不保存布局宽度或最终排列。 */
+    private static final class ParagraphRequest {
+        final TextContent.Resolved resolved;
+        final List<MeasuredInline> inline;
+        final AttributedText text;
+
+        ParagraphRequest(
+                TextContent.Resolved resolved,
+                List<MeasuredInline> inline,
+                ParagraphRequest previous) {
+            this.resolved = resolved;
+            this.inline = inline;
+            if (sameMetrics(previous)) {
+                text = previous.text;
+            } else {
+                List<InlineBox> boxes = new ArrayList<>();
+                for (MeasuredInline measured : inline) boxes.add(measured.box);
+                text = resolved.text.withInlineBoxes(boxes);
+            }
+        }
+
+        private boolean sameMetrics(ParagraphRequest previous) {
+            if (previous == null
+                    || resolved != previous.resolved
+                    || inline.size() != previous.inline.size()) return false;
+            for (int i = 0; i < inline.size(); i++)
+                if (!inline.get(i).sameMetrics(previous.inline.get(i))) return false;
+            return true;
+        }
+    }
+
     private static final class Paragraph implements SceneControl {
         final Consumer<String> activate;
         final DocumentResources resources;
         final Map<InlineContent, SceneNode> items = new IdentityHashMap<>();
-        TextContent declaration, cachedDeclaration;
-        final ResolvedContent shared;
+        TextContent declaration;
+        // 只表示当前声明已解析且可检查链接身份，不代表最后一次布局宽度或呈现。
+        TextContent interactionDeclaration;
+        final ScopedResolved shared;
         TextContent.Resolved resolved;
-        AttributedText measuredText;
-        List<InlineBox> boxes = Collections.emptyList();
+        ParagraphRequest fontRequest;
         List<ChildPlacements.Entry> placements = Collections.emptyList();
 
-        Paragraph(Consumer<String> activate, DocumentResources resources, ResolvedContent shared) {
+        Paragraph(Consumer<String> activate, DocumentResources resources, ScopedResolved shared) {
             this.activate = activate;
             this.resources = resources;
             this.shared = shared;
         }
 
         void invalidate() {
-            cachedDeclaration = null;
+            interactionDeclaration = null;
             shared.clear();
             resolved = null;
-            measuredText = null;
-            boxes = Collections.emptyList();
+            fontRequest = null;
             placements = Collections.emptyList();
         }
 
         @Override
         public TextLayout layoutText(SceneNode node, SceneTextMeasurer text, int width) {
-            return layoutText(node, text, width, null);
+            return layoutParagraph(node, text, width, null);
         }
 
         private void resolveContent() {
@@ -233,14 +276,15 @@ public final class SceneDocument {
             TextContent.Resolved current = shared.get();
             if (current != resolved) {
                 resolved = current;
-                cachedDeclaration = declaration;
-                measuredText = null;
+                interactionDeclaration = declaration;
+                fontRequest = null;
             }
         }
 
-        private List<InlineBox> measureBoxes(SceneChildMeasurer children, int width) {
-            List<InlineBox> result = new ArrayList<>();
-            for (InlineContent item : resolved.inlineContents()) {
+        private List<MeasuredInline> measureInline(
+                TextContent.Resolved content, SceneChildMeasurer children, int width) {
+            List<MeasuredInline> result = new ArrayList<>();
+            for (InlineContent item : content.inlineContents()) {
                 if (children == null) throw new IllegalArgumentException("行内子内容需要scene子测量能力");
                 SceneNode child = items.get(item);
                 if (child == null) throw new IllegalStateException("内联声明没有同树子项");
@@ -250,7 +294,11 @@ public final class SceneDocument {
                         item.kind == InlineContent.Kind.MATH
                                 ? SceneMath.presentationBaseline(child)
                                 : size.height;
-                result.add(new InlineBox(item.offset, size.width, size.height, baseline));
+                result.add(
+                        new MeasuredInline(
+                                item,
+                                child,
+                                new InlineBox(item.offset, size.width, size.height, baseline)));
             }
             return result;
         }
@@ -258,28 +306,23 @@ public final class SceneDocument {
         @Override
         public TextLayout layoutText(
                 SceneNode node, SceneTextMeasurer text, int width, SceneChildMeasurer children) {
+            return layoutParagraph(node, text, width, children);
+        }
+
+        private TextLayout layoutParagraph(
+                SceneNode node, SceneTextMeasurer text, int width, SceneChildMeasurer children) {
             resolveContent();
-            List<InlineBox> next = measureBoxes(children, width);
-            boolean same = next.size() == boxes.size();
-            for (int i = 0; same && i < next.size(); i++) {
-                InlineBox a = next.get(i), b = boxes.get(i);
-                same =
-                        a.offset == b.offset
-                                && a.width == b.width
-                                && a.height == b.height
-                                && a.baseline == b.baseline;
-            }
-            if (measuredText == null || !same) {
-                boxes = next;
-                measuredText = resolved.text.withInlineBoxes(boxes);
-            }
-            TextLayout layout = text.layout(measuredText, width, node.textPolicy());
-            placements = place(layout, boxes);
+            ParagraphRequest current =
+                    new ParagraphRequest(
+                            resolved, measureInline(resolved, children, width), fontRequest);
+            fontRequest = current;
+            TextLayout layout = text.layout(current.text, width, node.textPolicy());
+            placements = place(layout, current.inline);
             List<TextLayout.Diagnostic> diagnostics = new ArrayList<>(layout.diagnostics());
             for (TextLayout.Line line : layout.lines())
                 for (TextLayout.Cluster cluster : line.clusters())
                     if (cluster.logicalEnd > cluster.logicalStart
-                            && resolved.crossesLinkBoundary(
+                            && current.resolved.crossesLinkBoundary(
                                     cluster.logicalStart, cluster.logicalEnd))
                         diagnostics.add(
                                 new TextLayout.Diagnostic(
@@ -303,11 +346,10 @@ public final class SceneDocument {
                             layout.input);
         }
 
-        private List<ChildPlacements.Entry> place(TextLayout layout, List<InlineBox> layoutBoxes) {
+        private List<ChildPlacements.Entry> place(TextLayout layout, List<MeasuredInline> inline) {
             List<ChildPlacements.Entry> arranged = new ArrayList<>();
-            for (int i = 0; i < layoutBoxes.size(); i++) {
-                InlineBox box = layoutBoxes.get(i);
-                InlineContent item = resolved.inlineContents().get(i);
+            for (MeasuredInline measured : inline) {
+                InlineBox box = measured.box;
                 for (TextLayout.Line line : layout.lines())
                     for (TextLayout.Cluster cluster : line.clusters()) {
                         if (cluster.logicalStart == box.offset
@@ -316,7 +358,7 @@ public final class SceneDocument {
                             int left = (int) Math.floor(x), top = (int) Math.floor(y);
                             arranged.add(
                                     new ChildPlacements.Entry(
-                                            items.get(item),
+                                            measured.child,
                                             new LayoutBox(
                                                     left,
                                                     top,
@@ -328,6 +370,7 @@ public final class SceneDocument {
             return arranged;
         }
 
+        /** 正式组合呈现入口；旧 presentText 保留 SceneControl 原样返回 full 的兼容行为。 */
         @Override
         public TextLayout presentText(
                 SceneNode node,
@@ -336,16 +379,21 @@ public final class SceneDocument {
                 int height,
                 SceneTextMeasurer text,
                 SceneChildMeasurer children) {
+            return presentParagraph(full, width, children);
+        }
+
+        private TextLayout presentParagraph(
+                TextLayout full, int width, SceneChildMeasurer children) {
             resolveContent();
             // 每次呈现以本次full定位，即使引擎命中另一宽度的文字缓存，也不消费最后一次排列。
-            placements = place(full, measureBoxes(children, width));
+            placements = place(full, measureInline(resolved, children, width));
             return full;
         }
 
         @Override
         public MeasuredSize measure(
                 SceneNode node, Constraints constraints, SceneTextMeasurer text) {
-            return measure(node, constraints, text, null);
+            return measureParagraph(node, constraints, text, null);
         }
 
         @Override
@@ -354,7 +402,15 @@ public final class SceneDocument {
                 Constraints constraints,
                 SceneTextMeasurer text,
                 SceneChildMeasurer children) {
-            TextLayout layout = layoutText(node, text, constraints.availableWidth, children);
+            return measureParagraph(node, constraints, text, children);
+        }
+
+        private MeasuredSize measureParagraph(
+                SceneNode node,
+                Constraints constraints,
+                SceneTextMeasurer text,
+                SceneChildMeasurer children) {
+            TextLayout layout = layoutParagraph(node, text, constraints.availableWidth, children);
             float right = layout.width, bottom = layout.height;
             for (TextLayout.Line line : layout.lines()) {
                 right = Math.max(right, SceneTextPresentation.right(line));
@@ -404,7 +460,7 @@ public final class SceneDocument {
         public Object pointerTarget(SceneNode node, SceneGeometryView geometry, int x, int y) {
             SceneGeometryView.Entry entry = geometry.get(node);
             if (entry == null
-                    || cachedDeclaration != declaration
+                    || interactionDeclaration != declaration
                     || resolved == null
                     || entry.clip != null && !entry.clip.contains(x, y)) return null;
             // 显式行高允许对象超出行带：对象链接消费正式子几何，不能只用文字行高判断资格。
@@ -432,7 +488,7 @@ public final class SceneDocument {
 
         @Override
         public boolean pointerTargetValid(SceneNode node, Object target) {
-            return cachedDeclaration == declaration
+            return interactionDeclaration == declaration
                     && resolved != null
                     && resolved.containsLink(target);
         }

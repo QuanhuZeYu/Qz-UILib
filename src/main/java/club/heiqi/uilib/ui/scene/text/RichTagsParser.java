@@ -10,7 +10,6 @@ import java.util.Map;
 
 /** 只处理本阶段 DSL；首次错误整段字面呈现，不发布半解析状态或修复结构。 */
 final class RichTagsParser {
-    private final TextContent declaration;
     private final TextInput original;
     private final String raw;
     private final StringBuilder logical = new StringBuilder(), canonical = new StringBuilder();
@@ -70,15 +69,14 @@ final class RichTagsParser {
         }
     }
 
-    private RichTagsParser(TextContent declaration, TextInput input, String raw) {
-        this.declaration = declaration;
+    private RichTagsParser(TextInput input, String raw) {
         original = input;
         this.raw = raw;
         style = TextStyleOverride.INHERIT;
     }
 
-    static Parsed parse(TextContent declaration, TextInput input, String raw) {
-        RichTagsParser parser = new RichTagsParser(declaration, input, raw);
+    static Parsed parse(TextInput input, String raw) {
+        RichTagsParser parser = new RichTagsParser(input, raw);
         try {
             return parser.run();
         } catch (SyntaxFailure failure) {
@@ -175,7 +173,41 @@ final class RichTagsParser {
         return null;
     }
 
+    /** 词法输出仅描述一个完整标签，不改变正文、作用域或声明。end 是标签后的 UTF16 游标。 */
+    private static final class TagToken {
+        final int start, end;
+        final String name;
+        final Map<String, String> attributes;
+        final boolean closing, selfClosing;
+
+        TagToken(
+                int start,
+                int end,
+                String name,
+                Map<String, String> attributes,
+                boolean closing,
+                boolean selfClosing) {
+            this.start = start;
+            this.end = end;
+            this.name = name;
+            this.attributes = attributes;
+            this.closing = closing;
+            this.selfClosing = selfClosing;
+        }
+    }
+
     private void tag() {
+        TagToken token = readTag();
+        if (!supported(token.name)) unsupported(token.start, token.end, "本阶段不支持标签：" + token.name);
+        if (token.closing) acceptClosing(token);
+        else if (token.name.equals("br")) acceptBreak(token);
+        else if (token.name.equals("latex")) acceptFormula(token);
+        else if (token.name.equals("img")) acceptImage(token);
+        else openScope(token);
+    }
+
+    /** 进入时 position 指向 <；成功仅消费词法，退出时 position == token.end。 */
+    private TagToken readTag() {
         int start = position++;
         boolean closing = take('/');
         String name = name();
@@ -213,109 +245,138 @@ final class RichTagsParser {
             if (attributes.put(attribute, value.toString()) != null)
                 fail(attributeStart, position, "属性重复：" + attribute);
         }
-        if (!supported(name)) unsupported(start, position, "本阶段不支持标签：" + name);
-        if (closing) {
-            if (selfClosing
-                    || !attributes.isEmpty()
-                    || scopes.isEmpty()
-                    || !scopes.peek().tag.equals(name)) fail(start, position, "闭合标签错配：" + name);
-            Scope scope = scopes.pop();
-            style = scope.style;
-            link = scope.link;
-            gap(start, position);
-            canonical.append("</").append(name).append('>');
-            return;
+        return new TagToken(start, position, name, attributes, closing, selfClosing);
+    }
+
+    /** 匹配后恢复进入作用域前的 style/link；闭合语法只形成 gap 和 canonical。 */
+    private void acceptClosing(TagToken token) {
+        int start = token.start;
+        String name = token.name;
+        Map<String, String> attributes = token.attributes;
+        boolean selfClosing = token.selfClosing;
+
+        if (selfClosing
+                || !attributes.isEmpty()
+                || scopes.isEmpty()
+                || !scopes.peek().tag.equals(name)) fail(start, token.end, "闭合标签错配：" + name);
+        Scope scope = scopes.pop();
+        style = scope.style;
+        link = scope.link;
+        gap(start, token.end);
+        canonical.append("</").append(name).append('>');
+    }
+
+    private void acceptBreak(TagToken token) {
+        int start = token.start;
+        Map<String, String> attributes = token.attributes;
+        boolean selfClosing = token.selfClosing;
+
+        if (!selfClosing || !attributes.isEmpty()) fail(start, token.end, "换行必须为 <br/>");
+        append("\n", start, token.end);
+        canonical.append("<br/>");
+    }
+
+    /** 从 token.end 捕获数学正文；提交一个占位符，其来源覆盖完整成对标签。 */
+    private void acceptFormula(TagToken token) {
+        int start = token.start;
+        Map<String, String> attributes = token.attributes;
+        boolean selfClosing = token.selfClosing;
+
+        if (selfClosing
+                || attributes.size() > 1
+                || !attributes.isEmpty() && !attributes.containsKey("math-style"))
+            fail(start, token.end, "latex仅接受math-style及成对闭合");
+        String mode = attributes.getOrDefault("math-style", "text");
+        club.heiqi.uilib.ui.scene.text.math.MathStyle mathStyle;
+        switch (mode) {
+            case "display":
+                mathStyle = club.heiqi.uilib.ui.scene.text.math.MathStyle.DISPLAY;
+                break;
+            case "text":
+                mathStyle = club.heiqi.uilib.ui.scene.text.math.MathStyle.TEXT;
+                break;
+            case "script":
+                mathStyle = club.heiqi.uilib.ui.scene.text.math.MathStyle.SCRIPT;
+                break;
+            case "scriptscript":
+                mathStyle = club.heiqi.uilib.ui.scene.text.math.MathStyle.SCRIPT_SCRIPT;
+                break;
+            default:
+                fail(start, token.end, "未知数学样式：" + mode);
+                return;
         }
-        if (name.equals("br")) {
-            if (!selfClosing || !attributes.isEmpty()) fail(start, position, "换行必须为 <br/>");
-            append("\n", start, position);
-            canonical.append("<br/>");
-            return;
+        int body = token.end, close = original.text.indexOf("</latex>", body);
+        if (close < 0) fail(start, token.end, "latex缺少闭合标签");
+        // MathContent 的诊断是正文 substring 内的局部 UTF16；原子来源则沿文档 sourceUnit 覆盖标签全段。
+        String formula = original.text.substring(body, close);
+        position = close + 8;
+        inline.add(
+                new InlineContent(
+                        logical.length(),
+                        original.sourceRight(start),
+                        original.sourceLeft(position),
+                        club.heiqi.uilib.ui.scene.text.math.MathContent.parse(formula),
+                        mathStyle));
+        append("\ufffc", start, position);
+        // 数学正文按捕获语义原样往返，不把尖括号或与号送回DSL实体解析。
+        canonical.append(original.text, start, position);
+    }
+
+    /** 属性验证完成后提交一个原子声明；不改变外层 style/link 或作用域。 */
+    private void acceptImage(TagToken token) {
+        int start = token.start;
+        Map<String, String> attributes = token.attributes;
+        boolean selfClosing = token.selfClosing;
+
+        if (!selfClosing || !attributes.containsKey("src") || attributes.get("src").isEmpty())
+            fail(start, token.end, "img须自闭合且声明src");
+        for (String key : attributes.keySet())
+            if (!key.equals("src")
+                    && !key.equals("alt")
+                    && !key.equals("width")
+                    && !key.equals("height")
+                    && !key.equals("fit")) fail(start, token.end, "未知图像属性：" + key);
+        Integer width = imageSize(attributes.get("width"), start, token.end),
+                height = imageSize(attributes.get("height"), start, token.end);
+        club.heiqi.uilib.ui.scene.image.ImageOptions.Fit fit;
+        switch (attributes.getOrDefault("fit", "contain")) {
+            case "contain":
+                fit = club.heiqi.uilib.ui.scene.image.ImageOptions.Fit.CONTAIN;
+                break;
+            case "cover":
+                fit = club.heiqi.uilib.ui.scene.image.ImageOptions.Fit.COVER;
+                break;
+            case "stretch":
+                fit = club.heiqi.uilib.ui.scene.image.ImageOptions.Fit.STRETCH;
+                break;
+            case "original":
+                fit = club.heiqi.uilib.ui.scene.image.ImageOptions.Fit.NATIVE;
+                break;
+            default:
+                fail(start, token.end, "未知图像适配");
+                return;
         }
-        if (name.equals("latex")) {
-            if (selfClosing
-                    || attributes.size() > 1
-                    || !attributes.isEmpty() && !attributes.containsKey("math-style"))
-                fail(start, position, "latex仅接受math-style及成对闭合");
-            String mode = attributes.getOrDefault("math-style", "text");
-            club.heiqi.uilib.ui.scene.text.math.MathStyle mathStyle;
-            switch (mode) {
-                case "display":
-                    mathStyle = club.heiqi.uilib.ui.scene.text.math.MathStyle.DISPLAY;
-                    break;
-                case "text":
-                    mathStyle = club.heiqi.uilib.ui.scene.text.math.MathStyle.TEXT;
-                    break;
-                case "script":
-                    mathStyle = club.heiqi.uilib.ui.scene.text.math.MathStyle.SCRIPT;
-                    break;
-                case "scriptscript":
-                    mathStyle = club.heiqi.uilib.ui.scene.text.math.MathStyle.SCRIPT_SCRIPT;
-                    break;
-                default:
-                    fail(start, position, "未知数学样式：" + mode);
-                    return;
-            }
-            int body = position, close = original.text.indexOf("</latex>", body);
-            if (close < 0) fail(start, position, "latex缺少闭合标签");
-            String formula = original.text.substring(body, close);
-            position = close + 8;
-            inline.add(
-                    new InlineContent(
-                            logical.length(),
-                            original.sourceRight(start),
-                            original.sourceLeft(position),
-                            club.heiqi.uilib.ui.scene.text.math.MathContent.parse(formula),
-                            mathStyle));
-            append("\ufffc", start, position);
-            // 数学正文按捕获语义原样往返，不把尖括号或与号送回DSL实体解析。
-            canonical.append(original.text, start, position);
-            return;
-        }
-        if (name.equals("img")) {
-            if (!selfClosing || !attributes.containsKey("src") || attributes.get("src").isEmpty())
-                fail(start, position, "img须自闭合且声明src");
-            for (String key : attributes.keySet())
-                if (!key.equals("src")
-                        && !key.equals("alt")
-                        && !key.equals("width")
-                        && !key.equals("height")
-                        && !key.equals("fit")) fail(start, position, "未知图像属性：" + key);
-            Integer width = imageSize(attributes.get("width"), start),
-                    height = imageSize(attributes.get("height"), start);
-            club.heiqi.uilib.ui.scene.image.ImageOptions.Fit fit;
-            switch (attributes.getOrDefault("fit", "contain")) {
-                case "contain":
-                    fit = club.heiqi.uilib.ui.scene.image.ImageOptions.Fit.CONTAIN;
-                    break;
-                case "cover":
-                    fit = club.heiqi.uilib.ui.scene.image.ImageOptions.Fit.COVER;
-                    break;
-                case "stretch":
-                    fit = club.heiqi.uilib.ui.scene.image.ImageOptions.Fit.STRETCH;
-                    break;
-                case "original":
-                    fit = club.heiqi.uilib.ui.scene.image.ImageOptions.Fit.NATIVE;
-                    break;
-                default:
-                    fail(start, position, "未知图像适配");
-                    return;
-            }
-            inline.add(
-                    new InlineContent(
-                            logical.length(),
-                            original.sourceRight(start),
-                            original.sourceLeft(position),
-                            attributes.get("src"),
-                            attributes.getOrDefault("alt", ""),
-                            width,
-                            height,
-                            fit));
-            append("\ufffc", start, position);
-            canonical.append(original.text, start, position);
-            return;
-        }
-        if (selfClosing) fail(start, position, "成对标签不能自闭合：" + name);
+        inline.add(
+                new InlineContent(
+                        logical.length(),
+                        original.sourceRight(start),
+                        original.sourceLeft(token.end),
+                        attributes.get("src"),
+                        attributes.getOrDefault("alt", ""),
+                        width,
+                        height,
+                        fit));
+        append("\ufffc", start, token.end);
+        canonical.append(original.text, start, token.end);
+    }
+
+    /** 先验证属性并派生样式，再保存旧 style/link；标签只形成 gap 和 canonical。 */
+    private void openScope(TagToken token) {
+        int start = token.start;
+        String name = token.name;
+        Map<String, String> attributes = token.attributes;
+        boolean selfClosing = token.selfClosing;
+        if (selfClosing) fail(start, token.end, "成对标签不能自闭合：" + name);
         String expected =
                 name.equals("color") || name.equals("size")
                         ? "value"
@@ -323,7 +384,7 @@ final class RichTagsParser {
         if (expected == null
                 ? !attributes.isEmpty()
                 : attributes.size() != 1 || !attributes.containsKey(expected))
-            fail(start, position, "无效或缺失属性：" + name);
+            fail(start, token.end, "无效或缺失属性：" + name);
         TextStyleOverride.Builder next = style.toBuilder();
         if (name.equals("b")) next.weight(700);
         if (name.equals("i")) next.posture(FontStyle.Posture.ITALIC);
@@ -332,7 +393,7 @@ final class RichTagsParser {
         if (name.equals("color")) {
             String value = attributes.get("value");
             if (!value.matches("#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?"))
-                fail(start, position, "颜色必须为 #RRGGBB 或 #AARRGGBB");
+                fail(start, token.end, "颜色必须为 #RRGGBB 或 #AARRGGBB");
             long color = Long.parseLong(value.substring(1), 16);
             next.argb((int) (value.length() == 7 ? color | 0xff000000L : color));
         }
@@ -340,13 +401,13 @@ final class RichTagsParser {
             try {
                 next.em(Float.parseFloat(attributes.get("value")));
             } catch (IllegalArgumentException invalid) {
-                fail(start, position, "无效 logical px 字号");
+                fail(start, token.end, "无效 logical px 字号");
             }
         }
-        scopes.push(new Scope(name, style, link, start, position));
+        scopes.push(new Scope(name, style, link, start, token.end));
         style = next.build();
-        if (name.equals("a")) link = declaration.linkDeclaration(start, attributes.get("href"));
-        gap(start, position);
+        if (name.equals("a")) link = new TextContent.Link(attributes.get("href"));
+        gap(start, token.end);
         canonical.append('<').append(name);
         for (Map.Entry<String, String> attribute : attributes.entrySet())
             canonical
@@ -358,7 +419,7 @@ final class RichTagsParser {
         canonical.append('>');
     }
 
-    private Integer imageSize(String value, int start) {
+    private Integer imageSize(String value, int start, int end) {
         if (value == null) return null;
         try {
             double number = Double.parseDouble(value);
@@ -366,7 +427,7 @@ final class RichTagsParser {
                 throw new NumberFormatException();
             return (int) Math.ceil(number);
         } catch (NumberFormatException invalid) {
-            fail(start, position, "无效图像logical px尺寸");
+            fail(start, end, "无效图像logical px尺寸");
             return null;
         }
     }

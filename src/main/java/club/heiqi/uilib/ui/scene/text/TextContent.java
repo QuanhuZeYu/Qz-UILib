@@ -15,31 +15,29 @@ public final class TextContent {
     public final Mode mode;
     public final String source;
     private final TextInput input;
-    private ParagraphContent paragraph;
-    private boolean typed;
-    private RichTagsParser.Parsed parsed;
+    private ContentResult content;
 
-    private synchronized RichTagsParser.Parsed parsed() {
-        if (parsed == null) parsed = RichTagsParser.parse(this, input, source);
-        return parsed;
-    }
+    private static final class ContentResult {
+        final ParagraphContent paragraph;
+        final String canonical;
 
-    private final java.util.Map<Integer, Link> declarations =
-            new java.util.HashMap<Integer, Link>();
-
-    synchronized Link linkDeclaration(int sourceOffset, String target) {
-        Link link = declarations.get(sourceOffset);
-        if (link == null) {
-            link = new Link(target);
-            declarations.put(sourceOffset, link);
+        ContentResult(ParagraphContent paragraph, String canonical) {
+            this.paragraph = paragraph;
+            this.canonical = canonical;
         }
-        return link;
     }
 
     private TextContent(Mode mode, String source, TextInput input) {
+        this(mode, source, input, null);
+    }
+
+    private TextContent(Mode mode, String source, TextInput input, ParagraphContent paragraph) {
         this.mode = Objects.requireNonNull(mode, "mode");
         this.source = Objects.requireNonNull(source, "source");
         this.input = Objects.requireNonNull(input, "input");
+        // Mode 只选择源码语法；typed 的属性、链接及原子声明在构造期确定，无 DSL canonical。
+        final boolean typed = paragraph != null;
+        content = typed ? new ContentResult(paragraph, null) : null;
     }
 
     public static TextContent plain(String source) {
@@ -72,14 +70,11 @@ public final class TextContent {
     public static TextContent paragraph(ParagraphContent value) {
         Objects.requireNonNull(value, "value");
         StyledText text = value.text;
-        TextContent content =
-                new TextContent(
-                        Mode.PLAIN,
-                        text.originalText == null ? text.input.text : text.originalText,
-                        text.input);
-        content.paragraph = value;
-        content.typed = true;
-        return content;
+        return new TextContent(
+                Mode.PLAIN,
+                text.originalText == null ? text.input.text : text.originalText,
+                text.input,
+                value);
     }
 
     /** 链接声明身份独立于文字、目标值与布局宽度。 */
@@ -170,11 +165,14 @@ public final class TextContent {
         }
     }
 
-    private synchronized ParagraphContent paragraph() {
-        if (paragraph == null) {
-            if (mode == Mode.RICH_TAGS) paragraph = parsed().content;
-            else
-                paragraph =
+    /** 共同模型与可选序列化一起发布；唯一解析入口保证主题派生继续复用声明身份。 */
+    private synchronized ContentResult content() {
+        if (content == null) {
+            if (mode == Mode.RICH_TAGS) {
+                RichTagsParser.Parsed parsed = RichTagsParser.parse(input, source);
+                content = new ContentResult(parsed.content, parsed.canonical);
+            } else {
+                ParagraphContent paragraph =
                         new ParagraphContent(
                                 new StyledText(
                                         input,
@@ -190,25 +188,22 @@ public final class TextContent {
                                         Collections.<TextLayout.Diagnostic>emptyList()),
                                 Collections.<LinkSpan>emptyList(),
                                 Collections.<InlineContent>emptyList());
+                content = new ContentResult(paragraph, RichTagsParser.escape(input.text));
+            }
         }
-        return paragraph;
+        return content;
     }
 
     /** 稳定声明身份随源码替换；主题及宽度变化不重新解析或重建子内容。 */
     public List<InlineContent> inlineContents() {
-        return paragraph().inlineContents();
+        return content().paragraph.inlineContents();
     }
 
     public Resolved resolve(TextStyle style) {
         Objects.requireNonNull(style, "style");
-        ParagraphContent value = paragraph();
-        String serialized =
-                typed
-                        ? null
-                        : mode == Mode.RICH_TAGS
-                                ? parsed().canonical
-                                : RichTagsParser.escape(input.text);
+        ContentResult result = content();
+        ParagraphContent value = result.paragraph;
         return new Resolved(
-                value.text.resolve(style), value.links(), serialized, value.inlineContents());
+                value.text.resolve(style), value.links(), result.canonical, value.inlineContents());
     }
 }
