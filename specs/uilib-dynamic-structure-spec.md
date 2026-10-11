@@ -102,7 +102,7 @@
 
 ## 5. 可观察验收条件
 
-使用 [ScenePageSession.open](<../../../src/main/java/club/heiqi/uilib/ui/scene/host/ScenePageSession.java#L24>) 创建正式页面，页面只声明状态、标准控件与业务动作。测试宿主供给窗口、度量、软件绘制和输入；通过 session 的 pointer/navigation/edit/frame/close 执行。frame 是宿主正常推进，页面业务不调用管线。复用[测试应用规格](<2026-10-07-uilib-testing-spec.md>)，不用测试专用树或生产接缝。
+使用 [ScenePageSession.open](<../src/main/java/club/heiqi/uilib/ui/scene/host/ScenePageSession.java#L24>) 创建正式页面，页面只声明状态、标准控件与业务动作。测试宿主供给窗口、度量、软件绘制和输入；通过 session 的 pointer/navigation/edit/frame/close 执行。frame 是宿主正常推进，页面业务不调用管线。复用[测试应用规格](<2026-10-07-uilib-testing-spec.md>)，不用测试专用树或生产接缝。
 
 下表是待执行场景，不是已通过记录。业务期望先于实现确定；输出以业务动作记录、独立编辑状态、可见内容、实际位置与输入结果为主。
 
@@ -135,14 +135,14 @@
 
 | 能力 | 证据 | 当前结论 |
 | --- | --- | --- |
-| 节点身份与静态组合 | [SceneNode](<../../../src/main/java/club/heiqi/uilib/ui/scene/node/SceneNode.java#L19>) | 默认 UUID、逻辑 parent、运行时与销毁标记已存在；不需要另造身份树 |
-| 状态驱动子序列、按键列表 | [NodeBinding](<../../../src/main/java/club/heiqi/uilib/ui/scene/runtime/NodeBinding.java#L21>)、[RepeatBinding](<../../../src/main/java/club/heiqi/uilib/ui/scene/runtime/RepeatBinding.java#L38>) | children/repeat 已有；repeat 同键更新条目来源、复用节点、检查重复键，并在缺席后删除映射；当前实现具备键匹配基础；正式语义见第 2 节 |
-| 挂载与绑定作用域 | [SceneRuntime](<../../../src/main/java/club/heiqi/uilib/ui/scene/runtime/SceneRuntime.java#L217>) | 挂载建立子 Owner 和绑定；卸载释放作用域，与逻辑树保留分开 |
-| 子序列协调 | [SceneRuntime.reconcile](<../../../src/main/java/club/heiqi/uilib/ui/scene/runtime/SceneRuntime.java#L349>) | 保留节点不卸载，缺席节点解除挂载及归属；这不是永久销毁。不能以当前缺席处理反向确定声明所有权 |
-| 明确移动与销毁 | [SceneRuntime](<../../../src/main/java/club/heiqi/uilib/ui/scene/runtime/SceneRuntime.java#L307>) | 同 runtime 移动迁移 Owner、保留挂载；销毁另有路径。两个独立 children 声明并不构成跨父连续移动合同 |
-| 显隐与布局 | [SceneLayoutEngine](<../../../src/main/java/club/heiqi/uilib/ui/scene/layout/SceneLayoutEngine.java#L138>) | scene 的 visible=false 按不占布局处理；交互目标仍须按核心第 5 节释放，已取消 collapsed 例外 |
-| 正式无平台页面与事件结算 | [ScenePageSession](<../../../src/main/java/club/heiqi/uilib/ui/scene/host/ScenePageSession.java#L24>)、[SceneFramePipeline](<../../../src/main/java/club/heiqi/uilib/ui/scene/host/SceneFramePipeline.java#L148>) | 页面与输入复用正式管线，每事件准备结构/几何后路由；无需测试另装管线 |
-| 焦点、指针与编辑 | [SceneFocusRouter](<../../../src/main/java/club/heiqi/uilib/ui/scene/runtime/SceneFocusRouter.java#L173>)、[ScenePointerRouter](<../../../src/main/java/club/heiqi/uilib/ui/scene/runtime/ScenePointerRouter.java#L61>)、[编辑调查](<2026-10-07-uilib-editing-spec.md#2-动态结构中的编辑目标连续性>) | 已有范围核验、挂载联系和失活吞尾；旧组字跨重挂/重置的归属尚有缺口，不等于已经复现误写 |
-| 稳定呈现复用 | [SceneFramePipeline.prepare](<../../../src/main/java/club/heiqi/uilib/ui/scene/host/SceneFramePipeline.java#L467>) | 已依据变化复用几何和绘制计划；不能把“不每帧全量重建”当成全新能力，也不能外推已实现最小范围增量布局 |
+| 节点身份与静态组合 | [SceneNode](<../src/main/java/club/heiqi/uilib/ui/scene/node/SceneNode.java#L19>) | 默认 UUID、逻辑 parent、运行时与销毁标记已存在；不需要另造身份树 |
+| 状态驱动子序列、按键列表 | [NodeBinding](<../src/main/java/club/heiqi/uilib/ui/scene/runtime/NodeBinding.java#L21>)、[RepeatBinding](<../src/main/java/club/heiqi/uilib/ui/scene/runtime/RepeatBinding.java#L38>) | children/repeat 已有；repeat 同键更新条目来源、复用节点、检查重复键，并在缺席后删除映射；当前实现具备键匹配基础；正式语义见第 2 节 |
+| 挂载与绑定作用域 | [SceneRuntime](<../src/main/java/club/heiqi/uilib/ui/scene/runtime/SceneRuntime.java#L217>) | 挂载建立子 Owner 和绑定；卸载释放作用域，与逻辑树保留分开 |
+| 子序列协调 | [SceneRuntime.reconcile](<../src/main/java/club/heiqi/uilib/ui/scene/runtime/SceneRuntime.java#L349>) | 保留节点不卸载，缺席节点解除挂载及归属；这不是永久销毁。不能以当前缺席处理反向确定声明所有权 |
+| 明确移动与销毁 | [SceneRuntime](<../src/main/java/club/heiqi/uilib/ui/scene/runtime/SceneRuntime.java#L307>) | 同 runtime 移动迁移 Owner、保留挂载；销毁另有路径。两个独立 children 声明并不构成跨父连续移动合同 |
+| 显隐与布局 | [SceneLayoutEngine](<../src/main/java/club/heiqi/uilib/ui/scene/layout/SceneLayoutEngine.java#L138>) | scene 的 visible=false 按不占布局处理；交互目标仍须按核心第 5 节释放，已取消 collapsed 例外 |
+| 正式无平台页面与事件结算 | [ScenePageSession](<../src/main/java/club/heiqi/uilib/ui/scene/host/ScenePageSession.java#L24>)、[SceneFramePipeline](<../src/main/java/club/heiqi/uilib/ui/scene/host/SceneFramePipeline.java#L148>) | 页面与输入复用正式管线，每事件准备结构/几何后路由；无需测试另装管线 |
+| 焦点、指针与编辑 | [SceneFocusRouter](<../src/main/java/club/heiqi/uilib/ui/scene/runtime/SceneFocusRouter.java#L173>)、[ScenePointerRouter](<../src/main/java/club/heiqi/uilib/ui/scene/runtime/ScenePointerRouter.java#L61>)、[编辑调查](<2026-10-07-uilib-editing-spec.md#2-动态结构中的编辑目标连续性>) | 已有范围核验、挂载联系和失活吞尾；旧组字跨重挂/重置的归属尚有缺口，不等于已经复现误写 |
+| 稳定呈现复用 | [SceneFramePipeline.prepare](<../src/main/java/club/heiqi/uilib/ui/scene/host/SceneFramePipeline.java#L467>) | 已依据变化复用几何和绘制计划；不能把“不每帧全量重建”当成全新能力，也不能外推已实现最小范围增量布局 |
 
-已有场景代码可作后续验收起点：[SoftwareSceneScenario](<../../../src/test/java/club/heiqi/uilib/ui/scene/integration/SoftwareSceneScenario.java>)、[PointerInputScenario](<../../../src/test/java/club/heiqi/uilib/ui/scene/integration/PointerInputScenario.java>)。其存在不等于本轮执行通过，也不使字段快照成为验收标准。
+已有场景代码可作后续验收起点：[SoftwareSceneScenario](<../src/test/java/club/heiqi/uilib/ui/scene/integration/SoftwareSceneScenario.java>)、[PointerInputScenario](<../src/test/java/club/heiqi/uilib/ui/scene/integration/PointerInputScenario.java>)。其存在不等于本轮执行通过，也不使字段快照成为验收标准。

@@ -2,7 +2,7 @@
 
 状态：**正式模块规格**。第 1 节沿用已确认合同；第 2 节依据本次组字职责裁定与规格整理授权补齐编辑目标边界。本文与核心规格共同构成项目规格体系，不表示实现已满足要求。
 
-共同状态、布局、生命周期、输入与平台边界遵循[核心职责规格](<2026-10-07-uilib-core-contract-design.md>)；按职责选择规格见[规格入口](<../../开发者文档/规格文档/README.md>)。
+共同状态、布局、生命周期、输入与平台边界遵循[核心职责规格](<2026-10-07-uilib-core-contract-design.md>)；按职责选择规格见[规格入口](<README.md>)。
 
 ## 1. 编辑状态与业务结果
 
@@ -44,7 +44,7 @@
 
 输入法组字期间 Enter 仅确认输入法，不同时提交字段/表单；组字结束后的后续 Enter 才按字段声明执行。单行可以确认，多行默认换行，提交用明确快捷键或按钮。宿主提供真实组字状态及事件信息，不凭普通字符猜测。
 
-**当前宿主边界：** [原生组字桥](<../../../src/main/java/club/heiqi/uilib/ui/host/minecraft/SceneNativeTextInput.java>)依赖 lwjgl3ify 与 SDL3；普通 LWJGL2 没有真实 preedit 接缝，不能把已提交字符输入等同于本节的组字/候选确认隔离。此能力缺口保留为目标，未从现有宿主行为撤销合同。
+**当前宿主边界：** [原生组字桥](<../src/main/java/club/heiqi/uilib/ui/host/minecraft/SceneNativeTextInput.java>)依赖 lwjgl3ify 与 SDL3；普通 LWJGL2 没有真实 preedit 接缝，不能把已提交字符输入等同于本节的组字/候选确认隔离。此能力缺口保留为目标，未从现有宿主行为撤销合同。
 
 单行/多行默认 Tab 切换焦点，需要制表符的编辑器明确开启模式；输入法消费优先，同一事件不再切焦点。ESC 默认不取消整个草稿；组字取消或内部菜单可消费，否则交给外层策略。业务需要 ESC 取消编辑时明确声明。
 
@@ -105,4 +105,4 @@
 
 ### 2.4 调查证据（不定义要求）
 
-实现调查：当前 [SceneEditEvent](<../../../src/main/java/club/heiqi/uilib/ui/scene/input/SceneEditEvent.java#L38>) 不携带目标联系；[SceneRuntime.dispatchEdit](<../../../src/main/java/club/heiqi/uilib/ui/scene/runtime/SceneRuntime.java#L432>) 按当前焦点路由。[SceneTextField.focusChanged](<../../../src/main/java/club/heiqi/uilib/ui/scene/control/SceneTextField.java#L355>) 已在失焦时清 preedit、断历史分组，失活不触发 BLUR 提交。标准字段目前固定持有编辑状态，未找到挂载期间热改绑入口；本节不要求为动态目标增加热改绑 API，可通过明确替换节点表达切对象。这些是源码事实与风险定位，不是已复现的误写报告。
+实现调查：当前 [SceneEditEvent](<../src/main/java/club/heiqi/uilib/ui/scene/input/SceneEditEvent.java#L38>) 不携带目标联系；[SceneRuntime.dispatchEdit](<../src/main/java/club/heiqi/uilib/ui/scene/runtime/SceneRuntime.java#L432>) 按当前焦点路由。[SceneTextField.focusChanged](<../src/main/java/club/heiqi/uilib/ui/scene/control/SceneTextField.java#L355>) 已在失焦时清 preedit、断历史分组，失活不触发 BLUR 提交。标准字段目前固定持有编辑状态，未找到挂载期间热改绑入口；本节不要求为动态目标增加热改绑 API，可通过明确替换节点表达切对象。这些是源码事实与风险定位，不是已复现的误写报告。
