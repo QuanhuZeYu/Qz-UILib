@@ -983,7 +983,8 @@ public final class MathGlScenario extends TestApplication {
     private void lineSeamPixels() throws Exception {
         String[] formulas = {
             tex("@sqrt{@dfrac{1}{@dfrac{1}{@dfrac{@embed{ore}}{1+x}}}}"),
-            tex("@binom{@embed{ore}+n}{k}+@left.@frac{x}{1+x}@right|_{x=0}")
+            tex("@binom{@embed{ore}+n}{k}+@left.@frac{x}{1+x}@right|_{x=0}"),
+            tex("@sqrt{1+x}")
         };
         for (float em : new float[] {18, 28})
             for (int alpha : new int[] {255, 128}) {
@@ -1015,7 +1016,7 @@ public final class MathGlScenario extends TestApplication {
                                 LayoutBox origin = page.pipeline().current().geometry.get(math).box;
                                 for (MathLayout.TextPiece piece : layout.pieces) {
                                     if (!piece.text.logicalText.equals(
-                                            formulaIndex == 0 ? "√" : "|")) continue;
+                                            formulaIndex == 1 ? "|" : "√")) continue;
                                     float left = Float.POSITIVE_INFINITY,
                                             top = Float.POSITIVE_INFINITY;
                                     float right = Float.NEGATIVE_INFINITY,
@@ -1095,35 +1096,51 @@ public final class MathGlScenario extends TestApplication {
                                                 .append(high - low)
                                                 .append((char) 10);
                                     } else {
-                                        int rowLow = H, rowHigh = 0;
-                                        for (int x = (int) Math.floor(right - em * .3f);
-                                                x < Math.ceil(right + em * .3f);
-                                                x++) {
-                                            int peak = 0, peakRow = -1;
+                                        TextLayout.Glyph barGlyph = null;
+                                        for (TextLayout.Line line : piece.text.lines())
+                                            for (TextLayout.Glyph glyph : line.glyphs())
+                                                if (glyph.xExtension != null) barGlyph = glyph;
+                                        require(barGlyph != null, "根号没有使用原顶横纹理延长");
+                                        float join =
+                                                origin.x
+                                                        + piece.x
+                                                        + barGlyph.x
+                                                        + barGlyph.xExtension.splitX;
+                                        int first = (int) Math.floor(join);
+                                        int last =
+                                                (int)
+                                                        Math.floor(
+                                                                join
+                                                                        + barGlyph.xExtension
+                                                                                .extraWidth);
+                                        int vectorDiff = 0;
+                                        for (int x = first; x <= last; x++) {
+                                            int peak = 0;
                                             for (int y = (int) Math.floor(top);
                                                     y < Math.ceil(top + em * .2f);
                                                     y++) {
                                                 int pixel = rendered.getRGB(x, y) & 255;
-                                                if (pixel > peak) {
-                                                    peak = pixel;
-                                                    peakRow = y;
-                                                }
+                                                peak = Math.max(peak, pixel);
+                                                vectorDiff =
+                                                        Math.max(
+                                                                vectorDiff,
+                                                                Math.abs(
+                                                                        pixel
+                                                                                - (rendered.getRGB(
+                                                                                                first,
+                                                                                                y)
+                                                                                        & 255)));
                                             }
-                                            require(
-                                                    peak > background + 10,
-                                                    "根号顶部短横与长横之间存在背景列: " + x);
-                                            rowLow = Math.min(rowLow, peakRow);
-                                            rowHigh = Math.max(rowHigh, peakRow);
+                                            require(peak > background + 10, "根号原顶横接点存在背景列: " + x);
                                         }
-                                        require(
-                                                rowHigh - rowLow <= 1,
-                                                "根号顶部短横与长横出现上下台阶: " + rowLow + ".." + rowHigh);
+                                        // 比较整条覆盖度纵向向量，避免只看峰值而漏掉接点双alpha或上下台阶。
+                                        require(vectorDiff <= 1, "根号延长横线改变原覆盖度向量: " + vectorDiff);
                                         evidence.append("line-seam radical em=")
                                                 .append(em)
                                                 .append(" alpha=")
                                                 .append(alpha)
-                                                .append(" peakRowRange=")
-                                                .append(rowHigh - rowLow)
+                                                .append(" materialVectorDiff=")
+                                                .append(vectorDiff)
                                                 .append((char) 10);
                                     }
                                 }

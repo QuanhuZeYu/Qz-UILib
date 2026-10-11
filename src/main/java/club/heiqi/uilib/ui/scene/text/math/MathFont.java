@@ -91,6 +91,19 @@ public interface MathFont {
         throw new UnsupportedOperationException("数学字体不支持横向伸缩");
     }
 
+    /**
+     * 将已按 MATH 高度选择的根号原顶横纹理延长到 layout 坐标的 right。 hook/stem 与竖向 assembly 不变；不支持此附加能力时返回
+     * null，调用者保留既有绘制。
+     */
+    default TextLayout extendRadicalBar(TextLayout layout, float right) {
+        return null;
+    }
+
+    /** 根号原顶横在 layout 坐标中的真实轮廓区域；没有附加能力时为 UNKNOWN。 */
+    default InkBounds radicalBarBounds(TextLayout layout) {
+        return InkBounds.UNKNOWN;
+    }
+
     /** 单字形的真实 top-accent attachment，含布局 X 原点；无单字形数据时为 NaN。 */
     default float topAccentAttachment(TextLayout layout) {
         java.util.Objects.requireNonNull(layout, "layout");

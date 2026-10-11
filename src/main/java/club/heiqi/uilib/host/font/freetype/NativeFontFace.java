@@ -38,6 +38,8 @@ public final class NativeFontFace implements FontFace {
     private final float pixelScale;
     private final FontMetrics metrics;
     private java.util.BitSet topAccentGlyphs;
+    private final java.util.Map<Integer, InkBounds> radicalBars =
+            new java.util.HashMap<Integer, InkBounds>();
 
     NativeFontFace(
             NativeFontService owner,
@@ -218,6 +220,76 @@ public final class NativeFontFace implements FontFace {
                 -m.horiBearingY() * scale,
                 (m.horiBearingX() + m.width()) * scale,
                 (-m.horiBearingY() + m.height()) * scale);
+    }
+
+    public InkBounds glyphRadicalBarBounds(int glyphId) {
+        checkOpen();
+        checkGlyph(glyphId);
+        InkBounds cached = radicalBars.get(glyphId);
+        if (cached != null) return cached;
+        InkBounds result = radicalBarBounds(glyphId);
+        radicalBars.put(glyphId, result);
+        return result;
+    }
+
+    public float glyphRadicalBarSampleX(int glyphId) {
+        InkBounds bar = glyphRadicalBarBounds(glyphId);
+        if (!bar.known) return Float.NaN;
+        // 像素中心属于当前FT栅格，非整数em还必须映回该face的pixelScale。
+        float sample =
+                ((float) Math.floor((bar.left + bar.right) / (2 * pixelScale)) + .5f) * pixelScale;
+        return sample > bar.left && sample < bar.right ? sample : Float.NaN;
+    }
+
+    private InkBounds radicalBarBounds(int glyphId) {
+        if (!hasMathData() || !FreeType.FT_IS_SCALABLE(face)) return InkBounds.UNKNOWN;
+        float rule = mathConstant(51);
+        NativeFontService.check(
+                FreeType.FT_Load_Glyph(face, glyphId, FreeType.FT_LOAD_DEFAULT), "FT_Load_Glyph");
+        org.lwjgl.util.freetype.FT_Outline outline = face.glyph().outline();
+        if (outline.n_points() == 0) return InkBounds.UNKNOWN;
+        org.lwjgl.util.freetype.FT_Vector.Buffer points = outline.points();
+        ByteBuffer tags = outline.tags();
+        java.nio.ShortBuffer contours = outline.contours();
+        float unit = pixelScale / 64f;
+        float top = Float.POSITIVE_INFINITY, right = Float.NEGATIVE_INFINITY;
+        for (int i = 0; i < outline.n_points(); i++) top = Math.min(top, -points.get(i).y() * unit);
+        // slot metrics 是像素包络，不能用其 top+rule 截纹理；从真实 hinted 水平轮廓边找横线。
+        int start = 0;
+        for (int contour = 0; contour < outline.n_contours(); contour++) {
+            int end = contours.get(contour);
+            for (int i = start; i <= end; i++) {
+                int j = i == end ? start : i + 1;
+                if ((tags.get(i) & 3) != 1 || (tags.get(j) & 3) != 1) continue;
+                if (-points.get(i).y() * unit == top && -points.get(j).y() * unit == top)
+                    right = Math.max(right, Math.max(points.get(i).x(), points.get(j).x()) * unit);
+            }
+            start = end + 1;
+        }
+        if (!Float.isFinite(right)) return InkBounds.UNKNOWN;
+        start = 0;
+        for (int contour = 0; contour < outline.n_contours(); contour++) {
+            int end = contours.get(contour);
+            for (int i = start; i <= end; i++) {
+                int j = i == end ? start : i + 1;
+                if ((tags.get(i) & 3) != 1 || (tags.get(j) & 3) != 1) continue;
+                float y = -points.get(i).y() * unit;
+                float x1 = points.get(i).x() * unit, x2 = points.get(j).x() * unit;
+                // MATH 常量与 FT hint 后边有最多两个 26.6 单位的量化差，不能假定字体像素位置。
+                if (y != -points.get(j).y() * unit
+                        || Math.abs(y - top - rule) > 2 * unit
+                        || Math.max(x1, x2) != right) continue;
+                float left = Math.min(x1, x2);
+                if (!(left < right)) continue;
+                boolean pure = true;
+                for (int k = 0; k < outline.n_points(); k++)
+                    if (points.get(k).x() * unit > left && -points.get(k).y() * unit > y)
+                        pure = false;
+                if (pure) return new InkBounds(true, left, top, right, y);
+            }
+            start = end + 1;
+        }
+        return InkBounds.UNKNOWN;
     }
 
     public int glyphIndex(int codePoint) {

@@ -449,7 +449,13 @@ public final class MathArrayScenario extends TestApplication {
                         32.3f,
                         MathStyle.DISPLAY);
         healthy(value);
-        require(!value.rules.isEmpty() && !value.strokes.isEmpty(), "嵌套分式根式没有真实横线");
+        boolean radicalBar = false;
+        for (MathLayout.TextPiece piece : value.pieces)
+            for (TextLayout.Line line : piece.text.lines())
+                for (TextLayout.Glyph glyph : line.glyphs()) radicalBar |= glyph.xExtension != null;
+        require(
+                !value.rules.isEmpty() && radicalBar && value.strokes.isEmpty(),
+                "嵌套分式根式没有真实横线或混入实线");
         MathLayout ordered = layout("x+@embed{a}+@frac{y}{z}", 32.3f, MathStyle.TEXT);
         healthy(ordered);
         int item = -1, lastText = -1, lastFill = -1;

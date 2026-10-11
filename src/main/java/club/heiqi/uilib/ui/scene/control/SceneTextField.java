@@ -570,7 +570,8 @@ public final class SceneTextField {
                                 g.rasterStyle,
                                 g.resolvedStyle,
                                 g.clusterIndex,
-                                g.paintClip));
+                                g.paintClip,
+                                g.xExtension));
             List<TextLayout.Cluster> clusters = new ArrayList<>();
             for (TextLayout.Cluster c : line.clusters())
                 clusters.add(

@@ -244,6 +244,7 @@ final class SceneTextPresentation {
                 g.rasterStyle,
                 g.resolvedStyle,
                 ci,
-                g.paintClip);
+                g.paintClip,
+                g.xExtension);
     }
 }

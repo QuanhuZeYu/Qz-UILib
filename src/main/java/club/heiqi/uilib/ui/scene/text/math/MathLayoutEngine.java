@@ -1328,15 +1328,29 @@ public final class MathLayoutEngine {
             TextLayout signLayout = font(context, node).stretch(0x221a, target);
             MathBox sign = glyph(signLayout, node, context, true);
             InkBounds outline = font(context, node).outlineBounds(signLayout);
+            InkBounds bar = font(context, node).radicalBarBounds(signLayout);
+            float contentX = sign.width;
+            TextLayout extended =
+                    font(context, node).extendRadicalBar(signLayout, contentX + radicand.width);
+            MathBox paintedSign = extended == null ? sign : glyph(extended, node, context, true);
             // 根号横线连接用精确轮廓，不能把需求剔除的保守空白当作顶部或右端。
             // 未提供附加度量的既有 MathFont 保持原布局能力。
             float signTop =
-                    outline.known ? outline.top - signLayout.lines().get(0).baseline : -sign.ascent;
+                    bar.known
+                            ? bar.top - signLayout.lines().get(0).baseline
+                            : outline.known
+                                    ? outline.top - signLayout.lines().get(0).baseline
+                                    : -sign.ascent;
             float signRight = outline.known ? outline.right : sign.width;
             float extra = Math.max(0, sign.ascent + sign.descent - target);
             gap += extra / 2;
             float ruleTop = -radicand.ascent - gap - rule;
-            float signY = ruleTop - signTop;
+            float signY =
+                    bar.known
+                            ? -radicand.ascent
+                                    - gap
+                                    - (bar.bottom - signLayout.lines().get(0).baseline)
+                            : ruleTop - signTop;
             MathBox degree =
                     node.second == null
                             ? null
@@ -1359,9 +1373,9 @@ public final class MathLayoutEngine {
                                 - degree.descent;
             }
             MathBox value = new MathBox();
-            value.add(sign, signX, signY);
-            value.add(radicand, signX + sign.width, 0);
-            if (outline.known)
+            value.add(paintedSign, signX, signY);
+            value.add(radicand, signX + contentX, 0);
+            if (extended == null && outline.known)
                 value.stroke(
                         signX + signRight,
                         ruleTop + rule / 2,
@@ -1371,7 +1385,7 @@ public final class MathLayoutEngine {
                         context.textStyle.color,
                         node.start,
                         node.end);
-            else
+            else if (extended == null)
                 value.rule(
                         signX + sign.width,
                         ruleTop,
@@ -1385,7 +1399,8 @@ public final class MathLayoutEngine {
             if (degree != null) value.add(degree, degreeX, degreeY);
             value.width =
                     Math.max(
-                            signX + sign.width + radicand.width,
+                            Math.max(
+                                    signX + sign.width + radicand.width, signX + paintedSign.width),
                             degree == null ? 0 : degreeX + degree.width);
             return value;
         }

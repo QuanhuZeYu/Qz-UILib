@@ -251,7 +251,8 @@ public final class VanillaTextService {
                                 g.rasterStyle,
                                 g.resolvedStyle,
                                 g.clusterIndex,
-                                g.paintClip));
+                                g.paintClip,
+                                g.xExtension));
             for (TextLayout.Decoration d : line.decorations())
                 decorations.add(
                         new TextLayout.Decoration(
@@ -332,7 +333,8 @@ public final class VanillaTextService {
                                 g.rasterStyle,
                                 style,
                                 g.clusterIndex,
-                                g.paintClip));
+                                g.paintClip,
+                                g.xExtension));
             }
             for (TextLayout.Cluster c : line.clusters())
                 clusters.add(

@@ -172,13 +172,22 @@ public final class MathLayoutScenario extends TestApplication {
                         slots("degree", "body"));
         healthy(root);
         MathLayout.Embed body = embed(root, "body"), degree = embed(root, "degree");
-        // 根号延长横线保留浮点绘制；验证真实厚度、净空和覆盖，不要求矩形表示。
-        MathLayout.Stroke rootRule = root.strokes.get(0);
+        MathLayout.TextPiece rootPiece = piece(root, 0);
+        TextLayout.Glyph barGlyph = null;
+        for (TextLayout.Line line : rootPiece.text.lines())
+            for (TextLayout.Glyph g : line.glyphs()) if (g.xExtension != null) barGlyph = g;
+        require(barGlyph != null && root.strokes.isEmpty(), "根号没有沿原顶横纹理延长");
         near(degree.width, EM * percent(1), "根指数应使用scriptscript");
-        near(rootRule.width, metric(51, EM), "根式横线厚度");
-        near(rootRule.y1, rootRule.y2, "根式横线必须水平");
-        require(body.y - rootRule.y1 - rootRule.width / 2 + 0.002f >= metric(49, EM), "根式真实净空");
-        require(rootRule.x1 <= body.x && rootRule.x2 >= body.x + body.width, "根式横线未覆盖被开方盒");
+        // 从独立FT轮廓在采样列的交点读取真实横线厚度与bottom，不要求hinted厚度机械等于MATH常量。
+        float[] band = raw.barAt(barGlyph.glyphId, barGlyph.xExtension.splitX);
+        float barBottom = rootPiece.y + barGlyph.y + band[1];
+        require(band[1] > band[0], "原顶横没有真实厚度");
+        require(body.y - barBottom + 0.002f >= metric(49, EM), "根式真实净空");
+        require(
+                rootPiece.x + barGlyph.x + barGlyph.xExtension.splitX <= body.x
+                        && rootPiece.x + barGlyph.x + band[2] + barGlyph.xExtension.extraWidth
+                                >= body.x + body.width,
+                "根式横线未覆盖被开方盒");
         require(degree.x + degree.width < body.x + 0.002f, "根指数进入被开方盒");
         float[] rootSign = ink(piece(root, 0));
         near(degree.x, metric(53, EM), "根指数before kern");
@@ -189,7 +198,7 @@ public final class MathLayoutScenario extends TestApplication {
                 "根指数raise百分比");
         MathLayout nested = layout("@sqrt{1+@frac{@embed{n}}{2}}", MathStyle.TEXT, slots("n"));
         healthy(nested);
-        require(nested.rules.size() == 1 && nested.strokes.size() == 1, "嵌套根式分式丢横线");
+        require(nested.rules.size() == 1 && nested.strokes.isEmpty(), "嵌套根式分式丢横线或混入实线");
         MathLayout scoped =
                 layout(
                         "{@scriptstyle @embed{small}}@embed{large}",
@@ -1304,6 +1313,32 @@ public final class MathLayoutScenario extends TestApplication {
                 close();
                 throw failure;
             }
+        }
+
+        float[] barAt(int glyphId, float sampleX) {
+            check(FreeType.FT_Load_Glyph(face, glyphId, FreeType.FT_LOAD_DEFAULT));
+            org.lwjgl.util.freetype.FT_Outline o = face.glyph().outline();
+            org.lwjgl.util.freetype.FT_Vector.Buffer p = o.points();
+            float top = Float.POSITIVE_INFINITY,
+                    bottom = Float.NEGATIVE_INFINITY,
+                    right = Float.NEGATIVE_INFINITY;
+            int start = 0;
+            for (int contour = 0; contour < o.n_contours(); contour++) {
+                int end = o.contours().get(contour);
+                for (int i = start; i <= end; i++) {
+                    int j = i == end ? start : i + 1;
+                    float x1 = p.get(i).x() * scale, x2 = p.get(j).x() * scale;
+                    right = Math.max(right, x1);
+                    if (sampleX <= Math.min(x1, x2) || sampleX >= Math.max(x1, x2)) continue;
+                    float y1 = -p.get(i).y() * scale, y2 = -p.get(j).y() * scale;
+                    float y = y1 + (y2 - y1) * (sampleX - x1) / (x2 - x1);
+                    top = Math.min(top, y);
+                    bottom = Math.max(bottom, y);
+                }
+                start = end + 1;
+            }
+            require(Float.isFinite(top) && Float.isFinite(bottom), "原始FT采样列未穿过顶横");
+            return new float[] {top, bottom, right};
         }
 
         int largestVariant(int cp) {

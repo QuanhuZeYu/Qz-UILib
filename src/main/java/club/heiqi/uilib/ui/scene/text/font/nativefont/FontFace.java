@@ -41,6 +41,16 @@ public interface FontFace extends AutoCloseable {
         return InkBounds.UNKNOWN;
     }
 
+    /** 根号完整变体或顶部构件的纯水平横线轮廓区域；没有该字体事实时为 UNKNOWN。 */
+    default InkBounds glyphRadicalBarBounds(int glyphId) {
+        return InkBounds.UNKNOWN;
+    }
+
+    /** 当前face栅格的原顶横采样列中心，使用请求em坐标；没有附加事实时为 NaN。 */
+    default float glyphRadicalBarSampleX(int glyphId) {
+        return Float.NaN;
+    }
+
     /** 数学能力属于同一 face；不支持的后端保持显式边界。 */
     default boolean hasMathData() {
         return false;

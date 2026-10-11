@@ -813,6 +813,119 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
             return layout;
         }
 
+        public InkBounds radicalBarBounds(TextLayout layout) {
+            MathSelection selected = current();
+            if (layout.generation != generation) throw new IllegalArgumentException("数学布局已换代");
+            InkBounds result = InkBounds.UNKNOWN;
+            for (TextLayout.Line line : layout.lines())
+                for (TextLayout.Glyph g : line.glyphs()) {
+                    if (!g.source.equals(selected.source) || g.logicalEm != requested.logicalEm)
+                        throw new IllegalArgumentException("数学布局不是当前字体实例");
+                    InkBounds bar = selected.face.glyphRadicalBarBounds(g.glyphId);
+                    if (bar.known && (!result.known || g.y + bar.top < result.top))
+                        result =
+                                new InkBounds(
+                                        true,
+                                        g.x + bar.left,
+                                        g.y + bar.top,
+                                        g.x + bar.right,
+                                        g.y + bar.bottom);
+                }
+            return result;
+        }
+
+        public TextLayout extendRadicalBar(TextLayout layout, float right) {
+            Objects.requireNonNull(layout, "layout");
+            if (!Float.isFinite(right)) throw new IllegalArgumentException("无效根号横线跨度");
+            MathSelection selected = current();
+            if (layout.generation != generation)
+                throw new IllegalArgumentException("数学布局已换代，须重新布局后延长顶横");
+            TextLayout.Glyph terminal = null;
+            InkBounds bar = InkBounds.UNKNOWN;
+            float top = Float.POSITIVE_INFINITY;
+            for (TextLayout.Line line : layout.lines())
+                for (TextLayout.Glyph g : line.glyphs()) {
+                    if (!g.source.equals(selected.source) || g.logicalEm != requested.logicalEm)
+                        throw new IllegalArgumentException("数学布局不是当前字体实例");
+                    InkBounds candidate = selected.face.glyphRadicalBarBounds(g.glyphId);
+                    if (candidate.known && g.y + candidate.top < top) {
+                        terminal = g;
+                        bar = candidate;
+                        top = g.y + candidate.top;
+                    }
+                }
+            if (terminal == null) return null;
+            float extra = right - terminal.x - bar.right;
+            if (extra <= 0) return layout;
+            float split = radicalSplit(selected.face, terminal.glyphId, 1);
+            if (!Float.isFinite(split)) return null;
+            TextLayout.GlyphXExtension extension = new TextLayout.GlyphXExtension(split, extra);
+            List<TextLayout.Line> lines = new ArrayList<TextLayout.Line>();
+            for (TextLayout.Line line : layout.lines()) {
+                List<TextLayout.Glyph> glyphs = new ArrayList<TextLayout.Glyph>();
+                for (TextLayout.Glyph g : line.glyphs()) {
+                    if (g != terminal) {
+                        glyphs.add(g);
+                        continue;
+                    }
+                    glyphs.add(
+                            new TextLayout.Glyph(
+                                    g.source,
+                                    g.size,
+                                    g.glyphId,
+                                    g.logicalStart,
+                                    g.logicalEnd,
+                                    g.sourceStart,
+                                    g.sourceEnd,
+                                    g.x,
+                                    g.y,
+                                    g.xAdvance,
+                                    g.yAdvance,
+                                    g.color,
+                                    g.replacement,
+                                    extendedInk(g.inkBounds, extra),
+                                    g.logicalEm,
+                                    g.rasterToLayout,
+                                    g.rasterStyle,
+                                    g.resolvedStyle,
+                                    g.clusterIndex,
+                                    g.paintClip,
+                                    extension));
+                }
+                lines.add(
+                        new TextLayout.Line(
+                                line.text,
+                                line.x,
+                                line.y,
+                                line.logicalStart,
+                                line.logicalEnd,
+                                line.sourceStart,
+                                line.sourceEnd,
+                                Math.max(line.advance, right),
+                                line.baseline,
+                                line.ascent,
+                                line.descent,
+                                line.lineHeight,
+                                glyphs,
+                                line.clusters(),
+                                line.decorations(),
+                                line.paragraphRtl));
+            }
+            // 只延伸根号原顶横的采样覆盖度；MATH 高度、hook/stem 和 assembly 唯一绘制域不变。
+            return new TextLayout(
+                    ceil(Math.max(layout.advanceWidth, right)),
+                    layout.height,
+                    Math.max(layout.advanceWidth, right),
+                    layout.advanceHeight,
+                    layout.style,
+                    lines,
+                    layout.logicalText,
+                    layout.originalText,
+                    layout.generation,
+                    layout.diagnostics(),
+                    layout.input);
+        }
+
         public float topAccentAttachment(TextLayout layout) {
             Objects.requireNonNull(layout, "layout");
             MathSelection selected = current();
@@ -938,7 +1051,8 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                                 g.rasterStyle,
                                 style,
                                 g.clusterIndex,
-                                g.paintClip));
+                                g.paintClip,
+                                g.xExtension));
             for (TextLayout.Cluster c : line.clusters())
                 clusters.add(
                         new TextLayout.Cluster(
@@ -1826,7 +1940,8 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                                             a.rasterStyle,
                                             a.resolvedStyle,
                                             clusters.size(),
-                                            a.paintClip));
+                                            a.paintClip,
+                                            a.xExtension));
                         }
                         clusters.add(
                                 new TextLayout.Cluster(
@@ -1914,6 +2029,14 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                                         raw.right * ratio,
                                         raw.bottom * ratio)
                                 : InkBounds.UNKNOWN;
+                TextLayout.GlyphXExtension extension = g.xExtension;
+                if (extension != null) {
+                    float split = radicalSplit(face(g.source, em, doc), g.glyphId, ratio);
+                    if (!Float.isFinite(split))
+                        throw new UnsupportedOperationException("采样face没有根号顶横采样列");
+                    extension = new TextLayout.GlyphXExtension(split, extension.extraWidth);
+                    mapped = extendedInk(mapped, extension.extraWidth);
+                }
                 glyphs.add(
                         new TextLayout.Glyph(
                                 g.source,
@@ -1935,7 +2058,8 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                                 variant,
                                 style,
                                 g.clusterIndex,
-                                g.paintClip));
+                                g.paintClip,
+                                extension));
             }
             lines.add(
                     new TextLayout.Line(
@@ -1970,6 +2094,17 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                 layout.generation,
                 diagnostics,
                 layout.input);
+    }
+
+    private static InkBounds extendedInk(InkBounds ink, float extra) {
+        return ink.known
+                ? new InkBounds(true, ink.left, ink.top, ink.right + extra, ink.bottom)
+                : ink;
+    }
+
+    private static float radicalSplit(FontFace face, int glyphId, float ratio) {
+        // 短变体可能只有一个纯横区域内的像素中心；保留这一列原始alpha，不造实线。
+        return face.glyphRadicalBarSampleX(glyphId) * ratio;
     }
 
     private static int ceil(float value) {

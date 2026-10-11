@@ -546,15 +546,49 @@ public final class GlPaintPlanRenderer implements AutoCloseable {
                                 glyph.resolvedStyle == null
                                         ? command.color
                                         : glyph.resolvedStyle.color;
-                        collector.add(
+                        State state =
                                 new State(
                                         r.color
                                                 ? GlQuadRenderer.COLOR_PREMULT
                                                 : GlQuadRenderer.MONOCHROME_COVERAGE,
                                         r.resource,
                                         r.generation,
-                                        clip),
-                                new Quad(x, y, width, height, u0, v0, u1, v1, r.layer, color));
+                                        clip);
+                        if (glyph.xExtension == null) {
+                            collector.add(
+                                    state,
+                                    new Quad(x, y, width, height, u0, v0, u1, v1, r.layer, color));
+                        } else {
+                            // 三片目标域互斥，共享原atlas资源及Y采样；中片固定原覆盖度列，hook/stem不横向变形。
+                            float cut = command.box.x + glyph.x + glyph.xExtension.splitX;
+                            float extra = glyph.xExtension.extraWidth;
+                            float splitU = u0 + (u1 - u0) * (cut - x) / width;
+                            if (cut > x)
+                                collector.add(
+                                        state,
+                                        new Quad(
+                                                x, y, cut - x, height, u0, v0, splitU, v1, r.layer,
+                                                color));
+                            collector.add(
+                                    state,
+                                    new Quad(
+                                            cut, y, extra, height, splitU, v0, splitU, v1, r.layer,
+                                            color));
+                            if (x + width > cut)
+                                collector.add(
+                                        state,
+                                        new Quad(
+                                                cut + extra,
+                                                y,
+                                                x + width - cut,
+                                                height,
+                                                splitU,
+                                                v0,
+                                                u1,
+                                                v1,
+                                                r.layer,
+                                                color));
+                        }
                         drawnGlyphs++;
                     }
                     for (TextLayout.Decoration decoration : line.decorations()) {

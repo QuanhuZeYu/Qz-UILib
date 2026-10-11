@@ -11,6 +11,18 @@ import java.util.Objects;
 
 /** 度量与绘制共享的不可变定位。int 尺寸为真实浮点边界向上取整，不把 advance 逐字取整。 */
 public final class TextLayout {
+    /** 沿字形内一列原覆盖度延长；只改变绘制，不改变原glyph资源身份或stem轮廓。 */
+    public static final class GlyphXExtension {
+        public final float splitX, extraWidth;
+
+        public GlyphXExtension(float splitX, float extraWidth) {
+            if (!Float.isFinite(splitX) || !Float.isFinite(extraWidth) || extraWidth <= 0)
+                throw new IllegalArgumentException("无效字形局部延伸");
+            this.splitX = splitX;
+            this.extraWidth = extraWidth;
+        }
+    }
+
     public static final class Glyph {
         public final FontSource source;
         public final float size;
@@ -30,6 +42,8 @@ public final class TextLayout {
 
         /** 相对字形原点的绘制域；assembly 连接只绘制一次，UNKNOWN 表示不裁剪。 */
         public final InkBounds paintClip;
+
+        public final GlyphXExtension xExtension;
 
         public Glyph(
                 FontSource source,
@@ -163,6 +177,53 @@ public final class TextLayout {
                 TextStyle resolvedStyle,
                 int clusterIndex,
                 InkBounds paintClip) {
+            this(
+                    source,
+                    size,
+                    glyphId,
+                    logicalStart,
+                    logicalEnd,
+                    sourceStart,
+                    sourceEnd,
+                    x,
+                    y,
+                    xAdvance,
+                    yAdvance,
+                    color,
+                    replacement,
+                    inkBounds,
+                    logicalEm,
+                    rasterToLayout,
+                    rasterStyle,
+                    resolvedStyle,
+                    clusterIndex,
+                    paintClip,
+                    null);
+        }
+
+        public Glyph(
+                FontSource source,
+                float size,
+                int glyphId,
+                int logicalStart,
+                int logicalEnd,
+                int sourceStart,
+                int sourceEnd,
+                float x,
+                float y,
+                float xAdvance,
+                float yAdvance,
+                boolean color,
+                boolean replacement,
+                InkBounds inkBounds,
+                float logicalEm,
+                float rasterToLayout,
+                GlyphRasterStyle rasterStyle,
+                TextStyle resolvedStyle,
+                int clusterIndex,
+                InkBounds paintClip,
+                GlyphXExtension xExtension) {
+            this.xExtension = xExtension;
             this.paintClip = Objects.requireNonNull(paintClip, "paintClip");
             if (!Float.isFinite(size)
                     || size <= 0
@@ -587,7 +648,8 @@ public final class TextLayout {
                                 g.rasterStyle,
                                 paint,
                                 g.clusterIndex,
-                                g.paintClip));
+                                g.paintClip,
+                                g.xExtension));
             }
             for (Cluster c : line.clusters())
                 clusters.add(
