@@ -116,7 +116,7 @@ val desktopDist by tasks.registering(Zip::class) {
 // 自动点击、像素验收与关闭检查属于独立测试应用，正式发行不携带测试代码。
 val desktopTestSources = sourceSets.create("desktopTest") {
     java.srcDir("src/desktopTest/java")
-    compileClasspath = desktopSources.output + coreSources.output + fontAdapterSources.output + fontBindings + fontUnicodeRuntime + yamlRuntime
+    compileClasspath = sourceSets.getByName("gallery").output + desktopSources.output + coreSources.output + fontAdapterSources.output + fontBindings + fontUnicodeRuntime + yamlRuntime
     runtimeClasspath = output + desktopArtifacts
 }
 tasks.named<JavaCompile>(desktopTestSources.compileJavaTaskName) {
@@ -132,6 +132,7 @@ val desktopTestJar by tasks.registering(ShadowJar::class) {
     description = "生成独立桌面验收消费者，仅测试定义，不嵌入任何生产依赖"
     archiveClassifier.set("desktop-test")
     from(desktopTestSources.output)
+    from(sourceSets.getByName("gallery").output)
     configurations.set(emptyList())
     minimizeJar.set(false)
     enableAutoRelocation.set(false)
@@ -153,5 +154,15 @@ fun desktopApplication(name: String, summary: String, verify: Boolean) = tasks.r
 }
 val desktopRun = desktopApplication("desktopRun", "以正式发行组合启动独立桌面单窗口", false)
 val desktopVerify = desktopApplication("desktopVerify", "以正式发行组合运行有限真实窗口绘制交互与释放验收", true)
-tasks.named("check") { dependsOn(desktopVerify) }
+val desktopGallery = desktopApplication("desktopGallery", "打开与MC和自动机共用的测试广场", true).apply { configure {
+    mainClass.set("club.heiqi.uilib.host.desktop.DesktopGallery")
+}
+}
+val desktopGalleryVerify = desktopApplication("desktopGalleryVerify", "真实桌面运行共享广场旅程与图像像素重载释放", true).apply { configure {
+    mainClass.set("club.heiqi.uilib.host.desktop.DesktopGallery")
+    args("--verify", layout.buildDirectory.dir("reports/gallery-desktop").get().asFile.absolutePath)
+    mustRunAfter(desktopVerify)
+}
+}
+tasks.named("check") { dependsOn(desktopVerify, desktopGalleryVerify) }
 tasks.named("assemble") { dependsOn(desktopJar, desktopDist) }

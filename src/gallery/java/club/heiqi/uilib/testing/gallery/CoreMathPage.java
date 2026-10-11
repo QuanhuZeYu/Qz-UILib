@@ -1,8 +1,5 @@
-package club.heiqi.uilib.internal.devtools;
+package club.heiqi.uilib.testing.gallery;
 
-import club.heiqi.uilib.host.client.image.MinecraftImageServices;
-import club.heiqi.uilib.host.client.image.MinecraftItemSource;
-import club.heiqi.uilib.ui.host.minecraft.MinecraftSceneScreen;
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
@@ -26,17 +23,21 @@ import club.heiqi.uilib.ui.scene.text.math.MathStyle;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-/** /qzcore math：正式数学与 Item 来源接入页，宿主只提交物品来源。 */
-public final class CoreMathPage extends MinecraftSceneScreen {
-    public CoreMathPage() {
-        super(CoreMathPage::buildPage);
+/** /qzcore math：正式数学与 Item 来源接入页，宿主只提交嵌入图像来源。 */
+final class CoreMathPage {
+    private final GalleryEnvironment environment;
+    private final java.util.function.Consumer<TestGallery.Page> navigate;
+    CoreMathPage(GalleryEnvironment environment, java.util.function.Consumer<TestGallery.Page> navigate) {
+        this.environment = environment;
+        this.navigate = navigate;
     }
 
-    private static String tex(String source) {
+
+    private String tex(String source) {
         return source.replace('@', (char) 92);
     }
 
-    private static Map<String, SceneMath.Embed> slots(
+    private Map<String, SceneMath.Embed> slots(
             ScenePageContext ctx,
             ReadableSignal<SceneTheme> theme,
             ReadableSignal<ImageSource> item,
@@ -45,7 +46,7 @@ public final class CoreMathPage extends MinecraftSceneScreen {
         for (String id : ids) {
             SceneNode image =
                     SceneImage.themed(
-                            MinecraftImageServices.shared().images(),
+                            environment.images(),
                             item,
                             ctx.domain()
                                     .signal(
@@ -53,14 +54,14 @@ public final class CoreMathPage extends MinecraftSceneScreen {
                                                     .tooltip(true)
                                                     .quantity(true)
                                                     .durability(true)
-                                                    .alt("物品")),
+                                                    .alt("嵌入图像")),
                             theme);
             result.put(id, new SceneMath.Embed(image, new MathEmbedMetrics(1, 1, 0.8f)));
         }
         return result;
     }
 
-    private static String diagnostics(MathLayout layout) {
+    private String diagnostics(MathLayout layout) {
         if (layout == null) return "公式尚未呈现";
         if (layout.diagnostics.isEmpty()) return "无诊断";
         StringBuilder result = new StringBuilder();
@@ -76,7 +77,7 @@ public final class CoreMathPage extends MinecraftSceneScreen {
         return result.toString();
     }
 
-    private static void buildPage(ScenePageContext ctx) {
+    void buildPage(ScenePageContext ctx, java.util.List<SceneNode> roots) {
         Signal<Boolean> light = ctx.domain().signal(false),
                 invalid = ctx.domain().signal(false),
                 tool = ctx.domain().signal(false);
@@ -85,9 +86,7 @@ public final class CoreMathPage extends MinecraftSceneScreen {
         Signal<ImageSource> item =
                 ctx.domain()
                         .signal(
-                                new MinecraftItemSource(
-                                        new net.minecraft.item.ItemStack(
-                                                net.minecraft.init.Items.iron_ingot, 32)));
+                                environment.embed(false));
         Computed<SceneTheme> theme =
                 ctx.domain()
                         .computed(
@@ -289,27 +288,11 @@ public final class CoreMathPage extends MinecraftSceneScreen {
                         .add(
                                 SceneButton.create(
                                         ctx,
-                                        () -> tool.get() ? "物品：附魔工具" : "物品：铁锭",
+                                        () -> environment.hasItems() ? (tool.get() ? "嵌入物品：附魔工具" : "嵌入物品：铁锭") : (tool.get() ? "嵌入图像：绿色" : "嵌入图像：蓝色"),
                                         theme,
                                         () -> {
                                             tool.set(!tool.get());
-                                            net.minecraft.item.ItemStack stack =
-                                                    tool.get()
-                                                            ? new net.minecraft.item.ItemStack(
-                                                                    net.minecraft.init.Items
-                                                                            .diamond_pickaxe,
-                                                                    1,
-                                                                    900)
-                                                            : new net.minecraft.item.ItemStack(
-                                                                    net.minecraft.init.Items
-                                                                            .iron_ingot,
-                                                                    32);
-                                            if (tool.get())
-                                                stack.addEnchantment(
-                                                        net.minecraft.enchantment.Enchantment
-                                                                .efficiency,
-                                                        3);
-                                            item.set(new MinecraftItemSource(stack));
+                                            item.set(environment.embed(tool.get()));
                                         }))
                         .add(
                                 SceneButton.create(
@@ -351,7 +334,7 @@ public final class CoreMathPage extends MinecraftSceneScreen {
                         .bind(
                                 NodeBinding.value(
                                         theme, (node, value) -> node.background(value.panel)))
-                        .add(SceneLabel.create(ctx, () -> "完整数学与物品：基础公式、二维环境、宏、样式与装饰", theme))
+                        .add(SceneLabel.create(ctx, () -> "完整数学与嵌入图像：基础公式、二维环境、宏、样式与装饰", theme))
                         .add(actions)
                         .add(controls)
                         .add(viewport)
@@ -382,13 +365,10 @@ public final class CoreMathPage extends MinecraftSceneScreen {
                                 SceneLabel.create(
                                         ctx,
                                         () ->
-                                                "缩窄窗口并滚动，悬停可见图标查看物品提示；切换字号/主题/物品与非法公式后恢复。F3+T可检查资源更新。",
+                                                "缩窄窗口并滚动；切换字号/主题/嵌入图像与非法公式后恢复。"
+                                                        + (environment.hasItems() ? " 悬停物品查看原版提示；F3+T检查资源更新。" : " MC物品、原版提示与F3+T专项：当前宿主不支持；位图只验收通用嵌入图像。"),
                                         theme));
-        ctx.mount(page);
+        roots.add(page);
     }
 
-    @Override
-    public boolean doesGuiPauseGame() {
-        return false;
-    }
 }

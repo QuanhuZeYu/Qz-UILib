@@ -11,7 +11,7 @@ import org.gradle.api.tasks.SourceSetContainer
 val sourceSets = extensions.getByType<SourceSetContainer>()
 // 显式人工测试附加包：与发布包分离，不进入 assemble/publish，真实实例自动安装 /qzcore。
 val manualTestSources = sourceSets.create("manualTest") {
-    compileClasspath = sourceSets.getByName("main").output + sourceSets.getByName("core").output + sourceSets.getByName("fontAdapter").output + sourceSets.getByName("main").compileClasspath
+    compileClasspath = sourceSets.getByName("main").output + sourceSets.getByName("core").output + sourceSets.getByName("fontAdapter").output + sourceSets.getByName("gallery").output + sourceSets.getByName("main").compileClasspath
 }
 tasks.named<JavaCompile>(manualTestSources.compileJavaTaskName) {
     // 附加入口只有 Java 8 语法，不加载从业务 classpath 发现的编译处理器。
@@ -25,8 +25,8 @@ val manualTestDevJar by tasks.registering(Zip::class) {
     archiveClassifier.set("dev")
     archiveExtension.set("jar")
     destinationDirectory.set(layout.buildDirectory.dir("manual-test"))
-    from(sourceSets.getByName("main").output) { include("club/heiqi/uilib/internal/devtools/**") }
     from(manualTestSources.output)
+    from(sourceSets.getByName("gallery").output)
 }
 val manualTestJar by tasks.registering(ReobfuscatedJar::class) {
     dependsOn(manualTestDevJar, tasks.named("reobfJar"))
@@ -48,7 +48,10 @@ val manualTestJar by tasks.registering(ReobfuscatedJar::class) {
         ZipFile(archiveFile.get().asFile).use { zip ->
             check(zip.getEntry("club/heiqi/uilib/manualtest/ManualTestMod.class") != null) { "人工测试入口缺失" }
             check(zip.getEntry("club/heiqi/uilib/internal/devtools/CoreLoopScreen.class") != null) { "人工测试面板缺失" }
-            check(zip.getEntry("club/heiqi/uilib/internal/devtools/CoreMathPage.class") != null) { "数学人工测试页面缺失" }
+            check(zip.getEntry("club/heiqi/uilib/testing/gallery/TestGallery.class") != null) { "共享测试广场缺失" }
+            check(zip.getEntry("club/heiqi/uilib/testing/gallery/CoreMathPage.class") != null) { "数学共享测试页面缺失" }
+            check(zip.getEntry("assets/qz_uilib_test/textures/sample.png") != null) { "共享图像样本缺失" }
+            check(zip.getEntry("uilib/localization/core-loop/zh_CN.properties") != null) { "共享语言样本缺失" }
             check(zip.getEntry("club/heiqi/uilib/ui/reactive/Signal.class") == null) { "附加包不能重复打入核心类" }
         }
     }
@@ -86,7 +89,7 @@ val verifyDevToolsNotPackaged by tasks.registering {
         tasks.named(name, AbstractArchiveTask::class.java).flatMap { task -> task.archiveFile }
     }
     val allArchives: Provider<List<File>> = provider {
-        tasks.withType(AbstractArchiveTask::class.java).toList().filter { it.name != "manualTestDevJar" && it.name != "manualTestJar" }.map { task -> task.archiveFile.get().asFile }
+        tasks.withType(AbstractArchiveTask::class.java).toList().filter { it.name != "manualTestDevJar" && it.name != "manualTestJar" && it.name != "desktopTestJar" }.map { task -> task.archiveFile.get().asFile }
     }
     val forbidden = "$internalDevToolsPackagePath/"
     doLast {
@@ -101,8 +104,10 @@ val verifyDevToolsNotPackaged by tasks.registering {
             ZipFile(file).use { zip ->
                 val entries = zip.entries()
                 while (entries.hasMoreElements()) {
-                    val entryName = entries.nextElement().name
-                    if (entryName.startsWith(forbidden) || entryName.startsWith("club/heiqi/uilib/testing/")) {
+                    val entry = entries.nextElement()
+                    if (entry.isDirectory) continue
+                    val entryName = entry.name
+                    if (entryName.startsWith(forbidden) || entryName.startsWith("club/heiqi/uilib/testing/") || entryName.startsWith("assets/qz_uilib_test/") || entryName.startsWith("uilib/localization/")) {
                         hit = entryName
                         break
                     }

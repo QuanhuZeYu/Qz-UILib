@@ -1,6 +1,5 @@
-package club.heiqi.uilib.internal.devtools;
+package club.heiqi.uilib.testing.gallery;
 
-import club.heiqi.uilib.host.client.image.MinecraftImageServices;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.ReactiveDomain;
@@ -19,9 +18,15 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
 
 /** 手工图像验收只声明正式控件与signals；无下载缓存/纹理上传/布局补算。 */
 final class CoreImagePage {
-    private CoreImagePage() {}
+    private final GalleryEnvironment environment;
+    private final java.util.function.Consumer<TestGallery.Page> navigate;
+    CoreImagePage(GalleryEnvironment environment, java.util.function.Consumer<TestGallery.Page> navigate) {
+        this.environment = environment;
+        this.navigate = navigate;
+    }
 
-    private static ImageContent bitmap(int width, int height) {
+
+    private ImageContent bitmap(int width, int height) {
         byte[] rgba = new byte[width * height * 4];
         for (int y = 0; y < height; y++)
             for (int x = 0; x < width; x++) {
@@ -34,7 +39,7 @@ final class CoreImagePage {
         return new ImageContent(width, height, rgba);
     }
 
-    private static SceneNode tile(
+    private SceneNode tile(
             ScenePageContext context,
             ReadableSignal<SceneTheme> theme,
             ImageService service,
@@ -63,22 +68,14 @@ final class CoreImagePage {
                                 theme));
     }
 
-    private static void publishItem(
+    private void publishItem(
             Signal<ImageSource> target, boolean enchanted, int amount, int damage) {
-        net.minecraft.item.ItemStack stack =
-                new net.minecraft.item.ItemStack(
-                        enchanted
-                                ? net.minecraft.init.Items.diamond_pickaxe
-                                : net.minecraft.init.Items.diamond,
-                        amount,
-                        enchanted ? damage : 0);
-        if (enchanted) stack.addEnchantment(net.minecraft.enchantment.Enchantment.efficiency, 3);
-        target.set(new club.heiqi.uilib.host.client.image.MinecraftItemSource(stack));
+        target.set(environment.item(enchanted, amount, damage));
     }
 
-    static SceneNode create(ScenePageContext context, ReadableSignal<SceneTheme> theme) {
+    SceneNode create(ScenePageContext context, ReadableSignal<SceneTheme> theme) {
         ReactiveDomain domain = context.domain();
-        ImageService service = MinecraftImageServices.shared().images();
+        ImageService service = environment.images();
         Signal<ImageSource> runtime = domain.signal(ImageSource.bitmap(bitmap(120, 60)));
         Signal<ImageOptions> options =
                 domain.signal(
@@ -86,19 +83,17 @@ final class CoreImagePage {
         Signal<Integer> fit = domain.signal(0);
         Signal<Boolean> large = domain.signal(false);
         Signal<ImageSource> resource =
-                domain.signal(ImageSource.resource("minecraft:textures/blocks/planks_oak.png"));
+                domain.signal(ImageSource.resource("qz_uilib_test:textures/sample.png"));
         Signal<ImageSource> selected =
                 domain.signal(
                         ImageSource.resource(
-                                "minecraft:textures/blocks/planks_oak.png",
+                                "qz_uilib_test:textures/sample.png",
                                 new ImageSource.Region(0, 0, 8, 8)));
         Signal<ImageSource> remote =
-                domain.signal(ImageSource.http("https://httpbin.org/image/png"));
+                domain.signal(ImageSource.resource("qz_uilib_test:textures/sample.png"));
         Signal<ImageSource> item =
                 domain.signal(
-                        new club.heiqi.uilib.host.client.image.MinecraftItemSource(
-                                new net.minecraft.item.ItemStack(
-                                        net.minecraft.init.Items.diamond)));
+                        environment.item(false, 1, 0));
         Signal<Boolean> enchanted = domain.signal(false);
         Signal<Integer> amount = domain.signal(1), damage = domain.signal(0);
         Signal<ImageOptions> itemOptions =
@@ -108,7 +103,8 @@ final class CoreImagePage {
         panel.add(
                 SceneLabel.create(
                         context,
-                        () -> "统一图像：资源选区、动态图像、HTTP、原版物品；F3+T可验证资源更新。物品数量、耐久、提示各自选择，附魔效果持续变化。",
+                        () -> "统一图像：资源选区、动态图像；HTTP通过显式联网按钮加载。"
+                                + (environment.hasItems() ? " MC物品专项：数量、耐久、提示与附魔；F3+T重载资源。" : " 本宿主的资源重载操作由入口提供。"),
                         theme));
         panel.add(
                 new SceneNode()
@@ -146,9 +142,9 @@ final class CoreImagePage {
                         .add(
                                 SceneButton.create(
                                         context,
-                                        () -> "重新加载当前HTTP",
+                                        () -> "请求/重载HTTP（联网）",
                                         theme,
-                                        () -> service.reload(remote.get()))));
+                                        () -> { if (remote.get().kind != ImageSource.Kind.HTTP) remote.set(ImageSource.http("https://httpbin.org/image/png")); else service.reload(remote.get()); })));
         panel.add(
                 new SceneNode()
                         .axis(SceneNode.Axis.ROW)
@@ -157,13 +153,11 @@ final class CoreImagePage {
                         .add(tile(context, theme, service, resource, options))
                         .add(tile(context, theme, service, selected, options))
                         .add(tile(context, theme, service, runtime, options)));
-        panel.add(
-                new SceneNode()
-                        .axis(SceneNode.Axis.ROW)
-                        .size(Size.fill(1), Size.natural())
-                        .gap(4)
-                        .add(tile(context, theme, service, remote, options))
-                        .add(tile(context, theme, service, item, itemOptions)));
+        SceneNode imageRow = new SceneNode().axis(SceneNode.Axis.ROW).size(Size.fill(1), Size.natural()).gap(4)
+                .add(tile(context, theme, service, remote, options));
+        if (environment.hasItems()) imageRow.add(tile(context, theme, service, item, itemOptions));
+        panel.add(imageRow);
+        if (environment.hasItems()) {
         panel.add(
                 new SceneNode()
                         .axis(SceneNode.Axis.ROW)
@@ -249,6 +243,7 @@ final class CoreImagePage {
                                                                 .tooltip(
                                                                         !itemOptions.get()
                                                                                 .tooltip)))));
+        }
         panel.add(SceneLabel.create(context, () -> "高度填满时自然宽度跟随来源比例；边界裁剪不改变布局尺寸。", theme));
         panel.add(
                 new SceneNode()
@@ -268,6 +263,7 @@ final class CoreImagePage {
                         service, runtime, domain.signal(ImageOptions.defaults().alt("文档图像")));
         panel.add(SceneLabel.create(context, () -> "文档图片：大图随可用宽度缩小，小图不放大；明确尺寸可覆盖默认行为。", theme))
                 .add(document);
+        if (!environment.hasItems()) panel.add(SceneLabel.create(context, () -> "MC物品专项：当前宿主不支持；通用图像不计为物品验收", theme));
         return panel;
     }
 }

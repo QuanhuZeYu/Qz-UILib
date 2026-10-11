@@ -1,8 +1,7 @@
-package club.heiqi.uilib.internal.devtools;
+package club.heiqi.uilib.testing.gallery;
 
 import java.util.ArrayList;
 import java.util.List;
-import club.heiqi.uilib.ui.host.minecraft.MinecraftSceneScreen;
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.Owner;
 import club.heiqi.uilib.ui.reactive.ReactiveDomain;
@@ -18,21 +17,24 @@ import club.heiqi.uilib.ui.scene.control.SceneButton;
 import club.heiqi.uilib.ui.scene.control.SceneLabel;
 import club.heiqi.uilib.ui.scene.control.SceneTextPolicy;
 
-/** MC 验收入口 /qzcore；只声明业务树，运行与宿主接线由正式入口管理。 */
-public final class CoreLoopScreen extends MinecraftSceneScreen {
-    private static final ReactiveDomain EDIT_DOMAIN = ReactiveDomain.direct();
-    private static club.heiqi.uilib.ui.scene.edit.SceneEditState editState;
-    private static Signal<String> acceptedValue;
-    private static club.heiqi.uilib.ui.scene.edit.SceneEditState.Submission delayed;
-    private static club.heiqi.uilib.ui.scene.edit.SceneEditState multilineState;
-    private static Signal<String> acceptedDocument;
-    private static club.heiqi.uilib.ui.scene.edit.SceneEditState.Submission delayedDocument;
-
-    public CoreLoopScreen() {
-        super(EDIT_DOMAIN, CoreLoopScreen::buildPage);
+/** 共享控件验收页；只声明业务树，运行与宿主接线由正式入口管理。 */
+final class CoreLoopPage {
+    private final GalleryEnvironment environment;
+    private final java.util.function.Consumer<TestGallery.Page> navigate;
+    CoreLoopPage(GalleryEnvironment environment, java.util.function.Consumer<TestGallery.Page> navigate) {
+        this.environment = environment;
+        this.navigate = navigate;
     }
 
-    private static void buildPage(ScenePageContext ctx) {
+    private club.heiqi.uilib.ui.scene.edit.SceneEditState editState;
+    private Signal<String> acceptedValue;
+    private club.heiqi.uilib.ui.scene.edit.SceneEditState.Submission delayed;
+    private club.heiqi.uilib.ui.scene.edit.SceneEditState multilineState;
+    private Signal<String> acceptedDocument;
+    private club.heiqi.uilib.ui.scene.edit.SceneEditState.Submission delayedDocument;
+
+
+    void buildPage(ScenePageContext ctx, java.util.List<SceneNode> roots) {
         ReactiveDomain domain = ctx.domain();
         SceneRuntime runtime = ctx.runtime();
         Owner business = ctx.scope();
@@ -114,16 +116,14 @@ public final class CoreLoopScreen extends MinecraftSceneScreen {
                         () -> "语言",
                         theme,
                         () ->
-                                net.minecraft.client.Minecraft.getMinecraft()
-                                        .displayGuiScreen(new CoreLocalizationPage())));
+                                navigate.accept(TestGallery.Page.LANGUAGE)));
         controls.add(
                 SceneButton.create(
                         ctx,
                         () -> "富文本",
                         theme,
                         () ->
-                                net.minecraft.client.Minecraft.getMinecraft()
-                                        .displayGuiScreen(new CoreRichTextPage())));
+                                navigate.accept(TestGallery.Page.RICH)));
         controls.add(
                 SceneButton.create(
                         ctx,
@@ -475,7 +475,7 @@ public final class CoreLoopScreen extends MinecraftSceneScreen {
                         .gap(4)
                         .add(editPanel)
                         .add(areaPanel)
-                        .add(CoreImagePage.create(ctx, theme))
+                        .add(new CoreImagePage(environment, navigate).create(ctx, theme))
                         .add(body.size(Size.fill(1), Size.fixed(220)));
         // 页内自然内容共用外层滚动，小窗口/大字号不把字段正文压成零高度。
         SceneNode editorPage =
@@ -490,7 +490,7 @@ public final class CoreLoopScreen extends MinecraftSceneScreen {
                                         theme, (node, value) -> node.background(value.panel)));
         panel.size(Size.fill(1), Size.natural());
         editorPage.add(panel).add(scrollContent);
-        ctx.mount(editorPage);
+        roots.add(editorPage);
         SceneNode inner =
                 new SceneNode()
                         .size(Size.fill(1), Size.natural())
@@ -559,11 +559,7 @@ public final class CoreLoopScreen extends MinecraftSceneScreen {
                                             modal.set(false);
                                         }))
                         .add(inner);
-        ctx.mount(dialog);
+        roots.add(dialog);
     }
 
-    @Override
-    public boolean doesGuiPauseGame() {
-        return false;
-    }
 }

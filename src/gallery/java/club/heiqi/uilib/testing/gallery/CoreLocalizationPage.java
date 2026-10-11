@@ -1,10 +1,8 @@
-package club.heiqi.uilib.internal.devtools;
+package club.heiqi.uilib.testing.gallery;
 
-import net.minecraft.client.Minecraft;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.Locale;
-import club.heiqi.uilib.ui.host.minecraft.MinecraftSceneScreen;
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.control.SceneButton;
@@ -21,15 +19,19 @@ import club.heiqi.uilib.ui.scene.text.TextStyle;
 
 /** /qzcore lang短验收页：同页切语言/参数/重载，固定区自然高度，正文独立滚动。
  * 使用独立 classpath 译文与响应主题，切换和重载只改变本页自己的流。 */
-public final class CoreLocalizationPage extends MinecraftSceneScreen {
-    public CoreLocalizationPage() {
-        super(CoreLocalizationPage::buildPage);
+final class CoreLocalizationPage {
+    private final GalleryEnvironment environment;
+    private final java.util.function.Consumer<TestGallery.Page> navigate;
+    CoreLocalizationPage(GalleryEnvironment environment, java.util.function.Consumer<TestGallery.Page> navigate) {
+        this.environment = environment;
+        this.navigate = navigate;
     }
 
-    private static void buildPage(ScenePageContext ctx) {
-        // 本页只提供中英两套资料：MC 偏好仅映射初始选择，其他偏好在本页选择英文。
+
+    void buildPage(ScenePageContext ctx, java.util.List<SceneNode> roots) {
+        // 本页只提供中英两套资料：宿主偏好仅映射初始选择，其他偏好在本页选择英文。
         String language =
-                "zh_CN".equals(Minecraft.getMinecraft().gameSettings.language) ? "zh_CN" : "en_US";
+                environment.initialLanguage();
         LocalizationFlow flow;
         try {
             flow =
@@ -145,8 +147,7 @@ public final class CoreLocalizationPage extends MinecraftSceneScreen {
                                         localization.text("qz_uilib.lang.back"),
                                         theme,
                                         () ->
-                                                Minecraft.getMinecraft()
-                                                        .displayGuiScreen(new CoreLoopScreen()))));
+                                                navigate.accept(TestGallery.Page.CONTROLS))));
         SceneNode body =
                 new SceneNode()
                         .size(Size.fill(1), Size.fill(1))
@@ -163,10 +164,10 @@ public final class CoreLocalizationPage extends MinecraftSceneScreen {
                             theme));
         }
         panel.add(body);
-        ctx.mount(panel);
+        roots.add(panel);
     }
 
-    private static void select(LocalizationFlow flow, String language) {
+    private void select(LocalizationFlow flow, String language) {
         try {
             flow.select(language);
         } catch (IOException failure) {
@@ -174,7 +175,7 @@ public final class CoreLocalizationPage extends MinecraftSceneScreen {
         }
     }
 
-    private static void reload(LocalizationFlow flow) {
+    private void reload(LocalizationFlow flow) {
         try {
             flow.reload();
         } catch (IOException failure) {
@@ -182,8 +183,4 @@ public final class CoreLocalizationPage extends MinecraftSceneScreen {
         }
     }
 
-    @Override
-    public boolean doesGuiPauseGame() {
-        return false;
-    }
 }

@@ -1,8 +1,5 @@
-package club.heiqi.uilib.internal.devtools;
+package club.heiqi.uilib.testing.gallery;
 
-import club.heiqi.uilib.host.client.image.MinecraftImageServices;
-import club.heiqi.uilib.host.client.image.MinecraftItemSource;
-import club.heiqi.uilib.ui.host.minecraft.MinecraftSceneScreen;
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.control.DocumentResources;
@@ -25,28 +22,30 @@ import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-/** /qzcore document：共同文档实机入口；物品来源沿正式Minecraft图像服务。 */
-public final class CoreDocumentPage extends MinecraftSceneScreen {
-    public CoreDocumentPage() {
-        super(CoreDocumentPage::buildPage);
+/** /qzcore document：共同文档实机入口；嵌入图像来源由宿主显式供给。 */
+final class CoreDocumentPage {
+    private final GalleryEnvironment environment;
+    private final java.util.function.Consumer<TestGallery.Page> navigate;
+    CoreDocumentPage(GalleryEnvironment environment, java.util.function.Consumer<TestGallery.Page> navigate) {
+        this.environment = environment;
+        this.navigate = navigate;
     }
 
-    private static String tex(String text) {
+
+    private String tex(String text) {
         return text.replace('@', (char) 92);
     }
 
-    private static void buildPage(ScenePageContext ctx) {
+    void buildPage(ScenePageContext ctx, java.util.List<SceneNode> roots) {
         Signal<Boolean> light = ctx.domain().signal(false),
                 invalid = ctx.domain().signal(false),
                 tool = ctx.domain().signal(false);
         Signal<Integer> em = ctx.domain().signal(28);
-        Signal<String> observed = ctx.domain().signal("点击文中链接仅显示目标；悬停物品应显示原版内容提示。");
+        Signal<String> observed = ctx.domain().signal(environment.hasItems() ? "点击文中链接仅显示目标；悬停嵌入物品显示原版提示。" : "点击文中链接仅显示目标；MC物品、原版提示与F3+T专项：当前宿主不支持。");
         Signal<ImageSource> item =
                 ctx.domain()
                         .signal(
-                                new MinecraftItemSource(
-                                        new net.minecraft.item.ItemStack(
-                                                net.minecraft.init.Items.iron_ingot, 32)));
+                                environment.embed(false));
         Computed<SceneTheme> theme =
                 ctx.domain()
                         .computed(
@@ -61,7 +60,7 @@ public final class CoreDocumentPage extends MinecraftSceneScreen {
         String prose =
                 "中文与English共同行内分式：<a href=\"next\"><latex>"
                         + tex("@frac{a+b}{1+x^2}")
-                        + "</latex> 链接公式与物品 <img src=\"ore\" width=\"40\" alt=\"物品\"/></a>"
+                        + "</latex> 链接公式与嵌入图像 <img src=\"ore\" width=\"40\" alt=\"嵌入图像\"/></a>"
                         + " 后续正文。<br/>混合RTL：אבג <latex>"
                         + tex("@sqrt{x}")
                         + "</latex> é 👩‍💻 中文；字号变化时公式和图像仍在行高内。<br/>"
@@ -72,7 +71,7 @@ public final class CoreDocumentPage extends MinecraftSceneScreen {
                         + "</latex>。<br/>"
                         + "尺寸与盒：<latex>"
                         + tex("@smash[b]{@frac{a}{b}}")
-                        + "</latex> 后续文字和自然物品 <img src=\"ore\"/>。<br/>";
+                        + "</latex> 后续文字和自然嵌入图像 <img src=\"ore\"/>。<br/>";
         Computed<DocumentContent> content =
                 ctx.domain()
                         .computed(
@@ -113,7 +112,7 @@ public final class CoreDocumentPage extends MinecraftSceneScreen {
                                                 .tooltip(true))));
         DocumentResources resources =
                 new DocumentResources(
-                        MinecraftImageServices.shared().images(),
+                        environment.images(),
                         ctx.domain().signal("https://example.test/docs/"),
                         references,
                         null);
@@ -153,22 +152,13 @@ public final class CoreDocumentPage extends MinecraftSceneScreen {
                         .add(
                                 SceneButton.create(
                                         ctx,
-                                        () -> tool.get() ? "换铁锭" : "换工具",
+                                        () -> environment.hasItems() ? (tool.get() ? "换铁锭" : "换工具") : (tool.get() ? "换蓝色图像" : "换绿色图像"),
                                         theme,
                                         () -> {
                                             tool.set(!tool.get());
-                                            net.minecraft.item.ItemStack stack =
-                                                    new net.minecraft.item.ItemStack(
-                                                            tool.get()
-                                                                    ? net.minecraft.init.Items
-                                                                            .iron_pickaxe
-                                                                    : net.minecraft.init.Items
-                                                                            .iron_ingot,
-                                                            tool.get() ? 1 : 32);
-                                            if (tool.get()) stack.setItemDamage(100);
-                                            item.set(new MinecraftItemSource(stack));
+                                            item.set(environment.embed(tool.get()));
                                         }));
-        ctx.mount(
+        roots.add(
                 new SceneNode()
                         .size(Size.fill(1), Size.fill(1))
                         .padding(8)
@@ -176,7 +166,7 @@ public final class CoreDocumentPage extends MinecraftSceneScreen {
                         .add(
                                 SceneLabel.create(
                                         ctx,
-                                        ctx.domain().signal("共同文档：文字、公式和物品同一内容流；缩窄窗口、滚到底、F3+T。"),
+                                        ctx.domain().signal("共同文档：文字、公式和嵌入图像同一内容流；缩窄窗口、滚到底。" + (environment.hasItems() ? " F3+T重载资源。" : " 位图只验收通用嵌入图像。")),
                                         theme))
                         .add(actions)
                         .add(viewport)

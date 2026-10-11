@@ -1,6 +1,5 @@
-package club.heiqi.uilib.internal.devtools;
+package club.heiqi.uilib.testing.gallery;
 
-import club.heiqi.uilib.ui.host.minecraft.MinecraftSceneScreen;
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.control.SceneButton;
@@ -16,18 +15,22 @@ import club.heiqi.uilib.ui.scene.text.TextLayout;
 import club.heiqi.uilib.ui.scene.text.TextStyle;
 
 /** /qzcore rich：正式页面入口验收样式、动态重排与可见链接；只记录业务目标。 */
-public final class CoreRichTextPage extends MinecraftSceneScreen {
-    public CoreRichTextPage() {
-        super(CoreRichTextPage::buildPage);
+final class CoreRichTextPage {
+    private final GalleryEnvironment environment;
+    private final java.util.function.Consumer<TestGallery.Page> navigate;
+    CoreRichTextPage(GalleryEnvironment environment, java.util.function.Consumer<TestGallery.Page> navigate) {
+        this.environment = environment;
+        this.navigate = navigate;
     }
 
-    private static final String RICH =
+
+    private final String RICH =
             "基础样式：<b>粗体<b>重复粗体</b>恢复粗体</b>；<i>斜体</i>；<u>下划线 <size value=\"28\">大字号</size></u>；<s>删除线</s>。<br/>"
                     + "颜色：<color value=\"#35aaff\">蓝色</color>、<color value=\"#80ee6688\">显式半透明</color>。实体：&lt;b&gt; &amp; &gt;；§l在富文本模式保持字面。<br/>"
                     + "外层<a href=\"../文档?x=1&amp;y=2\">链接 A：多行正文 אבג 中文 👩‍💻，内层<a href=\"业务:内部目标\">链接 B</a>，恢复 A；缩窄窗口后应继续按每行可见内容点击。</a><br/>"
                     + "普通正文与行尾空白不计链接。<br/><a href=\"https://example.invalid/仅发布目标\">长链接：ABCDEFGHIJKLMNOPQRSTUVWXYZ 中文正文 中文正文 中文正文 中文正文</a><br/>";
 
-    private static void buildPage(ScenePageContext ctx) {
+    void buildPage(ScenePageContext ctx, java.util.List<SceneNode> roots) {
         Signal<TextContent.Mode> mode = ctx.domain().signal(TextContent.Mode.RICH_TAGS);
         Signal<Boolean> light = ctx.domain().signal(false),
                 longer = ctx.domain().signal(false),
@@ -196,13 +199,8 @@ public final class CoreRichTextPage extends MinecraftSceneScreen {
                                         () -> "返回核心页",
                                         theme,
                                         () ->
-                                                net.minecraft.client.Minecraft.getMinecraft()
-                                                        .displayGuiScreen(new CoreLoopScreen())));
-        ctx.mount(page);
+                                                navigate.accept(TestGallery.Page.CONTROLS)));
+        roots.add(page);
     }
 
-    @Override
-    public boolean doesGuiPauseGame() {
-        return false;
-    }
 }

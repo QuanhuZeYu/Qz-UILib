@@ -43,13 +43,13 @@ tasks.named<JavaCompile>(testSupportSources.compileJavaTaskName) {
     options.compilerArgs.add("-proc:none")
 }
 sourceSets.getByName("test") {
-    compileClasspath += testSupportSources.output
-    runtimeClasspath += testSupportSources.output
+    compileClasspath += testSupportSources.output + sourceSets.getByName("gallery").output
+    runtimeClasspath += testSupportSources.output + sourceSets.getByName("gallery").output
 }
 // convention插件为test任务单独设置classpath，显式把共同应用输出接到实际编译任务。
 tasks.named<JavaCompile>("compileTestJava") {
     dependsOn(tasks.named(testSupportSources.classesTaskName))
-    classpath += testSupportSources.output
+    classpath += testSupportSources.output + sourceSets.getByName("gallery").output
 }
 
 // 共享启动设置；宿主classpath和参数仍由测试声明。
@@ -103,7 +103,10 @@ val coreSceneApplications = coreSceneDeclarations.associate { (taskName, summary
     taskName to registerTestApplication(taskName, summary, "club.heiqi.uilib.ui.scene.integration.$application") {
         dependsOn(compileCoreSceneScenario)
         classpath = files(coreSceneClasses) + coreSources.output + fontUnicodeRuntime + yamlRuntime
-        if (taskName == "localizationResourceScenario") classpath += files("src/main/resources", "src/test/resources")
+        if (taskName == "localizationResourceScenario") {
+            dependsOn("galleryClasses")
+            classpath += sourceSets.getByName("gallery").output + files("src/test/resources")
+        }
     }
 }
 tasks.named("check") { dependsOn(coreSceneApplications.filterKeys { it != "coreStateScenario" }.values) }
@@ -333,6 +336,12 @@ val minecraftDurabilityScenario = registerTestApplication("minecraftDurabilitySc
     dependsOn(tasks.named("testClasses"))
     classpath = sourceSets.getByName("test").runtimeClasspath + sourceSets.getByName("patchedMc").output
 }
+val galleryScenario = registerTestApplication("galleryScenario", "同一测试广场无平台真实字体输入旅程", "club.heiqi.uilib.ui.scene.integration.GalleryScenario") {
+    dependsOn("testClasses")
+    classpath = fontUnicodeRuntime + yamlRuntime + sourceSets.getByName("test").runtimeClasspath
+}
+tasks.named("check") { dependsOn(galleryScenario) }
+
 val coreAssetResourceScenario = registerTestApplication("coreAssetResourceScenario", "MC资源链的独立Core资产、Emoji及用户覆盖重载回归", "club.heiqi.uilib.host.client.font.CoreAssetResourceScenario") {
     dependsOn(tasks.named("testClasses"))
     // 未重定位开发输出使用Core的ICU版本，不能先加载原版随附的ICU51。

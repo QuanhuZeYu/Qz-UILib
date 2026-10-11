@@ -14,7 +14,7 @@ val coreSources = sourceSets.create("core") {
     java.srcDir("src/main/java")
     java.include(*corePackages)
     resources.srcDir("src/main/resources")
-    resources.include("assets/qz_uilib/unicode/**", "assets/qz_uilib/fonts/**")
+    resources.include("assets/qz_uilib/unicode/**", "assets/qz_uilib/fonts/**", "assets/qz_uilib/math/**")
     compileClasspath = fontUnicodeRuntime + yamlRuntime
     runtimeClasspath = output + compileClasspath
 }
@@ -37,7 +37,7 @@ listOf(coreSources, fontAdapterSources).forEach { sources ->
 }
 sourceSets.getByName("main") {
     java.exclude(*corePackages, "club/heiqi/uilib/host/font/**")
-    resources.exclude("assets/qz_uilib/unicode/**", "assets/qz_uilib/fonts/**", "assets/qz_uilib/runtime/font/**")
+    resources.exclude("assets/qz_uilib/unicode/**", "assets/qz_uilib/fonts/**", "assets/qz_uilib/math/**", "assets/qz_uilib/runtime/font/**")
     compileClasspath += coreSources.output + fontAdapterSources.output + fontUnicodeRuntime + yamlRuntime
     runtimeClasspath += coreSources.output + fontAdapterSources.output + fontUnicodeRuntime + yamlRuntime
 }

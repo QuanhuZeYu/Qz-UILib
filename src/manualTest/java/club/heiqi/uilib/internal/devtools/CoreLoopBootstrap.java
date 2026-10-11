@@ -22,17 +22,12 @@ public final class CoreLoopBootstrap {
     public void tick(TickEvent.ClientTickEvent event) {
         if (event.phase != TickEvent.Phase.END || !pendingOpen) return;
         pendingOpen = false;
-        Minecraft.getMinecraft()
-                .displayGuiScreen(
-                        pendingDocument
-                                ? new CoreDocumentPage()
-                                : pendingMath
-                                        ? new CoreMathPage()
-                                        : pendingRich
-                                                ? new CoreRichTextPage()
-                                                : pendingLanguage
-                                                        ? new CoreLocalizationPage()
-                                                        : new CoreLoopScreen());
+        Minecraft.getMinecraft().displayGuiScreen(new CoreLoopScreen(
+                pendingDocument ? club.heiqi.uilib.testing.gallery.TestGallery.Page.DOCUMENT
+                : pendingMath ? club.heiqi.uilib.testing.gallery.TestGallery.Page.MATH
+                : pendingRich ? club.heiqi.uilib.testing.gallery.TestGallery.Page.RICH
+                : pendingLanguage ? club.heiqi.uilib.testing.gallery.TestGallery.Page.LANGUAGE
+                : club.heiqi.uilib.testing.gallery.TestGallery.Page.CONTROLS));
     }
 
     private CoreLoopBootstrap() {}

@@ -3,6 +3,7 @@ package club.heiqi.uilib.host.desktop;
 import static org.lwjgl.glfw.GLFW.*;
 import static org.lwjgl.opengl.GL11.*;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -13,6 +14,7 @@ import java.util.Collections;
 import java.util.Deque;
 import java.util.List;
 import java.util.Objects;
+import java.util.function.Function;
 import org.lwjgl.glfw.Callbacks;
 import org.lwjgl.glfw.GLFWErrorCallback;
 import org.lwjgl.opengl.GL;
@@ -23,6 +25,10 @@ import club.heiqi.uilib.host.client.font.FramebufferSceneRenderer;
 import club.heiqi.uilib.host.client.gl.GlProgramProvider;
 import club.heiqi.uilib.host.client.gl.Lwjgl3GlApi;
 import club.heiqi.uilib.host.font.freetype.LwjglFontEngine;
+import club.heiqi.uilib.host.client.image.ClientImageServices;
+import club.heiqi.uilib.host.client.image.JavaImageLoader;
+import club.heiqi.uilib.ui.scene.image.ImageService;
+import club.heiqi.uilib.ui.scene.image.SharedImageService;
 import club.heiqi.uilib.ui.config.ConfigKey;
 import club.heiqi.uilib.ui.config.ConfigSchema;
 import club.heiqi.uilib.ui.config.ConfigSession;
@@ -60,23 +66,31 @@ public final class DesktopWindow implements SceneHost, AutoCloseable {
     ConfigSession configuration;
     ConfigKey<List<String>> fontCandidates;
     ClientFontServices fonts;
+    private ClientImageServices images;
     private FramebufferSceneRenderer renderer;
     ScenePageSession page;
     PaintPlan lastPlan;
     int resizeCallbacks;
 
-    private DesktopWindow(Path path, ScenePage supplied) {
+    private DesktopWindow(Path path, boolean sample) {
         configPath = Objects.requireNonNull(path, "configPath").toAbsolutePath().normalize();
-        samplePage = supplied == null ? new DesktopPage() : null;
+        samplePage = sample ? new DesktopPage() : null;
     }
     public static DesktopWindow open(Path configuration) throws IOException {
         return open(configuration, null);
     }
     /** 业务页面直接接入既有ScenePage/ScenePageContext，无第二套页面抽象。 */
     public static DesktopWindow open(Path configuration, ScenePage content) throws IOException {
-        DesktopWindow result = new DesktopWindow(configuration, content);
+        return open(configuration, content, null);
+    }
+    /** 图像owner就绪后声明业务页面；服务归窗口，页面订阅仍归页面作用域。 */
+    public static DesktopWindow openWithImages(Path configuration, Function<ImageService, ScenePage> content) throws IOException {
+        return open(configuration, null, Objects.requireNonNull(content, "content"));
+    }
+    private static DesktopWindow open(Path configuration, ScenePage content, Function<ImageService, ScenePage> factory) throws IOException {
+        DesktopWindow result = new DesktopWindow(configuration, content == null && factory == null);
         try {
-            result.initialize(content);
+            result.initialize(content, factory);
             return result;
         } catch (Throwable failure) {
             try { result.close(); } catch (Throwable cleanup) { failure.addSuppressed(cleanup); }
@@ -88,7 +102,7 @@ public final class DesktopWindow implements SceneHost, AutoCloseable {
         }
     }
     private <T extends AutoCloseable> T own(T resource) { resources.push(resource); return resource; }
-    private void initialize(ScenePage supplied) throws IOException {
+    private void initialize(ScenePage supplied, Function<ImageService, ScenePage> factory) throws IOException {
         GLFWErrorCallback errors = GLFWErrorCallback.createPrint(System.err);
         errors.set();
         own(() -> { glfwSetErrorCallback(null); errors.free(); });
@@ -111,7 +125,18 @@ public final class DesktopWindow implements SceneHost, AutoCloseable {
                 true, new LwjglFontEngine(), new Lwjgl3GlApi(), GlProgramProvider.NONE);
         // worker与其native会话在销毁窗口前完成结束；只在关闭等待，不在帧里等待字形。
         own(this::closeFonts);
-        renderer = own(new FramebufferSceneRenderer(fonts));
+        images = new ClientImageServices(fonts.gl(), new JavaImageLoader(id -> {
+            // 桌面资源显式按domain:path映射，不依赖游戏ResourceManager或游戏类路径。
+            int separator = id.indexOf(':');
+            if (separator <= 0 || separator == id.length() - 1)
+                throw new IOException("桌面图像资源标识须为domain:path: " + id);
+            String resource = "assets/" + id.substring(0, separator) + "/" + id.substring(separator + 1);
+            InputStream snapshot = loader.getResourceAsStream(resource);
+            if (snapshot == null) throw new IOException("桌面图像资源不存在: " + id + " -> " + resource);
+            return snapshot;
+        }, JavaImageLoader.Budget.defaults()), SharedImageService.Budget.defaults());
+        own(this::closeImages);
+        renderer = own(new FramebufferSceneRenderer(fonts, images));
         List<FontSource> defaults = FontTextService.defaultSources(loader, 1);
         fontCandidates = FontCandidateConfiguration.key(defaults);
         domain.execute(() -> {
@@ -139,12 +164,29 @@ public final class DesktopWindow implements SceneHost, AutoCloseable {
                 catch (IOException failure) { throw new UncheckedIOException(failure); }
             });
         });
+        ScenePage content = factory == null ? supplied : Objects.requireNonNull(factory.apply(images.images()), "content page");
         page = own(ScenePageSession.open(domain, this, fonts,
-                supplied == null ? ctx -> samplePage.build(ctx, configuration, this::reloadUnchecked) : supplied));
+                content == null ? ctx -> samplePage.build(ctx, configuration, this::reloadUnchecked) : content));
         installCallbacks();
         glfwShowWindow(window);
     }
     private Signal<Long> reloadRevision;
+    private void closeImages() throws Exception {
+        // close后owner不可再访问，先取得共享服务；仅关闭阶段等待worker，不阻塞正常帧。
+        SharedImageService shared = images.shared();
+        Throwable failure = null;
+        try { images.close(); } catch (Throwable next) { failure = next; }
+        try {
+            if (!shared.awaitClose(5000)) throw new IllegalStateException("图像worker未结束");
+        } catch (Throwable next) {
+            if (next instanceof InterruptedException) Thread.currentThread().interrupt();
+            if (failure == null) failure = next;
+            else if (failure != next) failure.addSuppressed(next);
+        }
+        if (failure instanceof Error) throw (Error) failure;
+        if (failure instanceof Exception) throw (Exception) failure;
+        if (failure != null) throw new IllegalStateException(failure);
+    }
     private void closeFonts() throws Exception {
         Throwable failure = null;
         try { fonts.close(); } catch (Throwable next) { failure = next; }
@@ -175,6 +217,7 @@ public final class DesktopWindow implements SceneHost, AutoCloseable {
                 try { configuration.load(configPath); }
                 catch (IOException failure) { throw new UncheckedIOException(failure); }
                 reloadRevision.set(reloadRevision.get() + 1);
+                images.resourcesReloaded();
             });
         } catch (UncheckedIOException failure) { throw failure.getCause(); }
     }
@@ -303,6 +346,8 @@ public final class DesktopWindow implements SceneHost, AutoCloseable {
     @Override public int width() { return framebufferWidth; }
     @Override public int height() { return framebufferHeight; }
     @Override public long metricsRevision() { return revision + fonts.fonts().generation() + fonts.readyVersion(); }
+    /** 正式帧管线在测量/输入前接收完成结果，由既有图像信号使相关声明失效。 */
+    @Override public void prepareResources() { check(); images.prepareResources(); }
     @Override public void replay(PaintPlan plan) { lastPlan = plan; renderer.replay(plan, width(), height()); }
     public void frame() {
         check(); glfwPollEvents();

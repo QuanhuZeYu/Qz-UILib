@@ -111,6 +111,7 @@ public final class CoreArtifactScenario extends TestApplication {
     private void verifyCore(File file) throws Exception {
         try (JarFile jar = new JarFile(file)) {
             Enumeration<JarEntry> entries = jar.entries();
+            require(jar.getJarEntry("assets/qz_uilib/math/catalog/functions.tsv") != null, "Core数学事实资源缺失：桌面共享页面无法初始化");
             boolean config = false, unicode = false, yaml = false;
             while (entries.hasMoreElements()) {
                 JarEntry entry = entries.nextElement();
@@ -153,7 +154,7 @@ public final class CoreArtifactScenario extends TestApplication {
                         || name.startsWith(YAML) || name.startsWith("org/yaml/snakeyaml/"))), "MC成品重复定义独立模块：" + name);
                 require(!name.startsWith("club/heiqi/uilib/host/desktop/"), "MC成品嵌入桌面宿主：" + name);
                 require(!name.startsWith("assets/qz_uilib/runtime/font/")
-                        && !name.startsWith("assets/qz_uilib/fonts/") && !name.startsWith("assets/qz_uilib/unicode/"),
+                        && !name.startsWith("assets/qz_uilib/fonts/") && !name.startsWith("assets/qz_uilib/unicode/") && !name.startsWith("assets/qz_uilib/math/"),
                         "MC成品重复持有独立模块资源：" + name);
             }
         }
@@ -171,7 +172,7 @@ public final class CoreArtifactScenario extends TestApplication {
                 String name = entry.getName();
                 nativeLibrary |= name.endsWith(".dll") || name.endsWith(".so") || name.endsWith(".dylib");
                 require(!name.startsWith("assets/qz_uilib/runtime/font/")
-                        && !name.startsWith("assets/qz_uilib/fonts/") && !name.startsWith("assets/qz_uilib/unicode/"),
+                        && !name.startsWith("assets/qz_uilib/fonts/") && !name.startsWith("assets/qz_uilib/unicode/") && !name.startsWith("assets/qz_uilib/math/"),
                         "桌面重复持有核心或字体适配资源：" + name);
                 if (!name.endsWith(".class")) continue;
                 require(!name.startsWith("club/heiqi/uilib/testing/")
