@@ -268,6 +268,54 @@ public final class SceneCoreLoopTest extends TestApplication {
                     }
                 });
         scenario("节点挂载移动卸载生命周期", () -> lifecycleScenario(domain));
+        scenario(
+                "释放失败仍永久销毁所属子树",
+                () -> domain.execute(() -> {
+                    SceneRuntime runtime = new SceneRuntime(domain);
+                    List<String> released = new ArrayList<>();
+                    RuntimeException failure = new IllegalStateException("释放失败");
+                    SceneNode child = new SceneNode().text("独立子项");
+                    SceneNode root = new SceneNode().add(child).bind((scene, node, owner) -> {
+                        owner.own(() -> released.add("其余资源"));
+                        owner.own(() -> { throw failure; });
+                        return new BindingActivation() {
+                            public void refresh() {}
+                            public void close() { released.add("绑定"); }
+                        };
+                    });
+                    MountHandle handle = runtime.attach(null, root);
+                    try {
+                        try {
+                            handle.destroy();
+                            throw new AssertionError("必须报告原始释放错误");
+                        } catch (RuntimeException expected) {
+                            require(expected == failure, "永久销毁保留原始释放错误");
+                        }
+                        require(released.equals(Arrays.asList("绑定", "其余资源")), "释放失败不阻断其他资源");
+                        require(root.destroyed() && child.destroyed(), "释放失败仍终止整棵所属子树");
+                        require(root.runtime() == null && child.runtime() == null && child.parent() == null,
+                                "销毁释放挂载与所属关系");
+                        for (SceneNode ended : Arrays.asList(root, child)) {
+                            try {
+                                runtime.attach(null, ended);
+                                throw new AssertionError("永久销毁的节点不得重新挂载");
+                            } catch (IllegalArgumentException expected) {}
+                        }
+                        SceneNode retained = new SceneNode();
+                        MountHandle old = runtime.attach(null, retained);
+                        old.detach();
+                        MountHandle current = runtime.attach(null, retained);
+                        try {
+                            old.destroy();
+                            throw new AssertionError("旧句柄必须拒绝销毁新的挂载");
+                        } catch (IllegalStateException expected) {}
+                        require(!retained.destroyed() && retained.runtime() == runtime,
+                                "无效句柄不终止新的挂载生命周期");
+                        current.destroy();
+                    } finally {
+                        runtime.close();
+                    }
+                }));
         scenario("软件scene完整生产链路", () -> new SoftwareSceneScenario().run());
         System.out.println("无平台业务状态/派生/作用域/副作用及节点生命周期场景通过");
     }

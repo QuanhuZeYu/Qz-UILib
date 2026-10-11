@@ -323,12 +323,18 @@ public final class SceneRuntime implements AutoCloseable {
     }
 
     void destroy(SceneNode node, Object token) {
-        detach(node, token);
-        mutation = true;
+        // 核心规格第 5 节：有效的永久删除即使释放失败也必须终止子树。
+        // 先核验句柄，旧句柄不能借 finally 销毁后来重新挂载的同一实例。
+        requireMount(node, token);
         try {
-            destroySubtree(node);
+            detach(node, token);
         } finally {
-            mutation = false;
+            mutation = true;
+            try {
+                destroySubtree(node);
+            } finally {
+                mutation = false;
+            }
         }
     }
 
