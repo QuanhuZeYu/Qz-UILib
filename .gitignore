@@ -31,6 +31,7 @@ whitelist.json
 *.bat
 *.DS_Store
 *.png
+!src/gallery/resources/assets/**/*.png
 !gradlew.bat
 .factorypath
 addon.local.gradle
