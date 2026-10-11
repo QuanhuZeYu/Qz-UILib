@@ -5,6 +5,7 @@ import org.lwjgl.glfw.GLFWCursorPosCallback;
 import org.lwjgl.glfw.GLFWMouseButtonCallback;
 import org.lwjgl.glfw.GLFWCharCallback;
 import org.lwjgl.glfw.GLFWKeyCallback;
+import org.lwjgl.glfw.GLFWScrollCallback;
 import java.nio.ByteBuffer;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -33,6 +34,7 @@ public final class DesktopGallery {
             GLFWCursorPosCallback cursor = glfwSetCursorPosCallback(window.handle(), null); glfwSetCursorPosCallback(window.handle(), cursor);
             GLFWMouseButtonCallback mouse = glfwSetMouseButtonCallback(window.handle(), null); glfwSetMouseButtonCallback(window.handle(), mouse);
             GLFWCharCallback character = glfwSetCharCallback(window.handle(), null); glfwSetCharCallback(window.handle(), character);
+            GLFWScrollCallback scroll = glfwSetScrollCallback(window.handle(), null); glfwSetScrollCallback(window.handle(), scroll);
             GLFWKeyCallback key = glfwSetKeyCallback(window.handle(), null); glfwSetKeyCallback(window.handle(), key);
             if (cursor == null || mouse == null || character == null || key == null) throw new AssertionError("宿主没有安装输入回调");
             GalleryJourney.run(new GalleryJourney.Driver() {
@@ -43,6 +45,11 @@ public final class DesktopGallery {
                     int[] width = new int[1], height = new int[1]; glfwGetWindowSize(window.handle(),width,height);
                     cursor.invoke(window.handle(),(double)x*width[0]/window.width(),(double)y*height[0]/window.height());
                     mouse.invoke(window.handle(),0,GLFW_PRESS,0); mouse.invoke(window.handle(),0,GLFW_RELEASE,0);
+                }
+                public void scroll(int x, int y, int delta) {
+                    int[] width = new int[1], height = new int[1]; glfwGetWindowSize(window.handle(),width,height);
+                    cursor.invoke(window.handle(),(double)x*width[0]/window.width(),(double)y*height[0]/window.height());
+                    scroll.invoke(window.handle(),0,delta);
                 }
                 public void replaceText(String value) {
                     key.invoke(window.handle(),GLFW_KEY_A,0,GLFW_PRESS,GLFW_MOD_CONTROL);
@@ -98,7 +105,7 @@ public final class DesktopGallery {
             int p=((window.height()-1-y)*window.width()+x)*4;
             output.setRGB(x,y,0xff000000|((bytes.get(p)&255)<<16)|((bytes.get(p+1)&255)<<8)|(bytes.get(p+2)&255));
         }
-        if (glGetError() != GL_NO_ERROR || output.getRGB(window.width()-4, window.height()-4) != 0xff161c24) throw new AssertionError("共享广场背景未覆盖视口");
+        if (glGetError() != GL_NO_ERROR || output.getRGB(window.width()-4, window.height()-4) != club.heiqi.uilib.ui.scene.control.SceneTheme.dark().panel) throw new AssertionError("共享广场背景未覆盖视口");
         PaintCommand title = window.lastPlan.commands().stream().filter(c -> c.kind == PaintCommand.Kind.TEXT && c.text.originalText.startsWith("测试广场 · ")).findFirst().orElseThrow(() -> new AssertionError("广场标题缺失"));
         int ink = 0;
         for (int y = Math.max(0,title.box.y); y < Math.min(window.height(),title.box.y+title.box.height); y++)

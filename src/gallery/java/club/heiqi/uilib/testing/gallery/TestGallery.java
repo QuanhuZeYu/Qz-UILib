@@ -26,13 +26,24 @@ import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
 /** 一次声明由三宿主引用。每次build创建独立应用状态与页面树，没有进程静态草稿。 */
 public final class TestGallery implements ScenePage {
     public enum Page {
-        CONTROLS("控件"), LANGUAGE("语言"), RICH("富文本"), IMAGE("图像"), MATH("数学"), DOCUMENT("共同文档");
-        public final String title;
-        Page(String title) { this.title = title; }
+        HOME("场景目录", "选择真实使用任务或专项定位样本", false),
+        ARTICLE("文章阅读", "阅读含公式与插图的使用说明，切换语言、字号和阅读宽度", true),
+        DETAILS("配方详情", "调整制作批次，查看材料数量、计算说明与图标", true),
+        CONTROLS("设置与表单", "编辑、校验和提交数值，验证草稿、焦点与嵌套弹窗", true),
+        MESSAGES("消息与活动", "接收消息、展开详情，观察多语言和Emoji的动态列表", true),
+        REPORT("数据报告", "切换统计周期，核对数字、公式与说明同步变化", true),
+        LANGUAGE("语言样本", "语言资源切换与重载", false),
+        RICH("富文本样本", "属性、链接和复杂文字", false),
+        IMAGE("图像样本", "资源图像、动态图像与显式联网操作", false),
+        MATH("数学样本", "公式专项与错误定位", false),
+        DOCUMENT("混排样本", "共同文档复杂内容边界", false);
+        public final String title, purpose;
+        public final boolean scenario;
+        Page(String title, String purpose, boolean scenario) { this.title = title; this.purpose = purpose; this.scenario = scenario; }
     }
     private final GalleryEnvironment environment;
     private final Page initial;
-    public TestGallery(GalleryEnvironment environment) { this(environment, Page.CONTROLS); }
+    public TestGallery(GalleryEnvironment environment) { this(environment, Page.HOME); }
     public TestGallery(GalleryEnvironment environment, Page initial) {
         this.environment = Objects.requireNonNull(environment, "environment");
         this.initial = Objects.requireNonNull(initial, "initial");
@@ -43,7 +54,7 @@ public final class TestGallery implements ScenePage {
         club.heiqi.uilib.ui.reactive.ReadableSignal<SceneTheme> theme = SceneTheme::dark;
         SceneNode shell = new SceneNode().size(Size.fill(1), Size.fill(1)).background(0xff161c24).gap(4);
         SceneNode navigation = new SceneNode().axis(SceneNode.Axis.ROW).size(Size.fill(1), Size.natural()).gap(3);
-        for (Page id : Page.values()) navigation.add(SceneButton.create(context, () -> id.title, theme, () -> navigate.accept(id)));
+        navigation.add(SceneButton.create(context, () -> "返回场景目录", theme, () -> navigate.accept(Page.HOME)).size(Size.natural(), Size.natural()).clickFocus(false));
         shell.add(SceneLabel.create(context, () -> "测试广场 · " + selected.get().title, theme));
         shell.add(navigation);
         List<SceneNode> layers = new ArrayList<>();
@@ -51,7 +62,12 @@ public final class TestGallery implements ScenePage {
         for (Page id : Page.values()) {
             List<SceneNode> roots = new ArrayList<>();
             switch (id) {
-                case CONTROLS: new CoreLoopPage(environment, navigate).buildPage(context, roots); break;
+                case HOME: roots.add(directory(context, theme, navigate)); break;
+                case ARTICLE: case DETAILS: case MESSAGES: case REPORT:
+                    roots.add(UsageScenarios.create(context, environment, id)); break;
+                case CONTROLS:
+                    roots.add(SceneLabel.create(context, () -> "操作：添加记录、编辑并确认整数、打开与关闭弹窗。预期：业务结果更新；切页保留草稿并隔离失活输入。", theme));
+                    new CoreLoopPage(environment, navigate).buildPage(context, roots); break;
                 case LANGUAGE: new CoreLocalizationPage(environment, navigate).buildPage(context, roots); break;
                 case RICH: new CoreRichTextPage(environment, navigate).buildPage(context, roots); break;
                 case MATH: new CoreMathPage(environment, navigate).buildPage(context, roots); break;
@@ -67,6 +83,20 @@ public final class TestGallery implements ScenePage {
         for (SceneNode layer : layers) content.add(layer);
         shell.add(content);
         context.mountOwned(shell);
+    }
+    private static SceneNode directory(ScenePageContext context, club.heiqi.uilib.ui.reactive.ReadableSignal<SceneTheme> theme, java.util.function.Consumer<Page> navigate) {
+        SceneNode directory = new SceneNode().size(Size.fill(1), Size.fill(1)).padding(12).gap(8).scrollable(true);
+        directory.add(SceneLabel.create(context, () -> "从真实任务开始 · 每个场景共用文字、公式、图像与正式输入", theme));
+        for (boolean scenarios : new boolean[] {true, false}) {
+            directory.add(SceneLabel.create(context, () -> scenarios ? "使用场景" : "专项定位样本", theme));
+            for (Page id : Page.values()) if (id != Page.HOME && id.scenario == scenarios) {
+                SceneNode card = new SceneNode().size(Size.fill(1), Size.natural()).padding(8).gap(4).background(0xff253141);
+                card.add(SceneButton.create(context, () -> id.title, theme, () -> navigate.accept(id)).clickFocus(false));
+                card.add(SceneLabel.create(context, () -> id.purpose, theme));
+                directory.add(card);
+            }
+        }
+        return directory;
     }
     /** 多根页面复用正式控件扩展端口，模态仍按原根顺序叠放；几何与输入由scene唯一引擎维护。 */
     private static final class Layers implements SceneControl {

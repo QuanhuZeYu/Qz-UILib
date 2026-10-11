@@ -27,7 +27,7 @@ public final class CoreLoopBootstrap {
                 : pendingMath ? club.heiqi.uilib.testing.gallery.TestGallery.Page.MATH
                 : pendingRich ? club.heiqi.uilib.testing.gallery.TestGallery.Page.RICH
                 : pendingLanguage ? club.heiqi.uilib.testing.gallery.TestGallery.Page.LANGUAGE
-                : club.heiqi.uilib.testing.gallery.TestGallery.Page.CONTROLS));
+                : club.heiqi.uilib.testing.gallery.TestGallery.Page.HOME));
     }
 
     private CoreLoopBootstrap() {}

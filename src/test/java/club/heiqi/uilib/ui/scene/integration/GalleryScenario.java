@@ -45,6 +45,7 @@ public final class GalleryScenario extends TestApplication {
                         public PaintPlan paint() { return host.paint; }
                         public SceneGeometryView geometry() { final SceneGeometryView[] result = {null}; domain.execute(() -> result[0] = session.pipeline().current().geometry); return result[0]; }
                         public void click(int x, int y) { session.pointer(ScenePointerEvent.down(0,x,y)); session.pointer(ScenePointerEvent.up(0,x,y)); }
+                        public void scroll(int x, int y, int delta) { session.pointer(ScenePointerEvent.scroll(x,y,delta)); }
                         public void replaceText(String value) { session.edit(SceneEditEvent.command(SceneEditEvent.Command.SELECT_ALL,false,null)); session.edit(SceneEditEvent.text(value)); }
                     });
                     System.out.println("GALLERY host=automatic run="+number+" sharedDeclaration=true sharedJourney=true");
