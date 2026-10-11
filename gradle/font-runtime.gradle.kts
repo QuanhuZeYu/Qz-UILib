@@ -73,8 +73,7 @@ val packageFontBindings by tasks.registering {
         File(destination, "index.txt").writeText(artifacts.joinToString("\n") { it.name } + "\n", Charsets.UTF_8)
     }
 }
-sourceSets.getByName("main").resources.srcDir(isolatedFontResources)
-tasks.named("processResources") { dependsOn(packageFontBindings) }
+// 嵌套绑定资源由正式 fontAdapter 源集持有，main 不复制它们。
 tasks.named<Jar>("sourcesJar") {
     dependsOn(packageFontBindings)
     exclude("assets/qz_uilib/runtime/font/**")

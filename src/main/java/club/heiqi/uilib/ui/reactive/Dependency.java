@@ -3,7 +3,7 @@ package club.heiqi.uilib.ui.reactive;
 import java.util.LinkedHashSet;
 import java.util.Set;
 
-/** 内部依赖边；失效不执行用户代码。 */
+/** 内部依赖边；先完整传播失效，观察通知由状态域在失效边界结束后统一同步调用。 */
 abstract class Dependency {
     final ReactiveDomain domain;
     private final Set<Tracker> dependents = new LinkedHashSet<>();
@@ -25,7 +25,9 @@ abstract class Dependency {
     }
 
     final void invalidateDependents() {
-        for (Tracker tracker : new LinkedHashSet<>(dependents)) tracker.invalidate();
+        domain.invalidate(() -> {
+            for (Tracker tracker : new LinkedHashSet<>(dependents)) tracker.invalidate();
+        });
     }
 }
 

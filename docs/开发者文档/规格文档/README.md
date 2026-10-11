@@ -12,6 +12,7 @@
 | 文本、Markdown、富文本与数学内容 | [文本规格](<../../superpowers/specs/2026-10-07-uilib-text-content-spec.md>) |
 | 图像来源、尺寸、加载状态与物品图标 | [图像规格](<../../superpowers/specs/2026-10-07-uilib-image-spec.md>) |
 | 字体整形、光栅及渲染 | [字体规格](<../../superpowers/specs/2026-10-07-uilib-font-renderer-spec.md>) |
+| 独立配置声明、状态与持久化 | [无平台配置规格](<../../superpowers/specs/2026-10-11-uilib-config-spec.md>) |
 | MC宿主有序合批 | [渲染优化规格](<../../superpowers/specs/2026-10-07-mc-host-render-optimization-spec.md>) |
 
 规格是目标与验收依据，不表示所有模块已经实现。当前可用入口见[页面接入](<../声明式页面接入.md>)与[标准控件](<../标准控件与动态主题.md>)；源码与运行证据说明实现现状，不能反向定义要求。必要行为裁定更新到所属规格，局部机制及失败原因留在最近的代码注释。

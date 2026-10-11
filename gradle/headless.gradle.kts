@@ -16,7 +16,7 @@ val sourceSets = extensions.getByType<SourceSetContainer>()
 //    直启 classpath = main 输出（含 headless 类）+ 真 LWJGL2（须排在 lwjgl3ify shim 之前）+ 运行期依赖。
 // ============================================================================
 val headlessRuntimeDir = layout.buildDirectory.dir("headless")
-val mainSourceOutput: FileCollection = sourceSets.getByName("main").output
+val mainSourceOutput: FileCollection = sourceSets.getByName("main").output + sourceSets.getByName("core").output + sourceSets.getByName("fontAdapter").output
 
 val headlessLwjglRuntimeJars: Provider<List<File>> = configurations.named("compileClasspath").map { cfg ->
     cfg.files.filter { file ->
@@ -146,6 +146,7 @@ val exportHeadlessClasspath by tasks.registering(ExportHeadlessClasspath::class)
     // 注意必须用 sourceSets.main.output，而不是 classes 任务的 outputs——classes 是生命周期任务，outputs 为空。
     classpath.from(mainSourceOutput)
     classpath.from(headlessLwjglRuntimeJars)
+    classpath.from(configurations.getByName("fontUnicodeRuntime"))
     classpath.from(configurations.named("runtimeClasspath"))
     fullClasspath.from(configurations.named("compileClasspath"))
     // MC 类不在 compileClasspath 上：RFG 把重编译后的 Minecraft 放在 patchedMc 源集输出里，

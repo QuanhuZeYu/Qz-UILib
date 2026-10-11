@@ -11,7 +11,7 @@ import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.Properties;
 
-/** 同一个正式包在Java8/25实际打开字体、整形及光栅，避免开发classpath掩盖多版本绑定。 */
+/** 正式核心与独立字体适配组合在Java8/25打开字体、整形及光栅，避免开发classpath掩盖缺失依赖。 */
 public final class PackagedFontScenario extends TestApplication {
     private URLClassLoader loader;
     private Class<?> sessionType, faceType, directionType;
@@ -22,8 +22,9 @@ public final class PackagedFontScenario extends TestApplication {
     protected void setup() throws Exception {
         initialProperties = new Properties();
         initialProperties.putAll(System.getProperties());
-        loader =
-                own(new URLClassLoader(new URL[] {new File(arguments()[0]).toURI().toURL()}, null));
+        URL[] artifacts = new URL[arguments().length];
+        for (int i = 0; i < artifacts.length; i++) artifacts[i] = new File(arguments()[i]).toURI().toURL();
+        loader = own(new URLClassLoader(artifacts, null));
         sessionType =
                 loader.loadClass("club.heiqi.uilib.ui.scene.text.font.nativefont.FontSession");
         faceType = loader.loadClass("club.heiqi.uilib.ui.scene.text.font.nativefont.FontFace");

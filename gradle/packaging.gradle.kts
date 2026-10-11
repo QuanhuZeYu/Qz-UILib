@@ -11,7 +11,7 @@ import org.gradle.api.tasks.SourceSetContainer
 val sourceSets = extensions.getByType<SourceSetContainer>()
 // 显式人工测试附加包：与发布包分离，不进入 assemble/publish，真实实例自动安装 /qzcore。
 val manualTestSources = sourceSets.create("manualTest") {
-    compileClasspath = sourceSets.getByName("main").output + sourceSets.getByName("main").compileClasspath
+    compileClasspath = sourceSets.getByName("main").output + sourceSets.getByName("core").output + sourceSets.getByName("fontAdapter").output + sourceSets.getByName("main").compileClasspath
 }
 tasks.named<JavaCompile>(manualTestSources.compileJavaTaskName) {
     // 附加入口只有 Java 8 语法，不加载从业务 classpath 发现的编译处理器。
@@ -77,7 +77,7 @@ tasks.withType<org.gradle.jvm.tasks.Jar>().configureEach {
 
 // 2) 门禁：逐个打开产物断言不含该包。排除是意图，门禁才是保证；
 //    校验集合按 AbstractArchiveTask 全量枚举 + 显式依赖本仓产物任务，构建链新增打包任务不会静默漏检。
-val guardedArchiveTasks = listOf("jar", "shadowJar", "sourcesJar", "apiJar", "reobfJar")
+val guardedArchiveTasks = listOf("jar", "shadowJar", "sourcesJar", "apiJar", "reobfJar", "coreJar", "fontAdapterJar")
 val verifyDevToolsNotPackaged by tasks.registering {
     group = "verification"
     description = "校验内部开发工具（internal.devtools 整包）未进入任何打包产物"
@@ -117,8 +117,10 @@ val verifyDevToolsNotPackaged by tasks.registering {
 }
 tasks.named("check") { dependsOn(verifyDevToolsNotPackaged) }
 
-// 数学能力依赖正式随包字体；版权与完整许可必须与原资源一起进入发行包。
-tasks.named<ReobfuscatedJar>("reobfJar") {
+// 数学能力依赖核心持有的正式字体；版权与完整许可必须与原资源一起进入 coreJar。
+// MC 重混淆产物依赖该发行组成部分，单独生成 MC 成品也保留资源门禁。
+tasks.named("reobfJar") { dependsOn("coreJar") }
+tasks.named<Jar>("coreJar") {
     doLast {
         ZipFile(archiveFile.get().asFile).use { zip ->
             listOf("STIXTwoMath-Regular.otf", "OFL.txt", "SOURCE.md").forEach { name ->

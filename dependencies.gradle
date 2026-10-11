@@ -63,6 +63,5 @@ dependencies {
 
     // SnakeYAML：用于现代化配置页的 YAML 解析与序列化，shadow relocate 后随 jar 分发
     shadowImplementation("org.yaml:snakeyaml:2.2")
-    // Unicode排版不得加载Minecraft的ICU51；私有relocate后验证数据资源加载。
-    shadowImplementation("com.ibm.icu:icu4j:76.1")
+    // ICU 由正式 coreJar 独立持有；宿主编译与重定位引用在 gradle/core.gradle.kts 接入。
 }

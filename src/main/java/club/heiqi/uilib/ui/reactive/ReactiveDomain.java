@@ -12,6 +12,9 @@ public final class ReactiveDomain {
     private final Executor executor;
     private final ArrayDeque<Runnable> actions = new ArrayDeque<>();
     private final ArrayDeque<Effect> effects = new ArrayDeque<>();
+    private final ArrayDeque<Observation> observations = new ArrayDeque<>();
+    private int invalidationDepth;
+    private boolean drainingObservations;
     private boolean scheduled;
     private int depth;
     private int readOnlyDepth;
@@ -178,7 +181,48 @@ public final class ReactiveDomain {
 
     public void batch(Runnable action) {
         checkAccess();
-        operation(Objects.requireNonNull(action, "action"));
+        operation(() -> invalidate(Objects.requireNonNull(action, "action")));
+    }
+
+    /** 先完成全部依赖失效，再同步通知呈现观察者；批次内跨键派生不能暴露旧缓存。
+     * 回调错误不阻断其余观察者，已发布状态不撤销；沿原调用通道保留首错。 */
+    void invalidate(Runnable action) {
+        Throwable primary = null;
+        invalidationDepth++;
+        try {
+            action.run();
+        } catch (RuntimeException | Error failure) {
+            primary = failure;
+            throw failure;
+        } finally {
+            invalidationDepth--;
+            if (invalidationDepth == 0 && !drainingObservations) {
+                try { drainObservations(); }
+                catch (RuntimeException | Error failure) {
+                    if (primary == null) throw failure;
+                    if (primary != failure) primary.addSuppressed(failure);
+                }
+            }
+        }
+    }
+
+    void invalidate(Observation observation) { observations.add(observation); }
+
+    private void drainObservations() {
+        drainingObservations = true;
+        Throwable failure = null;
+        try {
+            Observation observation;
+            while ((observation = observations.poll()) != null) {
+                try { observation.notifyChanged(); }
+                catch (RuntimeException | Error next) {
+                    if (failure == null) failure = next;
+                    else if (failure != next) failure.addSuppressed(next);
+                }
+            }
+        } finally { drainingObservations = false; }
+        if (failure instanceof Error) throw (Error) failure;
+        if (failure instanceof RuntimeException) throw (RuntimeException) failure;
     }
 
     public <T> Signal<T> signal(T initial) {

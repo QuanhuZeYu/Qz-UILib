@@ -12,6 +12,7 @@ import java.util.List;
 import cpw.mods.fml.common.FMLLog;
 import club.heiqi.uilib.ui.scene.text.font.FontSource;
 import club.heiqi.uilib.ui.scene.text.font.FontTextService;
+import club.heiqi.uilib.ui.scene.text.font.FontCandidateConfiguration;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.resources.IReloadableResourceManager;
 import net.minecraft.client.resources.IResourceManager;
@@ -75,18 +76,22 @@ public final class MinecraftFontServices {
 
     /** 配置入口不安装服务；启动前只保留快照，退出后通知也不能重新创建owner。 */
     static void configurationChanged() {
-        if (shared == null) return;
+        if (shared == null) {
+            VanillaFontOptions.reload();
+            return;
+        }
         checkThread();
         reloadSources(Minecraft.getMinecraft().getResourceManager());
     }
 
     private static void reloadSources(IResourceManager resources) {
         checkThread();
+        VanillaFontOptions.reload();
         ResourceFonts next = new ResourceFonts(resources, thread);
         long nextRevision = revision + 1;
         try {
-            List<FontSource> candidates = new ArrayList<FontSource>();
-            List<String> paths = VanillaFontOptions.systemFontFiles();
+            List<String> declarations = VanillaFontOptions.candidates();
+            List<String> paths = FontCandidateConfiguration.files(declarations);
             List<java.nio.file.Path> configured = new ArrayList<java.nio.file.Path>();
             for (String path : paths) configured.add(Paths.get(path));
             List<java.nio.file.Path> directories = new ArrayList<java.nio.file.Path>();
@@ -94,25 +99,13 @@ public final class MinecraftFontServices {
             if (windows != null) directories.add(Paths.get(windows, "Fonts"));
             if (local != null) directories.add(Paths.get(local, "Microsoft", "Windows", "Fonts"));
             club.heiqi.uilib.ui.scene.text.font.FontFamilyResolver resolver =
-                    paths.isEmpty()
-                            ? null
-                            : new club.heiqi.uilib.ui.scene.text.font.FontFamilyResolver(
-                                    configured,
-                                    directories,
-                                    nextRevision,
-                                    message -> FMLLog.warning("[Qz-UILib] %s", message));
-            for (int i = 0; i < paths.size(); i++) {
-                String path = paths.get(i);
-                String id = "system-file-" + i;
-                if (path.trim().isEmpty()) throw new IllegalArgumentException("系统字体路径为空: " + id);
-                // 文件现在取字节快照；未验证脚本能力，不能凭cmap认定msyh.ttc支持复杂整形。
-                try {
-                    candidates.add(resolver.family(Paths.get(path), id));
-                } catch (IOException failure) {
-                    throw new IOException("系统字体读取失败: " + id + " origin=" + path, failure);
-                }
-            }
-            candidates.addAll(FontTextService.defaultSources(next, nextRevision));
+                    paths.isEmpty() ? null : new club.heiqi.uilib.ui.scene.text.font.FontFamilyResolver(
+                            configured, directories, nextRevision,
+                            message -> FMLLog.warning("[Qz-UILib] %s", message));
+            // 完整列表只消费已声明来源；默认内置资源作为可选目录，不再自动追加尾链。
+            List<FontSource> candidates = FontCandidateConfiguration.resolve(
+                    declarations, FontTextService.defaultSources(next, nextRevision),
+                    (path, position) -> resolver.family(Paths.get(path), "system-file-" + position));
             shared.reload(candidates);
             revision = nextRevision;
             loader.retire();

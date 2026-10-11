@@ -316,6 +316,35 @@ public final class SceneCoreLoopTest extends TestApplication {
                         runtime.close();
                     }
                 }));
+        scenario("同步观察者失败仍使同源派生失效", () -> {
+            final Signal<Integer>[] signal = new Signal[1];
+            final Computed<Integer>[] computed = new Computed[1];
+            final Owner[] owner = new Owner[1];
+            RuntimeException failure = new IllegalStateException("观察回调失败");
+            RuntimeException secondFailure = new IllegalStateException("另一观察回调失败");
+            domain.execute(() -> {
+                signal[0] = domain.signal(1);
+                owner[0] = domain.owner();
+                domain.observe(owner[0], () -> signal[0].get(), () -> { throw failure; }).refresh();
+                domain.observe(owner[0], () -> signal[0].get(), () -> { throw secondFailure; }).refresh();
+                computed[0] = domain.computed(owner[0], () -> signal[0].get() * 2);
+                require(computed[0].get() == 2, "建立真实共享依赖");
+            });
+            try {
+                try {
+                    domain.execute(() -> signal[0].set(3));
+                    throw new AssertionError("必须报告观察者原错误");
+                } catch (RuntimeException expected) {
+                    require(expected == failure, "保留第一个观察者原错误");
+                }
+                domain.execute(() -> require(computed[0].get() == 6,
+                        "一个观察者失败不能阻断其他派生的失效传播"));
+                require(failure.getSuppressed().length == 1 && failure.getSuppressed()[0] == secondFailure,
+                        "其余观察错误附着首错误");
+            } finally {
+                domain.execute(owner[0]::dispose);
+            }
+        });
         scenario("软件scene完整生产链路", () -> new SoftwareSceneScenario().run());
         System.out.println("无平台业务状态/派生/作用域/副作用及节点生命周期场景通过");
     }

@@ -30,8 +30,12 @@ public final class Observation extends Tracker implements AutoCloseable {
     void invalidate() {
         if (!disposed && !dirty) {
             dirty = true;
-            changed.run();
+            domain.invalidate(this);
         }
+    }
+
+    void notifyChanged() {
+        if (!disposed) changed.run();
     }
 
     @Override
