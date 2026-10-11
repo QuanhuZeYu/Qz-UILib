@@ -1,13 +1,16 @@
 package club.heiqi.uilib.ui.scene.integration;
 
 import club.heiqi.uilib.testing.TestApplication;
+import java.io.ByteArrayInputStream;
 import java.io.DataInputStream;
 import java.io.File;
 import java.io.InputStream;
 import java.lang.reflect.InvocationTargetException;
 import java.net.URL;
 import java.net.URLClassLoader;
+import java.util.ArrayList;
 import java.util.Enumeration;
+import java.util.List;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 
@@ -18,6 +21,7 @@ public final class CoreArtifactScenario extends TestApplication {
     };
     private static final String ADAPTER = "club/heiqi/uilib/host/font/";
     private static final String ICU = "club/heiqi/uilib/shadow/com/ibm/icu/";
+    private static final String YAML = "club/heiqi/uilib/shadow/org/yaml/snakeyaml/";
 
     public static void main(String[] args) throws Exception {
         new CoreArtifactScenario().run(args);
@@ -28,7 +32,7 @@ public final class CoreArtifactScenario extends TestApplication {
         String[] args = arguments();
         if (args.length > 0 && "--host".equals(args[0])) {
             require(args.length >= 4, "宿主隔离需要 core、fontAdapter 与 MC 成品");
-            scenario("宿主成品不重复定义核心、ICU或字体适配", () -> {
+            scenario("宿主成品不重复定义核心、ICU、YAML或字体适配", () -> {
                 verifyAdapter(new File(args[2]));
                 for (int i = 3; i < args.length; i++) verifyHost(new File(args[i]));
             });
@@ -38,14 +42,15 @@ public final class CoreArtifactScenario extends TestApplication {
         File core = new File(args[0]).getCanonicalFile();
         scenario("核心成品只含Java8无平台定义和资源", () -> verifyCore(core));
         URL[] urls = {core.toURI().toURL(), new File(args[1]).toURI().toURL(), new File(args[2]).toURI().toURL()};
-        // null parent 排除开发进程中的 main/core 输出、MC、原始 ICU 与 native；不把宿主成品接进来。
+        // null parent 排除开发进程中的 main/core 输出、MC、原始 ICU/YAML 与 native；不把宿主成品接进来。
         try (URLClassLoader loader = new URLClassLoader(urls, null)) {
             scenario("独立核心实际加载配置状态布局与字体资源", () -> {
                 for (String name : new String[] {
                     "club.heiqi.uilib.ui.config.ConfigSession",
                     "club.heiqi.uilib.ui.reactive.Signal",
                     "club.heiqi.uilib.ui.scene.host.ScenePageSession",
-                    "club.heiqi.uilib.ui.scene.text.font.FontTextService"
+                    "club.heiqi.uilib.ui.scene.text.font.FontTextService",
+                    "club.heiqi.uilib.shadow.org.yaml.snakeyaml.Yaml"
                 }) {
                     Class<?> type = loader.loadClass(name);
                     File source = new File(type.getProtectionDomain().getCodeSource().getLocation().toURI()).getCanonicalFile();
@@ -55,9 +60,10 @@ public final class CoreArtifactScenario extends TestApplication {
                 for (String name : new String[] {
                     "net.minecraft.client.Minecraft", "net.minecraftforge.common.MinecraftForge",
                     "org.lwjgl.system.MemoryUtil", "club.heiqi.uilib.host.font.IsolatedFontEngine",
-                    "com.ibm.icu.text.Bidi"
+                    "com.ibm.icu.text.Bidi", "org.yaml.snakeyaml.Yaml"
                 }) assertAbsent(loader, name);
                 runConsumer(loader, "ConfigScenario");
+                runConsumer(loader, "YamlObjectScenario");
                 runConsumer(loader, "FontConfigurationScenario");
                 runConsumer(loader, "PageSessionScenario");
                 // 字素路径实际使用重定位后的 ICU；配置/布局消费者不依赖原始 ICU 名称。
@@ -94,7 +100,7 @@ public final class CoreArtifactScenario extends TestApplication {
     private void verifyCore(File file) throws Exception {
         try (JarFile jar = new JarFile(file)) {
             Enumeration<JarEntry> entries = jar.entries();
-            boolean config = false, unicode = false;
+            boolean config = false, unicode = false, yaml = false;
             while (entries.hasMoreElements()) {
                 JarEntry entry = entries.nextElement();
                 String name = entry.getName();
@@ -102,14 +108,15 @@ public final class CoreArtifactScenario extends TestApplication {
                         && !name.endsWith(".so") && !name.endsWith(".dylib") && !name.endsWith(".jar"),
                         "核心夹带native/嵌套宿主依赖：" + name);
                 if (!name.endsWith(".class")) continue;
-                require(startsWith(name, CORE) || name.startsWith(ICU), "核心夹带所属范围外定义：" + name);
+                require(startsWith(name, CORE) || name.startsWith(ICU) || name.startsWith(YAML), "核心夹带所属范围外定义：" + name);
                 config |= name.equals("club/heiqi/uilib/ui/config/ConfigSession.class");
                 unicode |= name.equals(ICU + "text/BreakIterator.class");
+                yaml |= name.equals(YAML + "Yaml.class");
                 try (InputStream input = jar.getInputStream(entry)) {
                     verifyBytecode(input, name);
                 }
             }
-            require(config && unicode, "核心配置或独立Unicode运行依赖缺失");
+            require(config && unicode && yaml, "核心配置或私有Unicode/YAML运行依赖缺失");
         }
     }
 
@@ -131,7 +138,8 @@ public final class CoreArtifactScenario extends TestApplication {
             while (entries.hasMoreElements()) {
                 String name = entries.nextElement().getName();
                 require(!(name.endsWith(".class") && (startsWith(name, CORE) || name.startsWith(ADAPTER)
-                        || name.startsWith(ICU) || name.startsWith("com/ibm/icu/"))), "MC成品重复定义独立模块：" + name);
+                        || name.startsWith(ICU) || name.startsWith("com/ibm/icu/")
+                        || name.startsWith(YAML) || name.startsWith("org/yaml/snakeyaml/"))), "MC成品重复定义独立模块：" + name);
                 require(!name.startsWith("assets/qz_uilib/runtime/font/")
                         && !name.startsWith("assets/qz_uilib/fonts/") && !name.startsWith("assets/qz_uilib/unicode/"),
                         "MC成品重复持有独立模块资源：" + name);
@@ -150,21 +158,150 @@ public final class CoreArtifactScenario extends TestApplication {
         data.readUnsignedShort();
         require(data.readUnsignedShort() <= 52, "核心不是Java8字节码：" + name);
         int count = data.readUnsignedShort();
-        // 常量池同时覆盖方法体中的平台引用，单纯反射公开签名无法发现尚未执行的宿主调用。
+        String[] utf8 = new String[count];
+        List<Integer> typeReferences = new ArrayList<Integer>();
+        // 检查真实类符号与描述符，不把 YAML 为反射保留的任意类名字符串当作平台链接。
+        // 类常量和 NameAndType 同时覆盖方法体中的调用，不能只检查公开签名。
         for (int i = 1; i < count; i++) {
             switch (data.readUnsignedByte()) {
-                case 1:
-                    String value = data.readUTF();
-                    for (String forbidden : new String[] {"net/minecraft/", "net/minecraftforge/", "cpw/mods/", "org/lwjgl/", "club/heiqi/uilib/host/"})
-                        require(!value.contains(forbidden), "核心字节码引用平台实现：" + name + " -> " + value);
-                    break;
+                case 1: utf8[i] = data.readUTF(); break;
                 case 3: case 4: data.readInt(); break;
                 case 5: case 6: data.readLong(); i++; break;
-                case 7: case 8: case 16: case 19: case 20: data.readUnsignedShort(); break;
-                case 9: case 10: case 11: case 12: case 17: case 18: data.readInt(); break;
+                case 7: case 16: typeReferences.add(data.readUnsignedShort()); break;
+                case 8: case 19: case 20: data.readUnsignedShort(); break;
+                case 12:
+                    data.readUnsignedShort();
+                    typeReferences.add(data.readUnsignedShort());
+                    break;
+                case 9: case 10: case 11: case 17: case 18: data.readInt(); break;
                 case 15: data.readUnsignedByte(); data.readUnsignedShort(); break;
                 default: throw new AssertionError("未知常量池项：" + name);
             }
+        }
+        for (Integer reference : typeReferences) verifyTypeReference(utf8[reference], name);
+        data.readUnsignedShort(); // access_flags
+        data.readUnsignedShort(); // this_class
+        data.readUnsignedShort(); // super_class
+        int interfaces = data.readUnsignedShort();
+        for (int i = 0; i < interfaces; i++) data.readUnsignedShort();
+        // 未在方法体中使用的字段/方法类型也属于链接边界。
+        verifyMemberTypes(data, utf8, name);
+        verifyMemberTypes(data, utf8, name);
+        verifyAttributes(data, utf8, name);
+    }
+
+    private void verifyTypeReference(String value, String name) {
+        for (String forbidden : new String[] {"net/minecraft/", "net/minecraftforge/", "cpw/mods/", "org/lwjgl/", "club/heiqi/uilib/host/"})
+            require(!value.contains(forbidden), "核心字节码引用平台实现：" + name + " -> " + value);
+    }
+
+    private void verifyMemberTypes(DataInputStream data, String[] utf8, String name) throws Exception {
+        int members = data.readUnsignedShort();
+        for (int i = 0; i < members; i++) {
+            data.readUnsignedShort(); // access_flags
+            data.readUnsignedShort(); // name_index
+            verifyTypeReference(utf8[data.readUnsignedShort()], name);
+            verifyAttributes(data, utf8, name);
+        }
+    }
+
+    private void verifyAttributes(DataInputStream data, String[] utf8, String name) throws Exception {
+        int count = data.readUnsignedShort();
+        for (int i = 0; i < count; i++) {
+            String attribute = utf8[data.readUnsignedShort()];
+            int length = data.readInt();
+            require(length >= 0, "无效属性长度：" + name);
+            byte[] bytes = new byte[length];
+            data.readFully(bytes);
+            DataInputStream body = new DataInputStream(new ByteArrayInputStream(bytes));
+            if ("Signature".equals(attribute)) {
+                verifyTypeReference(utf8[body.readUnsignedShort()], name);
+            } else if ("RuntimeVisibleAnnotations".equals(attribute) || "RuntimeInvisibleAnnotations".equals(attribute)) {
+                verifyAnnotations(body, utf8, name);
+            } else if ("RuntimeVisibleParameterAnnotations".equals(attribute) || "RuntimeInvisibleParameterAnnotations".equals(attribute)) {
+                int parameters = body.readUnsignedByte();
+                for (int j = 0; j < parameters; j++) verifyAnnotations(body, utf8, name);
+            } else if ("RuntimeVisibleTypeAnnotations".equals(attribute) || "RuntimeInvisibleTypeAnnotations".equals(attribute)) {
+                int annotations = body.readUnsignedShort();
+                for (int j = 0; j < annotations; j++) {
+                    skipAnnotationTarget(body, name);
+                    skipFully(body, body.readUnsignedByte() * 2);
+                    verifyAnnotation(body, utf8, name);
+                }
+            } else if ("AnnotationDefault".equals(attribute)) {
+                verifyAnnotationValue(body, utf8, name);
+            } else if ("Code".equals(attribute)) {
+                body.readUnsignedShort(); // max_stack
+                body.readUnsignedShort(); // max_locals
+                skipFully(body, Integer.toUnsignedLong(body.readInt()));
+                skipFully(body, body.readUnsignedShort() * 8L);
+                verifyAttributes(body, utf8, name);
+            } else if ("LocalVariableTable".equals(attribute) || "LocalVariableTypeTable".equals(attribute)) {
+                int variables = body.readUnsignedShort();
+                for (int j = 0; j < variables; j++) {
+                    skipFully(body, 6); // start_pc、length、name_index
+                    verifyTypeReference(utf8[body.readUnsignedShort()], name);
+                    body.readUnsignedShort(); // index
+                }
+            }
+        }
+    }
+
+    private void verifyAnnotations(DataInputStream data, String[] utf8, String name) throws Exception {
+        int count = data.readUnsignedShort();
+        for (int i = 0; i < count; i++) verifyAnnotation(data, utf8, name);
+    }
+
+    private void verifyAnnotation(DataInputStream data, String[] utf8, String name) throws Exception {
+        verifyTypeReference(utf8[data.readUnsignedShort()], name);
+        int values = data.readUnsignedShort();
+        for (int i = 0; i < values; i++) {
+            data.readUnsignedShort(); // element_name_index
+            verifyAnnotationValue(data, utf8, name);
+        }
+    }
+
+    private void verifyAnnotationValue(DataInputStream data, String[] utf8, String name) throws Exception {
+        switch (data.readUnsignedByte()) {
+            case 'e':
+                verifyTypeReference(utf8[data.readUnsignedShort()], name);
+                data.readUnsignedShort(); // const_name_index
+                break;
+            case 'c': verifyTypeReference(utf8[data.readUnsignedShort()], name); break;
+            case '@': verifyAnnotation(data, utf8, name); break;
+            case '[':
+                int count = data.readUnsignedShort();
+                for (int i = 0; i < count; i++) verifyAnnotationValue(data, utf8, name);
+                break;
+            case 'B': case 'C': case 'D': case 'F': case 'I': case 'J': case 'S': case 'Z': case 's':
+                // 包括注解字符串在内的值不是类型符号，不按其文本推断平台依赖。
+                data.readUnsignedShort();
+                break;
+            default: throw new AssertionError("未知注解值：" + name);
+        }
+    }
+
+    private void skipAnnotationTarget(DataInputStream data, String name) throws Exception {
+        int target = data.readUnsignedByte();
+        switch (target) {
+            case 0x00: case 0x01: case 0x16: skipFully(data, 1); break;
+            case 0x10: case 0x11: case 0x12: case 0x17:
+            case 0x42: case 0x43: case 0x44: case 0x45: case 0x46: skipFully(data, 2); break;
+            case 0x13: case 0x14: case 0x15: break;
+            case 0x40: case 0x41: skipFully(data, data.readUnsignedShort() * 6L); break;
+            case 0x47: case 0x48: case 0x49: case 0x4A: case 0x4B: skipFully(data, 3); break;
+            default: throw new AssertionError("未知类型注解目标：" + name);
+        }
+    }
+
+    private void skipFully(DataInputStream data, long remaining) throws Exception {
+        while (remaining > 0) {
+            int skipped = data.skipBytes((int) Math.min(remaining, Integer.MAX_VALUE));
+            if (skipped == 0) {
+                data.readByte();
+                skipped = 1;
+            }
+            remaining -= skipped;
         }
     }
 }

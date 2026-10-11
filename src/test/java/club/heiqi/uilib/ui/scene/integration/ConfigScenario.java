@@ -58,7 +58,7 @@ public final class ConfigScenario extends TestApplication {
     private void filesAndValues() throws Exception {
         ReactiveDomain domain = ReactiveDomain.direct();
         ConfigSession config = session(domain);
-        Path file = Files.createTempFile("uilib-config-", ".properties");
+        Path file = Files.createTempFile("uilib-config-", ".yaml");
         try {
             operation(domain, () -> {
                 require(config.get(ENABLED), "默认 boolean");
@@ -82,7 +82,7 @@ public final class ConfigScenario extends TestApplication {
                 require(restored.get(TITLE).equals("汉字与é\\路径\n第二行"), "Unicode及转义往返");
                 require(restored.get(CANDIDATES).equals(Arrays.asList("file:C:/中文 字体.ttf", "builtin:后备", "")), "顺序与空项往返");
                 require(!restored.get(ENABLED), "boolean 往返");
-                restored.load(new StringReader("title=\nfont.candidates.count=0\n"));
+                restored.load(new StringReader("title: ''\nfont:\n  candidates: []\n"));
                 require(restored.get(TITLE).isEmpty(), "显式空串不能回默认");
                 require(restored.get(CANDIDATES).isEmpty(), "显式空列表不能回默认");
                 require(restored.get(ENABLED), "缺失键使用默认");
@@ -128,13 +128,13 @@ public final class ConfigScenario extends TestApplication {
         });
         require(observed.equals(Collections.singletonList("true/默认标题")), "首次 effect 真实读值");
         operation(domain, () -> {
-            config.load(new StringReader("enabled=false\ntitle=新标题\n"));
+            config.load(new StringReader("enabled: false\ntitle: 新标题\n"));
             require(!config.get(ENABLED) && config.get(TITLE).equals("新标题"), "加载后立即读取");
         });
         require(observed.equals(Arrays.asList("true/默认标题", "false/新标题")), "effect 不能看到混代或重复批次");
         require(synchronous.equals(Collections.singletonList("false/新标题")), "同步失效回调也必须看到完整快照");
         operation(domain, () -> {
-            config.load(new StringReader("enabled=false\ntitle=新标题\n"));
+            config.load(new StringReader("enabled: false\ntitle: 新标题\n"));
             config.set(TITLE, "新标题");
             config.set(CANDIDATES, Collections.singletonList("builtin:另一个"));
         });
@@ -163,14 +163,14 @@ public final class ConfigScenario extends TestApplication {
             domain.effect(owner[0], () -> effects.add(config.get(ENABLED) + "/" + config.get(TITLE)));
         });
         operation(domain, () -> {
-            expectKey("title", () -> config.load(new StringReader("enabled=false\ntitle=拒绝\n")));
-            expectKey("enabled", () -> config.load(new StringReader("title=试图半发布\nenabled=maybe\n")));
-            expectKey("unknown", () -> config.load(new StringReader("enabled=false\nunknown=1\n")));
-            for (String list : Arrays.asList("font.candidates.0=a\n", "font.candidates.count=-1\n",
-                    "font.candidates.count=2\nfont.candidates.0=a\n", "font.candidates.count=1\nfont.candidates.1=a\n",
-                    "font.candidates.count=0\nfont.candidates.extra=a\n", "font.candidates.count=1\nfont.candidates.00=a\n")) {
-                expectKey("font.candidates", () -> config.load(new StringReader("enabled=false\n" + list)));
+            expectKey("title", () -> config.load(new StringReader("enabled: false\ntitle: 拒绝\n")));
+            expectKey("enabled", () -> config.load(new StringReader("title: 试图半发布\nenabled: maybe\n")));
+            expectKey("unknown", () -> config.load(new StringReader("enabled: false\nunknown: 1\n")));
+            for (String list : Arrays.asList("null", "{}", "1", "[a, null]", "[a, 1]")) {
+                expectKey("font.candidates", () -> config.load(new StringReader("enabled: false\nfont:\n  candidates: " + list + "\n")));
             }
+            expectKey("title", () -> config.load(new StringReader("title: a\ntitle: b\n")));
+            expectKey("$", () -> config.load(new StringReader("[a, b]")));
             expectKey("title", () -> config.set(TITLE, "拒绝"));
             expectKey("title", () -> config.get(new ConfigKey<>("title", ConfigCodecs.STRING, "外来声明")));
             Reader broken = new Reader() {
@@ -208,7 +208,7 @@ public final class ConfigScenario extends TestApplication {
         });
         try {
             try {
-                operation(domain, () -> config.load(new StringReader("enabled=false\ntitle=新批次\n")));
+                operation(domain, () -> config.load(new StringReader("enabled: false\ntitle: 新批次\n")));
                 throw new AssertionError("观察者异常被吞掉");
             } catch (RuntimeException actual) {
                 require(actual == first, "保留首个观察者异常身份");

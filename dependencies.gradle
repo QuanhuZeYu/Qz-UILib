@@ -61,7 +61,6 @@ dependencies {
     testImplementation("org.commonmark:commonmark-ext-gfm-strikethrough:0.21.0")
     testImplementation("org.commonmark:commonmark-ext-gfm-tables:0.21.0")
 
-    // SnakeYAML：用于现代化配置页的 YAML 解析与序列化，shadow relocate 后随 jar 分发
-    shadowImplementation("org.yaml:snakeyaml:2.2")
-    // ICU 由正式 coreJar 独立持有；宿主编译与重定位引用在 gradle/core.gradle.kts 接入。
+    // ICU 与 SnakeYAML 由正式 coreJar 独立持有；宿主只编译并重定位引用，不重复嵌入。
+    // 开发依赖和版本在 gradle/font-runtime.gradle.kts 声明。
 }

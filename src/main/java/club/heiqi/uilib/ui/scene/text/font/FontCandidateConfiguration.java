@@ -27,7 +27,7 @@ public final class FontCandidateConfiguration {
         return new ConfigKey<>(KEY, ConfigCodecs.STRING_LIST, defaults(builtins), values -> {
             validate(values, available);
             return true;
-        });
+        }).withComment("完整有序字体候选：builtin:<内置来源id> 或 file:<字体路径>；空列表不追加默认字体。");
     }
 
     public static List<String> defaults(List<FontSource> builtins) {

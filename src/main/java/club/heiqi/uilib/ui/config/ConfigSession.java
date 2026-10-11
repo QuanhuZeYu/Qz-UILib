@@ -24,6 +24,7 @@ public final class ConfigSession {
     private final ConfigSchema schema;
     private final Map<ConfigKey<?>, Entry<?>> entries = new LinkedHashMap<>();
     private Map<ConfigKey<?>, Object> values;
+    private YamlDocument document = YamlDocument.empty();
 
     private final class Entry<T> implements ReadableSignal<T> {
         final ConfigKey<T> key;
@@ -85,21 +86,59 @@ public final class ConfigSession {
     public void load(Path path) throws IOException {
         domain.checkWrite();
         try (Reader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
-            load(reader);
+            load(reader, path.toString());
         }
     }
 
     /** Reader 的关闭由调用者负责；缺失声明重置为声明默认值。 */
-    public void load(Reader reader) throws IOException {
+    public void load(Reader reader) throws IOException { load(reader, "<Reader>"); }
+
+    /** 可指定输入来源，供语法和字段诊断使用。 */
+    public void load(Reader reader, String source) throws IOException {
         domain.checkWrite();
-        Properties properties = new Properties();
-        properties.load(Objects.requireNonNull(reader, "reader"));
+        YamlDocument parsed = YamlDocument.read(Objects.requireNonNull(reader, "reader"), Objects.requireNonNull(source, "source"));
         Map<ConfigKey<?>, Object> decoded = domain.readOnly(() -> {
-            schema.checkProperties(properties);
-            Map<ConfigKey<?>, Object> next = new LinkedHashMap<>();
-            for (ConfigKey<?> key : schema.keys()) next.put(key, key.decode(properties));
-            return next;
+            try {
+                schema.checkTree(parsed.tree());
+                Map<ConfigKey<?>, Object> next = new LinkedHashMap<>();
+                for (ConfigKey<?> key : schema.keys()) next.put(key, decodeKey(parsed.tree(), key));
+                return next;
+            } catch (ConfigException failure) { throw parsed.locate(failure); }
         });
+        // 注释属于文档表示；值完全相等时仍换入文档，不发业务通知。
+        document = parsed;
+        publish(decoded);
+    }
+
+    private <T> T decodeKey(Map<String, Object> tree, ConfigKey<T> key) {
+        Object branch = tree;
+        for (String segment : key.name().split("\\.")) {
+            Map<?, ?> map = (Map<?, ?>) branch;
+            if (!map.containsKey(segment)) return key.checked(key.defaultValue());
+            branch = map.get(segment);
+        }
+        try { return key.read(branch); }
+        catch (ConfigException failure) { throw failure; }
+        catch (RuntimeException failure) { throw new ConfigException(key.name(), failure.getMessage(), failure); }
+    }
+
+    /** 仅供宿主显式一次迁移旧格式。成功保存 YAML 后宿主以 YAML 为唯一来源。 */
+    public void loadProperties(Path path) throws IOException {
+        domain.checkWrite();
+        try (Reader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
+            loadProperties(reader, path.toString());
+        }
+    }
+    public void loadProperties(Reader reader) throws IOException { loadProperties(reader, "<Properties Reader>"); }
+    private void loadProperties(Reader reader, String source) throws IOException {
+        domain.checkWrite();
+        Properties input = new Properties();
+        input.load(Objects.requireNonNull(reader, "reader"));
+        Map<ConfigKey<?>, Object> decoded = domain.readOnly(() -> {
+            try { return LegacyProperties.read(schema, input); }
+            catch (ConfigException failure) { throw new ConfigException(failure.path(), source + ": " + failure.getMessage(), failure); }
+        });
+        document = YamlDocument.empty();
         publish(decoded);
     }
 
@@ -112,33 +151,42 @@ public final class ConfigSession {
 
     public void save(Path path) throws IOException {
         domain.checkAccess();
-        // 先编码，避免自定义 codec 的非法输出在打开文件后才被发现。
-        Properties properties = encode();
-        try (Writer writer = Files.newBufferedWriter(path, StandardCharsets.UTF_8)) {
-            properties.store(writer, "UILib");
-        }
+        // 先完整编码成文本，避免 codec 错误在打开目标文件后才暴露。
+        java.io.StringWriter content = new java.io.StringWriter();
+        save(content);
+        try (Writer writer = Files.newBufferedWriter(path, StandardCharsets.UTF_8)) { writer.write(content.toString()); }
     }
 
-    /** Writer 保持打开；Properties.store 刷新内容，不隐含安装持久化监听。 */
+    /** Writer 保持打开；持久化只由显式调用触发。 */
     public void save(Writer writer) throws IOException {
         domain.checkAccess();
-        encode().store(Objects.requireNonNull(writer, "writer"), "UILib");
-    }
-
-    private Properties encode() {
-        return domain.readOnly(() -> {
-            Properties properties = new Properties();
-            for (ConfigKey<?> key : schema.keys()) encodeKey(properties, key);
-            schema.checkProperties(properties);
-            return properties;
+        Objects.requireNonNull(writer, "writer");
+        java.io.StringWriter content = new java.io.StringWriter();
+        domain.readOnly(() -> {
+            Map<String, Object> tree = new LinkedHashMap<>();
+            Map<String, String> comments = new LinkedHashMap<>();
+            for (ConfigKey<?> key : schema.keys()) encodeKey(tree, comments, key);
+            document.write(tree, comments, content);
+            return null;
         });
+        writer.write(content.toString());
     }
 
-    private <T> void encodeKey(Properties properties, ConfigKey<T> key) {
-        try {
-            key.codec().encode(properties, key.name(), value(key));
-        } catch (RuntimeException failure) {
-            throw new IllegalArgumentException("配置键 " + key.name() + ": " + failure.getMessage(), failure);
+    @SuppressWarnings("unchecked")
+    private <T> void encodeKey(Map<String, Object> tree, Map<String, String> comments, ConfigKey<T> key) {
+        Object encoded;
+        try { encoded = key.codec().write(value(key)); }
+        catch (RuntimeException failure) { throw new ConfigException(key.name(), failure.getMessage(), failure); }
+        String[] path = key.name().split("\\.");
+        Map<String, Object> branch = tree;
+        for (int i = 0; i < path.length - 1; i++) {
+            Object child = branch.get(path[i]);
+            if (child == null) { child = new LinkedHashMap<String, Object>(); branch.put(path[i], child); }
+            branch = (Map<String, Object>) child;
         }
+        branch.put(path[path.length - 1], encoded);
+        if (key.comment() != null) comments.put(key.name(), key.comment());
+        for (Map.Entry<String, String> description : key.codec().comments(value(key)).entrySet())
+            comments.put(ConfigCodecs.child(key.name(), description.getKey()), description.getValue());
     }
 }

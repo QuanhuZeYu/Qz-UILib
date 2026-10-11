@@ -1,14 +1,16 @@
 package club.heiqi.uilib.ui.config;
 
-import java.util.Properties;
-
-/** 配置类型的存储与不可变快照边界。owns 必须声明键自身；标量仅占用自身，
- * 复合类型占用自身和完整的点分隔子树，decode 再检查其中的合法结构。
- * decode 在命名空间完全缺失时返回 null；显式空值必须返回相应的有效值。
- * 自定义复合类型必须在 snapshot 中复制并冻结所有向外发布的可变内容。 */
+/** 声明类型与 JDK 对象树之间的边界。树仅含 null、标量、List 和 String 键 Map。
+ * read 的 path 供自定义转换定位错误；不得从输入决定任意 Java 类的实例化。
+ * snapshot 必须复制并深冻结向外发布的内容。业务对象应不可变；对象 builder
+ * 会基于已冻结字段重新调用 factory，factory 不得重新引入可变共享内容。
+ * 自定义业务值须按配置语义实现 equals/hashCode，供相同值加载及 set 去重通知。 */
 public interface ConfigCodec<T> {
-    T decode(Properties properties, String name);
-    void encode(Properties properties, String name, T value);
+    T read(Object value, String path);
+    Object write(T value);
     T snapshot(T value);
-    boolean owns(String name, String propertyName);
+    /** 相对字段路径的声明说明；用于首次生成节点，不覆盖用户注释。 */
+    default java.util.Map<String, String> comments() { return java.util.Collections.emptyMap(); }
+    /** 复合 codec 按实际 children 展开路径，包含列表索引和映射键。 */
+    default java.util.Map<String, String> comments(T value) { return comments(); }
 }

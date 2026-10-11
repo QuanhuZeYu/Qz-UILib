@@ -10,10 +10,13 @@ val sourceSets = extensions.getByType<SourceSetContainer>()
 val fontBindings by configurations.creating
 val fontNativeRuntime by configurations.creating { extendsFrom(fontBindings) }
 val fontUnicodeRuntime by configurations.creating
+// YAML 由独立核心私有嵌入；开发编译与场景运行使用原始包名。
+val yamlRuntime by configurations.creating
 val isolatedFontRuntime by configurations.creating
 val lwjgl2Bindings by configurations.creating
 dependencies {
     add(fontUnicodeRuntime.name, "com.ibm.icu:icu4j:76.1")
+    add(yamlRuntime.name, "org.yaml:snakeyaml:2.4")
     add(lwjgl2Bindings.name, "org.lwjgl.lwjgl:lwjgl:2.9.4-nightly-20150209") { isTransitive = false }
     listOf("lwjgl", "lwjgl-freetype", "lwjgl-harfbuzz").forEach {
         add(isolatedFontRuntime.name, "org.lwjgl:$it:3.4.2") { isTransitive = false }

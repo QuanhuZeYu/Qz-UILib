@@ -46,6 +46,20 @@
 
 构建在 `build/libs` 分别生成 `*-core.jar`、`*-font-adapter.jar` 与 MC 宿主发行包；MC 安装须同时提供三者，人工包同样依赖核心和字体适配。核心产物可独立用于配置、状态、布局与绘制合同；CPU 字体 native 能力由字体适配提供，MC GPU 和原生输入接入留在宿主。CI/发布策略尚未调整，不应把旧的单个宿主下载当作完整安装组合。
 
-MC 首次启动创建原配置同目录、同基本名的 `.properties` 文件；已有旧 Forge 配置仅在新文件不存在时一次迁移。修改新文件后使用 F3+T 资源重载。`mc.replaceVanillaFont` 是 boolean；`font.candidates.count` 和从 `font.candidates.0` 开始的索引项表示完整有序来源，值使用 `builtin:<内置来源id>` 或 `file:<字体文件路径>`；生成文件包含当前默认来源，`count=0` 表示明确空表。配置能力与错误边界见[配置规格](<superpowers/specs/2026-10-11-uilib-config-spec.md>)，不在指南重复定义。
+MC 首次启动使用原配置同目录、同基本名的 `.yaml` 文件。已有 YAML 为权威；没有 YAML 时先迁移旧 Properties，再否则迁移旧 Forge 配置，原文件保留。修改后使用 F3+T 资源重载。配置声明提供字段说明，保存保留未修改节点的用户注释。`mc` 对象的 `replaceVanillaFont` 是 boolean，`font` 对象的 `candidates` 是完整有序序列；值使用 `builtin:<内置来源id>` 或 `file:<字体文件路径>`，`[]` 表示明确空表。配置能力与错误边界见[配置规格](<superpowers/specs/2026-10-11-uilib-config-spec.md>)。
+
+```yaml
+mc:
+  # 是否接管原版文字绘制
+  replaceVanillaFont: true
+font:
+  candidates:
+    - builtin:unifont
+    - file:C:/fonts/example.ttf
+```
+
+示例只声明两个候选；需要其他内置字体时保留首次生成文件中的完整默认列表并按需调整。YAML 依赖通过 shadow 重定位到核心私有包，独立核心和 MC 使用同一份定义，无需用户另行安装 YAML 库。
+
+业务模块通过 [ConfigCodecs](<../src/main/java/club/heiqi/uilib/ui/config/ConfigCodecs.java>) 的 `object()` 声明字段、getter 与工厂，组合 `listOf`、`mapOf`、`nullable` 表达复杂类型。对象使用自己的不可变业务类型，按值实现 `equals/hashCode`；字段校验和对象工厂承担模块约束。将 codec 和默认对象交给 `ConfigKey<T>` 后，由 `ConfigSession` 统一读取、设置、观察和持久化，业务无需接触 YAML 节点。对象字段及键的声明说明用于生成配置注释。
 
 设备场景需实际GL环境，CPU通过不替代GPU或Minecraft实机验收。构建异常先核对当前任务日志与脚本，不用旧架构或历史测试顺序推导行为。

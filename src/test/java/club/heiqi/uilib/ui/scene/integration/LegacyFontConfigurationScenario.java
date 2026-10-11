@@ -46,7 +46,7 @@ public final class LegacyFontConfigurationScenario extends TestApplication {
             ReactiveDomain domain = ReactiveDomain.direct();
             ConfigKey<Boolean> enabled = new ConfigKey<>("mc.replaceVanillaFont", ConfigCodecs.BOOLEAN, true);
             ConfigKey<List<String>> candidates = FontCandidateConfiguration.key(builtins);
-            Path saved = file.resolveSibling("font.properties");
+            Path saved = file.resolveSibling("font.yaml");
             onClose(() -> Files.deleteIfExists(saved));
             domain.execute(() -> {
                 ConfigSession config = new ConfigSession(domain, ConfigSchema.of(enabled, candidates));

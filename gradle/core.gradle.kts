@@ -3,7 +3,10 @@ import org.gradle.api.tasks.SourceSetContainer
 
 val sourceSets = extensions.getByType<SourceSetContainer>()
 val fontUnicodeRuntime = configurations.getByName("fontUnicodeRuntime")
+val yamlRuntime = configurations.getByName("yamlRuntime")
 val fontBindings = configurations.getByName("fontBindings")
+// RFG 的 runClient/runServer 直接读取此配置，而非 sourceSets.main.runtimeClasspath。
+configurations.named("runtimeClasspath") { extendsFrom(yamlRuntime) }
 val corePackages = arrayOf("club/heiqi/uilib/ui/scene/**", "club/heiqi/uilib/ui/reactive/**", "club/heiqi/uilib/ui/config/**")
 
 // 正式核心只持有无平台逻辑与内容资源；宿主源码通过输出依赖调用同一份定义。
@@ -12,7 +15,7 @@ val coreSources = sourceSets.create("core") {
     java.include(*corePackages)
     resources.srcDir("src/main/resources")
     resources.include("assets/qz_uilib/unicode/**", "assets/qz_uilib/fonts/**")
-    compileClasspath = fontUnicodeRuntime
+    compileClasspath = fontUnicodeRuntime + yamlRuntime
     runtimeClasspath = output + compileClasspath
 }
 val fontAdapterSources = sourceSets.create("fontAdapter") {
@@ -35,38 +38,39 @@ listOf(coreSources, fontAdapterSources).forEach { sources ->
 sourceSets.getByName("main") {
     java.exclude(*corePackages, "club/heiqi/uilib/host/font/**")
     resources.exclude("assets/qz_uilib/unicode/**", "assets/qz_uilib/fonts/**", "assets/qz_uilib/runtime/font/**")
-    compileClasspath += coreSources.output + fontAdapterSources.output + fontUnicodeRuntime
-    runtimeClasspath += coreSources.output + fontAdapterSources.output + fontUnicodeRuntime
+    compileClasspath += coreSources.output + fontAdapterSources.output + fontUnicodeRuntime + yamlRuntime
+    runtimeClasspath += coreSources.output + fontAdapterSources.output + fontUnicodeRuntime + yamlRuntime
 }
 sourceSets.getByName("lwjgl2") {
-    compileClasspath += coreSources.output + fontAdapterSources.output
-    runtimeClasspath += coreSources.output + fontAdapterSources.output + fontUnicodeRuntime
+    compileClasspath += coreSources.output + fontAdapterSources.output + yamlRuntime
+    runtimeClasspath += coreSources.output + fontAdapterSources.output + fontUnicodeRuntime + yamlRuntime
 }
 sourceSets.getByName("test") {
-    compileClasspath += coreSources.output + fontAdapterSources.output + fontUnicodeRuntime
-    runtimeClasspath += coreSources.output + fontAdapterSources.output + fontUnicodeRuntime
+    compileClasspath += coreSources.output + fontAdapterSources.output + fontUnicodeRuntime + yamlRuntime
+    runtimeClasspath += coreSources.output + fontAdapterSources.output + fontUnicodeRuntime + yamlRuntime
 }
 // convention 对主/测试编译任务另设 classpath，必须接到实际 JavaCompile 才能生效。
 listOf("compileJava", "compileTestJava").forEach { name ->
     tasks.named<JavaCompile>(name) {
         dependsOn(tasks.named(coreSources.classesTaskName), tasks.named(fontAdapterSources.classesTaskName))
-        classpath += coreSources.output + fontAdapterSources.output + fontUnicodeRuntime
+        classpath += coreSources.output + fontAdapterSources.output + fontUnicodeRuntime + yamlRuntime
     }
 }
 tasks.withType<Test>().configureEach {
-    classpath += coreSources.output + fontAdapterSources.output + fontUnicodeRuntime
+    classpath += coreSources.output + fontAdapterSources.output + fontUnicodeRuntime + yamlRuntime
 }
 
-// ICU 隔离沿用宿主现有 shadow 包名；完整资源保留，不以最小化误删字典/反射入口。
+// ICU 与 YAML 沿用私有 shadow 包名；完整资源保留，不以最小化误删字典/反射入口。
 val coreJar by tasks.registering(ShadowJar::class) {
     group = "build"
-    description = "生成可独立运行的 Java8 UILib 核心（含私有 ICU 和字体/Unicode 资源）"
+    description = "生成可独立运行的 Java8 UILib 核心（含私有 ICU、YAML 和字体/Unicode 资源）"
     archiveClassifier.set("core")
     from(coreSources.output)
-    configurations.set(listOf(fontUnicodeRuntime))
+    configurations.set(listOf(fontUnicodeRuntime, yamlRuntime))
     minimizeJar.set(false)
     enableAutoRelocation.set(false)
     relocate("com.ibm.icu", "club.heiqi.uilib.shadow.com.ibm.icu")
+    relocate("org.yaml.snakeyaml", "club.heiqi.uilib.shadow.org.yaml.snakeyaml")
     exclude("META-INF/versions/**", "META-INF/*.SF", "META-INF/*.RSA", "META-INF/*.DSA", "module-info.class")
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 }
@@ -76,8 +80,9 @@ val fontAdapterJar by tasks.registering(Jar::class) {
     archiveClassifier.set("font-adapter")
     from(fontAdapterSources.output)
 }
-// 宿主引用 ICU 但不重复携带它；发行组合由核心产物供给，开发运行使用未重定位输出。
+// 宿主引用 ICU/YAML 但不重复携带它们；发行组合由核心产物供给，开发运行使用未重定位输出。
 tasks.named<ShadowJar>("shadowJar") {
     relocate("com.ibm.icu", "club.heiqi.uilib.shadow.com.ibm.icu")
+    relocate("org.yaml.snakeyaml", "club.heiqi.uilib.shadow.org.yaml.snakeyaml")
 }
 tasks.named("assemble") { dependsOn(coreJar, fontAdapterJar) }

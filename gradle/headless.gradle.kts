@@ -147,6 +147,7 @@ val exportHeadlessClasspath by tasks.registering(ExportHeadlessClasspath::class)
     classpath.from(mainSourceOutput)
     classpath.from(headlessLwjglRuntimeJars)
     classpath.from(configurations.getByName("fontUnicodeRuntime"))
+    classpath.from(configurations.getByName("yamlRuntime"))
     classpath.from(configurations.named("runtimeClasspath"))
     fullClasspath.from(configurations.named("compileClasspath"))
     // MC 类不在 compileClasspath 上：RFG 把重编译后的 Minecraft 放在 patchedMc 源集输出里，
