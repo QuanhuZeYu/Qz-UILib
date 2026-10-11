@@ -1325,11 +1325,18 @@ public final class MathLayoutEngine {
                                     : RADICAL_VERTICAL_GAP);
             float rule = c(context, node, RADICAL_RULE_THICKNESS);
             float target = radicand.ascent + radicand.descent + gap + rule;
-            MathBox sign = glyph(font(context, node).stretch(0x221a, target), node, context, true);
+            TextLayout signLayout = font(context, node).stretch(0x221a, target);
+            MathBox sign = glyph(signLayout, node, context, true);
+            InkBounds outline = font(context, node).outlineBounds(signLayout);
+            // 根号横线连接用精确轮廓，不能把需求剔除的保守空白当作顶部或右端。
+            // 未提供附加度量的既有 MathFont 保持原布局能力。
+            float signTop =
+                    outline.known ? outline.top - signLayout.lines().get(0).baseline : -sign.ascent;
+            float signRight = outline.known ? outline.right : sign.width;
             float extra = Math.max(0, sign.ascent + sign.descent - target);
             gap += extra / 2;
             float ruleTop = -radicand.ascent - gap - rule;
-            float signY = ruleTop + sign.ascent;
+            float signY = ruleTop - signTop;
             MathBox degree =
                     node.second == null
                             ? null
@@ -1354,14 +1361,25 @@ public final class MathLayoutEngine {
             MathBox value = new MathBox();
             value.add(sign, signX, signY);
             value.add(radicand, signX + sign.width, 0);
-            value.rule(
-                    signX + sign.width,
-                    ruleTop,
-                    radicand.width,
-                    rule,
-                    context.textStyle.color,
-                    node.start,
-                    node.end);
+            if (outline.known)
+                value.stroke(
+                        signX + signRight,
+                        ruleTop + rule / 2,
+                        signX + sign.width + radicand.width,
+                        ruleTop + rule / 2,
+                        rule,
+                        context.textStyle.color,
+                        node.start,
+                        node.end);
+            else
+                value.rule(
+                        signX + sign.width,
+                        ruleTop,
+                        radicand.width,
+                        rule,
+                        context.textStyle.color,
+                        node.start,
+                        node.end);
             value.ascent =
                     Math.max(value.ascent, -ruleTop + c(context, node, RADICAL_EXTRA_ASCENDER));
             if (degree != null) value.add(degree, degreeX, degreeY);

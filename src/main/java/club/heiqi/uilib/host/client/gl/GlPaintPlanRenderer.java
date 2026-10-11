@@ -517,6 +517,31 @@ public final class GlPaintPlanRenderer implements AutoCloseable {
                         float ratio = glyph.rasterToLayout;
                         float x = command.box.x + glyph.x + r.bearingX * ratio,
                                 y = command.box.y + glyph.y - r.bearingY * ratio;
+                        float width = r.width * r.pixelScale * ratio;
+                        float height = r.height * r.pixelScale * ratio;
+                        float u0 = r.u0, v0 = r.v0, u1 = r.u1, v1 = r.v1;
+                        if (glyph.paintClip.known) {
+                            float left =
+                                    Math.max(x, command.box.x + glyph.x + glyph.paintClip.left);
+                            float top = Math.max(y, command.box.y + glyph.y + glyph.paintClip.top);
+                            float right =
+                                    Math.min(
+                                            x + width,
+                                            command.box.x + glyph.x + glyph.paintClip.right);
+                            float bottom =
+                                    Math.min(
+                                            y + height,
+                                            command.box.y + glyph.y + glyph.paintClip.bottom);
+                            if (right <= left || bottom <= top) continue;
+                            u0 = r.u0 + (r.u1 - r.u0) * (left - x) / width;
+                            u1 = r.u0 + (r.u1 - r.u0) * (right - x) / width;
+                            v0 = r.v0 + (r.v1 - r.v0) * (top - y) / height;
+                            v1 = r.v0 + (r.v1 - r.v0) * (bottom - y) / height;
+                            x = left;
+                            y = top;
+                            width = right - left;
+                            height = bottom - top;
+                        }
                         int color =
                                 glyph.resolvedStyle == null
                                         ? command.color
@@ -529,17 +554,7 @@ public final class GlPaintPlanRenderer implements AutoCloseable {
                                         r.resource,
                                         r.generation,
                                         clip),
-                                new Quad(
-                                        x,
-                                        y,
-                                        r.width * r.pixelScale * ratio,
-                                        r.height * r.pixelScale * ratio,
-                                        r.u0,
-                                        r.v0,
-                                        r.u1,
-                                        r.v1,
-                                        r.layer,
-                                        color));
+                                new Quad(x, y, width, height, u0, v0, u1, v1, r.layer, color));
                         drawnGlyphs++;
                     }
                     for (TextLayout.Decoration decoration : line.decorations()) {

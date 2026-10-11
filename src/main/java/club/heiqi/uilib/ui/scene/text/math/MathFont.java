@@ -1,6 +1,7 @@
 package club.heiqi.uilib.ui.scene.text.math;
 
 import club.heiqi.uilib.ui.scene.text.TextLayout;
+import club.heiqi.uilib.ui.scene.text.font.nativefont.InkBounds;
 
 /** 数学盒消费的当前字号字体事实；字体所有权仍属于既有字体服务。 */
 public interface MathFont {
@@ -94,6 +95,11 @@ public interface MathFont {
     default float topAccentAttachment(TextLayout layout) {
         java.util.Objects.requireNonNull(layout, "layout");
         return Float.NaN;
+    }
+
+    /** 精确字形轮廓在 layout 坐标中的并集；UNKNOWN 表示未提供此附加度量能力。 */
+    default InkBounds outlineBounds(TextLayout layout) {
+        return InkBounds.UNKNOWN;
     }
 
     /** 显示型大算子选择真实完整字形：优先满足建议高度，否则使用最大的可用变体。 算子并非须覆盖内容的定高根号；不做非等比拉伸。 */

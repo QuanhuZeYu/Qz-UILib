@@ -652,6 +652,7 @@ public final class MathGlScenario extends TestApplication {
                     save("stretch-reloaded.png", renderReady());
                     domain.execute(() -> require(!SceneMath.layout(math).fallback, "重载后伸缩公式失效"));
                 });
+        scenario("求值线恒定覆盖与根号顶部连续实际像素", this::lineSeamPixels);
         scenario("所有装饰family多em真实GL图像", this::decorationPixels);
         scenario("多个Item背景斜线邻text及全页tooltip真实叠压", this::orderedDecorationPixels);
         scenario("顶层换行双入口实际GL可选间距Item", this::lineBreakPixels);
@@ -975,6 +976,160 @@ public final class MathGlScenario extends TestApplication {
                                 SceneMath.layout(math).pieces.get(0).text.generation
                                         != generation[0],
                                 "重载保留旧字形generation"));
+        saveEvidence();
+    }
+
+    /** 真实回归：直线中段亮度应恒定，根号短横到长横不能有背景列或上下台阶。 */
+    private void lineSeamPixels() throws Exception {
+        String[] formulas = {
+            tex("@sqrt{@dfrac{1}{@dfrac{1}{@dfrac{@embed{ore}}{1+x}}}}"),
+            tex("@binom{@embed{ore}+n}{k}+@left.@frac{x}{1+x}@right|_{x=0}")
+        };
+        for (float em : new float[] {18, 28})
+            for (int alpha : new int[] {255, 128}) {
+                for (int f = 0; f < formulas.length; f++) {
+                    final String formula = formulas[f];
+                    domain.execute(
+                            () -> {
+                                theme.set(
+                                        SceneTheme.dark()
+                                                .withTextStyle(
+                                                        new TextStyle(
+                                                                "default",
+                                                                em,
+                                                                (alpha << 24) | 0xffffff,
+                                                                null,
+                                                                club.heiqi.uilib.ui.scene.text
+                                                                        .TextEffects.NORMAL,
+                                                                club.heiqi.uilib.ui.scene.text
+                                                                        .TextDecoration.NONE)));
+                                content.set(MathContent.parse(formula));
+                            });
+                    BufferedImage rendered = renderReady();
+                    save("line-seam-" + f + "-" + (int) em + "-" + alpha + ".png", rendered);
+                    final int formulaIndex = f;
+                    domain.execute(
+                            () -> {
+                                MathLayout layout = SceneMath.layout(math);
+                                require(!layout.fallback, "连接回归降为原文");
+                                LayoutBox origin = page.pipeline().current().geometry.get(math).box;
+                                for (MathLayout.TextPiece piece : layout.pieces) {
+                                    if (!piece.text.logicalText.equals(
+                                            formulaIndex == 0 ? "√" : "|")) continue;
+                                    float left = Float.POSITIVE_INFINITY,
+                                            top = Float.POSITIVE_INFINITY;
+                                    float right = Float.NEGATIVE_INFINITY,
+                                            bottom = Float.NEGATIVE_INFINITY;
+                                    for (TextLayout.Line line : piece.text.lines())
+                                        for (TextLayout.Glyph glyph : line.glyphs()) {
+                                            left =
+                                                    Math.min(
+                                                            left,
+                                                            origin.x
+                                                                    + piece.x
+                                                                    + glyph.x
+                                                                    + glyph.inkBounds.left);
+                                            top =
+                                                    Math.min(
+                                                            top,
+                                                            origin.y
+                                                                    + piece.y
+                                                                    + glyph.y
+                                                                    + glyph.inkBounds.top);
+                                            right =
+                                                    Math.max(
+                                                            right,
+                                                            origin.x
+                                                                    + piece.x
+                                                                    + glyph.x
+                                                                    + glyph.inkBounds.right);
+                                            bottom =
+                                                    Math.max(
+                                                            bottom,
+                                                            origin.y
+                                                                    + piece.y
+                                                                    + glyph.y
+                                                                    + glyph.inkBounds.bottom);
+                                        }
+                                    int background = rendered.getRGB(0, 0) & 255;
+                                    if (formulaIndex == 1) {
+                                        int first = -1, last = -1;
+                                        int[] peaks = new int[H];
+                                        int center = -1, centerPeak = 0;
+                                        int sampleRow = (int) Math.ceil(top + em * .2f);
+                                        for (int x = (int) Math.floor(left);
+                                                x < Math.ceil(right);
+                                                x++) {
+                                            int pixel = rendered.getRGB(x, sampleRow) & 255;
+                                            if (pixel > centerPeak) {
+                                                centerPeak = pixel;
+                                                center = x;
+                                            }
+                                        }
+                                        require(center >= 0, "求值线没有中心墨迹");
+                                        for (int y = (int) Math.floor(top);
+                                                y < Math.ceil(bottom);
+                                                y++) {
+                                            // 只采真实竖线中心，保守包络可能含紧邻的分数横线。
+                                            peaks[y] = rendered.getRGB(center, y) & 255;
+                                            if (peaks[y] > background + 10) {
+                                                if (first < 0) first = y;
+                                                last = y;
+                                            }
+                                        }
+                                        require(first >= 0 && last - first > em, "求值线未产生可验证像素");
+                                        int low = 255, high = 0;
+                                        // 两端的正常滤波衰减不计入恒定中段；覆盖所有部件接点。
+                                        for (int y = first + 2; y <= last - 2; y++) {
+                                            low = Math.min(low, peaks[y]);
+                                            high = Math.max(high, peaks[y]);
+                                        }
+                                        require(
+                                                high - low <= 1,
+                                                "求值线部件重复覆盖产生明暗分段: " + low + ".." + high);
+                                        evidence.append("line-seam bar em=")
+                                                .append(em)
+                                                .append(" alpha=")
+                                                .append(alpha)
+                                                .append(" peakRange=")
+                                                .append(high - low)
+                                                .append((char) 10);
+                                    } else {
+                                        int rowLow = H, rowHigh = 0;
+                                        for (int x = (int) Math.floor(right - em * .3f);
+                                                x < Math.ceil(right + em * .3f);
+                                                x++) {
+                                            int peak = 0, peakRow = -1;
+                                            for (int y = (int) Math.floor(top);
+                                                    y < Math.ceil(top + em * .2f);
+                                                    y++) {
+                                                int pixel = rendered.getRGB(x, y) & 255;
+                                                if (pixel > peak) {
+                                                    peak = pixel;
+                                                    peakRow = y;
+                                                }
+                                            }
+                                            require(
+                                                    peak > background + 10,
+                                                    "根号顶部短横与长横之间存在背景列: " + x);
+                                            rowLow = Math.min(rowLow, peakRow);
+                                            rowHigh = Math.max(rowHigh, peakRow);
+                                        }
+                                        require(
+                                                rowHigh - rowLow <= 1,
+                                                "根号顶部短横与长横出现上下台阶: " + rowLow + ".." + rowHigh);
+                                        evidence.append("line-seam radical em=")
+                                                .append(em)
+                                                .append(" alpha=")
+                                                .append(alpha)
+                                                .append(" peakRowRange=")
+                                                .append(rowHigh - rowLow)
+                                                .append((char) 10);
+                                    }
+                                }
+                            });
+                }
+            }
         saveEvidence();
     }
 

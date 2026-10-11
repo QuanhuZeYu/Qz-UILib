@@ -525,7 +525,8 @@ public final class SceneMath implements SceneControl {
                                     g.rasterToLayout,
                                     g.rasterStyle,
                                     g.resolvedStyle,
-                                    g.clusterIndex));
+                                    g.clusterIndex,
+                                    g.paintClip));
                 for (TextLayout.Cluster c : line.clusters())
                     clusters.add(
                             new TextLayout.Cluster(

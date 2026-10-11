@@ -1,9 +1,10 @@
 package club.heiqi.uilib.ui.scene.control;
 
-import java.util.ArrayList;
-import java.util.List;
 import club.heiqi.uilib.ui.scene.text.TextLayout;
 import club.heiqi.uilib.ui.scene.text.TextPolicy;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /** 多行的纯编辑几何；坐标只来自生产 Line/Cluster，方向使用同段落、同视觉行的 ICU 级别。 */
 final class SceneTextAreaGeometry {
@@ -182,7 +183,8 @@ final class SceneTextAreaGeometry {
                                 g.rasterToLayout,
                                 g.rasterStyle,
                                 g.resolvedStyle,
-                                g.clusterIndex));
+                                g.clusterIndex,
+                                g.paintClip));
             List<TextLayout.Cluster> clusters = new ArrayList<>();
             for (TextLayout.Cluster c : line.clusters())
                 clusters.add(

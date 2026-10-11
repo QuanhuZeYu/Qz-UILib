@@ -200,6 +200,26 @@ public final class NativeFontFace implements FontFace {
                 true, left * pixelScale, top * pixelScale, right * pixelScale, bottom * pixelScale);
     }
 
+    @Override
+    public InkBounds glyphOutlineBounds(int glyphId) {
+        checkGlyph(glyphId);
+        NativeFontService.check(
+                FreeType.FT_Load_Glyph(
+                        face, glyphId, FreeType.FT_LOAD_DEFAULT | FreeType.FT_LOAD_COLOR),
+                "FT_Load_Glyph outline bounds");
+        FT_GlyphSlot slot = face.glyph();
+        if (slot.format() != FreeType.FT_GLYPH_FORMAT_OUTLINE
+                || (face.face_flags() & FreeType.FT_FACE_FLAG_COLOR) != 0) return InkBounds.UNKNOWN;
+        org.lwjgl.util.freetype.FT_Glyph_Metrics m = slot.metrics();
+        float scale = pixelScale / 64f;
+        return new InkBounds(
+                true,
+                m.horiBearingX() * scale,
+                -m.horiBearingY() * scale,
+                (m.horiBearingX() + m.width()) * scale,
+                (-m.horiBearingY() + m.height()) * scale);
+    }
+
     public int glyphIndex(int codePoint) {
         checkOpen();
         if (!Character.isValidCodePoint(codePoint))

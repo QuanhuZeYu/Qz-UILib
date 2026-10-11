@@ -1,11 +1,12 @@
 package club.heiqi.uilib.ui.scene.control;
 
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.List;
 import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
 import club.heiqi.uilib.ui.scene.text.TextLayout;
 import club.heiqi.uilib.ui.scene.text.TextPolicy;
+
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
 
 /** 已整形文字的纯投影；保留完整源文、源映射和诊断，不再整形业务文案。 */
 final class SceneTextPresentation {
@@ -242,6 +243,7 @@ final class SceneTextPresentation {
                 g.rasterToLayout,
                 g.rasterStyle,
                 g.resolvedStyle,
-                ci);
+                ci,
+                g.paintClip);
     }
 }

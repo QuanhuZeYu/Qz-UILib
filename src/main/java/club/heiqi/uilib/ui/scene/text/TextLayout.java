@@ -1,14 +1,13 @@
 package club.heiqi.uilib.ui.scene.text;
 
+import club.heiqi.uilib.ui.scene.text.font.FontSource;
+import club.heiqi.uilib.ui.scene.text.font.nativefont.GlyphRasterStyle;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.InkBounds;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
-import club.heiqi.uilib.ui.scene.text.font.FontSource;
-import club.heiqi.uilib.ui.scene.text.font.nativefont.FontFace;
-import club.heiqi.uilib.ui.scene.text.font.nativefont.GlyphRasterStyle;
 
 /** 度量与绘制共享的不可变定位。int 尺寸为真实浮点边界向上取整，不把 advance 逐字取整。 */
 public final class TextLayout {
@@ -28,6 +27,9 @@ public final class TextLayout {
 
         /** 实际glyph原点的不可变墨迹边界（Y向下），UNKNOWN时不能据此剔除需求。 */
         public final InkBounds inkBounds;
+
+        /** 相对字形原点的绘制域；assembly 连接只绘制一次，UNKNOWN 表示不裁剪。 */
+        public final InkBounds paintClip;
 
         public Glyph(
                 FontSource source,
@@ -117,6 +119,51 @@ public final class TextLayout {
                 GlyphRasterStyle rasterStyle,
                 TextStyle resolvedStyle,
                 int clusterIndex) {
+            this(
+                    source,
+                    size,
+                    glyphId,
+                    logicalStart,
+                    logicalEnd,
+                    sourceStart,
+                    sourceEnd,
+                    x,
+                    y,
+                    xAdvance,
+                    yAdvance,
+                    color,
+                    replacement,
+                    inkBounds,
+                    logicalEm,
+                    rasterToLayout,
+                    rasterStyle,
+                    resolvedStyle,
+                    clusterIndex,
+                    InkBounds.UNKNOWN);
+        }
+
+        public Glyph(
+                FontSource source,
+                float size,
+                int glyphId,
+                int logicalStart,
+                int logicalEnd,
+                int sourceStart,
+                int sourceEnd,
+                float x,
+                float y,
+                float xAdvance,
+                float yAdvance,
+                boolean color,
+                boolean replacement,
+                InkBounds inkBounds,
+                float logicalEm,
+                float rasterToLayout,
+                GlyphRasterStyle rasterStyle,
+                TextStyle resolvedStyle,
+                int clusterIndex,
+                InkBounds paintClip) {
+            this.paintClip = Objects.requireNonNull(paintClip, "paintClip");
             if (!Float.isFinite(size)
                     || size <= 0
                     || !Float.isFinite(logicalEm)
@@ -539,7 +586,8 @@ public final class TextLayout {
                                 g.rasterToLayout,
                                 g.rasterStyle,
                                 paint,
-                                g.clusterIndex));
+                                g.clusterIndex,
+                                g.paintClip));
             }
             for (Cluster c : line.clusters())
                 clusters.add(

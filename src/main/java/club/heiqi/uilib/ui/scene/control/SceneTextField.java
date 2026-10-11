@@ -1,11 +1,5 @@
 package club.heiqi.uilib.ui.scene.control;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.List;
-import java.util.Objects;
-import java.util.function.Consumer;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.scene.edit.SceneEditState;
 import club.heiqi.uilib.ui.scene.edit.SceneEditState.Snapshot;
@@ -27,8 +21,16 @@ import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
 import club.heiqi.uilib.ui.scene.text.TextLayout;
 import club.heiqi.uilib.ui.scene.text.TextPolicy;
 
-/** 正式单行字段；草稿、历史和提交归业务持有的独立状态，卸载只释放呈现绑定。
- * 编辑边界见 docs/superpowers/specs/2026-10-07-uilib-editing-spec.md。
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
+import java.util.Objects;
+import java.util.function.Consumer;
+
+/**
+ * 正式单行字段；草稿、历史和提交归业务持有的独立状态，卸载只释放呈现绑定。 编辑边界见
+ * docs/superpowers/specs/2026-10-07-uilib-editing-spec.md。
  */
 public final class SceneTextField {
     public enum SubmitPolicy {
@@ -567,7 +569,8 @@ public final class SceneTextField {
                                 g.rasterToLayout,
                                 g.rasterStyle,
                                 g.resolvedStyle,
-                                g.clusterIndex));
+                                g.clusterIndex,
+                                g.paintClip));
             List<TextLayout.Cluster> clusters = new ArrayList<>();
             for (TextLayout.Cluster c : line.clusters())
                 clusters.add(

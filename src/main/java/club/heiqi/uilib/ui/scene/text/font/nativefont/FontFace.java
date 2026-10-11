@@ -36,6 +36,11 @@ public interface FontFace extends AutoCloseable {
         return glyphInkBounds(glyphId, GlyphRasterStyle.NORMAL);
     }
 
+    /** 同一实际 face 的精确轮廓度量，不含需求剔除的保守像素边框；不可用时明确返回 UNKNOWN。 */
+    default InkBounds glyphOutlineBounds(int glyphId) {
+        return InkBounds.UNKNOWN;
+    }
+
     /** 数学能力属于同一 face；不支持的后端保持显式边界。 */
     default boolean hasMathData() {
         return false;

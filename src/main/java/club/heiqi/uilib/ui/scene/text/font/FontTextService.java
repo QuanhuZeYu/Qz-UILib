@@ -429,6 +429,26 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
             return selected;
         }
 
+        @Override
+        public InkBounds outlineBounds(TextLayout layout) {
+            MathSelection selected = current();
+            float left = Float.POSITIVE_INFINITY, top = Float.POSITIVE_INFINITY;
+            float right = Float.NEGATIVE_INFINITY, bottom = Float.NEGATIVE_INFINITY;
+            for (TextLayout.Line line : layout.lines())
+                for (TextLayout.Glyph glyph : line.glyphs()) {
+                    if (!selected.source.equals(glyph.source)) return InkBounds.UNKNOWN;
+                    InkBounds ink = selected.face.glyphOutlineBounds(glyph.glyphId);
+                    if (!ink.known) return InkBounds.UNKNOWN;
+                    left = Math.min(left, glyph.x + ink.left);
+                    right = Math.max(right, glyph.x + ink.right);
+                    top = Math.min(top, glyph.y + ink.top);
+                    bottom = Math.max(bottom, glyph.y + ink.bottom);
+                }
+            return Float.isFinite(left)
+                    ? new InkBounds(true, left, top, right, bottom)
+                    : InkBounds.UNKNOWN;
+        }
+
         public float constant(Constant value) {
             Objects.requireNonNull(value, "value");
             return current().face.mathConstant(value.id);
@@ -687,6 +707,49 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
             List<TextLayout.Glyph> glyphs = new ArrayList<TextLayout.Glyph>(positions.size());
             for (int i = 0; i < positions.size(); i++) {
                 MathAssembly.Placement position = positions.get(i);
+                InkBounds ink = bounds.get(i);
+                float clipLeft = ink.left, clipRight = ink.right;
+                float clipTop = ink.top, clipBottom = ink.bottom;
+                // 部件按 MATH 原点与 overlap 放置；连接墨迹交集的中线只由一个部件拥有。
+                // 不能 source-over 重复绘制同一连接，否则抗锯齿边缘会出现周期性加深。
+                if (i > 0) {
+                    MathAssembly.Placement previous = positions.get(i - 1);
+                    InkBounds prior = bounds.get(i - 1);
+                    if (horizontal)
+                        clipLeft =
+                                Math.max(
+                                        clipLeft,
+                                        (previous.offset + prior.right + position.offset + ink.left)
+                                                        / 2
+                                                - position.offset);
+                    else
+                        clipBottom =
+                                Math.min(
+                                        clipBottom,
+                                        (-previous.offset
+                                                                + prior.top
+                                                                - position.offset
+                                                                + ink.bottom)
+                                                        / 2
+                                                + position.offset);
+                }
+                if (i + 1 < positions.size()) {
+                    MathAssembly.Placement next = positions.get(i + 1);
+                    InkBounds after = bounds.get(i + 1);
+                    if (horizontal)
+                        clipRight =
+                                Math.min(
+                                        clipRight,
+                                        (position.offset + ink.right + next.offset + after.left) / 2
+                                                - position.offset);
+                    else
+                        clipTop =
+                                Math.max(
+                                        clipTop,
+                                        (-position.offset + ink.top - next.offset + after.bottom)
+                                                        / 2
+                                                + position.offset);
+                }
                 glyphs.add(
                         new TextLayout.Glyph(
                                 selected.source,
@@ -707,7 +770,8 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                                 1,
                                 GlyphRasterStyle.NORMAL,
                                 selected.style,
-                                0));
+                                0,
+                                new InkBounds(true, clipLeft, clipTop, clipRight, clipBottom)));
             }
             TextLayout.Cluster cluster =
                     new TextLayout.Cluster(
@@ -873,7 +937,8 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                                 g.rasterToLayout,
                                 g.rasterStyle,
                                 style,
-                                g.clusterIndex));
+                                g.clusterIndex,
+                                g.paintClip));
             for (TextLayout.Cluster c : line.clusters())
                 clusters.add(
                         new TextLayout.Cluster(
@@ -1760,7 +1825,8 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                                             a.rasterToLayout,
                                             a.rasterStyle,
                                             a.resolvedStyle,
-                                            clusters.size()));
+                                            clusters.size(),
+                                            a.paintClip));
                         }
                         clusters.add(
                                 new TextLayout.Cluster(
@@ -1868,7 +1934,8 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                                 ratio,
                                 variant,
                                 style,
-                                g.clusterIndex));
+                                g.clusterIndex,
+                                g.paintClip));
             }
             lines.add(
                     new TextLayout.Line(

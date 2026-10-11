@@ -1,16 +1,6 @@
 package club.heiqi.uilib.host.client.font.vanilla;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.TreeSet;
-import java.util.function.Supplier;
-import com.ibm.icu.lang.UCharacter;
-import com.ibm.icu.text.Bidi;
+import club.heiqi.uilib.host.text.MinecraftFormat;
 import club.heiqi.uilib.ui.scene.text.AttributedText;
 import club.heiqi.uilib.ui.scene.text.RasterSampling;
 import club.heiqi.uilib.ui.scene.text.StyleSpan;
@@ -21,9 +11,22 @@ import club.heiqi.uilib.ui.scene.text.TextLayout;
 import club.heiqi.uilib.ui.scene.text.TextPolicy;
 import club.heiqi.uilib.ui.scene.text.TextStyle;
 import club.heiqi.uilib.ui.scene.text.font.FontTextService;
-import club.heiqi.uilib.host.text.MinecraftFormat;
 
-/** 原版标准文字语义适配。格式解析与度量均复用共享服务，不建立逐char排字引擎或scene。
+import com.ibm.icu.lang.UCharacter;
+import com.ibm.icu.text.Bidi;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.TreeSet;
+import java.util.function.Supplier;
+
+/**
+ * 原版标准文字语义适配。格式解析与度量均复用共享服务，不建立逐char排字引擎或scene。
  * 创建/使用在线程专属FontTextService所属线程。host负责PresentationEpoch、GL和资源生命周期。
  */
 public final class VanillaTextService {
@@ -247,7 +250,8 @@ public final class VanillaTextService {
                                 g.rasterToLayout,
                                 g.rasterStyle,
                                 g.resolvedStyle,
-                                g.clusterIndex));
+                                g.clusterIndex,
+                                g.paintClip));
             for (TextLayout.Decoration d : line.decorations())
                 decorations.add(
                         new TextLayout.Decoration(
@@ -327,7 +331,8 @@ public final class VanillaTextService {
                                 g.rasterToLayout,
                                 g.rasterStyle,
                                 style,
-                                g.clusterIndex));
+                                g.clusterIndex,
+                                g.paintClip));
             }
             for (TextLayout.Cluster c : line.clusters())
                 clusters.add(

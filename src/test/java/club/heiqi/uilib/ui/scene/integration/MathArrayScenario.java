@@ -449,7 +449,7 @@ public final class MathArrayScenario extends TestApplication {
                         32.3f,
                         MathStyle.DISPLAY);
         healthy(value);
-        require(value.rules.size() >= 2, "嵌套分式根式没有真实rule");
+        require(!value.rules.isEmpty() && !value.strokes.isEmpty(), "嵌套分式根式没有真实横线");
         MathLayout ordered = layout("x+@embed{a}+@frac{y}{z}", 32.3f, MathStyle.TEXT);
         healthy(ordered);
         int item = -1, lastText = -1, lastFill = -1;

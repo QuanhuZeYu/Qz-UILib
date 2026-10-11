@@ -172,13 +172,13 @@ public final class MathLayoutScenario extends TestApplication {
                         slots("degree", "body"));
         healthy(root);
         MathLayout.Embed body = embed(root, "body"), degree = embed(root, "degree");
-        MathLayout.Rule rootRule = root.rules.get(0);
+        // 根号延长横线保留浮点绘制；验证真实厚度、净空和覆盖，不要求矩形表示。
+        MathLayout.Stroke rootRule = root.strokes.get(0);
         near(degree.width, EM * percent(1), "根指数应使用scriptscript");
-        near(rootRule.height, metric(51, EM), "根式rule厚度");
-        require(body.y - rootRule.y - rootRule.height + 0.002f >= metric(49, EM), "根式真实净空");
-        require(
-                rootRule.x <= body.x && rootRule.x + rootRule.width >= body.x + body.width,
-                "根式rule未覆盖被开方盒");
+        near(rootRule.width, metric(51, EM), "根式横线厚度");
+        near(rootRule.y1, rootRule.y2, "根式横线必须水平");
+        require(body.y - rootRule.y1 - rootRule.width / 2 + 0.002f >= metric(49, EM), "根式真实净空");
+        require(rootRule.x1 <= body.x && rootRule.x2 >= body.x + body.width, "根式横线未覆盖被开方盒");
         require(degree.x + degree.width < body.x + 0.002f, "根指数进入被开方盒");
         float[] rootSign = ink(piece(root, 0));
         near(degree.x, metric(53, EM), "根指数before kern");
@@ -189,7 +189,7 @@ public final class MathLayoutScenario extends TestApplication {
                 "根指数raise百分比");
         MathLayout nested = layout("@sqrt{1+@frac{@embed{n}}{2}}", MathStyle.TEXT, slots("n"));
         healthy(nested);
-        require(nested.rules.size() == 2, "嵌套根式分式丢rule");
+        require(nested.rules.size() == 1 && nested.strokes.size() == 1, "嵌套根式分式丢横线");
         MathLayout scoped =
                 layout(
                         "{@scriptstyle @embed{small}}@embed{large}",
