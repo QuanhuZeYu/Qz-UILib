@@ -56,6 +56,19 @@ public final class ScenePageContext {
         return runtime.attach(null, root);
     }
 
+    /** 本次页面拥有根逻辑树；结束挂载后释放，不结束调用方保留的子树。 */
+    public MountHandle mountOwned(SceneNode root) {
+        domain.checkWrite();
+        Objects.requireNonNull(root, "root");
+        // 初始化失败同样沿页面已有 scope 清理，保留原错误及清理 suppressed。
+        Object logicalScope = new Object();
+        scope.own(() -> {
+            // 移动已交接生命周期责任，旧页面声明不能销毁新归属中的对象。
+            if (root.logicalOwner() == logicalScope) root.destroy();
+        });
+        return runtime.attachOwned(root, logicalScope);
+    }
+
     public void own(AutoCloseable resource) {
         domain.checkWrite();
         scope.own(resource);

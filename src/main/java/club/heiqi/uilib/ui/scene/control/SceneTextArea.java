@@ -8,6 +8,7 @@ import java.util.function.Consumer;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.control.SceneTextField.SubmitPolicy;
+import club.heiqi.uilib.ui.scene.edit.SceneCompositionTarget;
 import club.heiqi.uilib.ui.scene.edit.SceneEditState;
 import club.heiqi.uilib.ui.scene.edit.SceneEditState.Snapshot;
 import club.heiqi.uilib.ui.scene.edit.SceneEditState.Submission;
@@ -80,6 +81,12 @@ public final class SceneTextArea {
                 NodeBinding.value(
                         theme,
                         (target, value) -> target.style(value.textStyle).padding(value.padding)));
+        node.bind(
+                NodeBinding.value(
+                        readOnly,
+                        (target, locked) -> {
+                            if (locked) target.runtime().invalidateComposition(target);
+                        }));
         return node;
     }
 
@@ -108,7 +115,7 @@ public final class SceneTextArea {
                 : offset < preeditEnd ? start : offset - value.composition.length() + end - start;
     }
 
-    private static final class Control implements SceneControl {
+    private static final class Control implements SceneControl, SceneCompositionTarget {
         private final SceneEditState state;
         private final ReadableSignal<SceneTheme> theme;
         private final ReadableSignal<Boolean> readOnly;
@@ -239,6 +246,11 @@ public final class SceneTextArea {
         @Override
         public boolean scrollableContent() {
             return true;
+        }
+
+        @Override
+        public SceneEditState compositionState() {
+            return state;
         }
 
         @Override

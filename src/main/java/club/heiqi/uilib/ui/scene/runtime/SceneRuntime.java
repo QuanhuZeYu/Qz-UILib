@@ -25,6 +25,7 @@ public final class SceneRuntime implements AutoCloseable {
         final Object token = new Object();
         final Owner owner;
         final List<BindingActivation> bindings = new ArrayList<>();
+        final List<BindingActivation> transfers = new ArrayList<>();
 
         Mount(Owner owner) {
             this.owner = owner;
@@ -48,6 +49,10 @@ public final class SceneRuntime implements AutoCloseable {
     private boolean routing;
     private boolean disposed;
     private long revision, geometryRevision, measureRevision;
+    private club.heiqi.uilib.ui.scene.input.SceneCompositionSource compositionSource;
+    private MountHandle compositionMount;
+    private club.heiqi.uilib.ui.scene.edit.SceneEditState compositionState;
+    private Object compositionBaseline;
 
     public SceneRuntime(ReactiveDomain domain) {
         this.domain = domain;
@@ -170,6 +175,15 @@ public final class SceneRuntime implements AutoCloseable {
     }
 
     public MountHandle attach(SceneNode parent, SceneNode root) {
+        return attach(parent, root, null);
+    }
+
+    /** 根的逻辑拥有者参与同一迁移合同，挂载 Owner 只管理接入资源。 */
+    public MountHandle attachOwned(SceneNode root, Object logicalScope) {
+        return attach(null, root, Objects.requireNonNull(logicalScope, "logicalScope"));
+    }
+
+    private MountHandle attach(SceneNode parent, SceneNode root, Object logicalScope) {
         command();
         Objects.requireNonNull(root, "root");
         if (parent != null && !mounts.containsKey(parent))
@@ -180,6 +194,8 @@ public final class SceneRuntime implements AutoCloseable {
         mutation = true;
         try {
             root.frameworkParent(this, parent);
+            if (parent != null) root.frameworkOwnership(this, parent);
+            else if (logicalScope != null) root.frameworkOwnership(this, logicalScope);
             if (parent == null) roots.add(root);
             mountSubtree(root, parent == null ? owner : mounts.get(parent).owner);
             invalidateRange();
@@ -220,7 +236,12 @@ public final class SceneRuntime implements AutoCloseable {
         node.frameworkRuntime(this, true);
         for (NodeBinding binding : node.bindings()) {
             BindingActivation active = binding.activate(this, node, mount.owner);
-            mount.bindings.add(active);
+            if (binding instanceof MoveBinding) {
+                if (!mount.transfers.isEmpty())
+                    throw new IllegalArgumentException("节点具有多个移动声明: " + node.id());
+                mount.transfers.add(active);
+            }
+            else mount.bindings.add(active);
             mount.owner.own(active);
         }
         if (node.control() != null) {
@@ -258,11 +279,19 @@ public final class SceneRuntime implements AutoCloseable {
         try {
             do {
                 while (!dirtyBindings.isEmpty()) {
-                    SceneNode node = dirtyBindings.iterator().next();
-                    dirtyBindings.remove(node);
-                    Mount mount = mounts.get(node);
-                    if (mount != null)
-                        for (BindingActivation active : mount.bindings) active.refresh();
+                    List<SceneNode> batch = new ArrayList<>(dirtyBindings);
+                    dirtyBindings.clear();
+                    // 同批显式转移先于旧声明退出；不让订阅注册顺序决定条目生死。
+                    for (SceneNode node : batch) {
+                        Mount mount = mounts.get(node);
+                        if (mount != null)
+                            for (BindingActivation active : mount.transfers) active.refresh();
+                    }
+                    for (SceneNode node : batch) {
+                        Mount mount = mounts.get(node);
+                        if (mount != null)
+                            for (BindingActivation active : mount.bindings) active.refresh();
+                    }
                 }
                 // 进入选择依赖已结算声明；选择的响应投影再结算绑定，首次回放即可显示。
                 focusRouter.prepareScopes();
@@ -306,6 +335,7 @@ public final class SceneRuntime implements AutoCloseable {
 
     void move(SceneNode node, Object token, SceneNode next) {
         Mount mount = requireMount(node, token);
+        if (node.parent() == next) return;
         if (next != null && !mounts.containsKey(next))
             throw new IllegalArgumentException("目标父节点未挂载");
         for (SceneNode cursor = next; cursor != null; cursor = cursor.parent())
@@ -315,6 +345,7 @@ public final class SceneRuntime implements AutoCloseable {
             mount.owner.moveTo(next == null ? owner : mounts.get(next).owner);
             roots.remove(node);
             node.frameworkParent(this, next);
+            node.frameworkTransfer(this, next);
             if (next == null) roots.add(node);
             invalidateRange();
         } finally {
@@ -326,28 +357,55 @@ public final class SceneRuntime implements AutoCloseable {
         // 核心规格第 5 节：有效的永久删除即使释放失败也必须终止子树。
         // 先核验句柄，旧句柄不能借 finally 销毁后来重新挂载的同一实例。
         requireMount(node, token);
+        Throwable failure = null;
         try {
             detach(node, token);
-        } finally {
-            mutation = true;
-            try {
-                destroySubtree(node);
-            } finally {
-                mutation = false;
-            }
+        } catch (RuntimeException | Error error) {
+            failure = error;
         }
+        mutation = true;
+        try {
+            destroySubtree(node);
+        } catch (RuntimeException | Error error) {
+            failure = collectFailure(failure, error);
+        } finally {
+            mutation = false;
+        }
+        throwFailure(failure);
     }
 
     private void destroySubtree(SceneNode node) {
-        for (SceneNode child : new ArrayList<>(node.children())) {
-            destroySubtree(child);
-            child.frameworkParent(this, null);
-        }
         node.frameworkDestroy(this);
+    }
+
+    /** 状态驱动的同页连续移动，不重建绑定或挂载身份。 */
+    public void relocate(SceneNode node, SceneNode next) {
+        checkMutation();
+        Mount mount = mounts.get(node);
+        if (mount == null || (next != null && !mounts.containsKey(next)))
+            throw new IllegalArgumentException("移动节点或目标父未挂载: " + node.id());
+        if (node.parent() == next) return;
+        for (SceneNode cursor = next; cursor != null; cursor = cursor.parent())
+            if (cursor == node) throw new IllegalArgumentException("移动形成环: " + node.id());
+        mount.owner.moveTo(next == null ? owner : mounts.get(next).owner);
+        roots.remove(node);
+        node.frameworkParent(this, next);
+        node.frameworkTransfer(this, next);
+        if (next == null) roots.add(node);
+        invalidateRange();
     }
 
     /** 声明子序列更新；保留节点不卸载，移除节点结束挂载，新增节点激活当前来源。 */
     public void reconcile(SceneNode parent, List<SceneNode> declared) {
+        reconcile(parent, declared, null);
+    }
+
+    /** 非 null 的声明作用域拥有条目；null 明示调用方保留。 */
+    public void reconcile(SceneNode parent, List<SceneNode> declared, Object scope) {
+        reconcile(parent, declared, scope, scope != null);
+    }
+
+    public void reconcile(SceneNode parent, List<SceneNode> declared, Object scope, boolean owned) {
         checkMutation();
         if (!mounts.containsKey(parent)) throw new IllegalArgumentException("父节点未挂载");
         List<SceneNode> next = new ArrayList<>(declared);
@@ -362,23 +420,81 @@ public final class SceneRuntime implements AutoCloseable {
                 if (node == parent) throw new IllegalArgumentException("节点不能包含自身");
             }
         }
+        for (SceneNode node : next) {
+            if (node.parent() == parent && node.logicalOwner() != scope
+                    && !(node.logicalOwner() == parent && !node.transferred()))
+                throw new IllegalArgumentException("声明拥有权冲突: " + parent.id() + " -> " + node.id());
+        }
+        if (parent.children().equals(next)) {
+            for (SceneNode node : next) node.frameworkOwnership(this, scope, owned);
+            return;
+        }
+        Throwable failure = null;
         for (SceneNode child : new ArrayList<>(parent.children())) {
-            if (!unique.contains(child)) {
-                Mount mount = mounts.get(child);
+            if (!unique.contains(child) && (child.logicalOwner() == scope
+                    || (child.logicalOwner() == parent && !child.transferred()))) {
                 try {
-                    mount.owner.dispose();
-                } finally {
-                    releaseSubtree(child);
-                    child.frameworkParent(this, null);
+                    removeDeclared(child, owned);
+                } catch (RuntimeException | Error error) {
+                    failure = collectFailure(failure, error);
                 }
             }
         }
+        throwFailure(failure);
         for (SceneNode node : next) {
             boolean fresh = node.runtime() == null;
             node.frameworkParent(this, parent);
-            if (fresh) mountSubtree(node, mounts.get(parent).owner);
+            node.frameworkOwnership(this, scope, owned);
+            if (fresh) {
+                try {
+                    mountSubtree(node, mounts.get(parent).owner);
+                } catch (RuntimeException | Error error) {
+                    try {
+                        removeDeclared(node, owned);
+                    } catch (RuntimeException | Error cleanup) {
+                        if (cleanup != error) error.addSuppressed(cleanup);
+                    }
+                    throw error;
+                }
+            }
         }
         invalidateRange();
+    }
+
+    private void removeDeclared(SceneNode node, boolean owned) {
+        Throwable failure = null;
+        Mount mount = mounts.get(node);
+        try {
+            if (mount != null) mount.owner.dispose();
+        } catch (RuntimeException | Error error) {
+            failure = error;
+        }
+        releaseSubtree(node);
+        node.frameworkParent(this, null);
+        if (owned) {
+            try {
+                destroySubtree(node);
+            } catch (RuntimeException | Error error) {
+                failure = collectFailure(failure, error);
+            }
+        } else node.frameworkOwnership(this, null);
+        try {
+            invalidateRange();
+        } catch (RuntimeException | Error error) {
+            failure = collectFailure(failure, error);
+        }
+        throwFailure(failure);
+    }
+
+    private static Throwable collectFailure(Throwable failure, Throwable error) {
+        if (failure == null) return error;
+        if (failure != error) failure.addSuppressed(error);
+        return failure;
+    }
+
+    private static void throwFailure(Throwable failure) {
+        if (failure instanceof RuntimeException) throw (RuntimeException) failure;
+        if (failure instanceof Error) throw (Error) failure;
     }
 
     public boolean interactive(SceneNode node) {
@@ -428,18 +544,82 @@ public final class SceneRuntime implements AutoCloseable {
         return node.modal() ? node : null;
     }
 
-    /** 编辑目标由唯一焦点决定；handler只发布状态，不另建输入目标。 */
+    /** 普通编辑按当前焦点；真实组字只投向 BEGIN 建立的仍有效联系。 */
     public boolean dispatchEdit(club.heiqi.uilib.ui.scene.input.SceneEditEvent event) {
         domain.checkWrite();
         command();
+        revalidateComposition();
         SceneNode node = focusRouter.focused().get();
-        if (node == null || !interactive(node) || node.control() == null) return false;
-        routing = true;
-        try {
-            return node.control().edit(node, event);
-        } finally {
-            routing = false;
+        if (event.compositionSource != null) {
+            if (event.compositionPhase
+                    == club.heiqi.uilib.ui.scene.input.SceneEditEvent.CompositionPhase.BEGIN) {
+                if (!event.compositionSource.beginOnce()) return true;
+                invalidateComposition(null);
+                if (node == null || !interactive(node) || node.control() == null
+                        || !node.control().acceptsTextInput(node)
+                        || !(node.control() instanceof club.heiqi.uilib.ui.scene.edit.SceneCompositionTarget))
+                    return true;
+                compositionSource = event.compositionSource;
+                compositionMount = captureMount(node);
+                compositionState = ((club.heiqi.uilib.ui.scene.edit.SceneCompositionTarget)
+                        node.control()).compositionState();
+                compositionBaseline = compositionState.inputBaseline();
+            } else if (event.compositionSource != compositionSource) return true;
+            node = compositionMount.node();
         }
+        if (node == null || !interactive(node) || node.control() == null) return false;
+        boolean previous = routing;
+        routing = true;
+        boolean terminal = event.compositionSource != null
+                && (event.compositionPhase
+                        == club.heiqi.uilib.ui.scene.input.SceneEditEvent.CompositionPhase.COMMIT
+                    || event.compositionPhase
+                        == club.heiqi.uilib.ui.scene.input.SceneEditEvent.CompositionPhase.CANCEL);
+        try {
+            boolean consumed = node.control().edit(node, event);
+            if (event.command
+                    == club.heiqi.uilib.ui.scene.input.SceneEditEvent.Command.ESCAPE && consumed)
+                invalidateComposition(null);
+            return consumed;
+        } finally {
+            try {
+                // 最终来源事件即使业务回调失败也结束；异常仍沿页面既有错误通道暴露。
+                if (terminal && compositionSource == event.compositionSource)
+                    invalidateComposition(null);
+            } finally {
+                routing = previous;
+            }
+        }
+    }
+
+    /** 焦点离开及已生效只读资格变化只结束组字，不提交或取消独立草稿。 */
+    public void invalidateComposition(SceneNode target) {
+        domain.checkWrite();
+        if (compositionSource == null
+                || target != null && compositionMount.node() != target) return;
+        club.heiqi.uilib.ui.scene.edit.SceneEditState state = compositionState;
+        Object baseline = compositionBaseline;
+        compositionSource = null;
+        compositionMount = null;
+        compositionState = null;
+        compositionBaseline = null;
+        // reset/cancel 已自行清理；不能反过来修改新基线的组字呈现。
+        if (state.inputBaseline() == baseline) state.composition("", false);
+    }
+
+    /** 核验已有联系；同范围合法移动不改变挂载或基线身份。 */
+    void revalidateComposition() {
+        domain.checkAccess();
+        if (compositionSource == null) return;
+        SceneNode node = compositionMount.node();
+        if (!compositionMount.active() || focusRouter.focused().get() != node
+                || !interactive(node) || node.control() == null
+                || !node.control().acceptsTextInput(node)
+                || !(node.control() instanceof club.heiqi.uilib.ui.scene.edit.SceneCompositionTarget)
+                || ((club.heiqi.uilib.ui.scene.edit.SceneCompositionTarget)
+                        node.control()).compositionState() != compositionState
+                || compositionState.inputBaseline() != compositionBaseline)
+            invalidateComposition(null);
     }
 
     void dispatchControlFocus(SceneNode node, boolean focused, boolean eligible) {

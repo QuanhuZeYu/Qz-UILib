@@ -142,6 +142,7 @@ public final class SceneEditState {
     private int historyPosition;
     private Kind groupKind = Kind.NONE;
     private String baseline;
+    private Object inputBaseline = new Object();
     private long generation;
     private Submission latest;
 
@@ -370,6 +371,12 @@ public final class SceneEditState {
                             s.revision));
     }
 
+    /** 输入路由捕获业务基线身份；普通编辑不更换，reset/cancel 永不复活旧联系。 */
+    public Object inputBaseline() {
+        domain.checkAccess();
+        return inputBaseline;
+    }
+
     public void reset(String text) {
         domain.checkWrite();
         resetBaseline(normalize(text));
@@ -383,6 +390,7 @@ public final class SceneEditState {
     private void resetBaseline(String text) {
         Snapshot s = value.get();
         baseline = text;
+        inputBaseline = new Object();
         generation++;
         latest = null;
         history.clear();

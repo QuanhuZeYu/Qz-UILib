@@ -190,7 +190,11 @@ public final class SceneNativeTextInput implements AutoCloseable {
         }
     }
 
-    /** 不可变原生事实；edit 非空表示真实组字/提交，key 仅按键事实有效。 */
+    /**
+     * 不可变原生事实；edit 非空表示文字/组字，key 仅按键事实有效。
+     * 当前 SDL 快照及布尔 session 不提供独立组字来源身份，仍走兼容入口；
+     * 不能据此证明跨焦点、重挂或业务重置后的迟到组字隔离。
+     */
     public static final class NativeEvent {
         public final int key;
         public final boolean down, repeat;

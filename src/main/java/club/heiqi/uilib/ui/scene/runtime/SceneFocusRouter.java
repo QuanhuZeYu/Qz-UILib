@@ -116,6 +116,7 @@ public final class SceneFocusRouter {
         if (owner != target) pendingReveal = null;
         SceneNode before = owner == null ? null : owner.node();
         SceneNode after = target == null ? null : target.node();
+        if (before != after) runtime.invalidateComposition(before);
         owner = target;
         value.set(after);
         if (before != after && before != null && before.control() != null)
@@ -182,6 +183,7 @@ public final class SceneFocusRouter {
             syncRanges();
         }
         if (owner != null && (!local(owner) || !runtime.interactive(owner.node()))) setOwner(null);
+        runtime.revalidateComposition();
     }
 
     private boolean alive(Range range) {

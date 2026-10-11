@@ -1,6 +1,7 @@
 package club.heiqi.uilib.ui.scene.control;
 
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
+import club.heiqi.uilib.ui.scene.edit.SceneCompositionTarget;
 import club.heiqi.uilib.ui.scene.edit.SceneEditState;
 import club.heiqi.uilib.ui.scene.edit.SceneEditState.Snapshot;
 import club.heiqi.uilib.ui.scene.edit.SceneEditState.Submission;
@@ -85,6 +86,12 @@ public final class SceneTextField {
                 NodeBinding.value(
                         theme,
                         (target, value) -> target.style(value.textStyle).padding(value.padding)));
+        node.bind(
+                NodeBinding.value(
+                        readOnly,
+                        (target, locked) -> {
+                            if (locked) target.runtime().invalidateComposition(target);
+                        }));
         return node;
     }
 
@@ -113,7 +120,7 @@ public final class SceneTextField {
                 : offset < preeditEnd ? start : offset - value.composition.length() + end - start;
     }
 
-    private static final class Control implements SceneControl {
+    private static final class Control implements SceneControl, SceneCompositionTarget {
         private final SceneEditState state;
         private final ReadableSignal<SceneTheme> theme;
         private final ReadableSignal<Boolean> readOnly;
@@ -222,6 +229,11 @@ public final class SceneTextField {
         @Override
         public boolean capturesPointer() {
             return true;
+        }
+
+        @Override
+        public SceneEditState compositionState() {
+            return state;
         }
 
         @Override

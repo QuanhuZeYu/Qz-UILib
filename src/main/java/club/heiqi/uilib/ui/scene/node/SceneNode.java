@@ -37,6 +37,88 @@ public final class SceneNode {
     private SceneNode parent;
     private SceneRuntime runtime;
     private boolean destroyed;
+    private Object logicalOwner;
+    private boolean logicalOwned, transferred;
+    private final List<AutoCloseable> resources = new ArrayList<>();
+
+    /** 逻辑资源跨卸载保留，仅永久销毁释放；外部共享资源不隐含归属。 */
+    public SceneNode own(AutoCloseable resource) {
+        writable();
+        resources.add(Objects.requireNonNull(resource, "resource"));
+        return this;
+    }
+
+    public Object logicalOwner() {
+        return logicalOwner;
+    }
+
+    /** 声明拥有权独立于挂载 Owner，明确移动时转移。 */
+    public void frameworkOwnership(SceneRuntime authority, Object value) {
+        frameworkOwnership(authority, value, value != null);
+    }
+
+    public void frameworkOwnership(SceneRuntime authority, Object value, boolean owned) {
+        authority.checkMutation();
+        logicalOwner = value;
+        logicalOwned = owned;
+    }
+
+    public boolean transferred() {
+        return transferred;
+    }
+
+    public void frameworkTransfer(SceneRuntime authority, SceneNode next) {
+        frameworkOwnership(authority, next);
+        transferred = true;
+    }
+
+    /** 释放卸载保留的逻辑树；挂载树须由正式运行时结束挂载。 */
+    public void destroy() {
+        if (destroyed) return;
+        if (runtime != null) throw new IllegalStateException("挂载节点应经运行时销毁");
+        destroyed = true;
+        Throwable failure = null;
+        for (SceneNode child : new ArrayList<>(children)) {
+            child.parent = null;
+            if (child.logicalOwned) {
+                try {
+                    child.destroy();
+                } catch (Throwable error) {
+                    failure = cleanupFailure(failure, error);
+                }
+            }
+        }
+        children.clear();
+        if (parent != null) parent.children.remove(this);
+        parent = null;
+        logicalOwner = null;
+        for (int i = resources.size() - 1; i >= 0; i--) {
+            try {
+                resources.get(i).close();
+            } catch (Throwable error) {
+                failure = cleanupFailure(failure, error);
+            }
+        }
+        resources.clear();
+        control = null;
+        initialFocus = null;
+        restoreFocus = null;
+        declarationState.clear();
+        bindings.clear();
+        click = null;
+        scrollAction = null;
+        escapeAction = null;
+        text = "";
+        if (failure instanceof Error) throw (Error) failure;
+        if (failure instanceof RuntimeException) throw (RuntimeException) failure;
+        if (failure != null) throw new IllegalStateException("节点逻辑资源释放失败: " + id, failure);
+    }
+
+    private static Throwable cleanupFailure(Throwable failure, Throwable error) {
+        if (failure == null) return error;
+        if (failure != error) failure.addSuppressed(error);
+        return failure;
+    }
 
     public enum Axis {
         ROW,
@@ -369,6 +451,8 @@ public final class SceneNode {
             throw new IllegalArgumentException("节点已有归属");
         children.add(child);
         child.parent = this;
+        child.logicalOwner = this;
+        child.logicalOwned = true;
         changed();
         return this;
     }
@@ -392,16 +476,7 @@ public final class SceneNode {
 
     public void frameworkDestroy(SceneRuntime authority) {
         authority.checkMutation();
-        destroyed = true;
-        control = null;
-        initialFocus = null;
-        restoreFocus = null;
-        declarationState.clear();
-        bindings.clear();
-        click = null;
-        scrollAction = null;
-        escapeAction = null;
-        text = "";
+        destroy();
     }
 
     private void unmounted() {

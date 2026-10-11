@@ -73,6 +73,8 @@ val coreSceneDeclarations = listOf(
     Triple("focusNavigationScenario", "无平台真实scene焦点导航与键盘适配验收", "FocusNavigationScenario"),
     Triple("escapeInputScenario", "ESC范围消费和宿主关闭协调验收", "EscapeInputScenario"),
     Triple("pageSessionScenario", "正式页面声明与生命周期归属验收", "PageSessionScenario"),
+    Triple("dynamicStructureScenario", "动态结构身份、逻辑资源与明确移动验收", "DynamicStructureScenario"),
+    Triple("compositionIdentityScenario", "无平台组字联系与迟到输入隔离验收", "CompositionIdentityScenario"),
     Triple("localizationScenario", "无平台语言事实文案与真实页面动态布局生命周期验收", "LocalizationScenario"),
     Triple("localizationResourceScenario", "独立真实语言资源加载重载与失败生命周期验收", "LocalizationResourceScenario"),
     Triple("standardControlsScenario", "标准控件动态主题与完整文案验收", "StandardControlsScenario"),

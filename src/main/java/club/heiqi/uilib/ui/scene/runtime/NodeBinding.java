@@ -2,13 +2,7 @@ package club.heiqi.uilib.ui.scene.runtime;
 
 import java.util.function.BiConsumer;
 import java.util.List;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Set;
 import java.util.function.Function;
-import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.reactive.Observation;
 import club.heiqi.uilib.ui.reactive.Owner;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
@@ -18,7 +12,7 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
 public interface NodeBinding {
     BindingActivation activate(SceneRuntime runtime, SceneNode node, Owner owner);
 
-    /** 按业务键保留条目节点；业务操作只更新逻辑列表，节点由框架维护。 */
+    /** 创建并拥有键条目；持续键延续节点，退出生效自动销毁，同键返回重新创建。 */
     static <T, K> NodeBinding repeat(
             ReadableSignal<List<T>> source,
             Function<T, K> key,
@@ -26,8 +20,19 @@ public interface NodeBinding {
         return new RepeatBinding<>(source, key, declaration);
     }
 
+    /** 同页明确移动；null 目的地表示页面根，调用方仍持有根生命周期。 */
+    static NodeBinding move(ReadableSignal<SceneNode> destination) {
+        return new MoveBinding(destination);
+    }
+
+    /** 创建并拥有的子序列，退出生效自动销毁；可用于条件分支。 */
+    static NodeBinding ownedChildren(ReadableSignal<List<SceneNode>> source) {
+        return new ChildrenBinding(source, true);
+    }
+
+    /** 显式引用调用方保留的逻辑树，退出仅解除挂载。 */
     static NodeBinding children(ReadableSignal<List<SceneNode>> source) {
-        return value(source, (node, children) -> node.runtime().reconcile(node, children));
+        return new ChildrenBinding(source, false);
     }
 
     static <T> NodeBinding value(ReadableSignal<T> source, BiConsumer<SceneNode, T> apply) {
