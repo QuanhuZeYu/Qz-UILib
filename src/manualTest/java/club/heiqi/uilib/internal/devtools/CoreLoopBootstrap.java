@@ -11,23 +11,13 @@ import net.minecraftforge.client.ClientCommandHandler;
 
 /** 仅开发 classpath 中注册；场景不进入发布包。 */
 public final class CoreLoopBootstrap {
-    private static boolean installed,
-            pendingOpen,
-            pendingLanguage,
-            pendingRich,
-            pendingMath,
-            pendingDocument;
+    private static boolean installed, pendingOpen;
 
     @SubscribeEvent
     public void tick(TickEvent.ClientTickEvent event) {
         if (event.phase != TickEvent.Phase.END || !pendingOpen) return;
         pendingOpen = false;
-        Minecraft.getMinecraft().displayGuiScreen(new CoreLoopScreen(
-                pendingDocument ? club.heiqi.uilib.testing.gallery.TestGallery.Page.DOCUMENT
-                : pendingMath ? club.heiqi.uilib.testing.gallery.TestGallery.Page.MATH
-                : pendingRich ? club.heiqi.uilib.testing.gallery.TestGallery.Page.RICH
-                : pendingLanguage ? club.heiqi.uilib.testing.gallery.TestGallery.Page.LANGUAGE
-                : club.heiqi.uilib.testing.gallery.TestGallery.Page.HOME));
+        Minecraft.getMinecraft().displayGuiScreen(new CoreLoopScreen(club.heiqi.uilib.testing.gallery.TestGallery.Page.HOME));
     }
 
     private CoreLoopBootstrap() {}
@@ -45,7 +35,7 @@ public final class CoreLoopBootstrap {
 
                     @Override
                     public String getCommandUsage(ICommandSender sender) {
-                        return "/qzcore [lang|rich|math|document]";
+                        return "/qzcore";
                     }
 
                     @Override
@@ -57,10 +47,6 @@ public final class CoreLoopBootstrap {
                     public void processCommand(
                             ICommandSender sender,
                             String[] args) { // GuiChat 在命令返回后会关闭当前界面，必须等聊天输入收尾后再打开。
-                        pendingLanguage = args.length > 0 && "lang".equals(args[0]);
-                        pendingRich = args.length > 0 && "rich".equals(args[0]);
-                        pendingMath = args.length > 0 && "math".equals(args[0]);
-                        pendingDocument = args.length > 0 && "document".equals(args[0]);
                         pendingOpen = true;
                     }
                 });

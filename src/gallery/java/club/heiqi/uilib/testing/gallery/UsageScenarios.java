@@ -22,13 +22,13 @@ import club.heiqi.uilib.ui.scene.control.DocumentResources;
 /** 真实任务组合内容能力；所有状态属于本次场景，宿主只提供资源事实。 */
 final class UsageScenarios {
     private UsageScenarios() {}
-    static SceneNode create(ScenePageContext context, GalleryEnvironment environment, TestGallery.Page page) {
+    static SceneNode create(ScenePageContext context, GalleryEnvironment environment, TestGallery.Page page, ReadableSignal<SceneTheme> baseTheme) {
         Signal<Boolean> english = context.domain().signal("en_US".equals(environment.initialLanguage()));
-        Signal<Boolean> light = context.domain().signal(false), narrow = context.domain().signal(false);
-        Signal<Integer> em = context.domain().signal(18), value = context.domain().signal(1);
+        Signal<Boolean> narrow = context.domain().signal(false);
+        Signal<Integer> em = context.domain().signal(16), value = context.domain().signal(1);
         Signal<String> link = context.domain().signal("链接尚未激活");
         ReadableSignal<SceneTheme> theme = context.domain().computed(context.scope(), () -> {
-            SceneTheme base = light.get() ? SceneTheme.light() : SceneTheme.dark();
+            SceneTheme base = baseTheme.get();
             return base.withTextStyle(new TextStyle("default", em.get(), base.textStyle.color));
         });
         Signal<ImageSource> item = context.domain().signal(environment.hasItems() ? environment.item(false, 2, 0) : environment.embed(false));
@@ -36,32 +36,33 @@ final class UsageScenarios {
         images.put("material", new DocumentResources.ImageReference(item, context.domain().signal(ImageOptions.defaults().quantity(true).tooltip(true))));
         images.put("illustration", new DocumentResources.ImageReference(context.domain().signal(ImageSource.resource("qz_uilib_test:textures/sample.png")), context.domain().signal(ImageOptions.defaults())));
         DocumentResources resources = new DocumentResources(environment.images(), context.domain().signal("https://example.test/guide/"), images, null);
-        SceneNode root = new SceneNode().size(Size.fill(1), Size.fill(1)).padding(12).gap(8).scrollable(true);
-        root.bind(NodeBinding.value(theme, (node, style) -> node.background(style.panel)));
-        root.add(SceneLabel.create(context, () -> page.purpose, theme));
-        root.add(SceneLabel.create(context, () -> steps(page), theme));
+        SceneNode root = new SceneNode().size(Size.fill(1), Size.fill(1)).gap(16).scrollable(true);
+        root.add(GalleryStyle.label(context, () -> page.title, baseTheme, 28, false));
+        root.add(GalleryStyle.label(context, () -> page.purpose, baseTheme, 15, true));
+        SceneNode body = GalleryStyle.card(theme);
+        root.add(GalleryStyle.frame(body, theme));
+        root.add(GalleryStyle.label(context, () -> steps(page), baseTheme, 13, true));
         SceneNode actions = new SceneNode().size(Size.fill(1), Size.natural()).axis(SceneNode.Axis.ROW).gap(4);
-        actions.add(SceneButton.create(context, () -> english.get() ? "切换中文" : "Switch to English", theme, () -> english.set(!english.get())));
-        actions.add(SceneButton.create(context, () -> "字号：" + em.get(), theme, () -> em.set(em.get() == 18 ? 24 : 18)));
-        actions.add(SceneButton.create(context, () -> light.get() ? "深色阅读" : "浅色阅读", theme, () -> light.set(!light.get())));
-        actions.add(SceneButton.create(context, () -> narrow.get() ? "展开阅读宽度" : "收窄阅读宽度", theme, () -> narrow.set(!narrow.get())));
-        root.add(actions);
+        actions.add(GalleryStyle.button(context, () -> english.get() ? "中文" : "English", theme, () -> english.set(!english.get())));
+        actions.add(GalleryStyle.button(context, () -> "字号：" + em.get(), theme, () -> em.set(em.get() == 16 ? 20 : 16)));
+        actions.add(GalleryStyle.button(context, () -> narrow.get() ? "舒展阅读" : "专注阅读", theme, () -> narrow.set(!narrow.get())));
+        body.add(actions);
         if (page == TestGallery.Page.DETAILS) {
-            root.add(SceneButton.create(context, () -> "制作批次：" + value.get(), theme, () -> {
+            body.add(GalleryStyle.button(context, () -> "制作批次：" + value.get(), theme, () -> {
                 int batches = value.get() == 1 ? 3 : 1;
                 value.set(batches);
                 item.set(environment.hasItems() ? environment.item(false, batches * 2, 0) : environment.embed(batches == 3));
             }));
-            root.add(SceneLabel.create(context, () -> "材料需求：" + value.get() * 2 + "；产出：" + value.get() * 4, theme));
-            root.add(SceneLabel.create(context, () -> environment.hasItems() ? "MC物品专项：悬停材料图标查看物品提示与数量。" : "MC物品与原版提示专项：当前宿主不支持；彩色位图只表示通用材料图像。", theme));
+            body.add(SceneLabel.create(context, () -> "材料需求：" + value.get() * 2 + "；产出：" + value.get() * 4, theme));
+            body.add(SceneLabel.create(context, () -> environment.hasItems() ? "MC物品专项：悬停材料图标查看物品提示与数量。" : "MC物品与原版提示专项：当前宿主不支持；彩色位图只表示通用材料图像。", theme));
         }
         if (page == TestGallery.Page.REPORT) {
-            root.add(SceneButton.create(context, () -> value.get() == 1 ? "切换到本周" : "切换到今日", theme, () -> value.set(value.get() == 1 ? 7 : 1)));
-            root.add(SceneLabel.create(context, () -> "生产汇总：投入 " + value.get() * 12 + "；完成 " + value.get() * 9 + "；待处理 " + value.get() * 3, theme));
+            body.add(GalleryStyle.button(context, () -> value.get() == 1 ? "切换到本周" : "切换到今日", theme, () -> value.set(value.get() == 1 ? 7 : 1)));
+            body.add(SceneLabel.create(context, () -> "生产汇总：投入 " + value.get() * 12 + "；完成 " + value.get() * 9 + "；待处理 " + value.get() * 3, theme));
         }
         if (page == TestGallery.Page.MESSAGES) {
-            root.add(SceneButton.create(context, () -> "接收新消息", theme, () -> value.set(value.get() + 1)));
-            root.add(SceneLabel.create(context, () -> "消息总数：" + value.get(), theme));
+            body.add(GalleryStyle.button(context, () -> "接收新消息", theme, () -> value.set(value.get() + 1)));
+            body.add(SceneLabel.create(context, () -> "消息总数：" + value.get(), theme));
             SceneNode list = new SceneNode().size(Size.fill(1), Size.natural()).gap(8);
             list.bind(NodeBinding.repeat(() -> {
                 java.util.List<Integer> ids = new java.util.ArrayList<>();
@@ -69,23 +70,22 @@ final class UsageScenarios {
                 return ids;
             }, id -> id, id -> {
                 Signal<Boolean> expanded = context.domain().signal(false);
-                SceneNode card = new SceneNode().size(Size.fill(1), Size.natural()).padding(8).gap(4);
-                card.bind(NodeBinding.value(theme, (node, style) -> node.background(style.button)));
+                SceneNode card = GalleryStyle.card(theme);
                 card.add(SceneLabel.create(context, () -> "消息 #" + id.get() + " · " + (english.get() ? "Workshop ready 👩‍💻" : "工坊任务就绪 👩‍💻"), theme));
-                card.add(SceneButton.create(context, () -> (expanded.get() ? "收起消息 #" : "展开消息 #") + id.get(), theme, () -> expanded.set(!expanded.get())));
+                card.add(GalleryStyle.button(context, () -> (expanded.get() ? "收起消息 #" : "展开消息 #") + id.get(), theme, () -> expanded.set(!expanded.get())));
                 SceneNode detail = document(context, () -> english.get() ? "Operator: café / العربية / हिन्दी. Completed <latex>2+2=4</latex>. <a href=\"activity\">Activity details</a>" : "操作员：小明 / café / العربية / हिन्दी。完成 <latex>2+2=4</latex> 批次。<a href=\"activity\">查看活动记录</a>", theme, resources, link);
                 detail.bind(NodeBinding.value(expanded, SceneNode::visible));
                 card.add(detail);
-                return card;
+                return GalleryStyle.frame(card, theme);
             }));
-            root.add(list);
+            body.add(list);
         } else {
             SceneNode reader = new SceneNode().size(Size.fill(1), Size.natural());
             reader.bind(NodeBinding.value(narrow, (node, valueNarrow) -> node.size(valueNarrow ? Size.fill(1).bounds(0, 560) : Size.fill(1), Size.natural())));
             reader.add(document(context, () -> content(page, english.get(), value.get()), theme, resources, link));
-            root.add(reader);
+            body.add(reader);
         }
-        root.add(SceneLabel.create(context, link, theme));
+        body.add(GalleryStyle.label(context, link, theme, 13, true));
         return root;
     }
     private static SceneNode document(ScenePageContext context, ReadableSignal<String> source, ReadableSignal<SceneTheme> theme, DocumentResources resources, Signal<String> link) {

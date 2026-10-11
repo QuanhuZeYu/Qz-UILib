@@ -68,7 +68,7 @@ public final class DesktopGallery {
                 if (window.fonts.rasterizer().stats().pending == 0 && window.fonts.rasterizer().stats().ready == 0 && window.fonts.presentationStats().uploadCalls == 0) break;
             } while (System.nanoTime() < deadline);
             if (window.fonts.rasterizer().stats().pending != 0 || window.fonts.rasterizer().stats().errors != 0) throw new AssertionError("可见字形未准备完成");
-            screenshot(window, output.resolve("gallery-desktop.png"));
+            screenshot(window, output.resolve("gallery-desktop.png"), 0xfffafafa);
             verifyImage(window, image);
             Object generation = image.image.content;
             window.reloadConfiguration();
@@ -76,6 +76,14 @@ public final class DesktopGallery {
             while ((image == null || image.image.content == generation) && System.nanoTime() < deadline) { window.frame(); image = image(window); }
             if (image == null || image.image.content == generation) throw new AssertionError("资源重载未换代");
             verifyImage(window,image);
+            click(window,cursor,mouse,"场景概览"); settle(window);
+            screenshot(window, output.resolve("gallery-home.png"), 0xfffafafa);
+            click(window,cursor,mouse,"深色模式"); settle(window);
+            screenshot(window, output.resolve("gallery-dark.png"), 0xff09090b);
+            glfwSetWindowSize(window.handle(),640,900); settle(window);
+            screenshot(window, output.resolve("gallery-narrow.png"), 0xff09090b);
+            click(window,cursor,mouse,"打开知识库"); settle(window);
+            click(window,cursor,mouse,"场景概览");
             System.out.println("GALLERY host=desktop sharedDeclaration=true sharedJourney=true imagePixels=true resourceReload=true renderer="+glGetString(GL_RENDERER));
         }
         Files.write(output.resolve("result.txt"), "PASS sharedJourney actualGLFWCallbacks actualImagePixels resourceReload close\n".getBytes("UTF-8"));
@@ -94,7 +102,25 @@ public final class DesktopGallery {
         glReadPixels(x,window.height()-1-y,1,1,GL_RGBA,GL_UNSIGNED_BYTE,pixel);
         if (glGetError() != GL_NO_ERROR || (pixel.get(2)&255) < 150) throw new AssertionError("PNG纹理没有真实蓝色像素");
     }
-    private static void screenshot(DesktopWindow window, Path target) throws Exception {
+    private static void settle(DesktopWindow window) {
+        long deadline = System.nanoTime() + 5000000000L;
+        do {
+            window.frame();
+            if (window.fonts.rasterizer().stats().pending == 0 && window.fonts.rasterizer().stats().ready == 0 && window.fonts.presentationStats().uploadCalls == 0) break;
+        } while (System.nanoTime() < deadline);
+        if (window.fonts.rasterizer().stats().pending != 0 || window.fonts.rasterizer().stats().errors != 0) throw new AssertionError("截图可见字形未准备完成");
+    }
+    private static void click(DesktopWindow window, GLFWCursorPosCallback cursor, GLFWMouseButtonCallback mouse, String text) {
+        final SceneGeometryView[] view = {null};
+        window.domain.execute(() -> view[0] = window.page.pipeline().current().geometry);
+        SceneGeometryView.Entry entry = view[0].ordered().stream().filter(e -> e.text != null && text.equals(e.text.originalText)).findFirst().orElseThrow(() -> new AssertionError("找不到导航：" + text));
+        club.heiqi.uilib.ui.scene.layout.LayoutBox hit = entry.clip == null ? entry.box : entry.box.intersect(entry.clip);
+        if (hit.width <= 0 || hit.height <= 0) throw new AssertionError("导航被裁剪：" + text);
+        int[] width = new int[1], height = new int[1]; glfwGetWindowSize(window.handle(),width,height);
+        cursor.invoke(window.handle(),(double)(hit.x+hit.width/2)*width[0]/window.width(),(double)(hit.y+hit.height/2)*height[0]/window.height());
+        mouse.invoke(window.handle(),0,GLFW_PRESS,0); mouse.invoke(window.handle(),0,GLFW_RELEASE,0); window.frame();
+    }
+    private static void screenshot(DesktopWindow window, Path target, int background) throws Exception {
         window.fonts.beginPresentation(1000000);
         try { window.replay(window.lastPlan); } finally { window.fonts.endPresentation(); }
         glFinish();
@@ -105,11 +131,11 @@ public final class DesktopGallery {
             int p=((window.height()-1-y)*window.width()+x)*4;
             output.setRGB(x,y,0xff000000|((bytes.get(p)&255)<<16)|((bytes.get(p+1)&255)<<8)|(bytes.get(p+2)&255));
         }
-        if (glGetError() != GL_NO_ERROR || output.getRGB(window.width()-4, window.height()-4) != club.heiqi.uilib.ui.scene.control.SceneTheme.dark().panel) throw new AssertionError("共享广场背景未覆盖视口");
-        PaintCommand title = window.lastPlan.commands().stream().filter(c -> c.kind == PaintCommand.Kind.TEXT && c.text.originalText.startsWith("测试广场 · ")).findFirst().orElseThrow(() -> new AssertionError("广场标题缺失"));
+        if (glGetError() != GL_NO_ERROR || output.getRGB(window.width()-4, window.height()-4) != background) throw new AssertionError("共享广场背景未覆盖视口");
+        PaintCommand title = window.lastPlan.commands().stream().filter(c -> c.kind == PaintCommand.Kind.TEXT && c.text.originalText.startsWith("QZ / 场景工作台")).findFirst().orElseThrow(() -> new AssertionError("广场标题缺失"));
         int ink = 0;
         for (int y = Math.max(0,title.box.y); y < Math.min(window.height(),title.box.y+title.box.height); y++)
-            for (int x = Math.max(0,title.box.x); x < Math.min(window.width(),title.box.x+title.box.width); x++) if (output.getRGB(x,y) != 0xff161c24) ink++;
+            for (int x = Math.max(0,title.box.x); x < Math.min(window.width(),title.box.x+title.box.width); x++) if (output.getRGB(x,y) != background) ink++;
         if (ink == 0) throw new AssertionError("广场标题没有真实GL字形像素");
         ImageIO.write(output,"png",target.toFile());
     }

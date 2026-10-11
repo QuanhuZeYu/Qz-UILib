@@ -49,7 +49,9 @@ val manualTestJar by tasks.registering(ReobfuscatedJar::class) {
             check(zip.getEntry("club/heiqi/uilib/manualtest/ManualTestMod.class") != null) { "人工测试入口缺失" }
             check(zip.getEntry("club/heiqi/uilib/internal/devtools/CoreLoopScreen.class") != null) { "人工测试面板缺失" }
             check(zip.getEntry("club/heiqi/uilib/testing/gallery/TestGallery.class") != null) { "共享测试广场缺失" }
-            check(zip.getEntry("club/heiqi/uilib/testing/gallery/CoreMathPage.class") != null) { "数学共享测试页面缺失" }
+            check(zip.getEntry("club/heiqi/uilib/testing/gallery/ProjectSettings.class") != null) { "新项目设置场景缺失" }
+            val removedPages = listOf("CoreLoopPage", "CoreLocalizationPage", "CoreRichTextPage", "CoreImagePage", "CoreMathPage", "CoreDocumentPage")
+            check(zip.entries().asSequence().none { entry -> removedPages.any { entry.name.startsWith("club/heiqi/uilib/testing/gallery/$it") } }) { "附加包残留旧测试页面" }
             check(zip.getEntry("assets/qz_uilib_test/textures/sample.png") != null) { "共享图像样本缺失" }
             check(zip.getEntry("uilib/localization/core-loop/zh_CN.properties") != null) { "共享语言样本缺失" }
             check(zip.getEntry("club/heiqi/uilib/ui/reactive/Signal.class") == null) { "附加包不能重复打入核心类" }

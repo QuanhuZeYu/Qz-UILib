@@ -14,24 +14,25 @@ public final class GalleryJourney {
     }
     public static void run(Driver driver) {
         driver.frame();
-        require(text(driver, "测试广场 · 场景目录"), "默认入口不是场景目录");
-        go(driver, TestGallery.Page.CONTROLS);
-        require(text(driver, "核心闭环：0"), "新运行不是独立初始状态");
-        click(driver, "添加");
-        require(text(driver, "核心闭环：1"), "添加未产生业务结果");
-        click(driver, "12"); driver.replaceText("73"); driver.frame();
-        // 导航不抢编辑焦点；首次卸载后立即送文字，检验路由器清除失活编辑联系。
-        click(driver,"返回场景目录");
+        require(text(driver,"探索场景"), "默认入口不是新工作台");
+        require(!contains(driver,"核心闭环") && !contains(driver,"专项定位样本"), "旧页面仍在工作台中");
+        go(driver, TestGallery.Page.SETTINGS);
+        click(driver,"保存设置");
+        require(text(driver,"已保存：工坊计划 · 12 批"), "新运行初始表单未保存");
+        click(driver,"12"); driver.replaceText("0"); driver.frame();
+        click(driver,"保存设置");
+        require(text(driver,"批次必须是1至99的整数"), "表单未拒绝越界批次");
+        click(driver,"0"); driver.replaceText("73"); driver.frame();
+        click(driver,"场景概览");
         driver.replaceText("99"); driver.frame();
-        click(driver,TestGallery.Page.ARTICLE.title);
-        go(driver, TestGallery.Page.CONTROLS);
-        require(text(driver, "核心闭环：1") && text(driver, "73"), "切页丢失草稿或失活页收到输入");
-        click(driver, "确认整数");
-        require(contains(driver,"整数业务值：73"), "正式提交未更新业务值");
-        click(driver, "模态");
-        SceneGeometryView.Entry modal = driver.geometry().ordered().stream().filter(e -> e.node.modal()).findFirst().orElseThrow(() -> new AssertionError("模态未挂载"));
-        require(modal.box.height > 0 && modal.box.height < driver.geometry().viewport().height / 2, "自然模态被拉伸成整片视口");
-        click(driver, "关闭");
+        click(driver,"打开知识库");
+        go(driver,TestGallery.Page.SETTINGS);
+        require(text(driver,"73"), "切页丢失草稿或失活表单收到输入");
+        click(driver,"保存设置");
+        require(text(driver,"已保存：工坊计划 · 73 批"), "表单保存未更新权威值");
+        click(driver,"73"); driver.replaceText("22"); driver.frame();
+        click(driver,"恢复已保存");
+        require(text(driver,"73") && text(driver,"已恢复：工坊计划 · 73 批"), "恢复未取最近保存值");
         go(driver, TestGallery.Page.DETAILS);
         require(text(driver, "材料需求：2；产出：4"), "配方初始数量错误");
         click(driver, "制作批次：1");
@@ -54,22 +55,22 @@ public final class GalleryJourney {
         require(text(driver, "消息总数：2") && text(driver, "收起消息 #2"), "消息列表或展开状态未保留");
         for (TestGallery.Page id : TestGallery.Page.values()) if (id != TestGallery.Page.HOME) {
             go(driver, id);
-            require(text(driver, "测试广场 · " + id.title), "页面未切换：" + id);
+            require(text(driver, id.title), "页面未切换：" + id);
         }
         go(driver, TestGallery.Page.ARTICLE);
-        if (text(driver,"切换中文")) click(driver,"切换中文");
-        click(driver,"Switch to English");
+        if (text(driver,"中文")) click(driver,"中文");
+        click(driver,"English");
         require(contains(driver,"Workshop guide"), "文章语言切换未更新内容");
-        click(driver,"切换中文");
+        click(driver,"中文");
         SceneGeometryView.Entry articleBefore = article(driver);
         int readingWidth = articleBefore.box.width;
-        click(driver,"收窄阅读宽度");
+        click(driver,"专注阅读");
         require(article(driver).box.width < readingWidth && article(driver).box.width <= 560, "正文未按阅读宽度重排");
-        click(driver,"字号：18");
+        click(driver,"字号：16");
         click(driver,"N=2b");
         require(text(driver,"已激活链接：https://example.test/guide/checklist"), "文章链接未通过正式输入激活");
-        require(text(driver,"字号：24") && text(driver,"展开阅读宽度"), "阅读设置未更新");
-        require(article(driver).text.lines().stream().flatMap(line -> line.glyphs().stream()).anyMatch(g -> g.logicalEm == 24), "正文未应用阅读字号");
+        require(text(driver,"字号：20") && text(driver,"舒展阅读"), "阅读设置未更新");
+        require(article(driver).text.lines().stream().flatMap(line -> line.glyphs().stream()).anyMatch(g -> g.logicalEm == 20), "正文未应用阅读字号");
         long imageDeadline = System.nanoTime() + 5000000000L;
         while (!driver.paint().commands().stream().anyMatch(c -> c.kind == PaintCommand.Kind.IMAGE) && System.nanoTime() < imageDeadline) driver.frame();
         require(driver.paint().commands().stream().anyMatch(c -> c.kind == PaintCommand.Kind.IMAGE), "文章插图未进入正式绘制计划");
@@ -84,8 +85,8 @@ public final class GalleryJourney {
         return driver.paint().commands().stream().anyMatch(c -> c.kind == PaintCommand.Kind.TEXT && c.text.originalText.contains(value));
     }
     private static void go(Driver driver, TestGallery.Page page) {
-        click(driver,"返回场景目录");
-        click(driver,page.title);
+        click(driver,"场景概览");
+        click(driver,"打开" + page.title);
     }
     private static boolean text(Driver driver, String value) {
         return driver.paint().commands().stream().anyMatch(c -> c.kind == PaintCommand.Kind.TEXT && value.equals(c.text.originalText));
