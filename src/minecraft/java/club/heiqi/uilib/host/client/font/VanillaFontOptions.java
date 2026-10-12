@@ -9,6 +9,7 @@ import club.heiqi.uilib.ui.config.ConfigCodecs;
 import club.heiqi.uilib.ui.config.ConfigKey;
 import club.heiqi.uilib.ui.config.ConfigSchema;
 import club.heiqi.uilib.ui.config.ConfigSession;
+import club.heiqi.uilib.ui.scene.control.ThemeConfiguration;
 import club.heiqi.uilib.ui.reactive.Owner;
 import club.heiqi.uilib.ui.reactive.ReactiveDomain;
 import club.heiqi.uilib.ui.reactive.Signal;
@@ -32,6 +33,7 @@ public final class VanillaFontOptions {
     private static ConfigKey<List<String>> candidates;
     private static ConfigSession configuration;
     private static SettingsConfiguration settingsConfiguration;
+    private static ThemeConfiguration themeConfiguration;
     private static Signal<Long> reloadResources;
     private static Owner projection;
     private static Path path;
@@ -69,7 +71,7 @@ public final class VanillaFontOptions {
                 List<FontSource> builtins = FontTextService.defaultSources(
                         VanillaFontOptions.class.getClassLoader(), 1);
                 candidates = FontCandidateConfiguration.key(builtins);
-                configuration = new ConfigSession(DOMAIN, ConfigSchema.of(REPLACE_VANILLA, candidates));
+                configuration = new ConfigSession(DOMAIN, ConfigSchema.of(REPLACE_VANILLA, candidates, ThemeConfiguration.KEY));
                 path = FontConfigurationFiles.initialize(configuration, legacyFile.toPath(),
                         REPLACE_VANILLA, candidates, builtins);
                 reloadResources = DOMAIN.signal(0L);
@@ -78,6 +80,7 @@ public final class VanillaFontOptions {
                         MinecraftFontServices::validateCandidates,
                         () -> reloadResources.set(reloadResources.get() + 1));
                 projection = DOMAIN.owner();
+                themeConfiguration = new ThemeConfiguration(DOMAIN, configuration, projection);
                 DOMAIN.effect(projection, () -> settings = new Settings(
                         configuration.get(REPLACE_VANILLA), configuration.get(candidates)));
                 // 独立订阅不随页面结束；已发布后的字体资源失败由共享工作区显示，不终止页面。
@@ -92,6 +95,12 @@ public final class VanillaFontOptions {
         });
         FMLCommonHandler.instance().bus().register(LISTENER);
         FMLLog.info("[Qz-UILib] 核心配置文件=%s；修改后通过资源重载更新", path);
+    }
+
+    /** 借用MC应用唯一主题配置；其订阅归宿主projection，页面不释放共享配置。 */
+    public static ThemeConfiguration themeConfiguration() {
+        if (themeConfiguration == null) throw new IllegalStateException("主题配置尚未安装");
+        return themeConfiguration;
     }
 
     /** 借用MC唯一配置与状态域；页面关闭不保存或释放宿主配置。 */

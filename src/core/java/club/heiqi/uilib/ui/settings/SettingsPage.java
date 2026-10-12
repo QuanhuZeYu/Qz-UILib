@@ -11,6 +11,7 @@ import club.heiqi.uilib.ui.scene.control.SceneTextArea;
 import club.heiqi.uilib.ui.scene.control.SceneTextField;
 import club.heiqi.uilib.ui.scene.control.SceneTextPolicy;
 import club.heiqi.uilib.ui.scene.control.SceneTheme;
+import club.heiqi.uilib.ui.scene.control.ThemeMode;
 import club.heiqi.uilib.ui.scene.edit.SceneEditState;
 import club.heiqi.uilib.ui.scene.host.ScenePage;
 import club.heiqi.uilib.ui.scene.host.ScenePageContext;
@@ -46,7 +47,7 @@ public final class SettingsPage implements ScenePage {
     private final class View {
         final ScenePageContext ctx;
         final SettingsModel model;
-        final Signal<Boolean> dark, fileSource;
+        final Signal<Boolean> fileSource;
         final Signal<Section> section;
         final Signal<Dialog> dialog;
         final Signal<String> selectedBuiltin;
@@ -55,11 +56,11 @@ public final class SettingsPage implements ScenePage {
         final String defaultSample="每一种语言，都值得被认真呈现。\nGood typography makes a difference.";
         View(ScenePageContext ctx) {
             this.ctx=ctx;model=new SettingsModel(configuration,ctx.scope());
-            dark=ctx.domain().signal(false);fileSource=ctx.domain().signal(false);
+            fileSource=ctx.domain().signal(false);
             section=ctx.domain().signal(Section.FONT);dialog=ctx.domain().signal(Dialog.NONE);
             List<String> builtins=configuration.builtinCandidates();
             selectedBuiltin=ctx.domain().signal(builtins.isEmpty()?"":builtins.get(0));
-            palette=ctx.domain().computed(ctx.scope(),() -> new SettingsStyle.Palette(dark.get()));
+            palette=ctx.domain().computed(ctx.scope(),() -> new SettingsStyle.Palette(model.theme().get().isDark()));
             path=new SceneEditState(ctx.domain(),"");
             sample=new SceneEditState(ctx.domain(),defaultSample,SceneEditState.Mode.MULTI_LINE);
         }
@@ -76,7 +77,10 @@ public final class SettingsPage implements ScenePage {
                     .bind(NodeBinding.value(palette,(n,p) -> n.background(p.background)));
             SceneNode toolbar=SettingsStyle.row(12).padding(14);
             toolbar.add(text("QZ  /  UILib 设置",15,false).size(Size.fill(1),Size.natural()));
-            toolbar.add(button(() -> dark.get()?"浅色模式":"深色模式",() -> dark.set(!dark.get()),false,true));
+            toolbar.add(SettingsStyle.column(4)
+                    .add(button(() -> model.theme().get().isDark()?"浅色模式":"深色模式",
+                            () -> model.setTheme(model.theme().get().isDark()?ThemeMode.LIGHT:ThemeMode.DARK),false,true))
+                    .add(text("应用后全局生效，保存后重启保留",11,true)));
             toolbar.add(button(() -> "返回",this::closeRequested,false,true));
             shell.add(toolbar).add(SettingsStyle.line(palette));
             SceneNode workspace=SettingsStyle.column(0).size(Size.fill(1),Size.fill(1)).control(new SettingsStyle.Workspace());
@@ -204,7 +208,8 @@ public final class SettingsPage implements ScenePage {
             card.add(text("重新加载使用文件中的值替换当前配置。有未应用或未保存的更改时，会先确认。",12,true));
             card.add(error(model.fileError()));
             SceneNode values=SettingsStyle.column(12).add(text("当前生效值",16,false)).add(text("只读表示；未应用草稿不显示在这里。",12,true));
-            values.add(text(() -> "字体候选：\n"+String.join("\n",configuration.current().candidates())
+            values.add(text(() -> "全局主题："+(configuration.current().theme().isDark()?"深色":"浅色")
+                    +"\n\n字体候选：\n"+String.join("\n",configuration.current().candidates())
                     +(configuration.hasMinecraft()?"\n\n接管原版文字绘制："+(configuration.current().replace()?"开启":"关闭"):""),13,true));
             return SettingsStyle.column(18).add(SettingsStyle.card(card,palette)).add(SettingsStyle.card(values,palette));
         }

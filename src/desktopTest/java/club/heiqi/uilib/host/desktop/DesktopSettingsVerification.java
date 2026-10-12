@@ -17,6 +17,9 @@ import org.lwjgl.glfw.GLFWKeyCallback;
 import org.lwjgl.glfw.GLFWMouseButtonCallback;
 import org.lwjgl.glfw.GLFWScrollCallback;
 import org.lwjgl.glfw.GLFWWindowCloseCallback;
+import club.heiqi.uilib.ui.scene.control.SceneTheme;
+import club.heiqi.uilib.ui.scene.control.ThemeConfiguration;
+import club.heiqi.uilib.ui.scene.control.ThemeMode;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometryView;
 import club.heiqi.uilib.ui.scene.paint.PaintCommand;
@@ -32,11 +35,21 @@ public final class DesktopSettingsVerification {
             List<String> original=current(w);byte[] before=Files.readAllBytes(path);
             require(!original.isEmpty(),"默认字体候选为空");
             screenshot(w,output.resolve("settings-light.png"));
-            input.click("深色模式");settle(w);screenshot(w,output.resolve("settings-dark.png"));input.click("浅色模式");
+            require(currentTheme(w)==ThemeMode.LIGHT,"新配置全局主题不是默认浅色");
+            int lightInk=titleInk(w);
+            input.click("深色模式");settle(w);
+            require(currentTheme(w)==ThemeMode.LIGHT&&hasText(w,"有待应用修改"),"主题切换没有保留草稿阶段");
+            require(titleInk(w)!=lightInk,"主题草稿没有可见预览");
+            require(java.util.Arrays.equals(before,Files.readAllBytes(path)),"主题草稿误写文件");
+            input.click("放弃编辑");settle(w);
+            require(currentTheme(w)==ThemeMode.LIGHT&&hasText(w,"已保存")&&hasText(w,"深色模式")&&titleInk(w)==lightInk,"丢弃未恢复当前浅色主题");
+            input.click("深色模式");
             input.click("下移");require(current(w).equals(original),"排序草稿提前发布");require(hasText(w,"有待应用修改"),"排序未标记草稿");
             input.click("配置文件");require(hasText(w,"有待应用修改"),"切分类丢草稿");input.click("字体与排版");
             input.click("应用全部更改");settle(w);List<String> applied=current(w);
             require(applied.get(0).equals(original.get(1))&&applied.get(1).equals(original.get(0)),"正式应用没有发布顺序");
+            require(currentTheme(w)==ThemeMode.DARK&&titleInk(w)!=lightInk,"应用没有发布深色主题");
+            screenshot(w,output.resolve("settings-dark.png"));
             require(java.util.Arrays.equals(before,Files.readAllBytes(path)),"应用误写文件");require(hasText(w,"已应用，未保存"),"已应用未保存状态不实");
             Path backup=output.resolve("save-failure-backup.yaml");Files.move(path,backup,java.nio.file.StandardCopyOption.REPLACE_EXISTING);Files.createDirectory(path);
             input.click("保存到文件");require(hasTextContaining(w,"保存失败：")&&hasText(w,"已应用，未保存"),"保存失败缺全局可见反馈或伪保存");
@@ -67,15 +80,39 @@ public final class DesktopSettingsVerification {
             glfwSetWindowSize(w.handle(),1024,768);settle(w);screenshot(w,output.resolve("settings-medium.png"));require(visible(w,"应用全部更改"),"中窗口footer不可达");
             glfwSetWindowSize(w.handle(),480,900);settle(w);screenshot(w,output.resolve("settings-narrow.png"));require(visible(w,"应用全部更改")&&visible(w,"配置文件"),"窄窗口操作或分类不可达");
             glfwSetWindowSize(w.handle(),1440,1000);settle(w);input.enqueueClick("下移");input.close.invoke(w.handle());w.frame();
-            require(!w.shouldClose()&&hasText(w,"离开配置工作区？"),"原生关闭绕过草稿确认");input.click("继续编辑");require(hasText(w,"有待应用修改"),"关闭取消丢草稿");input.click("应用全部更改");settle(w);
+            require(!w.shouldClose()&&hasText(w,"离开配置工作区？"),"原生关闭绕过草稿确认");input.click("继续编辑");require(hasText(w,"有待应用修改"),"关闭取消丢草稿");
+            input.click("浅色模式");input.click("应用全部更改");settle(w);
+            require(currentTheme(w)==ThemeMode.LIGHT,"未保存主题应用没有生效");
             byte[] saved=Files.readAllBytes(path);input.close.invoke(w.handle());w.frame();require(!w.shouldClose(),"未保存原生关闭未确认");
             screenshot(w,output.resolve("settings-close.png"));input.click("不保存并离开");require(w.shouldClose(),"确认离开未关闭");require(java.util.Arrays.equals(saved,Files.readAllBytes(path)),"离开隐式保存");
             require(glGetError()==GL_NO_ERROR,"设置页GL错误");
             System.out.println("SETTINGS host=desktop sharedScene=true actualFileIO=true applyWithoutSave=true explicitReload=true callbackInput=true viewport=wide,medium,narrow theme=light,dark glyphPixels=true renderer="+glGetString(GL_RENDERER));
         }
-        try(DesktopWindow reopened=DesktopWindow.openSettings(path)){settle(reopened);require(hasText(reopened,"已保存"),"重开不是文件保存基线");reopened.requestClose();reopened.frame();require(reopened.shouldClose(),"无修改不能正常关闭");}
+        try(DesktopWindow reopened=DesktopWindow.openSettings(path)){
+            settle(reopened);require(hasText(reopened,"已保存"),"重开不是文件保存基线");
+            require(currentTheme(reopened)==ThemeMode.DARK&&hasText(reopened,"浅色模式"),"保存后关闭重开未恢复深色，或离开隐式保存了浅色");
+            screenshot(reopened,output.resolve("settings-reopened-dark.png"));
+            reopened.requestClose();reopened.frame();require(reopened.shouldClose(),"无修改不能正常关闭");
+        }
+        // 同一配置的普通sample页面也使用宿主全局主题，旧windowProfile.dark不决定配色。
+        try(DesktopWindow sample=DesktopWindow.open(path)){
+            settle(sample);require(currentTheme(sample)==ThemeMode.DARK,"另一桌面sample未读取已保存主题");
+            sample.domain.execute(() -> require(sample.samplePage.root.background()==SceneTheme.dark().panel,"sample未显示已保存深色主题"));
+            byte[] saved=Files.readAllBytes(path);
+            sample.domain.execute(() -> sample.configuration.set(ThemeConfiguration.KEY,ThemeMode.LIGHT));settle(sample);
+            sample.domain.execute(() -> {
+                require(sample.configuration.get(DesktopPage.PROFILE).dark,"兼容旧示例dark字段丢失");
+                require(sample.samplePage.root.background()==SceneTheme.light().panel,"sample未动态跟随全局浅色，或旧dark字段覆盖主题");
+                require(sample.samplePage.builds==1,"全局主题更新重建sample页面");
+            });
+            require(java.util.Arrays.equals(saved,Files.readAllBytes(path)),"sample内存主题发布隐式写盘");
+            sample.requestClose();
+        }
+        System.out.println("SETTINGS themeDraftDiscard=true themeApplyWithoutSave=true themePersistedReopen=true sampleThemeFollow=true");
     }
     private static List<String> current(DesktopWindow w){final List<String>[] result=new List[1];w.domain.execute(() -> result[0]=new ArrayList<>(w.configuration.get(w.fontCandidates)));return result[0];}
+    private static ThemeMode currentTheme(DesktopWindow w){final ThemeMode[] result={null};w.domain.execute(() -> result[0]=w.configuration.get(ThemeConfiguration.KEY));return result[0];}
+    private static int titleInk(DesktopWindow w){return w.lastPlan.commands().stream().filter(c -> c.kind==PaintCommand.Kind.TEXT&&c.text.originalText.equals("QZ  /  UILib 设置")).findFirst().orElseThrow(() -> new AssertionError("正式设置标题缺失")).color;}
     private static SceneGeometryView geometry(DesktopWindow w){final SceneGeometryView[] result={null};w.domain.execute(() -> result[0]=w.page.pipeline().current().geometry);return result[0];}
     private static boolean hasText(DesktopWindow w,String text){return geometry(w).ordered().stream().anyMatch(e -> e.text!=null&&e.text.originalText.equals(text));}
     private static boolean hasTextContaining(DesktopWindow w,String text){return geometry(w).ordered().stream().anyMatch(e -> e.text!=null&&e.text.originalText.contains(text)&&hit(e).width>0&&hit(e).height>0);}

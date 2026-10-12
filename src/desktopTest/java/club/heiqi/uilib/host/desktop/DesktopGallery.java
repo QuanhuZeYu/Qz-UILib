@@ -5,6 +5,8 @@ import static org.lwjgl.opengl.GL11.*;
 
 import club.heiqi.uilib.testing.gallery.GalleryJourney;
 import club.heiqi.uilib.testing.gallery.TestGallery;
+import club.heiqi.uilib.ui.scene.control.ThemeConfiguration;
+import club.heiqi.uilib.ui.scene.control.ThemeMode;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometryView;
 import club.heiqi.uilib.ui.scene.paint.PaintCommand;
 import club.heiqi.uilib.ui.scene.paint.PaintPlan;
@@ -165,8 +167,20 @@ public final class DesktopGallery {
             click(window, cursor, mouse, scroll, "场景概览");
             settle(window);
             screenshot(window, output.resolve("gallery-home.png"), 0xfffafafa);
-            click(window, cursor, mouse, scroll, "深色模式");
+            click(window, cursor, mouse, scroll, "预览深色");
             settle(window);
+            byte[] beforeTheme = Files.readAllBytes(configuration);
+            Object samePage = window.page;
+            window.domain.execute(() -> window.configuration.set(ThemeConfiguration.KEY,ThemeMode.DARK));
+            settle(window);
+            window.domain.execute(() -> window.configuration.set(ThemeConfiguration.KEY,ThemeMode.LIGHT));
+            settle(window);
+            // 全局发布清除旧深色预览，按钮才能重新变为“预览深色”。
+            click(window, cursor, mouse, scroll, "预览深色");
+            settle(window);
+            if (window.page != samePage || !java.util.Arrays.equals(beforeTheme,Files.readAllBytes(configuration)))
+                throw new AssertionError("图库主题发布重建页面或隐式写盘");
+            System.out.println("PASS gallery theme publication clears local preview and follows global, same page, no implicit save");
             screenshot(window, output.resolve("gallery-dark.png"), 0xff09090b);
             glfwSetWindowSize(window.handle(), 640, 900);
             settle(window);

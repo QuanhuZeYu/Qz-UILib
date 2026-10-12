@@ -28,6 +28,8 @@ import club.heiqi.uilib.ui.scene.host.ScenePageSession;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.control.SceneButton;
 import club.heiqi.uilib.ui.scene.control.SceneTheme;
+import club.heiqi.uilib.ui.scene.control.ThemeConfiguration;
+import club.heiqi.uilib.ui.scene.control.ThemeMode;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometryView;
 import club.heiqi.uilib.ui.scene.layout.Size;
@@ -65,6 +67,10 @@ public final class DesktopVerification {
             require(glfwGetWindowAttrib(w.handle(), GLFW_VISIBLE) == GLFW_TRUE, "窗口不可见");
             frames(w, 24);
             pass("visible real GLFW window, native OpenGL, 24 production frames");
+            w.domain.execute(() -> {
+                require(w.configuration.get(ThemeConfiguration.KEY)==ThemeMode.LIGHT,"新配置主题不是默认浅色");
+                require(view.root.background()==SceneTheme.light().panel,"旧sample.dark压过全局默认浅色");
+            });
             BufferedImage initial = capture(w, w.lastPlan);
             ImageIO.write(initial, "png", output.resolve("initial.png").toFile());
             PaintPlan titlePlan = titlePlan(w, DesktopPage.DEFAULT.text);
@@ -130,10 +136,11 @@ public final class DesktopVerification {
             Path selectedFont = fixtures.resolve("selected.ttf").toAbsolutePath();
             Files.copy(systemFont, selectedFont, StandardCopyOption.REPLACE_EXISTING);
             writerDomain.execute(() -> {
-                ConfigSession writer = new ConfigSession(writerDomain, ConfigSchema.of(DesktopPage.PROFILE, w.fontCandidates));
+                ConfigSession writer = new ConfigSession(writerDomain, ConfigSchema.of(DesktopPage.PROFILE, w.fontCandidates, ThemeConfiguration.KEY));
                 try {
                     writer.load(config);
                     writer.set(DesktopPage.PROFILE, new DesktopPage.WindowProfile("Desktop reloaded", "Reloaded title 中文", false, 26));
+                    writer.set(ThemeConfiguration.KEY, ThemeMode.DARK);
                     writer.set(w.fontCandidates, Collections.singletonList("file:" + selectedFont));
                     writer.save(config);
                 } catch (java.io.IOException failure) { throw new java.io.UncheckedIOException(failure); }
@@ -151,11 +158,19 @@ public final class DesktopVerification {
             ImageIO.write(fileGlyphs, "png", output.resolve("file-glyphs.png").toFile());
             w.domain.execute(() -> {
                 require(view.title.style().size == 26, "配置字号未进入标准控件");
-                require(view.root.background() == club.heiqi.uilib.ui.scene.control.SceneTheme.light().panel, "主题未重载");
+                require(view.root.background() == SceneTheme.dark().panel, "全局主题未重载，或旧sample.dark覆盖配置");
                 require(view.counter.get() == 1 && edited.equals(view.editing.text().get()), "重载丢失业务/编辑状态");
             });
             require(w.page == session && view.builds == 1, "配置重载重建页面");
-            pass("external core YAML write + installed Ctrl+R callback -> title/text/theme/fontSize + file-family source generation, same page");
+            pass("external core YAML write + installed Ctrl+R callback -> title/text/globalTheme/fontSize + file-family source generation, same page");
+            byte[] themeSaved=Files.readAllBytes(config);
+            w.domain.execute(() -> w.configuration.set(ThemeConfiguration.KEY,ThemeMode.LIGHT));frames(w,2);
+            w.domain.execute(() -> require(view.root.background()==SceneTheme.light().panel&&view.title.style().size==26,"全局浅色更新未自动呈现或字号丢失"));
+            w.domain.execute(() -> w.configuration.set(ThemeConfiguration.KEY,ThemeMode.DARK));frames(w,2);
+            w.domain.execute(() -> require(view.root.background()==SceneTheme.dark().panel&&view.counter.get()==1,"全局深色更新未自动呈现或业务状态丢失"));
+            require(w.page==session&&view.builds==1,"全局主题更新重建页面");
+            require(java.util.Arrays.equals(themeSaved,Files.readAllBytes(config)),"内存主题发布隐式写盘");
+            pass("application theme light/dark publishes dynamically to existing sample, legacy dark ignored, fontSize/state preserved, no implicit save");
             long reloadedGeneration = w.fonts.fonts().generation();
             moveTo(w, input, view.reloadButton);
             input.mouse.invoke(w.handle(), 0, GLFW_PRESS, 0);

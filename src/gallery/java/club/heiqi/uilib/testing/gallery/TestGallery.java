@@ -4,6 +4,7 @@ import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.control.SceneControl;
 import club.heiqi.uilib.ui.scene.control.SceneTheme;
+import club.heiqi.uilib.ui.scene.control.ThemeMode;
 import club.heiqi.uilib.ui.scene.host.ScenePage;
 import club.heiqi.uilib.ui.scene.host.ScenePageContext;
 import club.heiqi.uilib.ui.scene.layout.ChildPlacements;
@@ -87,7 +88,15 @@ public final class TestGallery implements ScenePage {
     @Override
     public void build(ScenePageContext context) {
         Signal<Page> selected = context.domain().signal(initial);
-        Signal<Boolean> dark = context.domain().signal(false);
+        Signal<ThemeMode> preview = context.domain().signal(null);
+        ReadableSignal<ThemeMode> global = context.themeMode();
+        // 预览只在本次页面有效；正式配置变化恢复跟随，避免局部选择永久覆盖全局。
+        context.domain().effect(context.scope(), () -> {
+            global.get();
+            preview.set(null);
+        });
+        ReadableSignal<Boolean> dark = context.domain().computed(context.scope(),
+                () -> (preview.get() == null ? global.get() : preview.get()).isDark());
         ReadableSignal<SceneTheme> theme =
                 context.domain().computed(context.scope(), () -> GalleryStyle.theme(dark.get()));
         Consumer<Page> navigate = selected::set;
@@ -113,9 +122,9 @@ public final class TestGallery implements ScenePage {
         actions.add(
                 GalleryStyle.button(
                         context,
-                        () -> dark.get() ? "浅色模式" : "深色模式",
+                        () -> dark.get() ? "预览浅色" : "预览深色",
                         theme,
-                        () -> dark.set(!dark.get())));
+                        () -> preview.set(dark.get() ? ThemeMode.LIGHT : ThemeMode.DARK)));
         header.add(actions);
         shell.add(header);
         SceneNode deck = new SceneNode().size(Size.fill(1), Size.fill(1)).control(new Layers());

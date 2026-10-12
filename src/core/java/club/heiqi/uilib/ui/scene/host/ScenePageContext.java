@@ -5,6 +5,10 @@ import club.heiqi.uilib.ui.scene.localization.LocalizationBinding;
 import club.heiqi.uilib.ui.scene.localization.LocalizationSource;
 import club.heiqi.uilib.ui.reactive.Owner;
 import club.heiqi.uilib.ui.reactive.ReactiveDomain;
+import club.heiqi.uilib.ui.reactive.ReadableSignal;
+import club.heiqi.uilib.ui.scene.control.SceneTheme;
+import club.heiqi.uilib.ui.scene.control.ThemeMode;
+import club.heiqi.uilib.ui.scene.control.ThemeConfiguration;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.runtime.MountHandle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
@@ -16,12 +20,22 @@ public final class ScenePageContext {
     private final SceneRuntime runtime;
     private LocalizationSource localizationSource;
     private LocalizationBinding localization;
+    private final ReadableSignal<ThemeMode> themeMode;
+    private final ReadableSignal<SceneTheme> theme;
 
-    ScenePageContext(ReactiveDomain domain, Owner scope, SceneRuntime runtime) {
+    ScenePageContext(ReactiveDomain domain, Owner scope, SceneRuntime runtime,
+            ThemeConfiguration themes) {
         this.domain = domain;
         this.scope = scope;
         this.runtime = runtime;
+        themeMode = themes == null ? domain.signal(ThemeMode.LIGHT)
+                : themes.bind(domain, scope);
+        theme = domain.computed(scope, () -> themeMode.get().sceneTheme());
     }
+
+    /** 应用配置的页面域投影；局部配色可由此派生，不抢占全局主题权威。 */
+    public ReadableSignal<ThemeMode> themeMode() { return themeMode; }
+    public ReadableSignal<SceneTheme> theme() { return theme; }
 
     /** 显式选择本页唯一来源，绑定归页面；共享流仅在明确 own 时才由页面关闭。 */
     public LocalizationBinding localization(LocalizationSource source) {

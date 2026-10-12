@@ -185,6 +185,7 @@ public final class CoreArtifactScenario extends TestApplication {
                                 "核心成品实体表重定位没有实际生效");
                         runConsumer(loader, "ConfigScenario");
                         runConsumer(loader, "YamlObjectScenario");
+                        runConsumer(loader, "ThemeConfigurationScenario");
                         runConsumer(loader, "FontConfigurationScenario");
                         runConsumer(loader, "PageSessionScenario");
                         // 字素路径实际使用重定位后的 ICU；配置/布局消费者不依赖原始 ICU 名称。

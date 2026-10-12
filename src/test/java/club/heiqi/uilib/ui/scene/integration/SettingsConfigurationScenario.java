@@ -21,6 +21,8 @@ import club.heiqi.uilib.ui.config.ConfigSession;
 import club.heiqi.uilib.ui.reactive.Observation;
 import club.heiqi.uilib.ui.reactive.Owner;
 import club.heiqi.uilib.ui.reactive.ReactiveDomain;
+import club.heiqi.uilib.ui.scene.control.ThemeConfiguration;
+import club.heiqi.uilib.ui.scene.control.ThemeMode;
 import club.heiqi.uilib.ui.scene.text.font.FontCandidateConfiguration;
 import club.heiqi.uilib.ui.scene.text.font.FontSource;
 import club.heiqi.uilib.ui.scene.text.font.FontTextService;
@@ -55,7 +57,8 @@ public final class SettingsConfigurationScenario extends TestApplication {
             file = Files.createTempFile("uilib-settings-中文-", ".yaml");
             onClose(() -> Files.deleteIfExists(file));
             domain.execute(() -> {
-                session = new ConfigSession(domain, minecraft ? ConfigSchema.of(fonts, mc, profile) : ConfigSchema.of(fonts, profile));
+                session = new ConfigSession(domain, minecraft ? ConfigSchema.of(fonts, mc, profile, ThemeConfiguration.KEY)
+                        : ConfigSchema.of(fonts, profile, ThemeConfiguration.KEY));
                 try {
                     session.load(new StringReader("# 用户字体说明\nfont:\n  candidates: [builtin:" + builtins.get(0).id
                             + "] # 用户候选说明\n" + (minecraft ? "mc:\n  replaceVanillaFont: true\n" : "")
@@ -84,6 +87,8 @@ public final class SettingsConfigurationScenario extends TestApplication {
     }
 
     @Override protected void runTests() throws Exception {
+        scenario("主题草稿放弃应用与真实文件新会话往返", this::themeLifecycle);
+        scenario("主题外部正式发布保留草稿与同步", this::themeExternal);
         scenario("完整草稿应用保存与注释及其他模块字段保留", this::applyAndSave);
         scenario("重复来源排序身份与空列表及语义改回", this::identityAndEmpty);
         scenario("外部正式发布与关闭作用域及重开保存基线", this::externalAndLifecycle);
@@ -94,15 +99,98 @@ public final class SettingsConfigurationScenario extends TestApplication {
         scenario("同步观察及延后资源Effect错误按已发布事实反馈", this::resourceErrors);
     }
 
+    private void themeLifecycle() throws Exception {
+        for (boolean minecraft : Arrays.asList(false, true)) {
+            Fixture f = new Fixture(minecraft, false);
+            String original = f.disk();
+            f.run(() -> {
+                require(f.configuration.defaultTheme() == ThemeMode.LIGHT && f.model.theme().get() == ThemeMode.LIGHT,
+                        "缺少主题字段采用正式声明默认浅色");
+                require(new SettingsConfiguration.Snapshot(Collections.emptyList(), false).theme() == ThemeMode.LIGHT,
+                        "旧快照构造默认浅色");
+                f.model.setTheme(ThemeMode.DARK);
+                require(f.model.theme().get().isDark() && f.model.dirty().get() && !f.model.unsaved().get(),
+                        "主题预览纳入草稿但不冒充已发布或未保存");
+                require(f.session.get(ThemeConfiguration.KEY) == ThemeMode.LIGHT, "主题编辑不发布全局值");
+                f.model.setTheme(ThemeMode.LIGHT);
+                require(!f.model.dirty().get(), "主题改回基线恢复无变化");
+                f.model.setTheme(ThemeMode.DARK);
+                f.model.discard();
+                require(f.model.theme().get() == ThemeMode.LIGHT && !f.model.dirty().get(), "放弃恢复当前主题");
+                f.model.setTheme(ThemeMode.DARK);
+            });
+            f.save();
+            require(f.disk().equals(original), "未应用主题不能保存");
+            f.apply();
+            f.run(() -> {
+                require(f.configuration.current().theme() == ThemeMode.DARK && !f.model.dirty().get() && f.model.unsaved().get(),
+                        "应用主题发布全局且准确标记未保存");
+                f.model.setTheme(ThemeMode.LIGHT);
+                f.model.discard();
+                require(f.model.theme().get() == ThemeMode.DARK && f.model.unsaved().get(), "放弃不撤销已应用主题");
+                f.configuration.apply(f.configuration.current().candidates(), f.configuration.current().replace());
+                require(f.configuration.current().theme() == ThemeMode.DARK, "旧应用接口保留当前主题");
+            });
+            require(f.disk().equals(original), "应用主题不落盘");
+            f.save();
+            f.run(() -> {
+                require(!f.model.unsaved().get() && f.configuration.saved().get().theme() == ThemeMode.DARK,
+                        "保存主题更新工作区基线");
+                ConfigSession reopened = new ConfigSession(f.domain, minecraft
+                        ? ConfigSchema.of(f.fonts, f.mc, f.profile, ThemeConfiguration.KEY)
+                        : ConfigSchema.of(f.fonts, f.profile, ThemeConfiguration.KEY));
+                try { reopened.load(f.file); }
+                catch (IOException failure) { throw new UncheckedIOException(failure); }
+                require(reopened.get(ThemeConfiguration.KEY) == ThemeMode.DARK, "新配置会话从真实文件读取深色");
+                f.model.setTheme(ThemeMode.LIGHT);
+            });
+            f.reload();
+            f.run(() -> require(f.model.theme().get() == ThemeMode.DARK && !f.model.dirty().get(),
+                    "显式加载同步主题草稿与文件值"));
+        }
+    }
+
+    private void themeExternal() throws Exception {
+        Fixture f = new Fixture(false, false);
+        f.run(() -> f.session.set(ThemeConfiguration.KEY, ThemeMode.DARK));
+        f.run(() -> {
+            require(f.model.theme().get() == ThemeMode.DARK && !f.model.dirty().get(), "无草稿同步外部主题");
+            f.model.add(f.declaration(1));
+        });
+        f.run(() -> f.session.set(ThemeConfiguration.KEY, ThemeMode.LIGHT));
+        f.run(() -> {
+            require(f.model.theme().get() == ThemeMode.DARK && f.model.sources().get().size() == 2,
+                    "外部主题保留整个已修改草稿");
+            require(f.model.externalChanged().get(), "主题参与外部变化提示");
+            f.model.setTheme(ThemeMode.LIGHT);
+            require(f.model.dirty().get() && f.model.externalChanged().get(), "外部变化后仍可编辑主题");
+            f.model.discard();
+            require(f.model.theme().get() == ThemeMode.LIGHT && !f.model.dirty().get() && !f.model.externalChanged().get(),
+                    "放弃同步外部主题并清理提示");
+            f.model.setTheme(ThemeMode.DARK);
+        });
+        f.run(() -> f.session.set(f.fonts, Collections.singletonList(f.declaration(2))));
+        f.run(() -> {
+            require(f.model.theme().get() == ThemeMode.DARK && f.model.sources().get().get(0).declaration().equals(f.declaration(0)),
+                    "只有主题草稿时外部字体变化仍保留完整草稿");
+            require(f.model.externalChanged().get(), "主题草稿可观察外部字体变化");
+        });
+        f.apply();
+        f.run(() -> require(f.configuration.current().theme() == ThemeMode.DARK && !f.model.externalChanged().get()
+                && !f.model.dirty().get(), "外部变化后可明确再次应用全部草稿"));
+    }
+
     private void applyAndSave() throws Exception {
         Fixture f = new Fixture(true, false);
         String original = f.disk();
         List<String> notifications = new ArrayList<>();
         f.run(() -> {
             require(f.configuration.saved().get().candidates().equals(Collections.singletonList(f.declaration(0))), "saved取实际loaded值而非模块默认");
-            f.domain.effect(f.owner, () -> notifications.add(f.session.get(f.fonts) + "/" + f.session.get(f.mc)));
+            f.domain.effect(f.owner, () -> notifications.add(f.session.get(f.fonts) + "/" + f.session.get(f.mc)
+                    + "/" + f.session.get(ThemeConfiguration.KEY)));
             f.model.add(f.declaration(1));
             f.model.setReplace(false);
+            f.model.setTheme(ThemeMode.DARK);
             require(f.model.dirty().get() && !f.model.unsaved().get(), "草稿不自动生效");
             require(f.model.saveDisabledReason().get().equals("先应用更改"), "未应用保存禁用原因");
         });
@@ -115,7 +203,7 @@ public final class SettingsConfigurationScenario extends TestApplication {
             require(!f.session.get(f.mc), "whole page包含MC字段");
         });
         require(f.disk().equals(original), "应用不写文件");
-        require(notifications.size() == 2 && notifications.get(1).endsWith("/false"), "字体与MC在同一批次通知");
+        require(notifications.size() == 2 && notifications.get(1).endsWith("/false/DARK"), "字体、MC与主题在同一批次通知");
         f.apply();
         require(notifications.size() == 2, "无变化应用不通知");
         f.save();
@@ -206,11 +294,14 @@ public final class SettingsConfigurationScenario extends TestApplication {
             require(f.model.fontError().get().contains("不存在的字体.ttf"), "真实来源读取失败保留具体路径与原因");
             f.model.add(f.declaration(1));
             f.model.setReplace(false);
+            f.model.setTheme(ThemeMode.DARK);
         });
         f.apply();
         f.run(() -> {
-            require(f.model.dirty().get() && f.model.sources().get().size() == 2, "校验失败保留完整草稿");
-            require(f.session.get(f.fonts).equals(Collections.singletonList(f.declaration(0))) && f.session.get(f.mc), "后一个字段拒绝时前一个也不发布");
+            require(f.model.dirty().get() && f.model.sources().get().size() == 2 && f.model.theme().get() == ThemeMode.DARK,
+                    "校验失败保留包括主题的完整草稿");
+            require(f.session.get(f.fonts).equals(Collections.singletonList(f.declaration(0))) && f.session.get(f.mc)
+                    && f.session.get(ThemeConfiguration.KEY) == ThemeMode.LIGHT, "MC字段拒绝时字体与主题也不发布");
             require(f.model.fontError().get().contains("mc.replaceVanillaFont"), "全字段诊断保留实际声明路径");
             Map<ConfigKey<?>, Object> updates = new LinkedHashMap<>();
             updates.put(f.fonts, Collections.emptyList());
@@ -218,7 +309,14 @@ public final class SettingsConfigurationScenario extends TestApplication {
             try { f.session.setAll(updates); throw new AssertionError("接受外键"); }
             catch (IllegalArgumentException expected) { }
             require(f.session.get(f.fonts).equals(Collections.singletonList(f.declaration(0))), "未知键不部分发布");
+            f.model.setTheme(ThemeMode.LIGHT);
+            require(f.model.fontError().get().isEmpty() && f.model.dirty().get(), "应用错误不阻断继续编辑主题");
+            f.model.setReplace(true);
+            f.model.setTheme(ThemeMode.DARK);
         });
+        f.apply();
+        f.run(() -> require(f.configuration.current().theme() == ThemeMode.DARK && !f.model.dirty().get(),
+                "修正拒绝字段后仍可应用主题"));
     }
 
     private void sourceDisappears() throws Exception {
@@ -314,18 +412,25 @@ public final class SettingsConfigurationScenario extends TestApplication {
                 f.model.add(f.declaration(1));
                 added[0] = f.model.sources().get().get(1);
                 f.model.setReplace(false);
+                f.model.setTheme(ThemeMode.DARK);
             });
             onClose(() -> f.domain.execute(resource[0]::dispose));
             try { f.apply(); }
             catch (RuntimeException actual) { require(deferred && actual == expected, "延后异常保留原域通道与身份"); }
             f.run(() -> {
-                require(f.session.get(f.fonts).size() == 2 && !f.session.get(f.mc), "资源错误发生后值已完整发布");
+                require(f.session.get(f.fonts).size() == 2 && !f.session.get(f.mc)
+                        && f.configuration.current().theme() == ThemeMode.DARK, "资源错误发生后字体、MC和主题已完整发布");
                 require(f.model.sources().get().get(1) == added[0], "资源失败保留原草稿身份");
                 require(!f.model.dirty().get() && f.model.unsaved().get(), "状态按已发布事实比较");
                 require(f.model.fontError().get().contains("配置已发布") && f.model.fontError().get().contains(expected.getMessage()), "错误包含阶段与资源原因");
                 require(!f.model.externalChanged().get() && f.model.message().get().isEmpty(), "自己的失败发布不报外部、不伪成功");
                 resource[0].dispose();
+                f.model.setTheme(ThemeMode.LIGHT);
+                require(f.model.fontError().get().isEmpty() && f.model.dirty().get(), "资源异常不永久阻断修改主题");
             });
+            f.apply();
+            f.run(() -> require(f.configuration.current().theme() == ThemeMode.LIGHT && !f.model.dirty().get(),
+                    "资源异常解除后可继续应用主题"));
         }
     }
 

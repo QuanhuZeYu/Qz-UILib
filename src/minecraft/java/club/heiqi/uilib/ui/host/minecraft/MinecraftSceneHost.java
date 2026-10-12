@@ -4,6 +4,8 @@ import org.lwjgl.opengl.Display;
 import club.heiqi.uilib.host.client.font.ClientFontServices;
 import club.heiqi.uilib.host.client.font.FramebufferSceneRenderer;
 import club.heiqi.uilib.host.client.font.MinecraftFontServices;
+import club.heiqi.uilib.host.client.font.VanillaFontOptions;
+import club.heiqi.uilib.ui.scene.control.ThemeConfiguration;
 import club.heiqi.uilib.ui.scene.host.SceneHost;
 import club.heiqi.uilib.ui.scene.paint.PaintPlan;
 import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
@@ -18,6 +20,11 @@ public final class MinecraftSceneHost implements SceneHost, SceneTextMeasurer, A
     private final club.heiqi.uilib.host.client.image.ClientImageServices images =
             club.heiqi.uilib.host.client.image.MinecraftImageServices.shared();
     private final FramebufferSceneRenderer renderer = new FramebufferSceneRenderer(fonts, images);
+
+    @Override
+    public ThemeConfiguration themeConfiguration() {
+        return VanillaFontOptions.themeConfiguration();
+    }
 
     public club.heiqi.uilib.ui.scene.image.ImageService images() {
         return images.images();

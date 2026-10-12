@@ -43,7 +43,7 @@ final class DesktopPage {
             ConfigCodecs.<WindowProfile>object()
                 .field("title", ConfigCodecs.STRING, DEFAULT.title, p -> p.title, "窗口标题")
                 .field("text", ConfigCodecs.STRING, DEFAULT.text, p -> p.text, "页面标题文字")
-                .field("dark", ConfigCodecs.BOOLEAN, DEFAULT.dark, p -> p.dark, "深色标准主题")
+                .field("dark", ConfigCodecs.BOOLEAN, DEFAULT.dark, p -> p.dark, "旧示例深色字段（读取兼容）；主题由ui.theme决定")
                 .field("fontSize", ConfigCodecs.INTEGER, DEFAULT.fontSize, p -> p.fontSize, "文字字号：8至96")
                 .build(v -> new WindowProfile((String)v.get("title"), (String)v.get("text"),
                         (Boolean)v.get("dark"), (Integer)v.get("fontSize"))), DEFAULT, p -> true)
@@ -60,7 +60,7 @@ final class DesktopPage {
         editing = new SceneEditState(d, "Edit here");
         Computed<SceneTheme> theme = d.computed(ctx.scope(), () -> {
             WindowProfile p = config.get(PROFILE);
-            SceneTheme base = p.dark ? SceneTheme.dark() : SceneTheme.light();
+            SceneTheme base = ctx.theme().get();
             return base.withTextStyle(new TextStyle("default", p.fontSize, base.textStyle.color));
         });
         title = SceneLabel.create(ctx, () -> config.get(PROFILE).text, theme);

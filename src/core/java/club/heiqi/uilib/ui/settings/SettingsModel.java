@@ -10,6 +10,7 @@ import club.heiqi.uilib.ui.reactive.Owner;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.ReactiveDomain;
 import club.heiqi.uilib.ui.reactive.Signal;
+import club.heiqi.uilib.ui.scene.control.ThemeMode;
 import club.heiqi.uilib.ui.settings.SettingsConfiguration.Snapshot;
 
 /** 一份工作区草稿，分类导航共享同一实例；页面释放仅结束本页订阅。
@@ -28,6 +29,7 @@ public final class SettingsModel {
     private final Owner scope;
     private final Signal<List<Source>> sources;
     private final Signal<Boolean> replace;
+    private final Signal<ThemeMode> theme;
     private final Signal<Boolean> externalChanged;
     private final Signal<String> fontError;
     private final Signal<String> fileError;
@@ -47,6 +49,7 @@ public final class SettingsModel {
         observed = configuration.current();
         sources = domain.signal(rows(observed.candidates(), Collections.emptyList()));
         replace = domain.signal(observed.replace());
+        theme = domain.signal(observed.theme());
         externalChanged = domain.signal(false);
         fontError = domain.signal("");
         fileError = domain.signal("");
@@ -62,6 +65,7 @@ public final class SettingsModel {
     public SettingsConfiguration configuration() { return configuration; }
     public ReadableSignal<List<Source>> sources() { return sources; }
     public ReadableSignal<Boolean> replace() { return replace; }
+    public ReadableSignal<ThemeMode> theme() { return theme; }
     public ReadableSignal<Boolean> dirty() { return dirty; }
     public ReadableSignal<Boolean> unsaved() { return unsaved; }
     public ReadableSignal<Boolean> externalChanged() { return externalChanged; }
@@ -74,7 +78,7 @@ public final class SettingsModel {
     private Snapshot draft() {
         List<String> values = new ArrayList<>();
         for (Source source : sources.get()) values.add(source.declaration());
-        return new Snapshot(values, replace.get());
+        return new Snapshot(values, replace.get(), theme.get());
     }
 
     private static List<Source> rows(List<String> values, List<Source> previous) {
@@ -115,6 +119,7 @@ public final class SettingsModel {
         domain.batch(() -> {
             sources.set(rows(snapshot.candidates(), sources.get()));
             replace.set(snapshot.replace());
+            theme.set(snapshot.theme());
             externalChanged.set(false);
         });
     }
@@ -165,6 +170,15 @@ public final class SettingsModel {
         replace.set(value);
     }
 
+    /** 主题与其他字段共享草稿；预览不发布全局值，也不保存文件。 */
+    public void setTheme(ThemeMode value) {
+        write();
+        Objects.requireNonNull(value, "theme");
+        if (theme.get() == value) return;
+        clearFeedback();
+        theme.set(value);
+    }
+
     public void resetFonts() {
         write();
         clearFeedback();
@@ -193,7 +207,7 @@ public final class SettingsModel {
             clearFeedback();
             Snapshot submitted = draft();
             try {
-                configuration.apply(submitted.candidates(), submitted.replace());
+                configuration.apply(submitted.candidates(), submitted.replace(), submitted.theme());
                 observed = configuration.current();
                 externalChanged.set(false);
                 message.set("已应用全部更改");

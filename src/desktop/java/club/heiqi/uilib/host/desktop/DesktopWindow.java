@@ -32,6 +32,7 @@ import club.heiqi.uilib.ui.scene.image.SharedImageService;
 import club.heiqi.uilib.ui.config.ConfigKey;
 import club.heiqi.uilib.ui.config.ConfigSchema;
 import club.heiqi.uilib.ui.config.ConfigSession;
+import club.heiqi.uilib.ui.scene.control.ThemeConfiguration;
 import club.heiqi.uilib.ui.reactive.Owner;
 import club.heiqi.uilib.ui.reactive.ReactiveDomain;
 import club.heiqi.uilib.ui.reactive.Signal;
@@ -66,6 +67,7 @@ public final class DesktopWindow implements SceneHost, AutoCloseable {
     private String title;
     private Owner owner;
     private SettingsConfiguration settingsConfiguration;
+    private ThemeConfiguration themeConfiguration;
     private SettingsPage settingsPage;
     private boolean pendingSettingsClose, pendingSettingsReload;
     ConfigSession configuration;
@@ -154,7 +156,7 @@ public final class DesktopWindow implements SceneHost, AutoCloseable {
         domain.execute(() -> {
             owner = domain.owner();
             own(() -> domain.execute(owner::close));
-            configuration = new ConfigSession(domain, ConfigSchema.of(DesktopPage.PROFILE, fontCandidates));
+            configuration = new ConfigSession(domain, ConfigSchema.of(DesktopPage.PROFILE, fontCandidates, ThemeConfiguration.KEY));
             try {
                 if (Files.exists(configPath)) configuration.load(configPath);
                 else {
@@ -163,6 +165,8 @@ public final class DesktopWindow implements SceneHost, AutoCloseable {
                     configuration.save(configPath);
                 }
             } catch (IOException failure) { throw new UncheckedIOException(failure); }
+            // 配置load完成后再发布初值；所有页面（含gallery）借用同一宿主主题。
+            themeConfiguration = new ThemeConfiguration(domain, configuration, owner);
             if (settings) settingsConfiguration = new SettingsConfiguration(domain, configuration,
                     fontCandidates, null, configPath, FontCandidateConfiguration.defaults(defaults),
                     this::validateFontCandidates, this::settingsResourcesReloaded);
@@ -385,6 +389,7 @@ public final class DesktopWindow implements SceneHost, AutoCloseable {
         if (Thread.currentThread() != thread) throw new IllegalStateException("桌面窗口操作必须在创建线程");
         if (closed) throw new IllegalStateException("桌面窗口已关闭");
     }
+    @Override public ThemeConfiguration themeConfiguration() { return themeConfiguration; }
     @Override public int width() { return framebufferWidth; }
     @Override public int height() { return framebufferHeight; }
     @Override public long metricsRevision() { return revision + fonts.fonts().generation() + fonts.readyVersion(); }

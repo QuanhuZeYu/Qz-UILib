@@ -15,6 +15,8 @@ import club.heiqi.uilib.ui.config.ConfigSession;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.ReactiveDomain;
 import club.heiqi.uilib.ui.reactive.Signal;
+import club.heiqi.uilib.ui.scene.control.ThemeConfiguration;
+import club.heiqi.uilib.ui.scene.control.ThemeMode;
 
 /** 设置工作区借用正式配置；保存基线归宿主持有的对象，不随页面释放。
  * 字体来源读取由宿主复用既有解析器，配置文档与其他模块字段仍由 session 保存。 */
@@ -22,19 +24,25 @@ public final class SettingsConfiguration {
     public static final class Snapshot {
         private final List<String> candidates;
         private final boolean replace;
+        private final ThemeMode theme;
 
         public Snapshot(List<String> candidates, boolean replace) {
+            this(candidates, replace, ThemeMode.LIGHT);
+        }
+        public Snapshot(List<String> candidates, boolean replace, ThemeMode theme) {
             this.candidates = freeze(candidates);
             this.replace = replace;
+            this.theme = Objects.requireNonNull(theme, "theme");
         }
         public List<String> candidates() { return candidates; }
         public boolean replace() { return replace; }
+        public ThemeMode theme() { return theme; }
         @Override public boolean equals(Object other) {
             if (!(other instanceof Snapshot)) return false;
             Snapshot next = (Snapshot) other;
-            return replace == next.replace && candidates.equals(next.candidates);
+            return replace == next.replace && theme == next.theme && candidates.equals(next.candidates);
         }
-        @Override public int hashCode() { return Objects.hash(candidates, replace); }
+        @Override public int hashCode() { return Objects.hash(candidates, replace, theme); }
     }
 
     private final ReactiveDomain domain;
@@ -85,7 +93,10 @@ public final class SettingsConfiguration {
     public boolean hasMinecraft() { return mcKey != null; }
     public List<String> defaultCandidates() { return fontKey.defaultValue(); }
     public boolean defaultReplace() { return mcKey != null && mcKey.defaultValue(); }
-    public Snapshot current() { return new Snapshot(session.get(fontKey), mcKey != null && session.get(mcKey)); }
+    public ThemeMode defaultTheme() { return ThemeConfiguration.KEY.defaultValue(); }
+    public Snapshot current() {
+        return new Snapshot(session.get(fontKey), mcKey != null && session.get(mcKey), session.get(ThemeConfiguration.KEY));
+    }
     public ReadableSignal<Snapshot> saved() { return saved; }
     public ReadableSignal<String> resourceError() { return resourceError; }
 
@@ -109,13 +120,20 @@ public final class SettingsConfiguration {
         domain.readOnly(() -> { validateCandidates.accept(frozen); return null; });
     }
 
+    /** 旧调用仅应用原有字段，保留当前全局主题。 */
     public void apply(List<String> candidates, boolean replace) {
+        apply(candidates, replace, current().theme());
+    }
+
+    public void apply(List<String> candidates, boolean replace, ThemeMode theme) {
         domain.checkWrite();
+        Objects.requireNonNull(theme, "theme");
         List<String> frozen = freeze(candidates);
         validateCandidates(frozen);
         Map<ConfigKey<?>, Object> updates = new LinkedHashMap<>();
         updates.put(fontKey, frozen);
         if (mcKey != null) updates.put(mcKey, replace);
+        updates.put(ThemeConfiguration.KEY, theme);
         session.setAll(updates);
     }
 
