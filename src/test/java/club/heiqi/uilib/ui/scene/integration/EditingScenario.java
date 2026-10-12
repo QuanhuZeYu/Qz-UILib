@@ -53,8 +53,9 @@ public final class EditingScenario extends TestApplication {
             return 0;
         }
 
+        PaintPlan lastPlan;
         @Override
-        public void replay(PaintPlan plan) {}
+        public void replay(PaintPlan plan) { lastPlan = plan; }
 
         @Override
         public TextLayout layout(String text, TextStyle style, int width) {
@@ -245,6 +246,39 @@ public final class EditingScenario extends TestApplication {
         scenario("正式页面文字空格确认Tab和IME及ESC沿唯一焦点序列", this::pageEditing);
         scenario("空白主键正常blur仅提交一次，同批文本隔离且失活不提交", this::blurEligibility);
         scenario("只读选择复制拒绝修改，粘贴单步撤销与生产文字簇指针定位", this::clipboardAndPointer);
+        scenario("选区只读变化复用度量且当前光标重新呈现", this::presentationInvalidation);
+    }
+
+    private int caretX(PaintPlan plan) {
+        int result = Integer.MIN_VALUE;
+        for (club.heiqi.uilib.ui.scene.paint.PaintCommand command : plan.commands())
+            if (command.kind == club.heiqi.uilib.ui.scene.paint.PaintCommand.Kind.RECT
+                    && command.box.width == 1 && command.box.height > 1
+                    && command.color == SceneTheme.light().focus) result = command.box.x;
+        require(result != Integer.MIN_VALUE, "正式计划包含当前光标");
+        return result;
+    }
+
+    private void presentationInvalidation() {
+        ReactiveDomain domain = ReactiveDomain.direct();
+        Page page = new Page(domain, state(domain, ""), SceneTextField.SubmitPolicy.CONFIRM);
+        page.edit(SceneEditEvent.text("abcd"));
+        long[] revision = {0};
+        domain.execute(() -> revision[0] = page.session.runtime().measureRevision());
+        int previous = caretX(page.host.lastPlan);
+        page.command(Command.LEFT);
+        require(caretX(page.host.lastPlan) < previous, "复用度量后绘制光标仍跟随当前选区");
+        domain.execute(() -> require(page.session.runtime().measureRevision() == revision[0],
+                "仅选区变化不增加内容测量代际"));
+        domain.execute(() -> page.readOnly.set(true));
+        page.session.frame();
+        domain.execute(() -> require(page.session.runtime().measureRevision() == revision[0],
+                "仅只读变化不增加内容测量代际"));
+        domain.execute(() -> page.readOnly.set(false));
+        page.edit(SceneEditEvent.text("x"));
+        page.expect("abcxd");
+        domain.execute(() -> require(page.session.runtime().measureRevision() > revision[0],
+                "实际显示文字变化仍失效度量"));
     }
 
     private void draftAndRejection() {
@@ -612,6 +646,29 @@ public final class EditingScenario extends TestApplication {
     }
 
     private void blurEligibility() {
+        ReactiveDomain redirectDomain = ReactiveDomain.direct();
+        Page redirected = new Page(redirectDomain, state(redirectDomain, ""), SceneTextField.SubmitPolicy.BLUR);
+        redirected.edit(SceneEditEvent.text("同步返回仍需提交"));
+        redirectDomain.execute(() -> {
+            club.heiqi.uilib.ui.reactive.Owner observerOwner = redirectDomain.owner();
+            club.heiqi.uilib.ui.reactive.Observation observer = redirectDomain.observe(observerOwner,
+                    () -> redirected.session.runtime().focusRouter().focused().get(), () -> {
+                        if (redirected.session.runtime().focusRouter().focused().get() == redirected.button)
+                            redirected.session.runtime().focusRouter().request(
+                                    redirected.session.runtime().captureMount(redirected.field));
+                    });
+            observer.refresh();
+            try {
+                redirected.session.runtime().focusRouter().request(
+                        redirected.session.runtime().captureMount(redirected.button));
+            } finally { observerOwner.dispose(); }
+            require(redirected.session.runtime().focusRouter().focused().get() == redirected.field,
+                    "同步订阅返回字段由唯一Router保留");
+            require(redirected.submissions.size() == 1 && redirected.submissions.get(0).complete,
+                    "实际焦点离开后同步返回仍依序执行一次BLUR提交");
+        });
+        redirected.edit(SceneEditEvent.text("后续输入"));
+        redirected.expect("同步返回仍需提交后续输入");
         ReactiveDomain d = ReactiveDomain.direct();
         Page p = new Page(d, state(d, ""), SceneTextField.SubmitPolicy.BLUR);
         p.edit(SceneEditEvent.text("draft"));

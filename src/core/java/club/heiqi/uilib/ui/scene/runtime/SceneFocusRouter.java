@@ -25,6 +25,9 @@ public final class SceneFocusRouter {
     private final ReadableSignal<SceneNode> view;
     private final List<Range> ranges = new ArrayList<>();
     private MountHandle owner, pendingReveal;
+    // 仅记录已发出的控件通知，不参与焦点资格或路由决定；owner是唯一权威。
+    private MountHandle notifiedOwner;
+    private final java.util.ArrayDeque<SceneNode> pendingFocusLosses = new java.util.ArrayDeque<>();
     private boolean closed, rangesDirty = true;
 
     SceneFocusRouter(SceneRuntime runtime) {
@@ -116,15 +119,35 @@ public final class SceneFocusRouter {
         if (owner != target) pendingReveal = null;
         SceneNode before = owner == null ? null : owner.node();
         SceneNode after = target == null ? null : target.node();
-        if (before != after) runtime.invalidateComposition(before);
+        if (before != after) {
+            runtime.invalidateComposition(before);
+            if (before != null) pendingFocusLosses.add(before);
+        }
         owner = target;
         value.set(after);
-        if (before != after && before != null && before.control() != null)
-            runtime.dispatchControlFocus(
-                    before, false, !closed && runtime.alive() && runtime.interactive(before));
-        if (before != after && after != null && after.control() != null)
-            runtime.dispatchControlFocus(after, true, true);
-        if (before != (target == null ? null : target.node())) runtime.invalidatePaint();
+        notifyControls();
+        if (before != after) runtime.invalidatePaint();
+    }
+
+    private void notifyControls() {
+        // Signal订阅与控件失焦回调均可同步request；每次回调后重新读取唯一owner。
+        // 先推进通知游标再调用扩展，嵌套转移不会覆盖已经发布的新通知。
+        while (true) {
+            // 实际离开按发生顺序保存，Signal订阅中离开再返回也不能吞掉BLUR提交。
+            SceneNode lost = pendingFocusLosses.poll();
+            if (lost != null) {
+                if (notifiedOwner != null && notifiedOwner.node() == lost) notifiedOwner = null;
+                if (lost.control() != null)
+                    runtime.dispatchControlFocus(lost, false,
+                            !closed && runtime.alive() && runtime.interactive(lost));
+                continue;
+            }
+            SceneNode current = owner == null ? null : owner.node();
+            if (current == (notifiedOwner == null ? null : notifiedOwner.node())) return;
+            notifiedOwner = owner;
+            if (current != null && current.control() != null)
+                runtime.dispatchControlFocus(current, true, true);
+        }
     }
 
     /** 仅呈现准备消费；读取焦点不推进。失活、换owner或卸载会取消旧意图，

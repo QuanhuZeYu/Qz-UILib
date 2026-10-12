@@ -2,6 +2,14 @@ package club.heiqi.uilib.ui.scene.integration;
 
 import club.heiqi.uilib.testing.TestApplication;
 import club.heiqi.uilib.ui.reactive.ReactiveDomain;
+import club.heiqi.uilib.ui.scene.control.SceneControl;
+import club.heiqi.uilib.ui.scene.layout.Constraints;
+import club.heiqi.uilib.ui.scene.layout.MeasuredSize;
+import club.heiqi.uilib.ui.scene.layout.ChildPlacements;
+import club.heiqi.uilib.ui.scene.layout.LayoutBox;
+import club.heiqi.uilib.ui.scene.layout.SceneGeometryView;
+import club.heiqi.uilib.ui.scene.paint.PaintPlanBuilder;
+import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.input.ScenePointerEvent;
 import java.util.ArrayDeque;
@@ -18,6 +26,66 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 
 /** 实际状态/声明/布局/回放闭环；只复用既有固定字体夹具，不替代焦点路由。 */
 public final class FocusInputScenario extends TestApplication {
+    private static final class FocusProbe implements SceneControl {
+        boolean focused;
+        int gained;
+        Runnable onBlur;
+        public MeasuredSize measure(SceneNode node, Constraints constraints, SceneTextMeasurer text) {
+            return new MeasuredSize(1, 1);
+        }
+        public ChildPlacements arrange(SceneNode node, LayoutBox box) {
+            return new ChildPlacements(Collections.emptyList());
+        }
+        public void paint(SceneNode node, SceneGeometryView geometry, PaintPlanBuilder target) {}
+        public void focusChanged(SceneNode node, boolean value, boolean eligible) {
+            focused = value;
+            if (value) gained++;
+            else if (onBlur != null) onBlur.run();
+        }
+    }
+
+    private void focusReentry() {
+        for (int variant = 0; variant < 5; variant++) {
+            final int route = variant;
+            ReactiveDomain domain = ReactiveDomain.direct();
+            domain.execute(() -> {
+                SceneRuntime runtime = new SceneRuntime(domain);
+                FocusProbe ac = new FocusProbe(), bc = new FocusProbe(), cc = new FocusProbe();
+                SceneNode a = new SceneNode().control(ac).focusable(true);
+                SceneNode b = new SceneNode().control(bc).focusable(true);
+                SceneNode c = new SceneNode().control(cc).focusable(true);
+                runtime.attach(null, new SceneNode().add(a).add(b).add(c));
+                try {
+                    runtime.focusRouter().request(runtime.captureMount(a));
+                    ac.onBlur = () -> {
+                        runtime.focusRouter().request(runtime.captureMount(route == 0 || route == 2 ? c : b));
+                        if (route == 2) runtime.focusRouter().request(runtime.captureMount(b));
+                    };
+                    club.heiqi.uilib.ui.reactive.Owner observerOwner = domain.owner();
+                    club.heiqi.uilib.ui.reactive.Observation redirect = domain.observe(observerOwner,
+                            () -> runtime.focusRouter().focused().get(), () -> {
+                                if (runtime.focusRouter().focused().get() == b)
+                                    runtime.focusRouter().request(runtime.captureMount(route == 3 ? a : c));
+                            });
+                    redirect.refresh();
+                    if (route >= 3) ac.onBlur = null;
+                    else redirect.close();
+                    try { runtime.focusRouter().request(runtime.captureMount(b)); }
+                    finally { observerOwner.dispose(); }
+                    SceneNode expected = route == 3 ? a : route == 0 || route == 4 ? c : b;
+                    require(runtime.focusRouter().focused().get() == expected, "重入请求决定最终焦点");
+                    require(ac.focused == (expected == a) && bc.focused == (expected == b) && cc.focused == (expected == c),
+                            "扩展通知投影与唯一Router一致");
+                    require(bc.gained == (expected == b ? 1 : 0),
+                            "同目标请求不丢失获焦，多次转移不重复外层获焦；route=" + route + " gained=" + bc.gained);
+                } finally {
+                    ac.onBlur = null;
+                    runtime.close();
+                }
+            });
+        }
+    }
+
     private final class Page {
         final ReactiveDomain domain = ReactiveDomain.direct();
         final SoftwareSceneScenario.SoftwareHost host = new SoftwareSceneScenario.SoftwareHost();
@@ -296,6 +364,7 @@ public final class FocusInputScenario extends TestApplication {
                             });
                     p.expect(p.a, "焦点A");
                 });
+        scenario("失焦回调重入保持唯一焦点和扩展通知一致", this::focusReentry);
         // 底层合同：pipeline.close保留runtime焦点，runtime.close才释放焦点权威。
         scenario(
                 "管线关闭保留共享焦点与runtime关闭清空",

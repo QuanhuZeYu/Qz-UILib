@@ -47,12 +47,13 @@ public final class Owner implements AutoCloseable {
     }
 
     private void checkAlive() {
-        domain.checkAccess();
+        // 生命周期命令沿状态域的共同纯阶段边界，不影响读取或内部依赖缓存。
+        domain.checkWrite();
         if (disposed) throw new IllegalStateException("作用域已释放");
     }
 
     public void dispose() {
-        domain.checkAccess();
+        domain.checkWrite();
         if (disposed) return;
         disposed = true;
         Throwable failure = null;

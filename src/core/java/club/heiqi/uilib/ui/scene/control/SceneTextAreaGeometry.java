@@ -3,7 +3,6 @@ package club.heiqi.uilib.ui.scene.control;
 import club.heiqi.uilib.ui.scene.text.TextLayout;
 import club.heiqi.uilib.ui.scene.text.TextPolicy;
 
-import java.util.ArrayList;
 import java.util.List;
 
 /** 多行的纯编辑几何；坐标只来自生产 Line/Cluster，方向使用同段落、同视觉行的 ICU 级别。 */
@@ -158,92 +157,6 @@ final class SceneTextAreaGeometry {
 
     /** 统一平移所有绝对位置；advance、墨迹相对边界和源映射保持原生产事实。 */
     static TextLayout translate(TextLayout full, int x, int y) {
-        if (x == 0 && y == 0) return full;
-        List<TextLayout.Line> lines = new ArrayList<>();
-        for (TextLayout.Line line : full.lines()) {
-            List<TextLayout.Glyph> glyphs = new ArrayList<>();
-            for (TextLayout.Glyph g : line.glyphs())
-                glyphs.add(
-                        new TextLayout.Glyph(
-                                g.source,
-                                g.size,
-                                g.glyphId,
-                                g.logicalStart,
-                                g.logicalEnd,
-                                g.sourceStart,
-                                g.sourceEnd,
-                                g.x - x,
-                                g.y - y,
-                                g.xAdvance,
-                                g.yAdvance,
-                                g.color,
-                                g.replacement,
-                                g.inkBounds,
-                                g.logicalEm,
-                                g.rasterToLayout,
-                                g.rasterStyle,
-                                g.resolvedStyle,
-                                g.clusterIndex,
-                                g.paintClip,
-                                g.xExtension));
-            List<TextLayout.Cluster> clusters = new ArrayList<>();
-            for (TextLayout.Cluster c : line.clusters())
-                clusters.add(
-                        new TextLayout.Cluster(
-                                c.logicalStart,
-                                c.logicalEnd,
-                                c.sourceStart,
-                                c.sourceEnd,
-                                c.glyphIndexStart,
-                                c.glyphIndexEnd,
-                                c.x - x,
-                                c.advance,
-                                c.style,
-                                c.rtl));
-            List<TextLayout.Decoration> decorations = new ArrayList<>();
-            for (TextLayout.Decoration d : line.decorations())
-                decorations.add(
-                        new TextLayout.Decoration(
-                                d.kind,
-                                d.x - x,
-                                d.y - y,
-                                d.width,
-                                d.height,
-                                d.color,
-                                d.logicalStart,
-                                d.logicalEnd,
-                                d.sourceStart,
-                                d.sourceEnd));
-            lines.add(
-                    new TextLayout.Line(
-                            line.text,
-                            line.x - x,
-                            line.y - y,
-                            line.logicalStart,
-                            line.logicalEnd,
-                            line.sourceStart,
-                            line.sourceEnd,
-                            line.advance,
-                            line.baseline - y,
-                            line.ascent,
-                            line.descent,
-                            line.lineHeight,
-                            glyphs,
-                            clusters,
-                            decorations,
-                            line.paragraphRtl));
-        }
-        return new TextLayout(
-                full.width,
-                full.height,
-                full.advanceWidth,
-                full.advanceHeight,
-                full.style,
-                lines,
-                full.logicalText,
-                full.originalText,
-                full.generation,
-                full.diagnostics(),
-                full.input);
+        return SceneTextPresentation.translate(full, -x, -y);
     }
 }

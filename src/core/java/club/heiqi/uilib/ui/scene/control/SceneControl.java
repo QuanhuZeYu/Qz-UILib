@@ -21,6 +21,16 @@ public interface SceneControl {
         return Collections.emptyList();
     }
 
+    /** 仅定位或视口变化：复用内容度量，在共同几何中更新排列与命中。 */
+    default List<ReadableSignal<?>> arrangementDependencies(SceneNode node) {
+        return Collections.emptyList();
+    }
+
+    /** 仅绘制状态变化，不使内容度量或几何失效。 */
+    default List<ReadableSignal<?>> paintDependencies(SceneNode node) {
+        return Collections.emptyList();
+    }
+
     /** 唯一 scene 布局的文本入口，属性内容不另建排版树。 */
     default club.heiqi.uilib.ui.scene.text.TextLayout layoutText(
             SceneNode node, SceneTextMeasurer text, int width) {

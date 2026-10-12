@@ -413,8 +413,11 @@ public final class SceneNode {
 
     public SceneNode text(String value) {
         writable();
-        text = Objects.requireNonNull(value, "text");
-        changed();
+        Objects.requireNonNull(value, "text");
+        if (!text.equals(value)) {
+            text = value;
+            changed();
+        }
         return this;
     }
 

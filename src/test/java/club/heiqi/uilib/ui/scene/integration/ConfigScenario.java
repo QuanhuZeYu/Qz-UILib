@@ -38,6 +38,42 @@ public final class ConfigScenario extends TestApplication {
         scenario("批次通知与释放", this::batchAndLifecycle);
         scenario("非法输入定位且不半发布", this::invalidInputs);
         scenario("观察者失败仍完成批次失效", this::observerFailure);
+        scenario("纯派生和只读阶段拒绝保存且不触碰文件", this::pureSaveCommands);
+    }
+
+    private void pureSaveCommands() throws Exception {
+        ReactiveDomain domain = ReactiveDomain.direct();
+        ConfigSession config = session(domain);
+        Path file = Files.createTempFile("uilib-pure-save-", ".yaml");
+        onClose(() -> Files.deleteIfExists(file));
+        String original = "纯阶段不得覆盖";
+        Files.write(file, original.getBytes(StandardCharsets.UTF_8));
+        StringWriter output = new StringWriter();
+        operation(domain, () -> {
+            for (boolean derived : Arrays.asList(false, true)) {
+                for (boolean path : Arrays.asList(false, true)) {
+                    Runnable save = () -> {
+                        try {
+                            if (path) config.save(file);
+                            else config.save(output);
+                        } catch (IOException failure) { throw new UncheckedIOException(failure); }
+                    };
+                    Computed<Boolean> attempt = domain.computed(() -> { save.run(); return true; });
+                    try {
+                        try {
+                            if (derived) attempt.get();
+                            else domain.readOnly(() -> { save.run(); return null; });
+                            throw new AssertionError("纯阶段不能保存");
+                        } catch (IllegalStateException expected) {}
+                    } finally { attempt.close(); }
+                    require(output.getBuffer().length() == 0, "拒绝保存不写调用方Writer");
+                    require(new String(Files.readAllBytes(file), StandardCharsets.UTF_8).equals(original),
+                            "拒绝保存在打开/截断文件之前发生");
+                }
+            }
+            config.save(output);
+            require(output.getBuffer().length() > 0, "正常操作仍可保存配置");
+        });
     }
 
     private static void operation(ReactiveDomain domain, CheckedRunnable action) {

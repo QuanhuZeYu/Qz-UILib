@@ -40,7 +40,7 @@ public final class Observation extends Tracker implements AutoCloseable {
 
     @Override
     public void close() {
-        domain.checkAccess();
+        domain.checkWrite();
         if (!disposed) {
             disposed = true;
             detachSources();

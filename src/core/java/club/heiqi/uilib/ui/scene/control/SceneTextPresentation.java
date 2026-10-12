@@ -12,6 +12,75 @@ import java.util.List;
 final class SceneTextPresentation {
     private SceneTextPresentation() {}
 
+    /** 全部绝对坐标作同一平移；来源、Bidi、字形样式、advance与代际保持同一载荷。 */
+    static TextLayout translate(TextLayout full, int dx, int dy) {
+        if (dx == 0 && dy == 0) return full;
+        List<TextLayout.Line> lines = new ArrayList<>();
+        for (TextLayout.Line line : full.lines()) {
+            List<TextLayout.Glyph> glyphs = new ArrayList<>();
+            for (TextLayout.Glyph g : line.glyphs())
+                glyphs.add(move(g, dx, dy, g.clusterIndex, g.logicalStart, g.logicalEnd, g.sourceStart, g.sourceEnd));
+            List<TextLayout.Cluster> clusters = new ArrayList<>();
+            for (TextLayout.Cluster c : line.clusters())
+                clusters.add(
+                        new TextLayout.Cluster(
+                                c.logicalStart,
+                                c.logicalEnd,
+                                c.sourceStart,
+                                c.sourceEnd,
+                                c.glyphIndexStart,
+                                c.glyphIndexEnd,
+                                c.x + dx,
+                                c.advance,
+                                c.style,
+                                c.rtl));
+            List<TextLayout.Decoration> decorations = new ArrayList<>();
+            for (TextLayout.Decoration d : line.decorations())
+                decorations.add(
+                        new TextLayout.Decoration(
+                                d.kind,
+                                d.x + dx,
+                                d.y + dy,
+                                d.width,
+                                d.height,
+                                d.color,
+                                d.logicalStart,
+                                d.logicalEnd,
+                                d.sourceStart,
+                                d.sourceEnd));
+            lines.add(
+                    new TextLayout.Line(
+                            line.text,
+                            line.x + dx,
+                            line.y + dy,
+                            line.logicalStart,
+                            line.logicalEnd,
+                            line.sourceStart,
+                            line.sourceEnd,
+                            line.advance,
+                            line.baseline + dy,
+                            line.ascent,
+                            line.descent,
+                            line.lineHeight,
+                            glyphs,
+                            clusters,
+                            decorations,
+                            line.paragraphRtl));
+        }
+        return new TextLayout(
+                full.width,
+                full.height,
+                full.advanceWidth,
+                full.advanceHeight,
+                full.style,
+                lines,
+                full.logicalText,
+                full.originalText,
+                full.generation,
+                full.diagnostics(),
+                full.input);
+    }
+
     static TextLayout fit(
             TextLayout full,
             int width,

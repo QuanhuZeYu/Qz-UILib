@@ -247,7 +247,7 @@ final class SceneDocumentTable implements SceneControl {
             SceneChildMeasurer children) {
         Grid grid = grid(node, width, children);
         maximum = Math.max(0, grid.width - width);
-        offset = Math.min(offset, maximum);
+        offset = SceneControlViewport.clamp(offset, maximum);
         List<ChildPlacements.Entry> entries = new ArrayList<>();
         int index = 0, y = node.padding();
         for (int row = 0; row < grid.rows.length; row++) {
@@ -293,13 +293,7 @@ final class SceneDocumentTable implements SceneControl {
     @Override
     public boolean scroll(SceneNode node, ScenePointerEvent event, SceneGeometryView geometry) {
         if (geometry.get(node) == null) return false;
-        int next =
-                (int)
-                        Math.max(
-                                0L,
-                                Math.min(
-                                        (long) maximum,
-                                        offset - (long) event.delta * node.scrollStep()));
+        int next = SceneControlViewport.scrolled(offset, maximum, event.delta, node.scrollStep());
         if (next == offset) return false;
         offset = next;
         return true;

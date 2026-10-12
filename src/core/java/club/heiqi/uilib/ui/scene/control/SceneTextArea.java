@@ -1,5 +1,11 @@
 package club.heiqi.uilib.ui.scene.control;
 
+import static club.heiqi.uilib.ui.scene.control.SceneControlPaint.inner;
+import static club.heiqi.uilib.ui.scene.control.SceneControlPaint.border;
+import static club.heiqi.uilib.ui.scene.control.SceneEditCommands.display;
+import static club.heiqi.uilib.ui.scene.control.SceneEditCommands.toDisplay;
+import static club.heiqi.uilib.ui.scene.control.SceneEditCommands.fromDisplay;
+
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -90,37 +96,11 @@ public final class SceneTextArea {
         return node;
     }
 
-    private static String display(Snapshot value) {
-        if (!value.composing) return value.text;
-        int start = Math.min(value.anchor, value.caret), end = Math.max(value.anchor, value.caret);
-        return value.text.substring(0, start) + value.composition + value.text.substring(end);
-    }
-
-    private static int toDisplay(Snapshot value, int offset) {
-        if (!value.composing) return offset;
-        int start = Math.min(value.anchor, value.caret), end = Math.max(value.anchor, value.caret);
-        return offset < start
-                ? offset
-                : offset <= end
-                        ? start + value.composition.length()
-                        : offset - (end - start) + value.composition.length();
-    }
-
-    private static int fromDisplay(Snapshot value, int offset) {
-        if (!value.composing) return offset;
-        int start = Math.min(value.anchor, value.caret), end = Math.max(value.anchor, value.caret);
-        int preeditEnd = start + value.composition.length();
-        return offset <= start
-                ? offset
-                : offset < preeditEnd ? start : offset - value.composition.length() + end - start;
-    }
-
     private static final class Control implements SceneControl, SceneCompositionTarget {
         private final SceneEditState state;
         private final ReadableSignal<SceneTheme> theme;
         private final ReadableSignal<Boolean> readOnly;
-        private final Consumer<Submission> onSubmit;
-        private final SubmitPolicy policy;
+        private final SceneEditCommands commands;
         // 只通知呈现归属变化；不保存草稿、选区、会话或焦点权威。
         private final Signal<Boolean> viewChanged;
         private TextLayout source, presented;
@@ -141,14 +121,23 @@ public final class SceneTextArea {
             this.state = state;
             this.theme = theme;
             this.readOnly = readOnly;
-            this.onSubmit = onSubmit;
-            this.policy = policy;
+            this.commands = new SceneEditCommands(state, readOnly, onSubmit, policy);
             viewChanged = state.domain().signal(false);
         }
 
         @Override
         public List<ReadableSignal<?>> measureDependencies(SceneNode node) {
-            return Arrays.asList(state.snapshot(), theme, readOnly, viewChanged);
+            return Collections.singletonList(theme);
+        }
+
+        @Override
+        public List<ReadableSignal<?>> arrangementDependencies(SceneNode node) {
+            return Arrays.asList(state.snapshot(), viewChanged);
+        }
+
+        @Override
+        public List<ReadableSignal<?>> paintDependencies(SceneNode node) {
+            return Collections.singletonList(readOnly);
         }
 
         @Override
@@ -298,6 +287,7 @@ public final class SceneTextArea {
             if (event.command == null) return false;
             if (before.composing && !locked && event.command != SceneEditEvent.Command.ESCAPE)
                 return true;
+            if (commands.command(before, event, this::resetNavigation)) return true;
             switch (event.command) {
                 case UP:
                     vertical(before, -1, event.shift);
@@ -336,55 +326,6 @@ public final class SceneTextArea {
                     state.select(0, before.text.length());
                     requestReveal();
                     break;
-                case COPY:
-                    copy(before, event);
-                    break;
-                case CUT:
-                    if (!locked && event.clipboard != null) {
-                        resetNavigation();
-                        copy(before, event);
-                        state.replaceSelection("", false);
-                        inputChanged(before);
-                    }
-                    break;
-                case PASTE:
-                    if (!locked && event.clipboard != null) {
-                        resetNavigation();
-                        state.composition("", false);
-                        state.replaceSelection(
-                                Objects.requireNonNull(event.clipboard.read(), "clipboard text"),
-                                false);
-                        inputChanged(before);
-                    }
-                    break;
-                case BACKSPACE:
-                    if (!locked) {
-                        resetNavigation();
-                        state.deleteBackward();
-                        inputChanged(before);
-                    }
-                    break;
-                case DELETE:
-                    if (!locked) {
-                        resetNavigation();
-                        state.deleteForward();
-                        inputChanged(before);
-                    }
-                    break;
-                case UNDO:
-                    if (!locked) {
-                        resetNavigation();
-                        state.undo();
-                        inputChanged(before);
-                    }
-                    break;
-                case REDO:
-                    if (!locked) {
-                        resetNavigation();
-                        state.redo();
-                        inputChanged(before);
-                    }
-                    break;
                 case SPACE:
                     if (!locked) {
                         resetNavigation();
@@ -402,8 +343,7 @@ public final class SceneTextArea {
                 case SUBMIT:
                     if (!locked && !before.composing) {
                         resetNavigation();
-                        state.breakHistoryGroup();
-                        onSubmit.accept(state.request(true));
+                        commands.submit();
                     }
                     break;
                 case ACTIVATE_ONLY:
@@ -460,27 +400,14 @@ public final class SceneTextArea {
         }
 
         private void inputChanged(Snapshot before) {
-            if (policy == SubmitPolicy.INPUT && !before.text.equals(state.snapshot().get().text))
-                onSubmit.accept(state.request(false));
-        }
-
-        private static void copy(Snapshot value, SceneEditEvent event) {
-            if (event.clipboard != null)
-                event.clipboard.write(
-                        value.text.substring(
-                                Math.min(value.anchor, value.caret),
-                                Math.max(value.anchor, value.caret)));
+            commands.inputChanged(before);
         }
 
         @Override
         public void focusChanged(SceneNode node, boolean focused, boolean eligible) {
             if (focused) return;
-            Snapshot before = state.snapshot().get();
             resetNavigation();
-            state.breakHistoryGroup();
-            state.composition("", false);
-            if (eligible && policy == SubmitPolicy.BLUR && before.active && !readOnly.get())
-                onSubmit.accept(state.request(true));
+            commands.blur(eligible);
         }
 
         @Override
@@ -641,23 +568,7 @@ public final class SceneTextArea {
         return Math.max(0, Math.min(value, maximum));
     }
 
-    private static LayoutBox inner(LayoutBox box, int padding) {
-        return new LayoutBox(
-                box.x + padding,
-                box.y + padding,
-                Math.max(0, box.width - padding * 2),
-                Math.max(0, box.height - padding * 2));
-    }
 
-    private static void border(PaintPlanBuilder target, LayoutBox box, LayoutBox clip, int color) {
-        if (box.width == 0 || box.height == 0) return;
-        target.add(PaintCommand.rect(new LayoutBox(box.x, box.y, box.width, 1), clip, color));
-        target.add(
-                PaintCommand.rect(
-                        new LayoutBox(box.x, box.y + box.height - 1, box.width, 1), clip, color));
-        target.add(PaintCommand.rect(new LayoutBox(box.x, box.y, 1, box.height), clip, color));
-        target.add(
-                PaintCommand.rect(
-                        new LayoutBox(box.x + box.width - 1, box.y, 1, box.height), clip, color));
-    }
+
+
 }

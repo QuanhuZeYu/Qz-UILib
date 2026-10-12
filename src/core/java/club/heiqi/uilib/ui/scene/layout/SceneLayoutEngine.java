@@ -15,6 +15,7 @@ import java.util.Set;
 /** 先测内容，再按声明分配；固定尺寸不因父空间不足被缩小。 */
 public final class SceneLayoutEngine {
     private final SceneTextMeasurer text;
+    private final java.util.function.ToIntFunction<SceneNode> scrollOffsets;
     private final Map<SceneNode, Map<Long, int[]>> measuredCache = new IdentityHashMap<>();
     private final Map<SceneNode, Map<Integer, TextLayout>> textCache = new IdentityHashMap<>();
     private final Map<SceneNode, BatchTextMeasurer> batchText = new IdentityHashMap<>();
@@ -46,7 +47,14 @@ public final class SceneLayoutEngine {
     }
 
     public SceneLayoutEngine(SceneTextMeasurer text) {
+        // 保留原入口的当前滚动语义；正式管线在构造边界明确提供唯一运行时的事实。
+        this(text, node -> node.runtime() == null ? node.scrollOffset() : node.runtime().scrollOffset(node));
+    }
+
+    /** 布局只读取本次滚动位置，位置权威及最终范围发布由调用方协调。 */
+    public SceneLayoutEngine(SceneTextMeasurer text, java.util.function.ToIntFunction<SceneNode> scrollOffsets) {
         this.text = text;
+        this.scrollOffsets = java.util.Objects.requireNonNull(scrollOffsets, "scrollOffsets");
     }
 
     public SceneGeometry layout(List<SceneNode> roots, int width, int height) {
@@ -311,10 +319,7 @@ public final class SceneLayoutEngine {
                                             Integer.MAX_VALUE,
                                             Math.max(0L, extent - (row ? box.width : box.height)))
                             : 0;
-            int desired =
-                    node.runtime() == null
-                            ? node.scrollOffset()
-                            : node.runtime().scrollOffset(node);
+            int desired = scrollOffsets.applyAsInt(node);
             int scroll = node.scrollable() ? Math.min(desired, maximum) : 0;
             entries.set(
                     entryIndex,
@@ -361,8 +366,7 @@ public final class SceneLayoutEngine {
                                         Integer.MAX_VALUE,
                                         Math.max(0L, content - (row ? innerWidth : innerHeight)))
                         : 0;
-        int desired =
-                node.runtime() == null ? node.scrollOffset() : node.runtime().scrollOffset(node);
+        int desired = scrollOffsets.applyAsInt(node);
         int scroll = node.scrollable() ? Math.min(desired, maximum) : 0;
         entries.set(
                 entryIndex, new SceneGeometryView.Entry(node, box, clip, lines, scroll, maximum));

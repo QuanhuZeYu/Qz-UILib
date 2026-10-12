@@ -378,7 +378,8 @@ public final class DesktopWindow implements SceneHost, AutoCloseable {
     @Override public ThemeConfiguration themeConfiguration() { return themeConfiguration; }
     @Override public int width() { return framebufferWidth; }
     @Override public int height() { return framebufferHeight; }
-    @Override public long metricsRevision() { return revision + fonts.fonts().generation() + fonts.readyVersion(); }
+    // ready只改变可画资源；字体代际才改变度量，与共同字体服务的职责一致。
+    @Override public long metricsRevision() { return revision + fonts.fonts().generation(); }
     /** 正式帧管线在测量/输入前接收完成结果，由既有图像信号使相关声明失效。 */
     @Override public void prepareResources() { check(); images.prepareResources(); }
     @Override public void replay(PaintPlan plan) { lastPlan = plan; renderer.replay(plan, width(), height()); }

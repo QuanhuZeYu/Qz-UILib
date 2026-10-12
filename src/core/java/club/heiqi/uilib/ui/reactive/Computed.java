@@ -23,10 +23,12 @@ public final class Computed<T> extends Tracker implements ReadableSignal<T>, Aut
             detachSources();
             domain.tracker = this;
             computing = true;
+            domain.computationDepth++;
             try {
                 value = derivation.get();
                 dirty = false;
             } finally {
+                domain.computationDepth--;
                 computing = false;
                 domain.tracker = previous;
             }
@@ -44,7 +46,7 @@ public final class Computed<T> extends Tracker implements ReadableSignal<T>, Aut
     }
 
     public void dispose() {
-        domain.checkAccess();
+        domain.checkWrite();
         if (disposed) return;
         disposed = true;
         detachSources();

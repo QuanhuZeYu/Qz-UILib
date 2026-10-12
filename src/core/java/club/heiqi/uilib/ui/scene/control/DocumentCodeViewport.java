@@ -55,7 +55,7 @@ final class DocumentCodeViewport implements SceneControl {
                         content, new Constraints(Integer.MAX_VALUE, Integer.MAX_VALUE));
         int maximum = Math.max(0, measured.width - width);
         // 字体、源码和视口改变后从本次测量求范围，不保留已失效旧上限。
-        offset = Math.min(offset, maximum);
+        offset = SceneControlViewport.clamp(offset, maximum);
         prepared =
                 new ChildPlacements(
                         Collections.singletonList(
@@ -106,13 +106,7 @@ final class DocumentCodeViewport implements SceneControl {
         if (content == null) return false;
         int width = Math.max(0, viewport.box.width - node.padding() * 2);
         int maximum = Math.max(0, content.box.width - width);
-        int next =
-                (int)
-                        Math.max(
-                                0L,
-                                Math.min(
-                                        (long) maximum,
-                                        offset - (long) event.delta * node.scrollStep()));
+        int next = SceneControlViewport.scrolled(offset, maximum, event.delta, node.scrollStep());
         if (next == offset) return false;
         offset = next;
         return true;

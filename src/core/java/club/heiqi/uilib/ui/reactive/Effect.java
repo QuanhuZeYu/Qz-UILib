@@ -28,7 +28,7 @@ public final class Effect extends Tracker implements AutoCloseable {
     }
 
     public void dispose() {
-        domain.checkAccess();
+        domain.checkWrite();
         if (!disposed) {
             disposed = true;
             detachSources();

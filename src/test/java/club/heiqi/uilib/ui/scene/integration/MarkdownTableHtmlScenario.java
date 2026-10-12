@@ -59,6 +59,7 @@ public final class MarkdownTableHtmlScenario extends TestApplication {
         runScenario("固定frontmatter默认表格语义与完整UTF16及BYTE来源", this::frontmatterOracle, failures);
         runScenario("frontmatter代理对节点别名及错误精确原位置", this::frontmatterSources, failures);
         runScenario("frontmatter真实字体主题重排与随后正文保持", this::frontmatterScene, failures);
+        runScenario("YAML时间时区按词法单位转换且保留来源", this::frontmatterTimestamp, failures);
         runScenario("管道列数对齐补空裁剪及成熟块结束边界", this::pipeStructure, failures);
         runScenario("CRLF代理对转义管道代码及typed原子的原文来源", this::pipeSources, failures);
         runScenario("HTML全部内容类别及inline与block成熟Markdown边界", this::htmlSemantics, failures);
@@ -204,6 +205,29 @@ public final class MarkdownTableHtmlScenario extends TestApplication {
                 result.add(Arrays.asList("li", frontmatterBlocks(block.children())));
         }
         return result;
+    }
+
+    private void frontmatterTimestamp() {
+        for (String zone : new String[] {"+00:15", "-00:15", "+02", "-02", "+01:30", "-01:30", "Z"}) {
+            String value = "2026-10-13T00:00:00" + zone;
+            String source = "---\n!!timestamp " + value + "\n---\n正文";
+            // Java8 ISO_OFFSET_DATE_TIME要求分钟；YAML原输入仍保留合法短小时偏移。
+            String oracle = !zone.equals("Z") && zone.indexOf(':') < 0 ? value + ":00" : value;
+            String expected = java.time.format.DateTimeFormatter
+                    .ofPattern("uuuu-MM-dd'T'HH:mm:ss.SSS'Z'")
+                    .withZone(java.time.ZoneOffset.UTC)
+                    .format(java.time.OffsetDateTime.parse(oracle).toInstant());
+            for (boolean bytes : new boolean[] {false, true}) {
+                DocumentContent document = checked(source, bytes);
+                require(document.diagnostics().isEmpty(), "合法timestamp不能产生诊断");
+                TextInput presented = document.blocks().get(0).table.rows().get(0).cells().get(1)
+                        .content().get(0).paragraph.resolve(BASE).text.input;
+                equal(expected, presented.text, "timestamp时区不能按数值大小猜小时或分钟: " + zone);
+                int start = source.indexOf("!!timestamp");
+                exactRange(presented, 0, source, start, start + "!!timestamp ".length() + value.length(), bytes);
+                require(document.blocks().size() == 2, "timestamp转换不得吞掉随后正文");
+            }
+        }
     }
 
     private void frontmatterSources() {

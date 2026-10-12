@@ -160,6 +160,7 @@ public final class SceneRuntime implements AutoCloseable {
     }
 
     public void checkMutation() {
+        domain.checkWrite();
         checkAlive();
         if (routing || !mutation) throw new IllegalStateException("挂载后声明仅由呈现运行时更新");
     }
@@ -170,6 +171,7 @@ public final class SceneRuntime implements AutoCloseable {
     }
 
     private void command() {
+        domain.checkWrite();
         checkAlive();
         if (routing) throw new IllegalStateException("输入操作仅发布状态或意图");
     }
@@ -245,32 +247,23 @@ public final class SceneRuntime implements AutoCloseable {
             mount.owner.own(active);
         }
         if (node.control() != null) {
-            Observation dependencies =
-                    domain.observe(
-                            mount.owner,
-                            () -> {
-                                for (ReadableSignal<?> source :
-                                        node.control().measureDependencies(node)) source.get();
-                            },
-                            () -> {
-                                invalidateBinding(node);
-                                invalidate();
-                            });
-            mount.bindings.add(
-                    new BindingActivation() {
-                        @Override
-                        public void refresh() {
-                            dependencies.refresh();
-                        }
-
-                        @Override
-                        public void close() {
-                            dependencies.close();
-                        }
-                    });
+            observeControl(node, mount, () -> node.control().measureDependencies(node), this::invalidate);
+            observeControl(node, mount, () -> node.control().arrangementDependencies(node), this::invalidateArrangement);
+            observeControl(node, mount, () -> node.control().paintDependencies(node), this::invalidatePaint);
         }
         dirtyBindings.add(node);
         for (SceneNode child : node.children()) mountSubtree(child, mount.owner);
+    }
+
+    private void observeControl(SceneNode node, Mount mount,
+            Supplier<List<ReadableSignal<?>>> sources, Runnable changed) {
+        Observation dependencies = domain.observe(mount.owner,
+                () -> { for (ReadableSignal<?> source : sources.get()) source.get(); },
+                () -> { invalidateBinding(node); changed.run(); });
+        mount.bindings.add(new BindingActivation() {
+            public void refresh() { dependencies.refresh(); }
+            public void close() { dependencies.close(); }
+        });
     }
 
     public void preparePresentation() {
@@ -751,14 +744,14 @@ public final class SceneRuntime implements AutoCloseable {
             if (!focusRouter.owns(target)) break;
             if (!ancestor.scrollable()) continue;
             SceneGeometryView.Entry entry = geometry.get(ancestor);
-            LayoutBox region = revealRegion(target.node(), ancestor, geometry);
+            LayoutBox region = SceneGeometry.revealRegion(target.node(), ancestor, geometry);
             if (entry == null || region == null || region.width == 0 || region.height == 0)
                 continue;
-            LayoutBox window = revealWindow(ancestor, geometry);
+            LayoutBox window = SceneGeometry.revealWindow(ancestor, geometry);
             if (window.width == 0 || window.height == 0) continue;
             boolean row = ancestor.axis() == SceneNode.Axis.ROW;
             long delta =
-                    revealDelta(
+                    SceneGeometry.revealDelta(
                             row ? region.x : region.y,
                             row ? region.width : region.height,
                             row ? window.x : window.y,
@@ -780,78 +773,6 @@ public final class SceneRuntime implements AutoCloseable {
             geometry = Objects.requireNonNull(relayout.get(), "geometry");
         }
         return geometry;
-    }
-
-    private static LayoutBox innerBox(SceneGeometryView.Entry entry) {
-        int padding = entry.node.padding();
-        return new LayoutBox(
-                entry.box.x + padding,
-                entry.box.y + padding,
-                (int) Math.max(0L, (long) entry.box.width - 2L * padding),
-                (int) Math.max(0L, (long) entry.box.height - 2L * padding));
-    }
-
-    private static LayoutBox revealRegion(
-            SceneNode target, SceneNode ancestor, SceneGeometryView geometry) {
-        SceneGeometryView.Entry entry = geometry.get(target);
-        if (entry == null) return null;
-        LayoutBox region = entry.box;
-        // 下层裁剪随当前祖先的内容一起移动，外层只能显露其中尚可见的部分。
-        for (SceneNode node = target.parent(); node != ancestor; node = node.parent()) {
-            if (node == null) return null;
-            SceneGeometryView.Entry clip = geometry.get(node);
-            if (clip == null) return null;
-            if (node.scrollable()) region = region.intersect(innerBox(clip));
-            else if (node.clip()) region = region.intersect(clip.box);
-        }
-        return region;
-    }
-
-    private static LayoutBox revealWindow(SceneNode ancestor, SceneGeometryView geometry) {
-        LayoutBox window = innerBox(geometry.get(ancestor));
-        boolean movableX = false, movableY = false;
-        for (SceneNode node = ancestor.parent(); node != null; node = node.parent()) {
-            // 外层只能修复自身滚动轴的遮挡；正交轴仍需约束内层窗口。
-            // 某轴可由外层移动后，其自身及更上层当前clip不提前卡住屏外内层。
-            if (node.scrollable()) {
-                if (node.axis() == SceneNode.Axis.ROW) movableX = true;
-                else movableY = true;
-            }
-            SceneGeometryView.Entry entry = geometry.get(node);
-            if (entry != null && (node.clip() || node.scrollable()))
-                window =
-                        limitWindow(
-                                window,
-                                node.scrollable() ? innerBox(entry) : entry.box,
-                                !movableX,
-                                !movableY);
-        }
-        return limitWindow(window, geometry.viewport(), !movableX, !movableY);
-    }
-
-    private static LayoutBox limitWindow(LayoutBox window, LayoutBox clip, boolean x, boolean y) {
-        int left = x ? Math.max(window.x, clip.x) : window.x;
-        int top = y ? Math.max(window.y, clip.y) : window.y;
-        long right =
-                x
-                        ? Math.min((long) window.x + window.width, (long) clip.x + clip.width)
-                        : (long) window.x + window.width;
-        long bottom =
-                y
-                        ? Math.min((long) window.y + window.height, (long) clip.y + clip.height)
-                        : (long) window.y + window.height;
-        return new LayoutBox(
-                left, top, (int) Math.max(0L, right - left), (int) Math.max(0L, bottom - top));
-    }
-
-    private static long revealDelta(long start, long size, long windowStart, long windowSize) {
-        long end = start + size, windowEnd = windowStart + windowSize;
-        // 大目标没有内部焦点位置时显露起始边缘；已经跨越整个视口则保持，
-        // 避免反复导航在两端跳动。普通目标仅补足被遮住的一侧。
-        if (size > windowSize)
-            return start <= windowStart && end >= windowEnd ? 0 : start - windowStart;
-        if (start < windowStart) return start - windowStart;
-        return end > windowEnd ? end - windowEnd : 0;
     }
 
     /**
@@ -886,7 +807,7 @@ public final class SceneRuntime implements AutoCloseable {
     }
 
     public void dispatchScroll(SceneNode node, int delta) {
-        checkAlive();
+        command();
         if (!interactive(node)) return;
         if (node.scrollable()) {
             ScrollPosition position = scrolling.get(node);

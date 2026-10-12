@@ -219,57 +219,37 @@ public final class GlImageResources implements GlQuadRenderer.ResourceProvider, 
     }
 
     private Resident upload(ImageContent content) {
-        int unit = gl.glGetInteger(GL_ACTIVE_TEXTURE),
-                pbo = gl.glGetInteger(GL_PIXEL_UNPACK_BUFFER_BINDING);
-        int[] names = {
-            GL_UNPACK_ALIGNMENT,
-            GL_UNPACK_ROW_LENGTH,
-            GL_UNPACK_IMAGE_HEIGHT,
-            GL_UNPACK_SKIP_PIXELS,
-            GL_UNPACK_SKIP_ROWS,
-            GL_UNPACK_SKIP_IMAGES,
-            GL_UNPACK_SWAP_BYTES,
-            GL_UNPACK_LSB_FIRST
-        };
-        int[] values = new int[names.length];
-        for (int i = 0; i < names.length; i++) values[i] = gl.glGetInteger(names[i]);
-        gl.glActiveTexture(GL_TEXTURE0);
-        int old = gl.glGetInteger(GL_TEXTURE_BINDING_2D), texture = gl.glGenTextures();
-        try {
-            gl.glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
-            for (int name : names) gl.glPixelStorei(name, name == GL_UNPACK_ALIGNMENT ? 1 : 0);
-            gl.glBindTexture(GL_TEXTURE_2D, texture);
-            gl.glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-            gl.glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-            gl.glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-            gl.glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-            byte[] pixels = content.pixels();
-            for (int i = 0; i < pixels.length; i += 4) {
-                int alpha = pixels[i + 3] & 255;
-                for (int c = 0; c < 3; c++)
-                    pixels[i + c] = (byte) (((pixels[i + c] & 255) * alpha + 127) / 255);
+        try (GlCpuUploadScope ignored = new GlCpuUploadScope(gl, GL_TEXTURE_2D)) {
+            int texture = gl.glGenTextures();
+            try {
+                gl.glBindTexture(GL_TEXTURE_2D, texture);
+                gl.glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+                gl.glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+                gl.glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+                gl.glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+                byte[] pixels = content.pixels();
+                for (int i = 0; i < pixels.length; i += 4) {
+                    int alpha = pixels[i + 3] & 255;
+                    for (int c = 0; c < 3; c++)
+                        pixels[i + c] = (byte) (((pixels[i + c] & 255) * alpha + 127) / 255);
+                }
+                ByteBuffer data = ByteBuffer.allocateDirect(pixels.length);
+                data.put(pixels).flip();
+                gl.glTexImage2D(
+                        GL_TEXTURE_2D,
+                        0,
+                        GL_RGBA8,
+                        content.width,
+                        content.height,
+                        0,
+                        GL_RGBA,
+                        GL_UNSIGNED_BYTE,
+                        data);
+                return new Resident(content, texture);
+            } catch (RuntimeException | Error failure) {
+                gl.glDeleteTextures(texture);
+                throw failure;
             }
-            ByteBuffer data = ByteBuffer.allocateDirect(pixels.length);
-            data.put(pixels).flip();
-            gl.glTexImage2D(
-                    GL_TEXTURE_2D,
-                    0,
-                    GL_RGBA8,
-                    content.width,
-                    content.height,
-                    0,
-                    GL_RGBA,
-                    GL_UNSIGNED_BYTE,
-                    data);
-            return new Resident(content, texture);
-        } catch (RuntimeException | Error failure) {
-            gl.glDeleteTextures(texture);
-            throw failure;
-        } finally {
-            gl.glBindTexture(GL_TEXTURE_2D, old);
-            gl.glActiveTexture(unit);
-            gl.glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbo);
-            for (int i = 0; i < names.length; i++) gl.glPixelStorei(names[i], values[i]);
         }
     }
 

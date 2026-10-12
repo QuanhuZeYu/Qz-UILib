@@ -227,6 +227,32 @@ public final class GlGlyphAtlas implements GlQuadRenderer.ResourceProvider, Auto
         }
     }
 
+    /** 单次 prepare 共用的预算游标；仅在成功提交后记账，不跨帧累计不足一行的额度。 */
+    private final class UploadProgress {
+        final UploadBudget limit;
+        final long start = System.nanoTime();
+        long remaining;
+        int calls;
+
+        UploadProgress(UploadBudget limit) {
+            this.limit = limit;
+            remaining = limit.bytes;
+        }
+
+        boolean canSubmit(long bytes) {
+            return calls < limit.calls
+                    && remaining >= bytes
+                    && System.nanoTime() - start < limit.nanos;
+        }
+
+        void record(long bytes) {
+            remaining -= bytes;
+            uploadedBytes += bytes;
+            uploadCalls++;
+            calls++;
+        }
+    }
+
     private final Thread thread = Thread.currentThread();
     private final GlApi gl;
     private final ByteBuffer whiteScratch =
@@ -292,7 +318,7 @@ public final class GlGlyphAtlas implements GlQuadRenderer.ResourceProvider, Auto
     // 两种资源格式各保留一个partial；同原生bitmap对象，不新增CPUviewcache或长期Frame。
     private final java.util.EnumMap<SamplingView, Upload> partials =
             new java.util.EnumMap<SamplingView, Upload>(SamplingView.class);
-    private UploadState preparingState;
+    private GlCpuUploadScope preparingState;
 
     public GlGlyphAtlas(GlApi gl, Mode mode, Budget budget) {
         this.gl = Objects.requireNonNull(gl, "gl");
@@ -449,63 +475,15 @@ public final class GlGlyphAtlas implements GlQuadRenderer.ResourceProvider, Auto
                 throw new IllegalArgumentException("非empty glyph需求须提供CPUworker");
             for (GlyphKey key : demand)
                 if (!residents.containsKey(new ViewKey(key, view))) cpu.request(key);
-            long start = System.nanoTime(), remaining = uploadBudget.bytes;
-            int calls = 0;
-            try (UploadState state = new UploadState()) {
+            UploadProgress progress = new UploadProgress(uploadBudget);
+            int uploadTarget = view == SamplingView.STRAIGHT_RGBA ? GL_TEXTURE_2D : target;
+            try (GlCpuUploadScope state = new GlCpuUploadScope(gl, uploadTarget)) {
                 preparingState = state;
-                if (needsSolid && view == SamplingView.STRAIGHT_RGBA) {
-                    Group whiteGroup = null;
-                    for (Group g : groups.values())
-                        if (g.view == view) {
-                            whiteGroup = g;
-                            break;
-                        }
-                    if (whiteGroup == null
-                            && remaining >= 36
-                            && calls < uploadBudget.calls
-                            && System.nanoTime() - start < uploadBudget.nanos)
-                        whiteGroup = createGroup(false, view);
-                    if (whiteGroup != null) {
-                        whiteGroup.pinned = true;
-                        whiteGroup.lastUsed = ++clock;
-                        if (!whiteGroup.whiteReady
-                                && remaining >= 36
-                                && calls < uploadBudget.calls
-                                && System.nanoTime() - start < uploadBudget.nanos) {
-                            ByteBuffer whiteData = whiteScratch;
-                            whiteData.clear();
-                            try {
-                                for (int i = 0; i < 36; i++) whiteData.put((byte) 255);
-                                whiteData.flip();
-                                gl.glBindTexture(whiteGroup.target, whiteGroup.texture);
-                                gl.glTexSubImage2D(
-                                        whiteGroup.target,
-                                        0,
-                                        0,
-                                        0,
-                                        3,
-                                        3,
-                                        GL_RGBA,
-                                        GL_UNSIGNED_BYTE,
-                                        whiteData);
-                            } finally {
-                            }
-                            whiteGroup.whiteReady = true;
-                            remaining -= 36;
-                            calls++;
-                            uploadedBytes += 36;
-                            uploadCalls++;
-                        }
-                        if (whiteGroup.whiteReady)
-                            white = new Resident(whiteGroup, budget.pageSize);
-                    }
-                }
+                if (needsSolid && view == SamplingView.STRAIGHT_RGBA) prepareSolid(progress);
                 for (List<GlyphKey> layer : priorityLayers) {
                     pinLayer(layer);
                     for (GlyphKey key : layer) {
-                        if (calls >= uploadBudget.calls
-                                || remaining == 0
-                                || System.nanoTime() - start >= uploadBudget.nanos) break;
+                        if (!progress.canSubmit(1)) break;
                         if (residents.containsKey(new ViewKey(key, view))) continue;
                         if (uploading != null
                                 && (!uploading.key.equals(key)
@@ -516,108 +494,38 @@ public final class GlGlyphAtlas implements GlQuadRenderer.ResourceProvider, Auto
                             uploading = allocate(key, bitmap, view);
                             if (uploading == null) continue;
                         }
-                        Upload job = uploading;
-                        int rowBytes = Math.multiplyExact(job.bitmap.width + 2, 4),
-                                totalRows = job.bitmap.height + 2;
-                        while (job.row < totalRows
-                                && calls < uploadBudget.calls
-                                && remaining >= rowBytes
-                                && System.nanoTime() - start < uploadBudget.nanos) {
-                            int rows = (int) Math.min(totalRows - job.row, remaining / rowBytes);
-                            // 复用小块提交，单次 staging 不超过64KiB；宽行本身是最小预算单位。
-                            rows = Math.min(rows, Math.max(1, 65536 / rowBytes));
-                            ByteBuffer data = uploadScratch(Math.multiplyExact(rows, rowBytes));
-                            try {
-                                // MASK straight view的RGB恒白，含alpha0 gutter；避免linear过滤覆盖率时二次变暗。
-                                // COLOR view的alpha0 RGB定义为0，保持明确RGBA格式而不偷偷改premult页。
-                                if (view == SamplingView.STRAIGHT_RGBA && !job.bitmap.color)
-                                    for (int i = 0; i < data.limit(); i += 4) {
-                                        data.put(i, (byte) 255);
-                                        data.put(i + 1, (byte) 255);
-                                        data.put(i + 2, (byte) 255);
-                                    }
-                                ByteBuffer source = job.bitmap.pixelsBuffer();
-                                for (int r = 0; r < rows; r++) {
-                                    int bitmapRow = job.row + r - 1;
-                                    if (bitmapRow < 0 || bitmapRow >= job.bitmap.height) continue;
-                                    source.position(bitmapRow * job.bitmap.width * 4);
-                                    source.limit((bitmapRow + 1) * job.bitmap.width * 4);
-                                    data.position(r * rowBytes + 4);
-                                    if (view == SamplingView.PREMULT_RGBA) data.put(source);
-                                    else
-                                        for (int x = 0; x < job.bitmap.width; x++) {
-                                            int offset = bitmapRow * job.bitmap.width * 4 + x * 4,
-                                                    a = source.get(offset + 3) & 255;
-                                            for (int c = 0; c < 3; c++) {
-                                                int premult = source.get(offset + c) & 255;
-                                                data.put(
-                                                        (byte)
-                                                                (!job.bitmap.color
-                                                                        ? 255
-                                                                        : a == 0
-                                                                                ? 0
-                                                                                : Math.min(
-                                                                                        255,
-                                                                                        (premult
-                                                                                                                * 255
-                                                                                                        + a
-                                                                                                                / 2)
-                                                                                                / a)));
-                                            }
-                                            data.put((byte) a);
-                                        }
-                                    source.limit(source.capacity());
-                                }
-                                data.position(0);
-                                data.limit(rows * rowBytes);
-                                gl.glBindTexture(
-                                        job.resident.group.target, job.resident.group.texture);
-                                if (job.resident.group.target == GL_TEXTURE_2D_ARRAY)
-                                    gl.glTexSubImage3D(
-                                            job.resident.group.target,
-                                            0,
-                                            job.x,
-                                            job.y + job.row,
-                                            job.resident.layer,
-                                            job.bitmap.width + 2,
-                                            rows,
-                                            1,
-                                            GL_RGBA,
-                                            GL_UNSIGNED_BYTE,
-                                            data);
-                                else
-                                    gl.glTexSubImage2D(
-                                            job.resident.group.target,
-                                            0,
-                                            job.x,
-                                            job.y + job.row,
-                                            job.bitmap.width + 2,
-                                            rows,
-                                            GL_RGBA,
-                                            GL_UNSIGNED_BYTE,
-                                            data);
-                            } finally {
-                            }
-                            long bytes = (long) rows * rowBytes;
-                            remaining -= bytes;
-                            uploadedBytes += bytes;
-                            uploadCalls++;
-                            calls++;
-                            job.row += rows;
-                        }
-                        if (job.row == totalRows) {
-                            ViewKey residentKey = new ViewKey(key, view);
-                            residents.put(residentKey, job.resident);
-                            job.resident.group.keys.add(residentKey);
-                            job.resident.group.lastUsed = ++clock;
-                            uploading = null;
-                            version++;
-                        } else break;
+                        if (!uploadRows(uploading, progress)) break;
+                        publish(uploading);
                     }
                 }
             } finally {
                 preparingState = null;
             }
+        }
+
+        private void prepareSolid(UploadProgress progress) {
+            Group whiteGroup = null;
+            for (Group group : groups.values())
+                if (group.view == view) {
+                    whiteGroup = group;
+                    break;
+                }
+            if (whiteGroup == null && progress.canSubmit(36))
+                whiteGroup = createGroup(false, view);
+            if (whiteGroup == null) return;
+            whiteGroup.pinned = true;
+            whiteGroup.lastUsed = ++clock;
+            if (!whiteGroup.whiteReady && progress.canSubmit(36)) {
+                whiteScratch.clear();
+                for (int i = 0; i < 36; i++) whiteScratch.put((byte) 255);
+                whiteScratch.flip();
+                gl.glBindTexture(whiteGroup.target, whiteGroup.texture);
+                gl.glTexSubImage2D(
+                        whiteGroup.target, 0, 0, 0, 3, 3, GL_RGBA, GL_UNSIGNED_BYTE, whiteScratch);
+                whiteGroup.whiteReady = true;
+                progress.record(36);
+            }
+            if (whiteGroup.whiteReady) white = new Resident(whiteGroup, budget.pageSize);
         }
 
         public void freeze() {
@@ -649,6 +557,94 @@ public final class GlGlyphAtlas implements GlQuadRenderer.ResourceProvider, Auto
             active = null;
             pinParents();
         }
+    }
+
+    /** 生成当前逐行进度对应的 padded 块，不推进 Upload 或发布 Resident。 */
+    private ByteBuffer glyphBlock(Upload job, int rows, int rowBytes) {
+        ByteBuffer data = uploadScratch(Math.multiplyExact(rows, rowBytes));
+        SamplingView view = job.resident.samplingView;
+        // MASK straight view 的 RGB 恒白，含 alpha0 gutter；linear 过滤覆盖率不会二次变暗。
+        // COLOR view 的 alpha0 RGB 定义为0，保持明确 RGBA 格式而不改变 premult 页。
+        if (view == SamplingView.STRAIGHT_RGBA && !job.bitmap.color)
+            for (int i = 0; i < data.limit(); i += 4) {
+                data.put(i, (byte) 255);
+                data.put(i + 1, (byte) 255);
+                data.put(i + 2, (byte) 255);
+            }
+        ByteBuffer source = job.bitmap.pixelsBuffer();
+        for (int r = 0; r < rows; r++) {
+            int bitmapRow = job.row + r - 1;
+            if (bitmapRow < 0 || bitmapRow >= job.bitmap.height) continue;
+            source.position(bitmapRow * job.bitmap.width * 4);
+            source.limit((bitmapRow + 1) * job.bitmap.width * 4);
+            data.position(r * rowBytes + 4);
+            if (view == SamplingView.PREMULT_RGBA) data.put(source);
+            else
+                for (int x = 0; x < job.bitmap.width; x++) {
+                    int offset = bitmapRow * job.bitmap.width * 4 + x * 4,
+                            a = source.get(offset + 3) & 255;
+                    for (int c = 0; c < 3; c++) {
+                        int premult = source.get(offset + c) & 255;
+                        data.put((byte) (!job.bitmap.color ? 255 : a == 0 ? 0
+                                : Math.min(255, (premult * 255 + a / 2) / a)));
+                    }
+                    data.put((byte) a);
+                }
+            source.limit(source.capacity());
+        }
+        data.position(0);
+        data.limit(rows * rowBytes);
+        return data;
+    }
+
+    /** 时间在每次块提交前检查；GL 返回后才记账并推进含 gutter 的逐行进度。 */
+    private boolean uploadRows(Upload job, UploadProgress progress) {
+        int rowBytes = Math.multiplyExact(job.bitmap.width + 2, 4),
+                totalRows = job.bitmap.height + 2;
+        while (job.row < totalRows && progress.canSubmit(rowBytes)) {
+            int rows = (int) Math.min(totalRows - job.row, progress.remaining / rowBytes);
+            // 复用小块提交，单次 staging 不超过64KiB；宽行本身是最小预算单位。
+            rows = Math.min(rows, Math.max(1, 65536 / rowBytes));
+            ByteBuffer data = glyphBlock(job, rows, rowBytes);
+            gl.glBindTexture(job.resident.group.target, job.resident.group.texture);
+            if (job.resident.group.target == GL_TEXTURE_2D_ARRAY)
+                gl.glTexSubImage3D(
+                        job.resident.group.target,
+                        0,
+                        job.x,
+                        job.y + job.row,
+                        job.resident.layer,
+                        job.bitmap.width + 2,
+                        rows,
+                        1,
+                        GL_RGBA,
+                        GL_UNSIGNED_BYTE,
+                        data);
+            else
+                gl.glTexSubImage2D(
+                        job.resident.group.target,
+                        0,
+                        job.x,
+                        job.y + job.row,
+                        job.bitmap.width + 2,
+                        rows,
+                        GL_RGBA,
+                        GL_UNSIGNED_BYTE,
+                        data);
+            progress.record((long) rows * rowBytes);
+            job.row += rows;
+        }
+        return job.row == totalRows;
+    }
+
+    /** 仅在最后一行（包含 gutter）上传完成后发布；freeze 仍是回放可见集合的边界。 */
+    private void publish(Upload job) {
+        ViewKey key = new ViewKey(job.key, job.resident.samplingView);
+        residents.put(key, job.resident);
+        job.resident.group.keys.add(key);
+        job.resident.group.lastUsed = ++clock;
+        uploading = null;
+        version++;
     }
 
     private int residentSlots() {
@@ -767,10 +763,7 @@ public final class GlGlyphAtlas implements GlQuadRenderer.ResourceProvider, Auto
         // glDeleteTextures 会解除所有单元上的绑定。仅在真实淘汰压力下查询各单元，
         // 不删除宿主仍绑定的资源；预算不足留白，不能破坏上传进入态或其他单元。
         java.util.HashSet<Integer> bound = new java.util.HashSet<Integer>();
-        if (preparingState != null) {
-            bound.add(preparingState.two);
-            bound.add(preparingState.array);
-        }
+        if (preparingState != null) preparingState.addSavedTexturesTo(bound);
         int activeUnit = gl.glGetInteger(GL_ACTIVE_TEXTURE),
                 units = gl.glGetInteger(GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS);
         try {
@@ -819,42 +812,6 @@ public final class GlGlyphAtlas implements GlQuadRenderer.ResourceProvider, Auto
         if (group == null || !group.pinned || group.generation != generation)
             throw new IllegalArgumentException("失效图集资源");
         return new GlQuadRenderer.Texture(group.target, group.texture);
-    }
-
-    /** 上传触及的状态集中保存/恢复；host 的 unpack PBO 与各布局参数不能渗入 CPU 指针。 */
-    private final class UploadState implements AutoCloseable {
-        final int unit = gl.glGetInteger(GL_ACTIVE_TEXTURE),
-                pbo = gl.glGetInteger(GL_PIXEL_UNPACK_BUFFER_BINDING);
-        final int[] names = {
-            GL_UNPACK_ALIGNMENT,
-            GL_UNPACK_ROW_LENGTH,
-            GL_UNPACK_IMAGE_HEIGHT,
-            GL_UNPACK_SKIP_PIXELS,
-            GL_UNPACK_SKIP_ROWS,
-            GL_UNPACK_SKIP_IMAGES,
-            GL_UNPACK_SWAP_BYTES,
-            GL_UNPACK_LSB_FIRST
-        };
-        final int[] values = new int[names.length];
-        final int two, array;
-
-        UploadState() {
-            for (int i = 0; i < names.length; i++) values[i] = gl.glGetInteger(names[i]);
-            gl.glActiveTexture(GL_TEXTURE0);
-            two = gl.glGetInteger(GL_TEXTURE_BINDING_2D);
-            array = gl.glGetInteger(GL_TEXTURE_BINDING_2D_ARRAY);
-            gl.glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
-            for (int name : names) gl.glPixelStorei(name, name == GL_UNPACK_ALIGNMENT ? 1 : 0);
-        }
-
-        @Override
-        public void close() {
-            gl.glBindTexture(GL_TEXTURE_2D, two);
-            gl.glBindTexture(GL_TEXTURE_2D_ARRAY, array);
-            gl.glActiveTexture(unit);
-            gl.glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbo);
-            for (int i = 0; i < names.length; i++) gl.glPixelStorei(names[i], values[i]);
-        }
     }
 
     @Override

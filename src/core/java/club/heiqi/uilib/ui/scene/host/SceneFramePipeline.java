@@ -76,7 +76,7 @@ public final class SceneFramePipeline implements AutoCloseable {
         this.runtime = runtime;
         this.host = host;
         this.text = measurer;
-        this.layout = new SceneLayoutEngine(measurer);
+        this.layout = new SceneLayoutEngine(measurer, runtime::scrollOffset);
     }
 
     /** 宿主在域外按采集顺序递交typed输入，所有物理按钮均需递交。 */

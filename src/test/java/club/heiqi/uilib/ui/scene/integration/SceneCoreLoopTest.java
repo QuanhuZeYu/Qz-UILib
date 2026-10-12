@@ -24,6 +24,15 @@ import java.util.concurrent.TimeUnit;
 
 /** 可直启的状态和挂载合同场景；生命周期共享正式页面入口，反例直接观察原runtime。 */
 public final class SceneCoreLoopTest extends TestApplication {
+    private void rejectPureCommand(Runnable command) {
+        try {
+            command.run();
+            throw new AssertionError("纯阶段命令必须被拒绝");
+        } catch (IllegalStateException expected) {
+            // 验证真实受控入口拒绝；调用方继续核对原状态与资源未受影响。
+        }
+    }
+
     private void lifecycleScenario(ReactiveDomain domain) {
         SoftwareSceneScenario.SoftwareHost host = new SoftwareSceneScenario.SoftwareHost();
         ScenePageSession session =
@@ -345,6 +354,53 @@ public final class SceneCoreLoopTest extends TestApplication {
                 domain.execute(owner[0]::dispose);
             }
         });
+        scenario("纯派生与只读阶段拒绝生命周期和结构命令", () -> domain.execute(() -> {
+            Owner resources = domain.owner();
+            Owner parent = domain.owner();
+            int[] releases = {0};
+            resources.own(() -> releases[0]++);
+            SceneRuntime runtime = new SceneRuntime(domain);
+            SceneNode mounted = new SceneNode().onClick(() -> releases[0]++).onScroll(delta -> releases[0]++);
+            SceneNode detached = new SceneNode();
+            MountHandle handle = runtime.attach(null, mounted);
+            Signal<Integer> cacheSource = domain.signal(3);
+            Computed<Integer> cached = domain.computed(resources, () -> cacheSource.get() * 2);
+            club.heiqi.uilib.ui.reactive.Effect effect = domain.effect(resources, () -> {});
+            club.heiqi.uilib.ui.reactive.Observation observation = domain.observe(resources, cached::get, () -> {});
+            observation.refresh();
+            try {
+                List<Runnable> commands = Arrays.asList(
+                        resources::dispose, resources::child, () -> resources.moveTo(parent),
+                        () -> resources.own(() -> releases[0]++),
+                        cached::dispose, effect::dispose, observation::close,
+                        () -> runtime.attach(null, detached), handle::detach, handle::destroy,
+                        () -> runtime.dispatchClick(mounted), () -> runtime.dispatchScroll(mounted, 1), runtime::close);
+                for (Runnable command : commands) {
+                    rejectPureCommand(() -> domain.readOnly(() -> { command.run(); return null; }));
+                    Computed<Boolean> derivation = domain.computed(() -> { command.run(); return true; });
+                    try { rejectPureCommand(derivation::get); }
+                    finally { derivation.close(); }
+                    club.heiqi.uilib.ui.reactive.Observation nested = domain.observe(parent, command, () -> {});
+                    Computed<Boolean> throughObservation = domain.computed(() -> { nested.refresh(); return true; });
+                    try { rejectPureCommand(throughObservation::get); }
+                    finally { throughObservation.close(); nested.close(); }
+                    require(!resources.isDisposed() && releases[0] == 0, "拒绝命令不触碰生命周期或业务回调");
+                    require(handle.active() && detached.runtime() == null && !mounted.destroyed(),
+                            "拒绝结构命令保留原挂载和节点生命");
+                }
+                // 纯阶段仍可读取和更新派生内部缓存，不将求值误当生命周期命令。
+                cacheSource.set(5);
+                require(domain.readOnly(cached::get) == 10, "只读阶段允许失效派生按当前来源重新求值");
+                runtime.dispatchClick(mounted);
+                require(releases[0] == 1, "正常命令仍沿原业务路径执行");
+                resources.dispose();
+                require(releases[0] == 2, "正常释放恰好关闭原资源");
+            } finally {
+                runtime.close();
+                resources.dispose();
+                parent.dispose();
+            }
+        }));
         scenario("软件scene完整生产链路", () -> new SoftwareSceneScenario().run());
         System.out.println("无平台业务状态/派生/作用域/副作用及节点生命周期场景通过");
     }

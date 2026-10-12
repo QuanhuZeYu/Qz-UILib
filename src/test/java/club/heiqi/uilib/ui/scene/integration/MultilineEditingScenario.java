@@ -236,6 +236,24 @@ public final class MultilineEditingScenario extends TestApplication {
         scenario("跨行剪贴板只读Tab与禁用释放不提交", this::clipboardAndEligibility);
         scenario("共享排版的上下水平目标视觉HomeEnd及全文选择", this::lineNavigation);
         scenario("内部滚轮端点消费稳定帧及resize保留状态", this::scrollAndResize);
+        scenario("视觉行导航与只读变化更新呈现并复用度量", this::presentationInvalidation);
+    }
+
+    private void presentationInvalidation() {
+        Page page = new Page("一行\n二行\n三行\n四行\n五行\n六行\n末行");
+        page.command(Command.DOCUMENT_HOME, false);
+        long[] revision = {0};
+        page.domain.execute(() -> revision[0] = page.session.runtime().measureRevision());
+        int originalY = page.entry(page.area).text.lines().get(0).y;
+        page.command(Command.DOCUMENT_END, false);
+        require(page.entry(page.area).text.lines().get(0).y < originalY,
+                "多行导航显露更新同一文字几何的位置投影");
+        page.domain.execute(() -> require(page.session.runtime().measureRevision() == revision[0],
+                "多行仅导航和内部视口改变复用内容度量"));
+        page.domain.execute(() -> page.readOnly.set(true));
+        page.session.frame();
+        page.domain.execute(() -> require(page.session.runtime().measureRevision() == revision[0],
+                "多行仅只读变化不失效度量"));
     }
 
     private void modeEntries() {

@@ -1567,8 +1567,6 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
             AttributedText attributed, String original, float width, TextPolicy policy) {
         attributed = supportedText(resolveScripts(attributed));
         TextInput input = attributed.input;
-        TextStyle style = attributed.baseStyle;
-        List<FontSource> sources = candidates(style);
         UnicodeText doc = new UnicodeText(input, policy, attributed.inlineBoxes());
         doc.diagnostics.addAll(attributed.diagnostics());
         List<TextLayout.Line> lines = new ArrayList<TextLayout.Line>();
@@ -1576,227 +1574,15 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
         for (int start = 0; start <= doc.display.length(); ) {
             int newline = doc.display.indexOf('\n', start),
                     end = newline < 0 ? doc.display.length() : newline;
-            // 空段也有活动逻辑样式，末段使用显式trailing状态，不能继承整个输入的base度量。
-            style = attributed.styleAt(doc.logical[start]);
-            sources = candidates(style);
-            String paragraph = doc.display.substring(start, end);
-            Bidi bidi = new Bidi();
-            byte level =
-                    policy.direction == TextPolicy.Direction.AUTO
-                            ? Bidi.LEVEL_DEFAULT_LTR
-                            : (byte) (policy.direction == TextPolicy.Direction.LTR ? 0 : 1);
-            bidi.setPara(paragraph, level, null);
-            List<Unit> units = doc.units(start, end, unicodeProfile);
-            int spanCursor = 0;
-            List<StyleSpan> requested = attributed.spans();
-            while (spanCursor < requested.size()
-                    && requested.get(spanCursor).logicalEnd <= doc.logical[start]) spanCursor++;
-            for (Unit unit : units) {
-                unit.style = attributed.styleAt(doc.logical[unit.start]);
-                unit.shapeStyle = unit.style;
-                while (spanCursor < requested.size()
-                        && requested.get(spanCursor).logicalEnd <= doc.logical[unit.start])
-                    spanCursor++;
-                for (int k = spanCursor + 1;
-                        k < requested.size()
-                                && requested.get(k).logicalStart < doc.logical[unit.end];
-                        k++)
-                    if (!requested.get(k).style.equals(unit.style)) {
-                        doc.diagnostics.add(
-                                new Diagnostic(
-                                        Diagnostic.Kind.STYLE_COALESCED,
-                                        doc.source(unit.start),
-                                        doc.sourceEnd(unit.end),
-                                        "字素内部样式统一使用逻辑首样式"));
-                        break;
-                    }
-            }
-            match(doc, units, bidi, start, style, policy, sources);
-            TreeSet<Integer> safe = new TreeSet<Integer>();
-            safe.add(start);
-            safe.add(end);
-            for (Unit unit : units) {
-                safe.add(unit.start);
-                safe.add(unit.end);
-            }
-            UnitIndex index = new UnitIndex(units);
-            Draft whole = shape(doc, index, bidi, start, start, end, style, policy, sources);
-            // 排除 ICU 字素内部以及 HB 已整形 cluster 内部；超宽单簇仍完整。
-            for (Placed glyph : whole.glyphs)
-                safe.subSet(glyph.start, false, glyph.end, false).clear();
-            for (java.util.Iterator<Integer> boundaries = safe.iterator(); boundaries.hasNext(); ) {
-                int boundary = boundaries.next();
-                if (boundary > start
-                        && boundary < end
-                        && UnicodeText.prohibitsBreak(doc.display, boundary)) boundaries.remove();
-            }
-            BreakIterator breaks =
-                    BreakIterator.getLineInstance(ULocale.forLanguageTag(policy.language));
-            breaks.setText(paragraph);
-            TreeSet<Integer> normal = new TreeSet<Integer>();
-            for (int b = breaks.first(); b != BreakIterator.DONE; b = breaks.next())
-                if (safe.contains(start + b)) normal.add(start + b);
-            // 段落终点始终结束本行；例如末尾SHY并不是需要显示连字符的自动断点。
-            safe.add(end);
-            normal.add(end);
-            // 段落只整形一次建立前缀；每行只按最终候选范围重整形，不再shape剩余整段。
-            BreakPlan plan =
-                    new BreakPlan(
-                            policy.wrap == TextPolicy.Wrap.EMERGENCY ? safe : normal,
-                            whole.prefix(start, end),
-                            start);
-            int a = start;
+            ParagraphPlan paragraph = prepareParagraph(doc, attributed, start, end, policy);
+            int lineStart = start;
             do {
-                int first = a < end ? plan.firstAfter(a) : end;
-                int b =
-                        policy.wrap == TextPolicy.Wrap.NONE || a == end
-                                ? end
-                                : plan.estimate(a, Math.max(0, width));
-                Draft chosen =
-                        a == start && b == end
-                                ? whole
-                                : shape(doc, index, bidi, start, a, b, style, policy, sources);
-                if (policy.wrap != TextPolicy.Wrap.NONE && a < end) {
-                    while (chosen.width > Math.max(0, width) && b > first) {
-                        b = plan.before(b);
-                        chosen = shape(doc, index, bidi, start, a, b, style, policy, sources);
-                    }
-                    // Arabic行端连接形和tabstop可改变局部宽度；只校正相邻断点，保留单个超宽安全范围。
-                    while (chosen.width <= Math.max(0, width) && b < end) {
-                        int next = plan.firstAfter(b);
-                        Draft expanded =
-                                shape(doc, index, bidi, start, a, next, style, policy, sources);
-                        if (expanded.width > Math.max(0, width)) break;
-                        b = next;
-                        chosen = expanded;
-                    }
-                }
-                if (b < end && b > a && doc.display.charAt(b - 1) == '\u00ad') {
-                    List<Diagnostic> adopted = index.hyphenDiagnostics.get(b - 1);
-                    if (adopted != null) doc.diagnostics.addAll(adopted);
-                }
-                float h =
-                        policy.lineHeight > 0
-                                ? policy.lineHeight
-                                : Math.max(chosen.ascent + chosen.descent, chosen.metricHeight);
-                // 字体规格2.5：显式行高按声明布局；真实度量与基线保留，溢出/裁剪归呈现层。
-                if (h <= 0) h = style.logicalEm;
-                float baseline = y + chosen.ascent;
-                List<TextLayout.Glyph> glyphs = new ArrayList<TextLayout.Glyph>();
-                List<TextLayout.Cluster> cells = new ArrayList<TextLayout.Cluster>();
-                List<TextLayout.Decoration> decorations = new ArrayList<TextLayout.Decoration>();
-                Bidi finalDirection = a == b ? null : lineBidi(doc, bidi, start, a, b);
-                Map<Cell, Integer> cellIds = new java.util.IdentityHashMap<Cell, Integer>();
-                for (Cell c : chosen.cells) {
-                    int id = cells.size();
-                    cellIds.put(c, id);
-                    int ls = doc.logical[c.start],
-                            le = doc.logical[c.end],
-                            ss = doc.source(c.start),
-                            se = doc.sourceEnd(c.end);
-                    cells.add(
-                            new TextLayout.Cluster(
-                                    ls,
-                                    le,
-                                    ss,
-                                    se,
-                                    c.glyphStart,
-                                    c.glyphEnd,
-                                    c.x,
-                                    c.advance,
-                                    c.style,
-                                    finalDirection != null
-                                            && (finalDirection.getLevelAt(c.start - a) & 1) != 0));
-                    if (c.style.highlightColor != null)
-                        decorations.add(
-                                new TextLayout.Decoration(
-                                        TextLayout.Decoration.Kind.HIGHLIGHT,
-                                        c.x,
-                                        baseline - chosen.ascent,
-                                        c.advance,
-                                        chosen.ascent + chosen.descent,
-                                        c.style.highlightColor,
-                                        ls,
-                                        le,
-                                        ss,
-                                        se));
-                    TextDecoration d = c.style.decoration;
-                    if (c.style.effects.underline && d.underlineThickness > 0)
-                        decorations.add(
-                                new TextLayout.Decoration(
-                                        TextLayout.Decoration.Kind.UNDERLINE,
-                                        c.x + d.underlineStartOffset,
-                                        baseline + c.style.baselineShift + d.underlineTop,
-                                        c.advance - d.underlineStartOffset,
-                                        d.underlineThickness,
-                                        c.style.color,
-                                        ls,
-                                        le,
-                                        ss,
-                                        se));
-                    if (c.style.effects.strike && d.strikeThickness > 0)
-                        decorations.add(
-                                new TextLayout.Decoration(
-                                        TextLayout.Decoration.Kind.STRIKE,
-                                        c.x,
-                                        baseline + c.style.baselineShift + d.strikeTop,
-                                        c.advance,
-                                        d.strikeThickness,
-                                        c.style.color,
-                                        ls,
-                                        le,
-                                        ss,
-                                        se));
-                }
-                for (Placed g : chosen.glyphs) {
-                    TextStyle paint = g.cell.style;
-                    GlyphRasterStyle variant = variant(paint, 1);
-                    glyphs.add(
-                            new TextLayout.Glyph(
-                                    g.source,
-                                    paint.logicalEm,
-                                    g.id,
-                                    doc.logical[g.cell.start],
-                                    doc.logical[g.cell.end],
-                                    doc.source(g.cell.start),
-                                    doc.sourceEnd(g.cell.end),
-                                    g.x,
-                                    baseline + paint.baselineShift + g.y,
-                                    g.advance,
-                                    g.yAdvance,
-                                    g.color,
-                                    g.replacement,
-                                    inkBounds(g.source, paint.logicalEm, g.id, variant, doc),
-                                    paint.logicalEm,
-                                    1,
-                                    variant,
-                                    paint,
-                                    cellIds.get(g.cell)));
-                }
-                lines.add(
-                        new TextLayout.Line(
-                                input.text.substring(doc.logical[a], doc.logical[b]),
-                                0,
-                                (int) Math.floor(y),
-                                doc.logical[a],
-                                doc.logical[b],
-                                input.sourceLeft(doc.logical[a]),
-                                b == end
-                                        ? input.sourceRight(doc.logical[b])
-                                        : input.sourceLeft(doc.logical[b]),
-                                chosen.width,
-                                baseline,
-                                chosen.ascent,
-                                chosen.descent,
-                                h,
-                                glyphs,
-                                cells,
-                                decorations,
-                                (bidi.getParaLevel() & 1) != 0));
-                maxWidth = Math.max(maxWidth, chosen.width);
-                y += h;
-                a = b;
-            } while (a < end);
+                FinalLine line = selectFinalLine(doc, paragraph, lineStart, width, policy);
+                lines.add(materialize(doc, line, y));
+                maxWidth = Math.max(maxWidth, line.shaped.width);
+                y += line.height;
+                lineStart = line.end;
+            } while (lineStart < end);
             if (newline < 0) break;
             start = end + 1;
         }
@@ -1812,6 +1598,322 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                 generation,
                 doc.diagnostics,
                 input);
+    }
+
+    /** 段落准备建立字体匹配、Bidi 与安全断点；整段宽度只用于候选估算。 */
+    private ParagraphPlan prepareParagraph(
+            UnicodeText doc, AttributedText attributed, int start, int end, TextPolicy policy) {
+        // 空段也有活动逻辑样式，末段使用显式trailing状态，不能继承整个输入的base度量。
+        TextStyle style = attributed.styleAt(doc.logical[start]);
+        List<FontSource> sources = candidates(style);
+        String paragraph = doc.display.substring(start, end);
+        Bidi bidi = new Bidi();
+        byte level =
+                policy.direction == TextPolicy.Direction.AUTO
+                        ? Bidi.LEVEL_DEFAULT_LTR
+                        : (byte) (policy.direction == TextPolicy.Direction.LTR ? 0 : 1);
+        bidi.setPara(paragraph, level, null);
+        List<Unit> units = doc.units(start, end, unicodeProfile);
+        int spanCursor = 0;
+        List<StyleSpan> requested = attributed.spans();
+        while (spanCursor < requested.size()
+                && requested.get(spanCursor).logicalEnd <= doc.logical[start]) spanCursor++;
+        for (Unit unit : units) {
+            unit.style = attributed.styleAt(doc.logical[unit.start]);
+            unit.shapeStyle = unit.style;
+            while (spanCursor < requested.size()
+                    && requested.get(spanCursor).logicalEnd <= doc.logical[unit.start])
+                spanCursor++;
+            for (int k = spanCursor + 1;
+                    k < requested.size()
+                            && requested.get(k).logicalStart < doc.logical[unit.end];
+                    k++)
+                if (!requested.get(k).style.equals(unit.style)) {
+                    doc.diagnostics.add(
+                            new Diagnostic(
+                                    Diagnostic.Kind.STYLE_COALESCED,
+                                    doc.source(unit.start),
+                                    doc.sourceEnd(unit.end),
+                                    "字素内部样式统一使用逻辑首样式"));
+                    break;
+                }
+        }
+        match(doc, units, bidi, start, style, policy, sources);
+        TreeSet<Integer> safe = new TreeSet<Integer>();
+        safe.add(start);
+        safe.add(end);
+        for (Unit unit : units) {
+            safe.add(unit.start);
+            safe.add(unit.end);
+        }
+        UnitIndex index = new UnitIndex(units);
+        Draft whole = shape(doc, index, bidi, start, start, end, style, policy, sources);
+        // 排除 ICU 字素内部以及 HB 已整形 cluster 内部；超宽单簇仍完整。
+        for (Placed glyph : whole.glyphs)
+            safe.subSet(glyph.start, false, glyph.end, false).clear();
+        for (java.util.Iterator<Integer> boundaries = safe.iterator(); boundaries.hasNext(); ) {
+            int boundary = boundaries.next();
+            if (boundary > start
+                    && boundary < end
+                    && UnicodeText.prohibitsBreak(doc.display, boundary)) boundaries.remove();
+        }
+        BreakIterator breaks =
+                BreakIterator.getLineInstance(ULocale.forLanguageTag(policy.language));
+        breaks.setText(paragraph);
+        TreeSet<Integer> normal = new TreeSet<Integer>();
+        for (int b = breaks.first(); b != BreakIterator.DONE; b = breaks.next())
+            if (safe.contains(start + b)) normal.add(start + b);
+        // 段落终点始终结束本行；例如末尾SHY并不是需要显示连字符的自动断点。
+        safe.add(end);
+        normal.add(end);
+        // 段落只整形一次建立前缀；每行只按最终候选范围重整形，不再shape剩余整段。
+        BreakPlan plan =
+                new BreakPlan(
+                        policy.wrap == TextPolicy.Wrap.EMERGENCY ? safe : normal,
+                        whole.prefix(start, end),
+                        start);
+        return new ParagraphPlan(start, end, style, sources, bidi, index, whole, plan);
+    }
+
+    /** 候选断点经真实行端整形校正后才成为最终行；试算的 SHY 诊断只随采用结果发布。 */
+    private FinalLine selectFinalLine(
+            UnicodeText doc, ParagraphPlan paragraph, int start, float width, TextPolicy policy) {
+        int end = paragraph.end;
+        BreakPlan plan = paragraph.breaks;
+        int first = start < end ? plan.firstAfter(start) : end;
+        float availableWidth = Math.max(0, width);
+        int lineEnd =
+                policy.wrap == TextPolicy.Wrap.NONE || start == end
+                        ? end
+                        : plan.estimate(start, availableWidth);
+        Draft chosen =
+                start == paragraph.start && lineEnd == end
+                        ? paragraph.whole
+                        : shapeLine(doc, paragraph, start, lineEnd, policy);
+        if (policy.wrap != TextPolicy.Wrap.NONE && start < end) {
+            while (chosen.width > availableWidth && lineEnd > first) {
+                lineEnd = plan.before(lineEnd);
+                chosen = shapeLine(doc, paragraph, start, lineEnd, policy);
+            }
+            // Arabic 行端连接形和 tabstop 可改变局部宽度；保留单个超宽安全范围。
+            while (chosen.width <= availableWidth && lineEnd < end) {
+                int next = plan.firstAfter(lineEnd);
+                Draft expanded = shapeLine(doc, paragraph, start, next, policy);
+                if (expanded.width > availableWidth) break;
+                lineEnd = next;
+                chosen = expanded;
+            }
+        }
+        if (lineEnd < end && lineEnd > start && doc.display.charAt(lineEnd - 1) == '\u00ad') {
+            List<Diagnostic> adopted = paragraph.units.hyphenDiagnostics.get(lineEnd - 1);
+            if (adopted != null) doc.diagnostics.addAll(adopted);
+        }
+        float height =
+                policy.lineHeight > 0
+                        ? policy.lineHeight
+                        : Math.max(chosen.ascent + chosen.descent, chosen.metricHeight);
+        // 字体规格 2.5：显式行高按声明布局；真实度量与基线保留，溢出/裁剪归呈现层。
+        if (height <= 0) height = paragraph.style.logicalEm;
+        Bidi direction =
+                start == lineEnd
+                        ? null
+                        : lineBidi(doc, paragraph.bidi, paragraph.start, start, lineEnd);
+        return new FinalLine(
+                start,
+                lineEnd,
+                chosen,
+                height,
+                direction,
+                lineEnd == end,
+                (paragraph.bidi.getParaLevel() & 1) != 0);
+    }
+
+    private Draft shapeLine(
+            UnicodeText doc, ParagraphPlan paragraph, int start, int end, TextPolicy policy) {
+        return shape(
+                doc,
+                paragraph.units,
+                paragraph.bidi,
+                paragraph.start,
+                start,
+                end,
+                paragraph.style,
+                policy,
+                paragraph.sources);
+    }
+
+    /** 只消费最终行事实，字形、簇和装饰仍统一映射到原 TextInput，不再选择断点。 */
+    private TextLayout.Line materialize(UnicodeText doc, FinalLine line, float y) {
+        TextInput input = doc.input;
+        int a = line.start, b = line.end;
+        Draft chosen = line.shaped;
+        float baseline = y + chosen.ascent;
+        List<TextLayout.Glyph> glyphs = new ArrayList<TextLayout.Glyph>();
+        List<TextLayout.Cluster> cells = new ArrayList<TextLayout.Cluster>();
+        List<TextLayout.Decoration> decorations = new ArrayList<TextLayout.Decoration>();
+        Bidi finalDirection = line.direction;
+        Map<Cell, Integer> cellIds = new java.util.IdentityHashMap<Cell, Integer>();
+        for (Cell c : chosen.cells) {
+            int id = cells.size();
+            cellIds.put(c, id);
+            int ls = doc.logical[c.start],
+                    le = doc.logical[c.end],
+                    ss = doc.source(c.start),
+                    se = doc.sourceEnd(c.end);
+            cells.add(
+                    new TextLayout.Cluster(
+                            ls,
+                            le,
+                            ss,
+                            se,
+                            c.glyphStart,
+                            c.glyphEnd,
+                            c.x,
+                            c.advance,
+                            c.style,
+                            finalDirection != null
+                                    && (finalDirection.getLevelAt(c.start - a) & 1) != 0));
+            if (c.style.highlightColor != null)
+                decorations.add(
+                        new TextLayout.Decoration(
+                                TextLayout.Decoration.Kind.HIGHLIGHT,
+                                c.x,
+                                baseline - chosen.ascent,
+                                c.advance,
+                                chosen.ascent + chosen.descent,
+                                c.style.highlightColor,
+                                ls,
+                                le,
+                                ss,
+                                se));
+            TextDecoration d = c.style.decoration;
+            if (c.style.effects.underline && d.underlineThickness > 0)
+                decorations.add(
+                        new TextLayout.Decoration(
+                                TextLayout.Decoration.Kind.UNDERLINE,
+                                c.x + d.underlineStartOffset,
+                                baseline + c.style.baselineShift + d.underlineTop,
+                                c.advance - d.underlineStartOffset,
+                                d.underlineThickness,
+                                c.style.color,
+                                ls,
+                                le,
+                                ss,
+                                se));
+            if (c.style.effects.strike && d.strikeThickness > 0)
+                decorations.add(
+                        new TextLayout.Decoration(
+                                TextLayout.Decoration.Kind.STRIKE,
+                                c.x,
+                                baseline + c.style.baselineShift + d.strikeTop,
+                                c.advance,
+                                d.strikeThickness,
+                                c.style.color,
+                                ls,
+                                le,
+                                ss,
+                                se));
+        }
+        for (Placed g : chosen.glyphs) {
+            TextStyle paint = g.cell.style;
+            GlyphRasterStyle variant = variant(paint, 1);
+            glyphs.add(
+                    new TextLayout.Glyph(
+                            g.source,
+                            paint.logicalEm,
+                            g.id,
+                            doc.logical[g.cell.start],
+                            doc.logical[g.cell.end],
+                            doc.source(g.cell.start),
+                            doc.sourceEnd(g.cell.end),
+                            g.x,
+                            baseline + paint.baselineShift + g.y,
+                            g.advance,
+                            g.yAdvance,
+                            g.color,
+                            g.replacement,
+                            inkBounds(g.source, paint.logicalEm, g.id, variant, doc),
+                            paint.logicalEm,
+                            1,
+                            variant,
+                            paint,
+                            cellIds.get(g.cell)));
+        }
+        return new TextLayout.Line(
+                input.text.substring(doc.logical[a], doc.logical[b]),
+                0,
+                (int) Math.floor(y),
+                doc.logical[a],
+                doc.logical[b],
+                input.sourceLeft(doc.logical[a]),
+                line.paragraphEnd
+                        ? input.sourceRight(doc.logical[b])
+                        : input.sourceLeft(doc.logical[b]),
+                chosen.width,
+                baseline,
+                chosen.ascent,
+                chosen.descent,
+                line.height,
+                glyphs,
+                cells,
+                decorations,
+                line.paragraphRtl);
+    }
+
+    /** 候选事实只在当前段落存活；前缀不能作为最终行几何发布。 */
+    private static final class ParagraphPlan {
+        final int start, end;
+        final TextStyle style;
+        final List<FontSource> sources;
+        final Bidi bidi;
+        final UnitIndex units;
+        final Draft whole;
+        final BreakPlan breaks;
+
+        ParagraphPlan(
+                int start,
+                int end,
+                TextStyle style,
+                List<FontSource> sources,
+                Bidi bidi,
+                UnitIndex units,
+                Draft whole,
+                BreakPlan breaks) {
+            this.start = start;
+            this.end = end;
+            this.style = style;
+            this.sources = sources;
+            this.bidi = bidi;
+            this.units = units;
+            this.whole = whole;
+            this.breaks = breaks;
+        }
+    }
+
+    /** 选择完成后的行事实；shaped 与 direction 此后只读，不向公开布局暴露局部可变对象。 */
+    private static final class FinalLine {
+        final int start, end;
+        final Draft shaped;
+        final float height;
+        final Bidi direction;
+        final boolean paragraphEnd, paragraphRtl;
+
+        FinalLine(
+                int start,
+                int end,
+                Draft shaped,
+                float height,
+                Bidi direction,
+                boolean paragraphEnd,
+                boolean paragraphRtl) {
+            this.start = start;
+            this.end = end;
+            this.shaped = shaped;
+            this.height = height;
+            this.direction = direction;
+            this.paragraphEnd = paragraphEnd;
+            this.paragraphRtl = paragraphRtl;
+        }
     }
 
     private static final class ObfuscatedGlyph {

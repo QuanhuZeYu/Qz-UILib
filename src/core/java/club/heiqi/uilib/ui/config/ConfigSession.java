@@ -169,7 +169,7 @@ public final class ConfigSession {
     }
 
     public void save(Path path) throws IOException {
-        domain.checkAccess();
+        domain.checkWrite();
         // 先完整编码成文本，避免 codec 错误在打开目标文件后才暴露。
         java.io.StringWriter content = new java.io.StringWriter();
         save(content);
@@ -178,7 +178,7 @@ public final class ConfigSession {
 
     /** Writer 保持打开；持久化只由显式调用触发。 */
     public void save(Writer writer) throws IOException {
-        domain.checkAccess();
+        domain.checkWrite();
         Objects.requireNonNull(writer, "writer");
         java.io.StringWriter content = new java.io.StringWriter();
         domain.readOnly(() -> {

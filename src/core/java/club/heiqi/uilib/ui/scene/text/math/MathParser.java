@@ -33,11 +33,62 @@ final class MathParser {
     private final Set<String> embeds;
     private final List<MathMacroExpander.RowTag> rowTags;
     private final List<MathMacroExpander.EnvironmentHeader> environmentHeaders;
-    private int index, depth;
-    private String mode = "math", stop = "";
-    private boolean cell, left, singleCell;
-    // middle继承活动left上下文；right仍只结束当前同组leftright row。
-    private int leftDepth;
+    private int index;
+
+    /** 递归资格属于当前解析作用域；游标和全式嵌入身份仍由 parser 统一持有。 */
+    private static final class Context {
+        final String mode, stop;
+        final boolean cell, left, singleCell;
+        // middle继承活动left；right只结束当前同组row，普通参数分组清除left而保留leftDepth。
+        final int leftDepth, depth;
+
+        Context() {
+            this("math", "", false, false, false, 0, 0);
+        }
+
+        private Context(
+                String mode,
+                String stop,
+                boolean cell,
+                boolean left,
+                boolean singleCell,
+                int leftDepth,
+                int depth) {
+            this.mode = mode;
+            this.stop = stop;
+            this.cell = cell;
+            this.left = left;
+            this.singleCell = singleCell;
+            this.leftDepth = leftDepth;
+            this.depth = depth;
+        }
+
+        Context nested() {
+            return new Context(mode, stop, cell, left, singleCell, leftDepth, depth + 1);
+        }
+
+        Context mode(String value) {
+            return new Context(value, stop, cell, left, singleCell, leftDepth, depth);
+        }
+
+        Context group(String end) {
+            return new Context(mode, end, false, false, singleCell, leftDepth, depth);
+        }
+
+        Context fence() {
+            return new Context(mode, stop, cell, true, singleCell, leftDepth + 1, depth);
+        }
+
+        Context cell(boolean singleRow) {
+            return new Context(mode, "", true, false, singleRow, leftDepth, depth);
+        }
+    }
+
+    private Context nested(Context context) {
+        Context child = context.nested();
+        if (child.depth > 64) throw error(peek(), "公式嵌套超过64层");
+        return child;
+    }
 
     MathParser(List<Token> tokens, int sourceLength) {
         this(
@@ -70,7 +121,7 @@ final class MathParser {
     }
 
     Node parse(List<Token> tagTokens) {
-        Node result = row("", false, false, false);
+        Node result = row(new Context(), false);
         if (index != tokens.size()) throw error(peek(), "多余的结构终点");
         if (!tagTokens.isEmpty()) {
             Node tag = subparse(tagTokens);
@@ -100,7 +151,7 @@ final class MathParser {
 
     private Node subparse(List<Token> values) {
         MathParser p = new MathParser(values, sourceLength, embeds, rowTags, environmentHeaders);
-        return p.row("", false, false, false);
+        return p.row(new Context(), false);
     }
 
     private Token peek() {
@@ -151,32 +202,27 @@ final class MathParser {
         return new Node(kind, lo, hi, value, children, a, b, c, payload);
     }
 
-    private Node row(String end, boolean inCell, boolean inLeft, boolean stopInfix) {
-        if (++depth > 64) throw error(peek(), "公式嵌套超过64层");
-        String oldStop = stop;
-        boolean oldCell = cell, oldLeft = left;
-        stop = end;
-        cell = inCell;
-        left = inLeft;
+    private Node row(Context context, boolean stopInfix) {
+        context = nested(context);
         int from = index;
         List<Node> body = new ArrayList<Node>();
         boolean hadInfix = false;
         while (true) {
-            if (mode.equals("math")) spaces();
+            if (context.mode.equals("math")) spaces();
             String t = text();
             if (t.equals("EOF")
-                    || !end.isEmpty() && t.equals(end)
-                    || inCell
+                    || !context.stop.isEmpty() && t.equals(context.stop)
+                    || context.cell
                             && (t.equals("&")
-                                    || !singleCell && t.equals("\\\\")
+                                    || !context.singleCell && t.equals("\\\\")
                                     || t.equals("\\end"))
-                    || inLeft && t.equals("\\right")) break;
+                    || context.left && t.equals("\\right")) break;
             if (t.equals("}")) throw error(peek(), "多余的闭合分组");
             MathCommandCatalog.Function function = MathCommandCatalog.findFunction(t);
             if (function != null && function.infix) {
                 // infix在row提前消费，仍须执行与普通函数相同的目录模式资格。
-                if (mode.equals("text") ? !function.allowedInText : !function.allowedInMath)
-                    throw error(peek(), "命令不允许在 " + mode + " mode: " + t);
+                if (context.mode.equals("text") ? !function.allowedInText : !function.allowedInMath)
+                    throw error(peek(), "命令不允许在 " + context.mode + " mode: " + t);
                 if (stopInfix) break;
                 if (hadInfix) throw error(peek(), "同一分组只能有一个 infix 分式");
                 hadInfix = true;
@@ -184,7 +230,7 @@ final class MathParser {
                 take();
                 MathDimension size = t.equals("\\above") ? dimension(false) : null;
                 Node numerator = node(Kind.ROW, from, "", body, null, null, null, null);
-                Node denominator = row(end, inCell, inLeft, true);
+                Node denominator = row(context, true);
                 if (MathCommandCatalog.findFunction(text()) != null
                         && MathCommandCatalog.findFunction(text()).infix)
                     throw error(peek(), "同一分组只能有一个 infix 分式");
@@ -212,8 +258,8 @@ final class MathParser {
                                 false));
                 break;
             }
-            if (leftDepth > 0 && t.equals("\\middle")) {
-                if (mode.equals("text") && !function.allowedInText)
+            if (context.leftDepth > 0 && t.equals("\\middle")) {
+                if (context.mode.equals("text") && !function.allowedInText)
                     throw error(peek(), "命令不允许在 text mode: " + t);
                 int mark = index;
                 take();
@@ -221,9 +267,10 @@ final class MathParser {
                 continue;
             }
             // 起始prime与^/_同样允许空base，脚本参数本身仍按primitive合同拒绝apostrophe。
-            if (mode.equals("math") && (t.equals("^") || t.equals("_") || t.equals("'"))) {
+            if (context.mode.equals("math") && (t.equals("^") || t.equals("_") || t.equals("'"))) {
                 body.add(
                         postfix(
+                                context,
                                 new Node(
                                         Kind.ROW,
                                         peek().sourceStart,
@@ -233,13 +280,10 @@ final class MathParser {
                                         null,
                                         null,
                                         null)));
-            } else body.add(mode.equals("math") ? postfix(atom()) : atom());
+            } else
+                body.add(context.mode.equals("math") ? postfix(context, atom(context)) : atom(context));
         }
-        stop = oldStop;
-        cell = oldCell;
-        left = oldLeft;
-        depth--;
-        if (mode.equals("text")) formLigatures(body);
+        if (context.mode.equals("text")) formLigatures(body);
         return node(Kind.ROW, from, "", body, null, null, null, null);
     }
 
@@ -283,30 +327,26 @@ final class MathParser {
         }
     }
 
-    private Node argument(String type, boolean optional) {
+    private Node argument(Context context, String type, boolean optional) {
         spaces();
         if (optional && !text().equals("[")) return null;
-        String previous = mode;
         if (type.equals("math") || type.equals("text") || type.equals("hbox"))
-            mode = type.equals("hbox") ? "text" : type;
+            context = context.mode(type.equals("hbox") ? "text" : type);
         int from = index;
         Node n;
         if (text().equals(optional ? "[" : "{")) {
             take();
-            n = row(optional ? "]" : "}", false, false, false);
+            n = row(context.group(optional ? "]" : "}"), false);
             expect(optional ? "]" : "}");
             n = node(Kind.ROW, from, "", n.children, null, null, null, null);
         } else {
             if (text().equals("EOF")) throw error(peek(), "缺少命令参数");
             MathCommandCatalog.Function f = MathCommandCatalog.findFunction(text());
             if (f != null && !f.allowedInArgument) throw error(peek(), "命令参数需要分组: " + text());
-            if (++depth > 64) throw error(peek(), "公式嵌套超过64层");
-            n = atom();
-            depth--;
+            n = atom(nested(context));
             if (!type.equals("primitive"))
                 n = node(Kind.ROW, from, "", Collections.singletonList(n), null, null, null, null);
         }
-        mode = previous;
         if (type.equals("hbox"))
             n = node(Kind.STYLE, from, "textstyle", null, n, null, null, new StyleSpec("text"));
         return n;
@@ -374,7 +414,7 @@ final class MathParser {
         MathDimension dimension;
     }
 
-    private Arg arg(String type, boolean optional) {
+    private Arg arg(Context context, String type, boolean optional) {
         Arg a = new Arg();
         if (type.equals("size")) a.dimension = dimension(optional);
         else if (type.equals("raw") || type.equals("url") || type.equals("color")) {
@@ -384,15 +424,15 @@ final class MathParser {
                     throw error(peek(), "Invalid color: " + a.literal);
                 if (a.literal.matches("(?i)[a-f0-9]{6}")) a.literal = "#" + a.literal;
             }
-        } else a.node = argument(type, optional);
+        } else a.node = argument(context, type, optional);
         return a;
     }
 
-    private Node atom() {
+    private Node atom(Context context) {
         int from = index;
         Token token = peek();
         String t = token.text;
-        if (t.equals("{")) return argument("primitive", false);
+        if (t.equals("{")) return argument(context, "primitive", false);
         if (t.equals("EOF") || t.equals("}") || t.equals("^") || t.equals("_"))
             throw error(token, "数学原子缺失");
         take();
@@ -416,17 +456,14 @@ final class MathParser {
                     null,
                     new VerbSpec(star));
         }
-        if (mode.equals("text") && (t.equals("$") || t.equals("\\("))) {
-            String previous = mode;
-            mode = "math";
-            Node body = row(t.equals("$") ? "$" : "\\)", false, false, false);
+        if (context.mode.equals("text") && (t.equals("$") || t.equals("\\("))) {
+            Node body = row(context.mode("math").group(t.equals("$") ? "$" : "\\)"), false);
             expect(t.equals("$") ? "$" : "\\)");
-            mode = previous;
             return node(
                     Kind.STYLE, from, "textstyle", null, body, null, null, new StyleSpec("text"));
         }
         MathCommandCatalog.Function f = MathCommandCatalog.findFunction(t);
-        if (f != null) return function(from, token, f);
+        if (f != null) return function(context, from, token, f);
         if (t.equals("&")
                 || t.equals("\\\\")
                 || t.equals("#")
@@ -434,34 +471,34 @@ final class MathParser {
                 || t.equals("\\right")
                 || t.equals("\\middle")) throw error(token, "结构 token 不在有效上下文: " + t);
         if (t.startsWith("\\")) {
-            MathSymbols.Entry symbol = MathSymbols.find(mode, t);
+            MathSymbols.Entry symbol = MathSymbols.find(context.mode, t);
             if (symbol == null) throw error(token, "Undefined control sequence: " + t);
-            return glyph(from, t, symbol);
+            return glyph(context, from, t, symbol);
         }
         int cp = t.codePointAt(0);
         if (cp >= 0xD800 && cp <= 0xDFFF) throw error(token, "孤立UTF-16代理项");
-        return literalGlyph(from, t);
+        return literalGlyph(context, from, t);
     }
 
-    private Node literalGlyph(int from, String original) {
+    private Node literalGlyph(Context context, int from, String original) {
         String normalized = original;
-        if (MathSymbols.find(mode, original) == null && styledFont(original) == null)
+        if (MathSymbols.find(context.mode, original) == null && styledFont(original) == null)
             normalized = java.text.Normalizer.normalize(original, java.text.Normalizer.Form.NFD);
         int baseEnd = normalized.length();
         while (baseEnd > 0
                 && normalized.charAt(baseEnd - 1) >= 0x300
                 && normalized.charAt(baseEnd - 1) <= 0x36f) baseEnd--;
         if (baseEnd == normalized.length()) {
-            MathSymbols.Entry e = MathSymbols.find(mode, original);
+            MathSymbols.Entry e = MathSymbols.find(context.mode, original);
             if (e == null && original.codePointAt(0) < 0x80)
                 throw error(tokens.get(from), "Unexpected character: " + original);
-            return glyph(from, original, e);
+            return glyph(context, from, original, e);
         }
         if (baseEnd == 0) throw error(tokens.get(from), "组合重音缺少base");
         String base = normalized.substring(0, baseEnd);
         if (base.equals("i")) base = "ı";
         else if (base.equals("j")) base = "ȷ";
-        Node result = glyph(from, base, MathSymbols.find(mode, base));
+        Node result = glyph(context, from, base, MathSymbols.find(context.mode, base));
         GlyphSpec facts = (GlyphSpec) result.payload;
         result =
                 new Node(
@@ -499,7 +536,7 @@ final class MathParser {
         for (int n = baseEnd; n < normalized.length(); n++) {
             int mark = marks.indexOf(normalized.charAt(n));
             if (mark < 0) throw error(tokens.get(from), "Unknown accent: " + normalized.charAt(n));
-            String command = mode.equals("text") ? text[mark] : math[mark];
+            String command = context.mode.equals("text") ? text[mark] : math[mark];
             result =
                     node(
                             Kind.ACCENT,
@@ -514,13 +551,13 @@ final class MathParser {
         return result;
     }
 
-    private Node glyph(int from, String t, MathSymbols.Entry e) {
+    private Node glyph(Context context, int from, String t, MathSymbols.Entry e) {
         boolean anonymousText = e == null && t.codePointAt(0) >= 0x80 && styledFont(t) == null;
         String group =
                 anonymousText
                         ? "textord"
                         : e == null
-                                ? mode.equals("text") || !Character.isLetter(t.codePointAt(0))
+                                ? context.mode.equals("text") || !Character.isLetter(t.codePointAt(0))
                                         ? "textord"
                                         : "mathord"
                                 : e.group;
@@ -528,7 +565,7 @@ final class MathParser {
         GlyphSpec spec =
                 new GlyphSpec(
                         t,
-                        anonymousText ? "text" : mode,
+                        anonymousText ? "text" : context.mode,
                         group,
                         e == null ? null : e.font,
                         e == null ? t : e.replace,
@@ -589,7 +626,7 @@ final class MathParser {
         return null;
     }
 
-    private Node postfix(Node base) {
+    private Node postfix(Context context, Node base) {
         int scriptFrom = index;
         Node upper = null, lower = null;
         String limits = "default";
@@ -601,7 +638,7 @@ final class MathParser {
                 Token mark = take();
                 if (t.equals("^") && upper != null || t.equals("_") && lower != null)
                     throw error(mark, "重复的同类脚本");
-                Node n = argument("primitive", false);
+                Node n = argument(context, "primitive", false);
                 if (t.equals("^")) upper = n;
                 else lower = n;
                 changed = true;
@@ -612,11 +649,11 @@ final class MathParser {
                 while (text().equals("'")) {
                     int p = index;
                     take();
-                    primes.add(glyph(p, "\\prime", MathSymbols.find("math", "\\prime")));
+                    primes.add(glyph(context, p, "\\prime", MathSymbols.find("math", "\\prime")));
                 }
                 if (text().equals("^")) {
                     take();
-                    primes.add(argument("primitive", false));
+                    primes.add(argument(context, "primitive", false));
                 }
                 upper = node(Kind.ROW, from, "", primes, null, null, null, null);
                 changed = true;
@@ -674,26 +711,20 @@ final class MathParser {
                                 op.symbolFacts));
     }
 
-    private Node function(int from, Token token, MathCommandCatalog.Function f) {
+    private Node function(Context context, int from, Token token, MathCommandCatalog.Function f) {
         String t = token.text,
                 name =
                         t.startsWith("\\\\")
                                 ? t.substring(2)
                                 : t.startsWith("\\") ? t.substring(1) : t;
-        if (mode.equals("text") ? !f.allowedInText : !f.allowedInMath)
-            throw error(token, "命令不允许在 " + mode + " mode: " + t);
-        if (t.equals("\\begin")) return environment(from, token);
+        if (context.mode.equals("text") ? !f.allowedInText : !f.allowedInMath)
+            throw error(token, "命令不允许在 " + context.mode + " mode: " + t);
+        if (t.equals("\\begin")) return environment(context, from, token);
         if (t.equals("\\end") || f.type.equals("middle") || f.type.equals("leftright-right"))
             throw error(token, "错配结构命令: " + t);
         if (f.type.equals("leftright")) {
             Node l = delimiter(from, Kind.DELIMITER, "open", 0);
-            Node body;
-            leftDepth++;
-            try {
-                body = row(stop, cell, true, false);
-            } finally {
-                leftDepth--;
-            }
+            Node body = row(context.fence(), false);
             if (!text().equals("\\right")) throw error(token, "left 缺少同组 right");
             int r = index;
             take();
@@ -722,7 +753,7 @@ final class MathParser {
         if (f.type.equals("styling")
                 || f.type.equals("sizing")
                 || f.type.equals("font") && f.numArgs == 0) {
-            Node body = row(stop, cell, left, true);
+            Node body = row(context, true);
             if (f.type.equals("styling"))
                 return node(
                         Kind.STYLE,
@@ -751,7 +782,7 @@ final class MathParser {
                     body,
                     null,
                     null,
-                    new FontSpec("math" + name, mode));
+                    new FontSpec("math" + name, context.mode));
         }
         List<Arg> optional = new ArrayList<Arg>(), args = new ArrayList<Arg>();
         for (int n = 0; n < f.numArgs + f.numOptionalArgs; n++) {
@@ -761,13 +792,64 @@ final class MathParser {
                             ? f.argTypes.get(n)
                             : f.primitive ? "primitive" : "original";
             if (f.type.equals("sqrt") && !opt && optional.get(0).node == null) type = "primitive";
-            Arg a = arg(type, opt);
+            Arg a = arg(context, type, opt);
             if (opt) optional.add(a);
             else args.add(a);
         }
+        switch (f.type) {
+            case "genfrac":
+            case "sqrt":
+                return structureFunction(from, token, name, f.type, optional, args);
+            case "font":
+            case "text":
+            case "hbox":
+            case "textord":
+                return textFunction(context, from, token, name, f.type, args);
+            case "op":
+            case "operatorname":
+            case "mclass":
+                return atomFunction(context, from, t, name, f.type, args);
+            case "accent":
+            case "accentUnder":
+            case "overline":
+            case "underline":
+            case "horizBrace":
+            case "xArrow":
+            case "cdlabel":
+            case "cdlabelparent":
+                return decorationFunction(from, name, f.type, optional, args);
+            case "color":
+            case "kern":
+            case "cr":
+                return scopeFunction(context, from, name, f.type, args);
+            case "rule":
+            case "raisebox":
+            case "phantom":
+            case "hphantom":
+            case "vphantom":
+            case "smash":
+            case "lap":
+            case "pmb":
+            case "vcenter":
+            case "enclose":
+                return boxFunction(from, name, f.type, optional, args);
+            case "mathchoice":
+            case "htmlmathml":
+            case "includegraphics":
+            case "href":
+            case "html":
+            case "verb":
+                return contentFunction(from, token, name, f.type, optional, args);
+            default:
+                throw error(token, "未实现登记函数类型: " + f.type);
+        }
+    }
+
+    private Node structureFunction(
+            int from, Token token, String name, String type, List<Arg> optional, List<Arg> args) {
         Node a = args.isEmpty() ? null : args.get(0).node;
         Node b = args.size() < 2 ? null : args.get(1).node;
-        switch (f.type) {
+        switch (type) {
             case "genfrac":
                 if (name.equals("genfrac")) {
                     String l = fractionalDelimiter(args.get(0).node, "open");
@@ -821,6 +903,15 @@ final class MathParser {
                         name.equals("cfrac"));
             case "sqrt":
                 return node(Kind.ROOT, from, name, null, a, optional.get(0).node, null, null);
+            default:
+                throw new IllegalArgumentException("命令类型不属于当前语义组: " + type);
+        }
+    }
+
+    private Node textFunction(
+            Context context, int from, Token token, String name, String type, List<Arg> args) {
+        Node a = args.isEmpty() ? null : args.get(0).node;
+        switch (type) {
             case "font":
                 name =
                         name.equals("Bbb")
@@ -836,7 +927,7 @@ final class MathParser {
                         normalize(a),
                         null,
                         null,
-                        new FontSpec(name, mode));
+                        new FontSpec(name, context.mode));
             case "text":
                 return node(
                         Kind.TEXT,
@@ -868,7 +959,17 @@ final class MathParser {
                 }
                 if (!Character.isValidCodePoint(cp) || cp >= 0xD800 && cp <= 0xDFFF)
                     throw error(token, "Invalid character code");
-                return glyph(from, new String(Character.toChars(cp)), null);
+                return glyph(context, from, new String(Character.toChars(cp)), null);
+            default:
+                throw new IllegalArgumentException("命令类型不属于当前语义组: " + type);
+        }
+    }
+
+    private Node atomFunction(
+            Context context, int from, String t, String name, String type, List<Arg> args) {
+        Node a = args.isEmpty() ? null : args.get(0).node;
+        Node b = args.size() < 2 ? null : args.get(1).node;
+        switch (type) {
             case "op":
             case "operatorname":
                 MathSymbols.Entry e = MathSymbols.find("math", t);
@@ -896,7 +997,7 @@ final class MathParser {
                                 "default",
                                 symbol,
                                 defaultLimits,
-                                f.type.equals("operatorname") && defaultLimits,
+                                type.equals("operatorname") && defaultLimits,
                                 e == null
                                         ? null
                                         : new GlyphSpec(
@@ -927,7 +1028,7 @@ final class MathParser {
                                     a,
                                     null,
                                     null,
-                                    new FontSpec("boldsymbol", mode));
+                                    new FontSpec("boldsymbol", context.mode));
                     return node(
                             Kind.CLASSIFY,
                             from,
@@ -949,21 +1050,30 @@ final class MathParser {
                         new ClassSpec(
                                 name.equals("@binrel") ? binrel(a) : name.substring(4),
                                 character(name.equals("@binrel") ? b : a)));
+            default:
+                throw new IllegalArgumentException("命令类型不属于当前语义组: " + type);
+        }
+    }
+
+    private Node decorationFunction(
+            int from, String name, String type, List<Arg> optional, List<Arg> args) {
+        Node a = args.isEmpty() ? null : args.get(0).node;
+        switch (type) {
             case "accent":
             case "accentUnder":
             case "overline":
             case "underline":
             case "horizBrace":
                 boolean below =
-                        f.type.equals("accentUnder")
-                                || f.type.equals("underline")
+                        type.equals("accentUnder")
+                                || type.equals("underline")
                                 || name.equals("underbrace");
                 boolean stretch =
-                        f.type.equals("accentUnder")
+                        type.equals("accentUnder")
                                 || name.startsWith("wide")
                                 || name.startsWith("over")
                                 || name.startsWith("under");
-                Kind kind = f.type.equals("horizBrace") ? Kind.HORIZBRACE : Kind.ACCENT;
+                Kind kind = type.equals("horizBrace") ? Kind.HORIZBRACE : Kind.ACCENT;
                 return node(
                         kind,
                         from,
@@ -996,9 +1106,18 @@ final class MathParser {
                         new DecorationSpec(name, false, false, false));
             case "cdlabelparent":
                 return node(Kind.VCENTER, from, name, null, a, null, null, null);
+            default:
+                throw new IllegalArgumentException("命令类型不属于当前语义组: " + type);
+        }
+    }
+
+    private Node scopeFunction(
+            Context context, int from, String name, String type, List<Arg> args) {
+        Node b = args.size() < 2 ? null : args.get(1).node;
+        switch (type) {
             case "color":
                 String css = args.get(0).literal;
-                Node colored = args.size() == 2 ? b : row(stop, cell, left, true);
+                Node colored = args.size() == 2 ? b : row(context, true);
                 return node(Kind.COLOR, from, name, null, colored, null, null, new ColorSpec(css));
             case "kern":
                 MathDimension dim = args.get(0).dimension;
@@ -1021,6 +1140,16 @@ final class MathParser {
                         null,
                         null,
                         new SpaceSpec(dimension(true), false, false));
+            default:
+                throw new IllegalArgumentException("命令类型不属于当前语义组: " + type);
+        }
+    }
+
+    private Node boxFunction(
+            int from, String name, String type, List<Arg> optional, List<Arg> args) {
+        Node a = args.isEmpty() ? null : args.get(0).node;
+        Node b = args.size() < 2 ? null : args.get(1).node;
+        switch (type) {
             case "rule":
                 return node(
                         Kind.RULE,
@@ -1146,6 +1275,17 @@ final class MathParser {
                         null,
                         null,
                         new DecorationSpec(name, false, false, false));
+            default:
+                throw new IllegalArgumentException("命令类型不属于当前语义组: " + type);
+        }
+    }
+
+    private Node contentFunction(
+            int from, Token token, String name, String type, List<Arg> optional, List<Arg> args) {
+        String t = token.text;
+        Node a = args.isEmpty() ? null : args.get(0).node;
+        Node b = args.size() < 2 ? null : args.get(1).node;
+        switch (type) {
             case "mathchoice":
                 List<Node> choices = new ArrayList<Node>();
                 for (Arg choice : args) choices.add(choice.node);
@@ -1167,7 +1307,7 @@ final class MathParser {
             case "verb":
                 throw error(token, "verb 缺少定界文本");
             default:
-                throw error(token, "未实现登记函数类型: " + f.type);
+                throw new IllegalArgumentException("命令类型不属于当前语义组: " + type);
         }
     }
 
@@ -1308,17 +1448,18 @@ final class MathParser {
     }
 
     // 二维环境的实现集中在本 parser；MathEnvironmentSpec 只记录模式和布局语义。
-    private Node environment(int from, Token begin) {
+    private Node environment(Context context, int from, Token begin) {
         String name = literal(false);
         MathCommandCatalog.Environment registration = MathCommandCatalog.findEnvironment(name);
         MathEnvironmentSpec spec = MathEnvironmentSpec.find(name);
         if (spec == null) throw error(begin, "No such environment: " + name);
-        if (mode.equals("text") && !registration.allowedInText)
+        if (context.mode.equals("text") && !registration.allowedInText)
             throw error(begin, "环境不允许在text mode: " + name);
         List<Arg> parameters = new ArrayList<Arg>();
         for (int n = 0; n < registration.numArgs + registration.numOptionalArgs; n++)
             parameters.add(
                     arg(
+                            context,
                             n < registration.argTypes.size()
                                     ? registration.argTypes.get(n)
                                     : "original",
@@ -1390,12 +1531,11 @@ final class MathParser {
         List<Node> flat = new ArrayList<Node>();
         List<RowSpec> rows = new ArrayList<RowSpec>();
         List<LineSpec> lines = new ArrayList<LineSpec>();
-        boolean oldSingle = singleCell;
-        singleCell = spec.singleRow;
+        Context cellContext = context.cell(spec.singleRow);
         int maxColumns = 0, firstCell = 0, count = 0;
         horizontalLines(lines, 0, base.equals("CD"));
         while (true) {
-            Node content = row("", true, false, false);
+            Node content = row(cellContext, false);
             if (base.equals("CD")) {
                 List<Node> cd = cdCells(content, rows.size(), begin);
                 flat.addAll(cd);
@@ -1468,7 +1608,6 @@ final class MathParser {
             }
             throw error(peek(), "Expected & or \\\\ or \\end in " + name);
         }
-        singleCell = oldSingle;
         if (columns.isEmpty()
                 && (spec.separation.equals("align") || spec.separation.equals("alignat"))) {
             boolean aligned = !constrainedColumns;

@@ -22,6 +22,8 @@ public final class ReactiveDomain {
     private boolean drainingCleanups;
     private final ArrayDeque<Runnable> cleanups = new ArrayDeque<>();
     Tracker tracker;
+    // 依赖收集器可被嵌套Observation替换，纯求值边界必须贯穿整段调用。
+    int computationDepth;
 
     public ReactiveDomain(Executor executor) {
         this.executor = Objects.requireNonNull(executor, "executor");
@@ -288,7 +290,7 @@ public final class ReactiveDomain {
     public void checkWrite() {
         checkAccess();
         if (readOnlyDepth != 0) throw new IllegalStateException("测量或绘制不能写业务状态");
-        if (tracker instanceof Computed<?>) throw new IllegalStateException("纯派生不能写状态");
+        if (computationDepth != 0) throw new IllegalStateException("纯派生不能写状态");
     }
 
     void enqueue(Effect effect) {

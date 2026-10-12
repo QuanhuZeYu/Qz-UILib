@@ -56,6 +56,7 @@ public final class MathTextFontScenario extends TestApplication {
         scenario("三族四样式多em真实HB度量及无合成光栅", this::faces);
         scenario("MathContent到Engine真实familyweightposture作用域", this::commands);
         scenario("verb与标签共用具名字体真实管线", this::verbatimAndTags);
+        scenario("宏参数和模板反序来源合并为完整文字范围", this::macroRunSources);
         scenario("公开具名尾链非Latin覆盖与explicit完整覆盖", this::candidates);
         scenario("registerreload通知换代LRU及旧glyph重开", this::lifetime);
         scenario("默认资源退休后数学正文尾链自动换代", this::retiredDefaults);
@@ -257,6 +258,27 @@ public final class MathTextFontScenario extends TestApplication {
                             + glyphs(plainBold).get(0).source.actualStyle()
                             + " diagnostics="
                             + diagnostics(plainBold));
+        }
+    }
+
+    private void macroRunSources() throws Exception {
+        try (FontTextService service = new FontTextService(new LwjglFontEngine())) {
+            for (String expression : new String[] {
+                "\\text{\\def\\f#1{#1b}\\f{x}}",
+                "\\text{\\def\\f#1#2{#2#1}\\f{a}{b}}"
+            }) {
+                MathLayout layout = math(service, expression, style("default", 32, FontStyle.NORMAL, null));
+                require(layout.pieces.size() == 1, "宏展开文字仍整段整形，不拆分为第二条字体路径");
+                MathLayout.TextPiece piece = layout.pieces.get(0);
+                int invocation = expression.lastIndexOf("\\f");
+                int start = expression.contains("{#1b}") ? invocation : expression.indexOf("{a}", invocation) + 1;
+                int end = expression.lastIndexOf('}') - 1;
+                require(piece.sourceStart == start && piece.sourceEnd == end,
+                        "run来源覆盖全部参与来源: expected=" + start + ".." + end
+                                + " actual=" + piece.sourceStart + ".." + piece.sourceEnd);
+                require(piece.text.logicalText.equals(expression.contains("{#1b}") ? "xb" : "ba"),
+                        "来源归并不得改变宏替换后的整段文字");
+            }
         }
     }
 

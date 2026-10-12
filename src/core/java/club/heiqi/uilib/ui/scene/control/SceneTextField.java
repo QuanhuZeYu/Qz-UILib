@@ -22,8 +22,12 @@ import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
 import club.heiqi.uilib.ui.scene.text.TextLayout;
 import club.heiqi.uilib.ui.scene.text.TextPolicy;
 
-import java.util.ArrayList;
-import java.util.Arrays;
+import static club.heiqi.uilib.ui.scene.control.SceneControlPaint.inner;
+import static club.heiqi.uilib.ui.scene.control.SceneControlPaint.border;
+import static club.heiqi.uilib.ui.scene.control.SceneEditCommands.display;
+import static club.heiqi.uilib.ui.scene.control.SceneEditCommands.toDisplay;
+import static club.heiqi.uilib.ui.scene.control.SceneEditCommands.fromDisplay;
+
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
@@ -95,37 +99,11 @@ public final class SceneTextField {
         return node;
     }
 
-    private static String display(Snapshot value) {
-        if (!value.composing) return value.text;
-        int start = Math.min(value.anchor, value.caret), end = Math.max(value.anchor, value.caret);
-        return value.text.substring(0, start) + value.composition + value.text.substring(end);
-    }
-
-    private static int toDisplay(Snapshot value, int offset) {
-        if (!value.composing) return offset;
-        int start = Math.min(value.anchor, value.caret), end = Math.max(value.anchor, value.caret);
-        return offset < start
-                ? offset
-                : offset <= end
-                        ? start + value.composition.length()
-                        : offset - (end - start) + value.composition.length();
-    }
-
-    private static int fromDisplay(Snapshot value, int offset) {
-        if (!value.composing) return offset;
-        int start = Math.min(value.anchor, value.caret), end = Math.max(value.anchor, value.caret);
-        int preeditEnd = start + value.composition.length();
-        return offset <= start
-                ? offset
-                : offset < preeditEnd ? start : offset - value.composition.length() + end - start;
-    }
-
     private static final class Control implements SceneControl, SceneCompositionTarget {
         private final SceneEditState state;
         private final ReadableSignal<SceneTheme> theme;
         private final ReadableSignal<Boolean> readOnly;
-        private final Consumer<Submission> onSubmit;
-        private final SubmitPolicy policy;
+        private final SceneEditCommands commands;
         // 以下仅为呈现缓存，不是草稿、输入所有权或另一份编辑状态。
         private TextLayout source, presented;
         private Snapshot presentation;
@@ -141,13 +119,22 @@ public final class SceneTextField {
             this.state = state;
             this.theme = theme;
             this.readOnly = readOnly;
-            this.onSubmit = onSubmit;
-            this.policy = policy;
+            this.commands = new SceneEditCommands(state, readOnly, onSubmit, policy);
         }
 
         @Override
         public List<ReadableSignal<?>> measureDependencies(SceneNode node) {
-            return Arrays.asList(state.snapshot(), theme, readOnly);
+            return Collections.singletonList(theme);
+        }
+
+        @Override
+        public List<ReadableSignal<?>> arrangementDependencies(SceneNode node) {
+            return Collections.singletonList(state.snapshot());
+        }
+
+        @Override
+        public List<ReadableSignal<?>> paintDependencies(SceneNode node) {
+            return Collections.singletonList(readOnly);
         }
 
         private static TextPolicy bodyPolicy(SceneNode node) {
@@ -261,6 +248,7 @@ public final class SceneTextField {
             // 真实组字期间方向/删除/空格等候选键归IME；不同时修改已确认草稿或提交字段。
             if (before.composing && !locked && event.command != SceneEditEvent.Command.ESCAPE)
                 return true;
+            if (commands.command(before, event, () -> {})) return true;
             switch (event.command) {
                 case LEFT:
                     state.move(-1, event.shift);
@@ -279,49 +267,6 @@ public final class SceneTextField {
                 case SELECT_ALL:
                     state.select(0, before.text.length());
                     break;
-                case COPY:
-                    copy(before, event);
-                    break;
-                case CUT:
-                    if (!locked && event.clipboard != null) {
-                        copy(before, event);
-                        state.replaceSelection("", false);
-                        inputChanged(before);
-                    }
-                    break;
-                case PASTE:
-                    if (!locked && event.clipboard != null) {
-                        state.composition("", false);
-                        state.replaceSelection(
-                                Objects.requireNonNull(event.clipboard.read(), "clipboard text"),
-                                false);
-                        inputChanged(before);
-                    }
-                    break;
-                case BACKSPACE:
-                    if (!locked) {
-                        state.deleteBackward();
-                        inputChanged(before);
-                    }
-                    break;
-                case DELETE:
-                    if (!locked) {
-                        state.deleteForward();
-                        inputChanged(before);
-                    }
-                    break;
-                case UNDO:
-                    if (!locked) {
-                        state.undo();
-                        inputChanged(before);
-                    }
-                    break;
-                case REDO:
-                    if (!locked) {
-                        state.redo();
-                        inputChanged(before);
-                    }
-                    break;
                 case SPACE:
                     if (!locked) {
                         if (before.composing) state.composition("", false);
@@ -332,8 +277,7 @@ public final class SceneTextField {
                 case SUBMIT:
                 case CONFIRM:
                     if (!locked && !before.composing) {
-                        state.breakHistoryGroup();
-                        onSubmit.accept(state.request(true));
+                        commands.submit();
                     }
                     break;
                 case ACTIVATE_ONLY:
@@ -351,27 +295,13 @@ public final class SceneTextField {
         }
 
         private void inputChanged(Snapshot before) {
-            if (policy == SubmitPolicy.INPUT && !before.text.equals(state.snapshot().get().text))
-                onSubmit.accept(state.request(false));
-        }
-
-        private static void copy(Snapshot value, SceneEditEvent event) {
-            if (event.clipboard != null)
-                event.clipboard.write(
-                        value.text.substring(
-                                Math.min(value.anchor, value.caret),
-                                Math.max(value.anchor, value.caret)));
+            commands.inputChanged(before);
         }
 
         @Override
         public void focusChanged(SceneNode node, boolean focused, boolean eligible) {
             if (focused) return;
-            Snapshot before = state.snapshot().get();
-            state.breakHistoryGroup();
-            state.composition("", false);
-            // 真实用户离开才可完成提交；禁用、modal、卸载由父路由传 eligible=false。
-            if (eligible && policy == SubmitPolicy.BLUR && before.active && !readOnly.get())
-                onSubmit.accept(state.request(true));
+            commands.blur(eligible);
         }
 
         @Override
@@ -534,114 +464,12 @@ public final class SceneTextField {
         }
     }
 
-    private static LayoutBox inner(LayoutBox box, int padding) {
-        return new LayoutBox(
-                box.x + padding,
-                box.y + padding,
-                Math.max(0, box.width - padding * 2),
-                Math.max(0, box.height - padding * 2));
-    }
 
-    private static void border(PaintPlanBuilder target, LayoutBox box, LayoutBox clip, int color) {
-        if (box.width == 0 || box.height == 0) return;
-        target.add(PaintCommand.rect(new LayoutBox(box.x, box.y, box.width, 1), clip, color));
-        target.add(
-                PaintCommand.rect(
-                        new LayoutBox(box.x, box.y + box.height - 1, box.width, 1), clip, color));
-        target.add(PaintCommand.rect(new LayoutBox(box.x, box.y, 1, box.height), clip, color));
-        target.add(
-                PaintCommand.rect(
-                        new LayoutBox(box.x + box.width - 1, box.y, 1, box.height), clip, color));
-    }
+
+
 
     /** 纯位置投影，HB glyph 与 source 映射原样沿用，绘制和命中读取同一几何 text。 */
     private static TextLayout translate(TextLayout full, int offset) {
-        if (offset == 0) return full;
-        List<TextLayout.Line> lines = new ArrayList<>();
-        for (TextLayout.Line line : full.lines()) {
-            List<TextLayout.Glyph> glyphs = new ArrayList<>();
-            for (TextLayout.Glyph g : line.glyphs())
-                glyphs.add(
-                        new TextLayout.Glyph(
-                                g.source,
-                                g.size,
-                                g.glyphId,
-                                g.logicalStart,
-                                g.logicalEnd,
-                                g.sourceStart,
-                                g.sourceEnd,
-                                g.x - offset,
-                                g.y,
-                                g.xAdvance,
-                                g.yAdvance,
-                                g.color,
-                                g.replacement,
-                                g.inkBounds,
-                                g.logicalEm,
-                                g.rasterToLayout,
-                                g.rasterStyle,
-                                g.resolvedStyle,
-                                g.clusterIndex,
-                                g.paintClip,
-                                g.xExtension));
-            List<TextLayout.Cluster> clusters = new ArrayList<>();
-            for (TextLayout.Cluster c : line.clusters())
-                clusters.add(
-                        new TextLayout.Cluster(
-                                c.logicalStart,
-                                c.logicalEnd,
-                                c.sourceStart,
-                                c.sourceEnd,
-                                c.glyphIndexStart,
-                                c.glyphIndexEnd,
-                                c.x - offset,
-                                c.advance,
-                                c.style,
-                                c.rtl));
-            List<TextLayout.Decoration> decorations = new ArrayList<>();
-            for (TextLayout.Decoration d : line.decorations())
-                decorations.add(
-                        new TextLayout.Decoration(
-                                d.kind,
-                                d.x - offset,
-                                d.y,
-                                d.width,
-                                d.height,
-                                d.color,
-                                d.logicalStart,
-                                d.logicalEnd,
-                                d.sourceStart,
-                                d.sourceEnd));
-            lines.add(
-                    new TextLayout.Line(
-                            line.text,
-                            line.x - offset,
-                            line.y,
-                            line.logicalStart,
-                            line.logicalEnd,
-                            line.sourceStart,
-                            line.sourceEnd,
-                            line.advance,
-                            line.baseline,
-                            line.ascent,
-                            line.descent,
-                            line.lineHeight,
-                            glyphs,
-                            clusters,
-                            decorations,
-                            line.paragraphRtl));
-        }
-        return new TextLayout(
-                full.width,
-                full.height,
-                full.advanceWidth,
-                full.advanceHeight,
-                full.style,
-                lines,
-                full.logicalText,
-                full.originalText,
-                full.generation,
-                full.diagnostics(),
-                full.input);
+        return SceneTextPresentation.translate(full, -offset, 0);
     }
 }

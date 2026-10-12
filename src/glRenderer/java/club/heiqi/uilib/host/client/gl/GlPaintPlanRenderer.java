@@ -413,202 +413,229 @@ public final class GlPaintPlanRenderer implements AutoCloseable {
             LayoutBox clip = context == null ? clip(command.clip, prepared.viewport) : null;
             // world不能把framebuffer scissor交给会按callerXY裁决的collector；scope单独处理outerclip。
             if (clip != null && (clip.width == 0 || clip.height == 0)) return;
-            if (command.kind == PaintCommand.Kind.IMAGE_BRANCH_OVERLAY) {
-                ImageChoice choice = imageChoices.get(command.branchSource);
-                if (choice == ImageChoice.PENDING) drawPlan(command.pendingPaint);
-                else if (choice == ImageChoice.FAILED) drawPlan(command.failedPaint);
+            switch (command.kind) {
+                case RECT:
+                    drawRect(command, clip);
+                    break;
+                case LINE:
+                    drawLine(command, clip);
+                    break;
+                case IMAGE:
+                    drawImage(command, clip);
+                    break;
+                case IMAGE_BRANCH_OVERLAY:
+                    drawImageBranchOverlay(command);
+                    break;
+                case TEXT:
+                    drawText(command, clip);
+                    break;
+            }
+        }
+
+        private void drawImageBranchOverlay(PaintCommand command) {
+            ImageChoice choice = imageChoices.get(command.branchSource);
+            if (choice == ImageChoice.PENDING) drawPlan(command.pendingPaint);
+            else if (choice == ImageChoice.FAILED) drawPlan(command.failedPaint);
+        }
+
+        private void drawRect(PaintCommand command, LayoutBox clip) {
+            solid(
+                    command.box.x,
+                    command.box.y,
+                    command.box.width,
+                    command.box.height,
+                    command.color,
+                    clip);
+        }
+
+        private void drawLine(PaintCommand command, LayoutBox clip) {
+            if (command.line.empty()) return;
+            GlGlyphAtlas.Resident white =
+                    prepared.frame.view == GlGlyphAtlas.SamplingView.STRAIGHT_RGBA
+                            ? prepared.frame.solid()
+                            : null;
+            if (prepared.frame.view == GlGlyphAtlas.SamplingView.STRAIGHT_RGBA && white == null)
+                return;
+            PaintCommand.Line line = command.line;
+            collector.add(
+                    white == null
+                            ? new State(GlQuadRenderer.SOLID, 0, 0, clip)
+                            : new State(
+                                    GlQuadRenderer.MONOCHROME_COVERAGE,
+                                    white.resource,
+                                    white.generation,
+                                    clip),
+                    Quad.line(
+                            line.x0,
+                            line.y0,
+                            line.x1,
+                            line.y1,
+                            line.thickness,
+                            white == null ? 0 : white.u0,
+                            white == null ? 0 : white.v0,
+                            white == null ? 0 : white.u1,
+                            white == null ? 0 : white.v1,
+                            0,
+                            command.color));
+        }
+
+        private void drawImage(PaintCommand command, LayoutBox clip) {
+            club.heiqi.uilib.ui.scene.image.ImagePlacement image = command.image;
+            if (context != null) throw new IllegalStateException("图像只支持framebuffer scene回放");
+            if (prepared.imageFrame == null
+                    || !prepared.imageFrame.ready(image.content.identity)) {
+                boolean failed =
+                        prepared.imageFrame != null
+                                && prepared.imageFrame.failed(image.content.identity);
+                imageChoices.put(command, failed ? ImageChoice.FAILED : ImageChoice.PENDING);
+                drawPlan(failed ? command.failedPaint : command.pendingPaint);
                 return;
             }
-            if (command.kind == PaintCommand.Kind.RECT) {
-                solid(
-                        command.box.x,
-                        command.box.y,
-                        command.box.width,
-                        command.box.height,
-                        command.color,
-                        clip);
-            } else if (command.kind == PaintCommand.Kind.LINE) {
-                if (command.line.empty()) return;
-                GlGlyphAtlas.Resident white =
-                        prepared.frame.view == GlGlyphAtlas.SamplingView.STRAIGHT_RGBA
-                                ? prepared.frame.solid()
-                                : null;
-                if (prepared.frame.view == GlGlyphAtlas.SamplingView.STRAIGHT_RGBA && white == null)
-                    return;
-                PaintCommand.Line line = command.line;
-                collector.add(
-                        white == null
-                                ? new State(GlQuadRenderer.SOLID, 0, 0, clip)
-                                : new State(
-                                        GlQuadRenderer.MONOCHROME_COVERAGE,
-                                        white.resource,
-                                        white.generation,
-                                        clip),
-                        Quad.line(
-                                line.x0,
-                                line.y0,
-                                line.x1,
-                                line.y1,
-                                line.thickness,
-                                white == null ? 0 : white.u0,
-                                white == null ? 0 : white.v0,
-                                white == null ? 0 : white.u1,
-                                white == null ? 0 : white.v1,
-                                0,
-                                command.color));
-            } else if (command.kind == PaintCommand.Kind.IMAGE) {
-                club.heiqi.uilib.ui.scene.image.ImagePlacement image = command.image;
-                if (context != null) throw new IllegalStateException("图像只支持framebuffer scene回放");
-                if (prepared.imageFrame == null
-                        || !prepared.imageFrame.ready(image.content.identity)) {
-                    boolean failed =
-                            prepared.imageFrame != null
-                                    && prepared.imageFrame.failed(image.content.identity);
-                    imageChoices.put(command, failed ? ImageChoice.FAILED : ImageChoice.PENDING);
-                    drawPlan(failed ? command.failedPaint : command.pendingPaint);
-                    return;
-                }
-                if (image.content.kind
-                        == club.heiqi.uilib.ui.scene.image.ImageContent.Kind.HOST_ITEM) {
-                    boolean[] drawn = {false};
-                    delegate(
-                            () -> {
-                                int[] viewport = new int[4];
-                                gl.glGetIntegerv(GL_VIEWPORT, viewport);
-                                drawn[0] = images.renderHost(image, clip, viewport[2], height);
-                            });
-                    // 原图只执行一次；失败仅选择控件已冻结的同代片段，不重prepare或读live scene。
-                    imageChoices.put(command, drawn[0] ? ImageChoice.READY : ImageChoice.FAILED);
-                    drawPlan(drawn[0] ? command.readyOverlay : command.failedPaint);
-                    return;
-                }
-                imageChoices.put(command, ImageChoice.READY);
-                collector.add(
-                        new State(
-                                GlQuadRenderer.COLOR_PREMULT,
-                                -image.content.identity,
-                                image.content.identity,
-                                clip),
-                        new Quad(
-                                image.x,
-                                image.y,
-                                image.width,
-                                image.height,
-                                0,
-                                0,
-                                1,
-                                1,
-                                0,
-                                0xFFFFFFFF));
-                drawPlan(command.readyOverlay);
-            } else if (command.text != null) {
-                // 显式小行高允许墨迹溢出：所有行的背景先输出，后行高亮不覆盖前行字形。
-                for (TextLayout.Line line : command.text.lines())
-                    for (TextLayout.Decoration decoration : line.decorations())
-                        if (decoration.kind == TextLayout.Decoration.Kind.HIGHLIGHT)
-                            solid(command.box.x + decoration.x, command.box.y + decoration.y,
-                                    decoration.width, decoration.height, decoration.color, clip);
-                for (TextLayout.Line line : command.text.lines()) {
-                    for (TextLayout.Glyph glyph : line.glyphs()) {
-                        if (context == null
-                                ? !visible(command, glyph, clip)
-                                : !GlFontVisibility.visible(command, glyph, context)) continue;
-                        GlGlyphAtlas.Resident r = prepared.frame.lookup(GlyphKey.of(glyph));
-                        if (r == null) {
-                            blankGlyphs++;
-                            continue;
-                        }
-                        if (r.width == 0 || r.height == 0) continue;
-                        // resident bearing/尺寸属于采样face；布局位置与墨迹界已是logical单位，只映回一次。
-                        float ratio = glyph.rasterToLayout;
-                        float x = command.box.x + glyph.x + r.bearingX * ratio,
-                                y = command.box.y + glyph.y - r.bearingY * ratio;
-                        float width = r.width * r.pixelScale * ratio;
-                        float height = r.height * r.pixelScale * ratio;
-                        float u0 = r.u0, v0 = r.v0, u1 = r.u1, v1 = r.v1;
-                        if (glyph.paintClip.known) {
-                            float left =
-                                    Math.max(x, command.box.x + glyph.x + glyph.paintClip.left);
-                            float top = Math.max(y, command.box.y + glyph.y + glyph.paintClip.top);
-                            float right =
-                                    Math.min(
-                                            x + width,
-                                            command.box.x + glyph.x + glyph.paintClip.right);
-                            float bottom =
-                                    Math.min(
-                                            y + height,
-                                            command.box.y + glyph.y + glyph.paintClip.bottom);
-                            if (right <= left || bottom <= top) continue;
-                            u0 = r.u0 + (r.u1 - r.u0) * (left - x) / width;
-                            u1 = r.u0 + (r.u1 - r.u0) * (right - x) / width;
-                            v0 = r.v0 + (r.v1 - r.v0) * (top - y) / height;
-                            v1 = r.v0 + (r.v1 - r.v0) * (bottom - y) / height;
-                            x = left;
-                            y = top;
-                            width = right - left;
-                            height = bottom - top;
-                        }
-                        int color =
-                                glyph.resolvedStyle == null
-                                        ? command.color
-                                        : glyph.resolvedStyle.color;
-                        State state =
-                                new State(
-                                        r.color
-                                                ? GlQuadRenderer.COLOR_PREMULT
-                                                : GlQuadRenderer.MONOCHROME_COVERAGE,
-                                        r.resource,
-                                        r.generation,
-                                        clip);
-                        if (glyph.xExtension == null) {
-                            collector.add(
-                                    state,
-                                    new Quad(x, y, width, height, u0, v0, u1, v1, r.layer, color));
-                        } else {
-                            // 三片目标域互斥，共享原atlas资源及Y采样；中片固定原覆盖度列，hook/stem不横向变形。
-                            float cut = command.box.x + glyph.x + glyph.xExtension.splitX;
-                            float extra = glyph.xExtension.extraWidth;
-                            float splitU = u0 + (u1 - u0) * (cut - x) / width;
-                            if (cut > x)
-                                collector.add(
-                                        state,
-                                        new Quad(
-                                                x, y, cut - x, height, u0, v0, splitU, v1, r.layer,
-                                                color));
-                            collector.add(
-                                    state,
-                                    new Quad(
-                                            cut, y, extra, height, splitU, v0, splitU, v1, r.layer,
-                                            color));
-                            if (x + width > cut)
-                                collector.add(
-                                        state,
-                                        new Quad(
-                                                cut + extra,
-                                                y,
-                                                x + width - cut,
-                                                height,
-                                                splitU,
-                                                v0,
-                                                u1,
-                                                v1,
-                                                r.layer,
-                                                color));
-                        }
-                        drawnGlyphs++;
-                    }
-                    for (TextLayout.Decoration decoration : line.decorations()) {
-                        if (decoration.kind == TextLayout.Decoration.Kind.HIGHLIGHT) continue;
-                        solid(
-                                command.box.x + decoration.x,
-                                command.box.y + decoration.y,
-                                decoration.width,
-                                decoration.height,
-                                decoration.color,
-                                clip);
-                    }
+            if (image.content.kind
+                    == club.heiqi.uilib.ui.scene.image.ImageContent.Kind.HOST_ITEM) {
+                boolean[] drawn = {false};
+                delegate(
+                        () -> {
+                            int[] viewport = new int[4];
+                            gl.glGetIntegerv(GL_VIEWPORT, viewport);
+                            drawn[0] = images.renderHost(image, clip, viewport[2], height);
+                        });
+                // 原图只执行一次；失败仅选择控件已冻结的同代片段，不重prepare或读live scene。
+                imageChoices.put(command, drawn[0] ? ImageChoice.READY : ImageChoice.FAILED);
+                drawPlan(drawn[0] ? command.readyOverlay : command.failedPaint);
+                return;
+            }
+            imageChoices.put(command, ImageChoice.READY);
+            collector.add(
+                    new State(
+                            GlQuadRenderer.COLOR_PREMULT,
+                            -image.content.identity,
+                            image.content.identity,
+                            clip),
+                    new Quad(
+                            image.x,
+                            image.y,
+                            image.width,
+                            image.height,
+                            0,
+                            0,
+                            1,
+                            1,
+                            0,
+                            0xFFFFFFFF));
+            drawPlan(command.readyOverlay);
+        }
+
+        private void drawText(PaintCommand command, LayoutBox clip) {
+            if (command.text == null) return;
+            // 显式小行高允许墨迹溢出：所有行的背景先输出，后行高亮不覆盖前行字形。
+            for (TextLayout.Line line : command.text.lines())
+                for (TextLayout.Decoration decoration : line.decorations())
+                    if (decoration.kind == TextLayout.Decoration.Kind.HIGHLIGHT)
+                        solid(command.box.x + decoration.x, command.box.y + decoration.y,
+                                decoration.width, decoration.height, decoration.color, clip);
+            for (TextLayout.Line line : command.text.lines()) {
+                for (TextLayout.Glyph glyph : line.glyphs()) drawGlyph(command, glyph, clip);
+                for (TextLayout.Decoration decoration : line.decorations()) {
+                    if (decoration.kind == TextLayout.Decoration.Kind.HIGHLIGHT) continue;
+                    solid(
+                            command.box.x + decoration.x,
+                            command.box.y + decoration.y,
+                            decoration.width,
+                            decoration.height,
+                            decoration.color,
+                            clip);
                 }
             }
+        }
+
+        private void drawGlyph(PaintCommand command, TextLayout.Glyph glyph, LayoutBox clip) {
+            if (context == null
+                    ? !visible(command, glyph, clip)
+                    : !GlFontVisibility.visible(command, glyph, context)) return;
+            GlGlyphAtlas.Resident r = prepared.frame.lookup(GlyphKey.of(glyph));
+            if (r == null) {
+                blankGlyphs++;
+                return;
+            }
+            if (r.width == 0 || r.height == 0) return;
+            // resident bearing/尺寸属于采样face；布局位置与墨迹界已是logical单位，只映回一次。
+            float ratio = glyph.rasterToLayout;
+            float x = command.box.x + glyph.x + r.bearingX * ratio,
+                    y = command.box.y + glyph.y - r.bearingY * ratio;
+            float width = r.width * r.pixelScale * ratio;
+            float height = r.height * r.pixelScale * ratio;
+            float u0 = r.u0, v0 = r.v0, u1 = r.u1, v1 = r.v1;
+            if (glyph.paintClip.known) {
+                float left =
+                        Math.max(x, command.box.x + glyph.x + glyph.paintClip.left);
+                float top = Math.max(y, command.box.y + glyph.y + glyph.paintClip.top);
+                float right =
+                        Math.min(
+                                x + width,
+                                command.box.x + glyph.x + glyph.paintClip.right);
+                float bottom =
+                        Math.min(
+                                y + height,
+                                command.box.y + glyph.y + glyph.paintClip.bottom);
+                if (right <= left || bottom <= top) return;
+                u0 = r.u0 + (r.u1 - r.u0) * (left - x) / width;
+                u1 = r.u0 + (r.u1 - r.u0) * (right - x) / width;
+                v0 = r.v0 + (r.v1 - r.v0) * (top - y) / height;
+                v1 = r.v0 + (r.v1 - r.v0) * (bottom - y) / height;
+                x = left;
+                y = top;
+                width = right - left;
+                height = bottom - top;
+            }
+            int color =
+                    glyph.resolvedStyle == null
+                            ? command.color
+                            : glyph.resolvedStyle.color;
+            State state =
+                    new State(
+                            r.color
+                                    ? GlQuadRenderer.COLOR_PREMULT
+                                    : GlQuadRenderer.MONOCHROME_COVERAGE,
+                            r.resource,
+                            r.generation,
+                            clip);
+            if (glyph.xExtension == null) {
+                collector.add(
+                        state,
+                        new Quad(x, y, width, height, u0, v0, u1, v1, r.layer, color));
+            } else {
+                // 三片目标域互斥，共享原atlas资源及Y采样；中片固定原覆盖度列，hook/stem不横向变形。
+                float cut = command.box.x + glyph.x + glyph.xExtension.splitX;
+                float extra = glyph.xExtension.extraWidth;
+                float splitU = u0 + (u1 - u0) * (cut - x) / width;
+                if (cut > x)
+                    collector.add(
+                            state,
+                            new Quad(
+                                    x, y, cut - x, height, u0, v0, splitU, v1, r.layer,
+                                    color));
+                collector.add(
+                        state,
+                        new Quad(
+                                cut, y, extra, height, splitU, v0, splitU, v1, r.layer,
+                                color));
+                if (x + width > cut)
+                    collector.add(
+                            state,
+                            new Quad(
+                                    cut + extra,
+                                    y,
+                                    x + width - cut,
+                                    height,
+                                    splitU,
+                                    v0,
+                                    u1,
+                                    v1,
+                                    r.layer,
+                                    color));
+            }
+            drawnGlyphs++;
         }
 
         private void drawPlan(PaintPlan plan) {

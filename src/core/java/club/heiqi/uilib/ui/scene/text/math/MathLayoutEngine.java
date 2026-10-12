@@ -550,41 +550,72 @@ public final class MathLayoutEngine {
                             && ((MathContent.SpaceSpec) node.payload).dimension == null;
         }
 
+        /** 行归约的实际项：绘制盒、该项的样式作用域和来源不可分开移动。 */
+        private static final class RowItem {
+            final MathBox box;
+            final MathLayoutContext context;
+            final Node source;
+
+            RowItem(MathBox box, MathLayoutContext context, Node source) {
+                this.box = box;
+                this.context = context;
+                this.source = source;
+            }
+
+            RowItem withBox(MathBox value) {
+                return new RowItem(value, context, source);
+            }
+        }
+
         MathBox row(Node node, MathLayoutContext initial) {
             return row(node, initial, null);
         }
 
         MathBox row(Node node, MathLayoutContext initial, Node fence) {
-            List<MathBox> boxes = new ArrayList<MathBox>();
-            List<MathLayoutContext> contexts = new ArrayList<MathLayoutContext>();
-            List<Node> sources = new ArrayList<Node>();
+            List<RowItem> items = new ArrayList<RowItem>();
             boolean multiline = node == rootBody && rootLineBreak(node.children);
-            collectRow(node.children, initial, fence != null, multiline, boxes, contexts, sources);
-            if (fence != null) {
-                MathBox content = new MathBox();
-                for (MathBox value : boxes) content.add(value, 0, 0);
-                float target = delimiterTarget(content, initial, fence);
-                for (int i = 0; i < boxes.size(); i++)
-                    if (sources.get(i).kind == MathContent.Kind.MIDDLE)
-                        boxes.set(i, delimiter(sources.get(i), contexts.get(i), target, Atom.REL));
-                boxes.add(0, delimiter(fence.first, initial, target, Atom.OPEN));
-                contexts.add(0, initial);
-                boxes.add(delimiter(fence.third, initial, target, Atom.CLOSE));
-                contexts.add(initial);
+            collectRow(node.children, initial, fence != null, multiline, items);
+            if (fence != null) encloseRow(items, initial, fence);
+            normalizeBins(items, multiline);
+            if (multiline) return lines(node, initial, items);
+            MathBox value = horizontal(items, 0, items.size());
+            value.atom = fence == null ? Atom.ORD : Atom.INNER;
+            if (fence != null) value.italic = 0;
+            return value;
+        }
+
+        private void encloseRow(List<RowItem> items, MathLayoutContext context, Node fence) {
+            MathBox content = new MathBox();
+            for (RowItem item : items) content.add(item.box, 0, 0);
+            float target = delimiterTarget(content, context, fence);
+            for (int i = 0; i < items.size(); i++) {
+                RowItem item = items.get(i);
+                if (item.source.kind == MathContent.Kind.MIDDLE)
+                    items.set(i, item.withBox(delimiter(item.source, item.context, target, Atom.REL)));
             }
+            items.add(
+                    0,
+                    new RowItem(
+                            delimiter(fence.first, context, target, Atom.OPEN), context, fence.first));
+            items.add(
+                    new RowItem(
+                            delimiter(fence.third, context, target, Atom.CLOSE), context, fence.third));
+        }
+
+        private void normalizeBins(List<RowItem> items, boolean multiline) {
             // TeX BIN 归一化忽略显式 kern，按实际原子序列判定。
             Atom previous = Atom.NONE;
-            for (int i = 0; i < boxes.size(); i++) {
-                MathBox current = boxes.get(i);
-                if (multiline && sources.get(i).kind == MathContent.Kind.LINEBREAK) {
+            for (int i = 0; i < items.size(); i++) {
+                MathBox current = items.get(i).box;
+                if (multiline && items.get(i).source.kind == MathContent.Kind.LINEBREAK) {
                     previous = Atom.NONE;
                     continue;
                 }
                 if (current.atom == Atom.NONE) continue;
                 Atom next = Atom.NONE;
-                for (int j = i + 1; j < boxes.size(); j++)
-                    if (boxes.get(j).atom != Atom.NONE) {
-                        next = boxes.get(j).atom;
+                for (int j = i + 1; j < items.size(); j++)
+                    if (items.get(j).box.atom != Atom.NONE) {
+                        next = items.get(j).box.atom;
                         break;
                     }
                 if (current.atom == Atom.BIN
@@ -600,21 +631,16 @@ public final class MathLayoutEngine {
                                 || next == Atom.PUNCT)) current.atom = Atom.ORD;
                 previous = current.atom;
             }
-            if (multiline) return lines(node, initial, boxes, contexts, sources);
-            MathBox value = horizontal(boxes, contexts, 0, boxes.size());
-            value.atom = fence == null ? Atom.ORD : Atom.INNER;
-            if (fence != null) value.italic = 0;
-            return value;
         }
 
-        private MathBox horizontal(
-                List<MathBox> boxes, List<MathLayoutContext> contexts, int from, int end) {
+        private MathBox horizontal(List<RowItem> items, int from, int end) {
             MathBox value = new MathBox();
             float cursor = 0, left = 0, right = 0;
             Atom previous = Atom.NONE;
             for (int i = from; i < end; i++) {
-                MathBox current = boxes.get(i);
-                MathLayoutContext currentContext = contexts.get(i);
+                RowItem item = items.get(i);
+                MathBox current = item.box;
+                MathLayoutContext currentContext = item.context;
                 if (current.atom != Atom.NONE) {
                     cursor +=
                             spacing(previous, current.atom, currentContext.style)
@@ -650,12 +676,7 @@ public final class MathLayoutEngine {
             return false;
         }
 
-        private MathBox lines(
-                Node node,
-                MathLayoutContext context,
-                List<MathBox> boxes,
-                List<MathLayoutContext> contexts,
-                List<Node> sources) {
+        private MathBox lines(Node node, MathLayoutContext context, List<RowItem> items) {
             // CSS只把katex-html直接newline作为零高block；连续空block不创建新空行，margin按正最大/负最小折叠。
             TextLayout.Line strut = font(context, node).text("M").lines().get(0);
             float leading = Math.max(0, strut.lineHeight - strut.ascent - strut.descent) / 2;
@@ -663,11 +684,11 @@ public final class MathLayoutEngine {
             float baseline = 0, previousDepth = 0, positive = 0, negative = 0;
             boolean first = true;
             int from = 0;
-            for (int end = 0; end <= boxes.size(); end++) {
-                if (end < boxes.size() && sources.get(end).kind != MathContent.Kind.LINEBREAK)
+            for (int end = 0; end <= items.size(); end++) {
+                if (end < items.size() && items.get(end).source.kind != MathContent.Kind.LINEBREAK)
                     continue;
                 if (end > from) {
-                    MathBox line = horizontal(boxes, contexts, from, end);
+                    MathBox line = horizontal(items, from, end);
                     float ascent = Math.max(line.ascent, strut.ascent + leading),
                             descent = Math.max(line.descent, strut.descent + leading);
                     for (MathLayout.TextPiece piece : line.pieces())
@@ -696,13 +717,13 @@ public final class MathLayoutEngine {
                     previousDepth = descent;
                     positive = negative = 0;
                 }
-                if (end < boxes.size()) {
-                    MathContent.SpaceSpec spec = (MathContent.SpaceSpec) sources.get(end).payload;
+                if (end < items.size()) {
+                    RowItem item = items.get(end);
+                    MathContent.SpaceSpec spec = (MathContent.SpaceSpec) item.source.payload;
                     float gap =
                             spec.dimension == null
                                     ? 0
-                                    : dimension(
-                                            spec.dimension, contexts.get(end), sources.get(end));
+                                    : dimension(spec.dimension, item.context, item.source);
                     positive = Math.max(positive, gap);
                     negative = Math.min(negative, gap);
                 }
@@ -717,9 +738,7 @@ public final class MathLayoutEngine {
                 MathLayoutContext initial,
                 boolean fenced,
                 boolean rootLines,
-                List<MathBox> boxes,
-                List<MathLayoutContext> contexts,
-                List<Node> sources) {
+                List<RowItem> items) {
             MathLayoutContext context = initial;
             for (int index = 0; index < children.size(); index++) {
                 Node child = children.get(index);
@@ -733,31 +752,31 @@ public final class MathLayoutEngine {
                             MathDecorations.scope(this, child, context),
                             fenced,
                             true,
-                            boxes,
-                            contexts,
-                            sources);
+                            items);
                     continue;
                 }
                 if (textRun(child, context)) {
                     StringBuilder run = new StringBuilder(child.value);
-                    int end = child.end;
+                    // 宏参数可与模板调用点反序；合并run须覆盖全部来源，不能取首尾位置。
+                    int start = child.start, end = child.end;
                     while (index + 1 < children.size()
                             && textRun(children.get(index + 1), context)) {
                         Node next = children.get(++index);
                         run.append(next.value);
-                        end = next.end;
+                        start = Math.min(start, next.start);
+                        end = Math.max(end, next.end);
                     }
                     Node source =
                             new Node(
                                     MathContent.Kind.TEXT,
-                                    child.start,
+                                    start,
                                     end,
                                     run.toString(),
                                     null,
                                     null,
                                     null,
                                     null);
-                    boxes.add(
+                    MathBox value =
                             glyph(
                                     text.layout(
                                             run.toString(),
@@ -766,9 +785,8 @@ public final class MathLayoutEngine {
                                             TextPolicy.NO_WRAP),
                                     source,
                                     context,
-                                    false));
-                    contexts.add(context);
-                    sources.add(source);
+                                    false);
+                    items.add(new RowItem(value, context, source));
                     continue;
                 }
                 if (child.kind == MathContent.Kind.STYLE && child.first == null) {
@@ -783,9 +801,7 @@ public final class MathLayoutEngine {
                             context.declaredStyle(style(child.value)),
                             fenced,
                             rootLines,
-                            boxes,
-                            contexts,
-                            sources);
+                            items);
                     continue;
                 }
                 if (child.kind == MathContent.Kind.HTMLMATHML
@@ -796,9 +812,7 @@ public final class MathLayoutEngine {
                             context,
                             fenced,
                             rootLines,
-                            boxes,
-                            contexts,
-                            sources);
+                            items);
                     continue;
                 }
                 // 只有本层left直接可见的middle占位并共用target；nested wrapper内size1真实墨迹参与测高。
@@ -807,9 +821,7 @@ public final class MathLayoutEngine {
                     value = new MathBox();
                     value.atom = Atom.REL;
                 } else value = box(child, context);
-                boxes.add(value);
-                contexts.add(context);
-                sources.add(child);
+                items.add(new RowItem(value, context, child));
             }
         }
 

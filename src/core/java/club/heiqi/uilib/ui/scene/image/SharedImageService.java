@@ -3,8 +3,8 @@ package club.heiqi.uilib.ui.scene.image;
 import java.util.Objects;
 import java.util.List;
 import java.util.ArrayList;
-import java.util.Map;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.Iterator;
 import java.util.concurrent.Callable;
 import java.util.concurrent.Future;
@@ -43,7 +43,7 @@ public final class SharedImageService implements ImageService, AutoCloseable {
     private final Budget budget;
     private final ThreadPoolExecutor workers;
     private final LinkedHashMap<ImageSource, Entry> entries = new LinkedHashMap<>();
-    private final LinkedHashMap<Entry, ImageState> completed = new LinkedHashMap<>();
+    private final LinkedHashSet<RequestAttempt> completed = new LinkedHashSet<>();
     private long request, bytes;
     private boolean closed;
 
@@ -51,13 +51,166 @@ public final class SharedImageService implements ImageService, AutoCloseable {
         final ImageSource source;
         final List<Subscription> subscriptions = new ArrayList<>();
         ImageState state;
-        long request;
-        boolean pending;
-        Future<?> task;
-        ImageLoader.Task snapshot;
+        RequestAttempt attempt;
 
         Entry(ImageSource source) {
             this.source = source;
+        }
+    }
+
+    private enum RequestPhase {
+        PENDING,
+        STARTED,
+        COMPLETED,
+        PUBLISHED,
+        CANCELLED
+    }
+
+    /** 一次请求拥有自己的资格、异步资源和完成产物；所有可变字段由service监视器保护。
+     * Entry只保存当前发布快照。完成产物转成当前快照时沿用同一份计费，取消只释放本请求。
+     * 对应图像规格第1.2/1.3节的迟到结果与共享生命周期边界。
+     */
+    private final class RequestAttempt {
+        final Entry entry;
+        final long request;
+        RequestPhase phase;
+        Future<?> future;
+        ImageLoader.Task snapshot;
+        ImageState completion;
+        long retainedBytes;
+
+        RequestAttempt(Entry entry, long request, RuntimeException cleanup) {
+            this.entry = entry;
+            this.request = request;
+            phase = cleanup == null ? RequestPhase.PENDING : RequestPhase.PUBLISHED;
+            publish(cleanup == null
+                    ? ImageState.loading(entry.source, request)
+                    : ImageState.failure(entry.source, request, false, "cleanup", cleanup.toString()));
+        }
+
+        boolean current() {
+            return !closed && phase != RequestPhase.CANCELLED
+                    && entries.get(entry.source) == entry && entry.attempt == this;
+        }
+
+        boolean claimStart() {
+            if (!current() || phase != RequestPhase.PENDING) return false;
+            phase = RequestPhase.STARTED;
+            return true;
+        }
+
+        // completion与Entry当前快照属于同一次请求；转交发布不重复计费。
+        private void account(ImageState next) {
+            long nextBytes = next == null || next.content == null ? 0 : next.content.bytes();
+            bytes += nextBytes - retainedBytes;
+            retainedBytes = nextBytes;
+        }
+
+        void publish(ImageState next) {
+            account(next);
+            entry.state = next;
+        }
+
+        // 先解除归属再调用close，异常或重复取消不会再次释放；Task自身仍可在call中幂等关闭。
+        private void closeSnapshot() throws Exception {
+            ImageLoader.Task owned = snapshot;
+            snapshot = null;
+            if (owned != null) owned.close();
+        }
+
+        RuntimeException cancel() {
+            if (phase == RequestPhase.CANCELLED) return null;
+            phase = RequestPhase.CANCELLED;
+            completed.remove(this);
+            completion = null;
+            account(null);
+            RuntimeException failure = null;
+            try {
+                closeSnapshot();
+            } catch (Exception cleanup) {
+                failure = new IllegalStateException("资源快照释放失败: " + entry.source, cleanup);
+            }
+            Future<?> owned = future;
+            future = null;
+            if (owned != null) {
+                try {
+                    owned.cancel(true);
+                } catch (RuntimeException cleanup) {
+                    if (failure == null) failure = cleanup;
+                    else failure.addSuppressed(cleanup);
+                } finally {
+                    workers.purge();
+                }
+            }
+            return failure;
+        }
+
+        private ImageState failure(Exception error) {
+            ImageLoader.Failure f = error instanceof ImageLoader.Failure
+                    ? (ImageLoader.Failure) error : null;
+            return ImageState.failure(entry.source, request, f != null && f.unsupported,
+                    f == null ? "load" : f.stage, error.toString());
+        }
+
+        private void complete(ImageState next) {
+            synchronized (SharedImageService.this) {
+                if (!current() || phase != RequestPhase.STARTED) return;
+                if (next.content != null) {
+                    long required = next.content.bytes();
+                    while (required > budget.bytes - bytes && evict()) {}
+                    if (!current()) return;
+                    if (required > budget.bytes - bytes)
+                        next = ImageState.failure(entry.source, request, false, "budget",
+                                "解码内容超出共享字节预算");
+                }
+                account(next);
+                completion = next;
+                phase = RequestPhase.COMPLETED;
+                completed.add(this);
+            }
+        }
+
+        ImageState publishCompletion() {
+            if (!current() || phase != RequestPhase.COMPLETED) return null;
+            ImageState next = completion;
+            completion = null;
+            future = null;
+            phase = RequestPhase.PUBLISHED;
+            publish(next);
+            return next;
+        }
+
+        void start() {
+            synchronized (SharedImageService.this) {
+                if (!current() || phase != RequestPhase.STARTED) return;
+            }
+            try {
+                Callable<ImageContent> load = loader.prepare(entry.source);
+                synchronized (SharedImageService.this) {
+                    // prepare在锁外执行；其迟到快照仍归此attempt，不能清理后来的请求。
+                    snapshot = load instanceof ImageLoader.Task ? (ImageLoader.Task) load : null;
+                    if (!current()) {
+                        closeSnapshot();
+                        return;
+                    }
+                    future = workers.submit(() -> {
+                        try {
+                            complete(ImageState.ready(entry.source, request, load.call()));
+                        } catch (Exception error) {
+                            complete(failure(error));
+                        }
+                    });
+                }
+            } catch (Exception error) {
+                synchronized (SharedImageService.this) {
+                    try {
+                        closeSnapshot();
+                    } catch (Exception cleanup) {
+                        error.addSuppressed(cleanup);
+                    }
+                    complete(failure(error));
+                }
+            }
         }
     }
 
@@ -85,7 +238,7 @@ public final class SharedImageService implements ImageService, AutoCloseable {
                         synchronized (SharedImageService.this) {
                             if (!closed
                                     && alive
-                                    && entry.request == next.request
+                                    && entry.attempt.current()
                                     && entry.state == next) state.set(next);
                         }
                     });
@@ -102,8 +255,7 @@ public final class SharedImageService implements ImageService, AutoCloseable {
                     if (entry.subscriptions.isEmpty()
                             && (entry.state.status == ImageState.Status.LOADING
                                     || entry.source.kind == ImageSource.Kind.BITMAP)) {
-                        RuntimeException failure = cancel(entry);
-                        if (entry.state.content != null) bytes -= entry.state.content.bytes();
+                        RuntimeException failure = entry.attempt.cancel();
                         entries.remove(entry.source);
                         if (failure != null) throw failure;
                     }
@@ -160,45 +312,9 @@ public final class SharedImageService implements ImageService, AutoCloseable {
         return subscription;
     }
 
-    private RuntimeException cancel(Entry entry) {
-        RuntimeException failure = null;
-        ImageLoader.Task snapshot = entry.snapshot;
-        entry.snapshot = null;
-        if (snapshot != null) {
-            try {
-                snapshot.close();
-            } catch (Exception cleanup) {
-                failure = new IllegalStateException("资源快照释放失败: " + entry.source, cleanup);
-            }
-        }
-        if (entry.task != null) {
-            try {
-                entry.task.cancel(true);
-            } catch (RuntimeException cleanup) {
-                if (failure == null) failure = cleanup;
-                else failure.addSuppressed(cleanup);
-            } finally {
-                entry.task = null;
-                workers.purge();
-            }
-        }
-        ImageState ready = completed.remove(entry);
-        if (ready != null && ready.content != null) bytes -= ready.content.bytes();
-        entry.pending = false;
-        return failure;
-    }
-
     private void restart(Entry entry) {
-        RuntimeException cleanup = cancel(entry);
-        if (entry.state != null && entry.state.content != null)
-            bytes -= entry.state.content.bytes();
-        entry.request = ++request;
-        entry.state =
-                cleanup == null
-                        ? ImageState.loading(entry.source, entry.request)
-                        : ImageState.failure(
-                                entry.source, entry.request, false, "cleanup", cleanup.toString());
-        entry.pending = cleanup == null;
+        RuntimeException cleanup = entry.attempt == null ? null : entry.attempt.cancel();
+        entry.attempt = new RequestAttempt(entry, ++request, cleanup);
     }
 
     @Override
@@ -210,8 +326,7 @@ public final class SharedImageService implements ImageService, AutoCloseable {
             Entry entry = entries.get(source);
             if (entry == null) return;
             if (entry.subscriptions.isEmpty()) {
-                RuntimeException cleanup = cancel(entry);
-                if (entry.state.content != null) bytes -= entry.state.content.bytes();
+                RuntimeException cleanup = entry.attempt.cancel();
                 entries.remove(source);
                 if (cleanup != null) System.err.println(cleanup);
                 return;
@@ -240,40 +355,13 @@ public final class SharedImageService implements ImageService, AutoCloseable {
         while (it.hasNext()) {
             Entry e = it.next();
             if (e.subscriptions.isEmpty()) {
-                RuntimeException cleanup = cancel(e);
-                if (e.state.content != null) bytes -= e.state.content.bytes();
+                RuntimeException cleanup = e.attempt.cancel();
                 it.remove();
                 if (cleanup != null) System.err.println(cleanup);
                 return true;
             }
         }
         return false;
-    }
-
-    private void complete(Entry entry, long generation, ImageState next) {
-        synchronized (this) {
-            if (closed || entries.get(entry.source) != entry || entry.request != generation) return;
-            if (next.content != null) {
-                while (bytes + next.content.bytes() > budget.bytes && evict()) {}
-                if (bytes + next.content.bytes() > budget.bytes)
-                    next =
-                            ImageState.failure(
-                                    entry.source, generation, false, "budget", "解码内容超出共享字节预算");
-                else bytes += next.content.bytes();
-            }
-            completed.put(entry, next);
-        }
-    }
-
-    private ImageState failure(Entry entry, long generation, Exception error) {
-        ImageLoader.Failure f =
-                error instanceof ImageLoader.Failure ? (ImageLoader.Failure) error : null;
-        return ImageState.failure(
-                entry.source,
-                generation,
-                f != null && f.unsupported,
-                f == null ? "load" : f.stage,
-                error.toString());
     }
 
     /** 唯一宿主资源入口；不逐控件轮询。每次限额收完成、启动任务及安全snapshot。 */
@@ -283,73 +371,28 @@ public final class SharedImageService implements ImageService, AutoCloseable {
         List<ImageState> notifications = new ArrayList<>();
         synchronized (this) {
             checkOpen();
-            Iterator<Map.Entry<Entry, ImageState>> iterator = completed.entrySet().iterator();
+            Iterator<RequestAttempt> iterator = completed.iterator();
             int n = 0;
             while (iterator.hasNext() && n++ < budget.completions) {
-                Map.Entry<Entry, ImageState> value = iterator.next();
-                Entry entry = value.getKey();
-                entry.state = value.getValue();
-                entry.task = null;
-                for (Subscription s : entry.subscriptions) {
-                    subscriptions.add(s);
-                    notifications.add(entry.state);
-                }
+                RequestAttempt attempt = iterator.next();
                 iterator.remove();
+                ImageState next = attempt.publishCompletion();
+                if (next == null) continue;
+                for (Subscription s : attempt.entry.subscriptions) {
+                    subscriptions.add(s);
+                    notifications.add(next);
+                }
             }
         }
         for (int i = 0; i < subscriptions.size(); i++)
             subscriptions.get(i).publish(notifications.get(i));
-        List<Entry> start = new ArrayList<>();
+        List<RequestAttempt> start = new ArrayList<>();
         synchronized (this) {
-            for (Entry e : entries.values())
-                if (e.pending && start.size() < budget.completions) {
-                    e.pending = false;
-                    start.add(e);
-                }
+            for (Entry entry : entries.values())
+                if (start.size() < budget.completions && entry.attempt.claimStart())
+                    start.add(entry.attempt);
         }
-        for (Entry entry : start) {
-            long generation;
-            synchronized (this) {
-                generation = entry.request;
-            }
-            try {
-                Callable<ImageContent> load = loader.prepare(entry.source);
-                synchronized (this) {
-                    if (closed || entry.request != generation) {
-                        if (load instanceof ImageLoader.Task) ((ImageLoader.Task) load).close();
-                        continue;
-                    }
-                    entry.snapshot =
-                            load instanceof ImageLoader.Task ? (ImageLoader.Task) load : null;
-                    entry.task =
-                            workers.submit(
-                                    () -> {
-                                        try {
-                                            complete(
-                                                    entry,
-                                                    generation,
-                                                    ImageState.ready(
-                                                            entry.source, generation, load.call()));
-                                        } catch (Exception error) {
-                                            complete(
-                                                    entry,
-                                                    generation,
-                                                    failure(entry, generation, error));
-                                        }
-                                    });
-                }
-            } catch (Exception error) {
-                if (entry.snapshot != null) {
-                    try {
-                        entry.snapshot.close();
-                    } catch (Exception cleanup) {
-                        error.addSuppressed(cleanup);
-                    }
-                    entry.snapshot = null;
-                }
-                complete(entry, generation, failure(entry, generation, error));
-            }
-        }
+        for (RequestAttempt attempt : start) attempt.start();
     }
 
     /** 宿主呈现结果只作用于仍使用同一不可变内容的当前请求；旧plan错误不能覆盖reload。 */
@@ -369,23 +412,24 @@ public final class SharedImageService implements ImageService, AutoCloseable {
         synchronized (this) {
             if (closed) return;
             for (Entry entry : entries.values())
-                if (entry.state.content != null && entry.state.content.identity == identity) {
+                if (entry.attempt.current()
+                        && entry.state.content != null
+                        && entry.state.content.identity == identity) {
                     ImageState current = entry.state;
                     ImageState next =
                             failure != null
                                     ? ImageState.failure(
                                             entry.source,
-                                            entry.request,
+                                            current.request,
                                             unsupported,
                                             stage,
                                             failure)
                                     : pending
                                             ? ImageState.uploading(current)
                                             : ImageState.ready(
-                                                    entry.source, entry.request, current.content);
+                                                    entry.source, current.request, current.content);
                     if (current.status == next.status && current.stage.equals(next.stage)) continue;
-                    if (next.content == null) bytes -= current.content.bytes();
-                    entry.state = next;
+                    entry.attempt.publish(next);
                     for (Subscription s : entry.subscriptions) {
                         subscriptions.add(s);
                         notifications.add(next);
@@ -412,7 +456,7 @@ public final class SharedImageService implements ImageService, AutoCloseable {
         RuntimeException failure = null;
         try {
             for (Entry e : entries.values()) {
-                RuntimeException cleanup = cancel(e);
+                RuntimeException cleanup = e.attempt.cancel();
                 if (cleanup != null) {
                     if (failure == null) failure = cleanup;
                     else failure.addSuppressed(cleanup);
