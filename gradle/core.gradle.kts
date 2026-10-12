@@ -7,20 +7,17 @@ val yamlRuntime = configurations.getByName("yamlRuntime")
 val fontBindings = configurations.getByName("fontBindings")
 // RFG 的 runClient/runServer 直接读取此配置，而非 sourceSets.main.runtimeClasspath。
 configurations.named("runtimeClasspath") { extendsFrom(yamlRuntime) }
-val corePackages = arrayOf("club/heiqi/uilib/ui/scene/**", "club/heiqi/uilib/ui/reactive/**", "club/heiqi/uilib/ui/config/**")
 
+// Java源码使用各sourceSet的独立默认根：IDEA会把共享src/main/java从其他模块去重，
+// 不理解按Java包include/exclude分配归属；共享根会使core依赖指向无源码模块。
 // 正式核心只持有无平台逻辑与内容资源；宿主源码通过输出依赖调用同一份定义。
 val coreSources = sourceSets.create("core") {
-    java.srcDir("src/main/java")
-    java.include(*corePackages)
     resources.srcDir("src/main/resources")
     resources.include("assets/qz_uilib/unicode/**", "assets/qz_uilib/fonts/**", "assets/qz_uilib/math/**")
     compileClasspath = fontUnicodeRuntime + yamlRuntime
     runtimeClasspath = output + compileClasspath
 }
 val fontAdapterSources = sourceSets.create("fontAdapter") {
-    java.srcDir("src/main/java")
-    java.include("club/heiqi/uilib/host/font/**")
     resources.srcDir(layout.buildDirectory.dir("generated/isolated-font"))
     compileClasspath = coreSources.output + fontBindings
     runtimeClasspath = output + coreSources.runtimeClasspath + configurations.getByName("fontNativeRuntime")
@@ -36,7 +33,6 @@ listOf(coreSources, fontAdapterSources).forEach { sources ->
     }
 }
 sourceSets.getByName("main") {
-    java.exclude(*corePackages, "club/heiqi/uilib/host/font/**")
     resources.exclude("assets/qz_uilib/unicode/**", "assets/qz_uilib/fonts/**", "assets/qz_uilib/math/**", "assets/qz_uilib/runtime/font/**")
     compileClasspath += coreSources.output + fontAdapterSources.output + fontUnicodeRuntime + yamlRuntime
     runtimeClasspath += coreSources.output + fontAdapterSources.output + fontUnicodeRuntime + yamlRuntime

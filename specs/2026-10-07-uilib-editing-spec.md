@@ -105,4 +105,4 @@
 
 ### 2.4 调查证据（不定义要求）
 
-实现调查：当前 [SceneEditEvent](<../src/main/java/club/heiqi/uilib/ui/scene/input/SceneEditEvent.java#L38>) 不携带目标联系；[SceneRuntime.dispatchEdit](<../src/main/java/club/heiqi/uilib/ui/scene/runtime/SceneRuntime.java#L432>) 按当前焦点路由。[SceneTextField.focusChanged](<../src/main/java/club/heiqi/uilib/ui/scene/control/SceneTextField.java#L355>) 已在失焦时清 preedit、断历史分组，失活不触发 BLUR 提交。标准字段目前固定持有编辑状态，未找到挂载期间热改绑入口；本节不要求为动态目标增加热改绑 API，可通过明确替换节点表达切对象。这些是源码事实与风险定位，不是已复现的误写报告。
+实现调查：当前 [SceneEditEvent](<../src/core/java/club/heiqi/uilib/ui/scene/input/SceneEditEvent.java#L38>) 不携带目标联系；[SceneRuntime.dispatchEdit](<../src/core/java/club/heiqi/uilib/ui/scene/runtime/SceneRuntime.java#L432>) 按当前焦点路由。[SceneTextField.focusChanged](<../src/core/java/club/heiqi/uilib/ui/scene/control/SceneTextField.java#L355>) 已在失焦时清 preedit、断历史分组，失活不触发 BLUR 提交。标准字段目前固定持有编辑状态，未找到挂载期间热改绑入口；本节不要求为动态目标增加热改绑 API，可通过明确替换节点表达切对象。这些是源码事实与风险定位，不是已复现的误写报告。
