@@ -7,8 +7,7 @@ val coreSources = sourceSets.getByName("core")
 val fontAdapterSources = sourceSets.getByName("fontAdapter")
 val fontBindings = configurations.getByName("fontBindings")
 val fontNativeRuntime = configurations.getByName("fontNativeRuntime")
-val fontUnicodeRuntime = configurations.getByName("fontUnicodeRuntime")
-val yamlRuntime = configurations.getByName("yamlRuntime")
+val coreContentRuntime = configurations.getByName("coreContentRuntime")
 val javaToolchains = extensions.getByType<JavaToolchainService>()
 val desktopMain = "club.heiqi.uilib.host.desktop.DesktopApplication"
 
@@ -16,8 +15,8 @@ val desktopMain = "club.heiqi.uilib.host.desktop.DesktopApplication"
 val glRendererSources = sourceSets.getByName("glRenderer")
 val lwjgl3Sources = sourceSets.getByName("lwjgl3")
 val desktopSources = sourceSets.create("desktop") {
-    compileClasspath = glRendererSources.output + lwjgl3Sources.output + coreSources.output + fontAdapterSources.output + fontBindings + fontUnicodeRuntime + yamlRuntime
-    runtimeClasspath = output + glRendererSources.output + lwjgl3Sources.output + coreSources.output + fontAdapterSources.output + fontNativeRuntime + fontUnicodeRuntime + yamlRuntime
+    compileClasspath = glRendererSources.output + lwjgl3Sources.output + coreSources.output + fontAdapterSources.output + fontBindings + coreContentRuntime
+    runtimeClasspath = output + glRendererSources.output + lwjgl3Sources.output + coreSources.output + fontAdapterSources.output + fontNativeRuntime + coreContentRuntime
 }
 tasks.named<JavaCompile>(desktopSources.compileJavaTaskName) {
     dependsOn(tasks.named(coreSources.classesTaskName), tasks.named(fontAdapterSources.classesTaskName))
@@ -40,6 +39,8 @@ val desktopJar by tasks.registering(ShadowJar::class) {
     enableAutoRelocation.set(false)
     relocate("com.ibm.icu", "club.heiqi.uilib.shadow.com.ibm.icu")
     relocate("org.yaml.snakeyaml", "club.heiqi.uilib.shadow.org.yaml.snakeyaml")
+    relocate("org.commonmark", "club.heiqi.uilib.shadow.org.commonmark")
+    relocate("org.nibor.autolink", "club.heiqi.uilib.shadow.org.nibor.autolink")
     exclude("META-INF/versions/**", "META-INF/*.SF", "META-INF/*.RSA", "META-INF/*.DSA", "module-info.class")
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     manifest.attributes("Main-Class" to desktopMain,
@@ -97,7 +98,7 @@ val desktopDist by tasks.registering(Zip::class) {
 }
 // 自动点击、像素验收与关闭检查属于独立测试应用，正式发行不携带测试代码。
 val desktopTestSources = sourceSets.create("desktopTest") {
-    compileClasspath = sourceSets.getByName("gallery").output + desktopSources.output + glRendererSources.output + lwjgl3Sources.output + coreSources.output + fontAdapterSources.output + fontBindings + fontUnicodeRuntime + yamlRuntime
+    compileClasspath = sourceSets.getByName("gallery").output + desktopSources.output + glRendererSources.output + lwjgl3Sources.output + coreSources.output + fontAdapterSources.output + fontBindings + coreContentRuntime
     runtimeClasspath = output + desktopArtifacts
 }
 tasks.named<JavaCompile>(desktopTestSources.compileJavaTaskName) {
@@ -119,6 +120,8 @@ val desktopTestJar by tasks.registering(ShadowJar::class) {
     enableAutoRelocation.set(false)
     relocate("com.ibm.icu", "club.heiqi.uilib.shadow.com.ibm.icu")
     relocate("org.yaml.snakeyaml", "club.heiqi.uilib.shadow.org.yaml.snakeyaml")
+    relocate("org.commonmark", "club.heiqi.uilib.shadow.org.commonmark")
+    relocate("org.nibor.autolink", "club.heiqi.uilib.shadow.org.nibor.autolink")
 }
 fun desktopApplication(name: String, summary: String, verify: Boolean) = tasks.register<JavaExec>(name) {
     group = if (verify) "verification" else "application"

@@ -58,6 +58,7 @@ import javax.imageio.ImageIO;
 public final class DocumentGlScenario extends TestApplication {
     private static final int W = 640, H = 360;
     private long window, serial;
+    private boolean markdown;
     private ClientFontServices fonts;
     private ClientImageServices images;
     private GlPaintPlanRenderer renderer;
@@ -87,6 +88,12 @@ public final class DocumentGlScenario extends TestApplication {
 
     public static void main(String[] args) throws Exception {
         new DocumentGlScenario().run(args);
+    }
+
+    public static void runMarkdown(String[] args) throws Exception {
+        DocumentGlScenario scenario = new DocumentGlScenario();
+        scenario.markdown = true;
+        scenario.run(args);
     }
 
     @Override
@@ -186,7 +193,12 @@ public final class DocumentGlScenario extends TestApplication {
                                 host,
                                 fonts,
                                 ctx -> {
-                                    content = domain.signal(TextContent.richTags(SOURCE));
+                                    content = domain.signal(markdown
+                                            ? club.heiqi.uilib.ui.scene.text.MarkdownDocument.parse(
+                                                    "正文前段 [链接文字 $" + tex("@frac{a}{b}")
+                                                    + "$ 后缀](next) ![位图](bitmap) 正文尾段与足够长的共同换行内容，继续阅读正文。")
+                                                    .blocks().get(0).paragraph
+                                            : TextContent.richTags(SOURCE));
                                     theme =
                                             domain.signal(
                                                     SceneTheme.dark()

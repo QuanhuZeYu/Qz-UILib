@@ -83,6 +83,9 @@ public final class DesktopGallery {
             glfwSetWindowSize(window.handle(),640,900); settle(window);
             screenshot(window, output.resolve("gallery-narrow.png"), 0xff09090b);
             click(window,cursor,mouse,"打开知识库"); settle(window);
+            screenshot(window, output.resolve("gallery-markdown-narrow.png"), 0xff09090b);
+            glfwSetWindowSize(window.handle(),1100,900); settle(window);
+            screenshot(window, output.resolve("gallery-markdown-wide.png"), 0xff09090b);
             click(window,cursor,mouse,"场景概览");
             System.out.println("GALLERY host=desktop sharedDeclaration=true sharedJourney=true imagePixels=true resourceReload=true renderer="+glGetString(GL_RENDERER));
         }

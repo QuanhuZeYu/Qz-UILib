@@ -79,7 +79,7 @@ public final class GalleryJourney {
         return driver.geometry().ordered().stream().anyMatch(e -> e.text != null && source.equals(e.text.originalText) && e.text.diagnostics().isEmpty());
     }
     private static SceneGeometryView.Entry article(Driver driver) {
-        return driver.geometry().ordered().stream().filter(e -> e.text != null && e.text.originalText.startsWith("工坊使用说明")).findFirst().orElseThrow(() -> new AssertionError("文章正文未排版"));
+        return driver.geometry().ordered().stream().filter(e -> e.text != null && e.text.logicalText.startsWith("一份生产任务")).findFirst().orElseThrow(() -> new AssertionError("文章正文未排版"));
     }
     private static boolean contains(Driver driver, String value) {
         return driver.paint().commands().stream().anyMatch(c -> c.kind == PaintCommand.Kind.TEXT && c.text.originalText.contains(value));

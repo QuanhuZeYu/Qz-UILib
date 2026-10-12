@@ -24,6 +24,8 @@ public final class CoreArtifactScenario extends TestApplication {
     private static final String ADAPTER = "club/heiqi/uilib/host/font/";
     private static final String ICU = "club/heiqi/uilib/shadow/com/ibm/icu/";
     private static final String YAML = "club/heiqi/uilib/shadow/org/yaml/snakeyaml/";
+    private static final String MARKDOWN = "club/heiqi/uilib/shadow/org/commonmark/";
+    private static final String AUTOLINK = "club/heiqi/uilib/shadow/org/nibor/autolink/";
 
     public static void main(String[] args) throws Exception {
         new CoreArtifactScenario().run(args);
@@ -62,7 +64,10 @@ public final class CoreArtifactScenario extends TestApplication {
                     "club.heiqi.uilib.ui.reactive.Signal",
                     "club.heiqi.uilib.ui.scene.host.ScenePageSession",
                     "club.heiqi.uilib.ui.scene.text.font.FontTextService",
-                    "club.heiqi.uilib.shadow.org.yaml.snakeyaml.Yaml"
+                    "club.heiqi.uilib.shadow.org.yaml.snakeyaml.Yaml",
+                    "club.heiqi.uilib.ui.scene.text.MarkdownDocument",
+                    "club.heiqi.uilib.shadow.org.commonmark.parser.Parser",
+                    "club.heiqi.uilib.shadow.org.nibor.autolink.LinkExtractor"
                 }) {
                     Class<?> type = loader.loadClass(name);
                     File source = new File(type.getProtectionDomain().getCodeSource().getLocation().toURI()).getCanonicalFile();
@@ -72,8 +77,22 @@ public final class CoreArtifactScenario extends TestApplication {
                 for (String name : new String[] {
                     "net.minecraft.client.Minecraft", "net.minecraftforge.common.MinecraftForge",
                     "org.lwjgl.system.MemoryUtil", "club.heiqi.uilib.host.font.IsolatedFontEngine",
-                    "com.ibm.icu.text.Bidi", "org.yaml.snakeyaml.Yaml"
+                    "com.ibm.icu.text.Bidi", "org.yaml.snakeyaml.Yaml",
+                    "org.commonmark.parser.Parser", "org.nibor.autolink.LinkExtractor"
                 }) assertAbsent(loader, name);
+                // 成品隔离执行真正的解析、实体资源与数学扩展注册，不能仅检查.class存在。
+                Object markdown = loader.loadClass("club.heiqi.uilib.ui.scene.text.MarkdownDocument")
+                        .getMethod("parse", String.class).invoke(null, "# heading\n\n&NotEqualTilde; **bold** $x$ https://example.test\n");
+                java.util.List<?> blocks = (java.util.List<?>) markdown.getClass().getMethod("blocks").invoke(markdown);
+                require(blocks.size() == 2, "核心成品Markdown解析没有正确结构");
+                Object paragraph = blocks.get(1).getClass().getField("paragraph").get(blocks.get(1));
+                Object style = loader.loadClass("club.heiqi.uilib.ui.scene.text.TextStyle")
+                        .getConstructor(String.class, int.class, int.class).newInstance("default", 16, -1);
+                Object resolved = paragraph.getClass().getMethod("resolve", style.getClass()).invoke(paragraph, style);
+                Object text = resolved.getClass().getField("text").get(resolved);
+                Object input = text.getClass().getField("input").get(text);
+                require(input.getClass().getField("text").get(input).toString().startsWith("≂̸ bold"),
+                        "核心成品实体表重定位没有实际生效");
                 runConsumer(loader, "ConfigScenario");
                 runConsumer(loader, "YamlObjectScenario");
                 runConsumer(loader, "FontConfigurationScenario");
@@ -115,6 +134,8 @@ public final class CoreArtifactScenario extends TestApplication {
             require(jar.getJarEntry("assets/qz_uilib/math/catalog/functions.tsv") != null, "Core数学事实资源缺失：桌面共享页面无法初始化");
             require(jar.getJarEntry("assets/qz_uilib/licenses/ICU-76.1-LICENSE.txt") != null,
                     "独立核心携带ICU时必须同时携带随仓许可，不能依赖MC资源包");
+            require(jar.getJarEntry("assets/qz_uilib/licenses/CommonMark-0.21.0-LICENSE.txt") != null, "核心CommonMark许可缺失");
+            require(jar.getJarEntry("assets/qz_uilib/licenses/Autolink-0.10.0-LICENSE.txt") != null, "核心自动链接许可缺失");
             boolean config = false, unicode = false, yaml = false;
             while (entries.hasMoreElements()) {
                 JarEntry entry = entries.nextElement();
@@ -123,7 +144,7 @@ public final class CoreArtifactScenario extends TestApplication {
                         && !name.endsWith(".so") && !name.endsWith(".dylib") && !name.endsWith(".jar"),
                         "核心夹带native/嵌套宿主依赖：" + name);
                 if (!name.endsWith(".class")) continue;
-                require(startsWith(name, CORE) || name.startsWith(ICU) || name.startsWith(YAML), "核心夹带所属范围外定义：" + name);
+                require(startsWith(name, CORE) || name.startsWith(ICU) || name.startsWith(YAML) || name.startsWith(MARKDOWN) || name.startsWith(AUTOLINK), "核心夹带所属范围外定义：" + name);
                 config |= name.equals("club/heiqi/uilib/ui/config/ConfigSession.class");
                 unicode |= name.equals(ICU + "text/BreakIterator.class");
                 yaml |= name.equals(YAML + "Yaml.class");
@@ -154,7 +175,9 @@ public final class CoreArtifactScenario extends TestApplication {
                 String name = entries.nextElement().getName();
                 require(!(name.endsWith(".class") && (startsWith(name, CORE) || name.startsWith(ADAPTER)
                         || name.startsWith(ICU) || name.startsWith("com/ibm/icu/")
-                        || name.startsWith(YAML) || name.startsWith("org/yaml/snakeyaml/"))), "MC成品重复定义独立模块：" + name);
+                        || name.startsWith(YAML) || name.startsWith("org/yaml/snakeyaml/")
+                        || name.startsWith(MARKDOWN) || name.startsWith(AUTOLINK)
+                        || name.startsWith("org/commonmark/") || name.startsWith("org/nibor/autolink/"))), "MC成品重复定义独立模块：" + name);
                 require(!name.startsWith("club/heiqi/uilib/host/desktop/"), "MC成品嵌入桌面宿主：" + name);
                 require(!name.startsWith("assets/qz_uilib/runtime/font/")
                         && !name.startsWith("assets/qz_uilib/fonts/") && !name.startsWith("assets/qz_uilib/unicode/") && !name.startsWith("assets/qz_uilib/math/"),
@@ -188,6 +211,8 @@ public final class CoreArtifactScenario extends TestApplication {
                         "桌面成品夹带测试或开发工具：" + name);
                 require(!startsWith(name, CORE) && !name.startsWith(ADAPTER)
                         && !name.startsWith(ICU) && !name.startsWith(YAML)
+                        && !name.startsWith(MARKDOWN) && !name.startsWith(AUTOLINK)
+                        && !name.startsWith("org/commonmark/") && !name.startsWith("org/nibor/autolink/")
                         && !name.startsWith("com/ibm/icu/") && !name.startsWith("org/yaml/snakeyaml/"),
                         "桌面重复定义独立模块：" + name);
                 verifyTypeReference(name, name);
@@ -243,11 +268,12 @@ public final class CoreArtifactScenario extends TestApplication {
     private void verifyTypeReference(String value, String name) {
         String[] forbiddenTypes = desktopMode
                 ? new String[] {"net/minecraft/", "net/minecraftforge/", "cpw/mods/", "me/eigenraven/",
-                    "com/ibm/icu/", "org/yaml/snakeyaml/"}
+                    "com/ibm/icu/", "org/yaml/snakeyaml/", "org/commonmark/", "org/nibor/autolink/"}
                 : new String[] {"net/minecraft/", "net/minecraftforge/", "cpw/mods/", "org/lwjgl/", "club/heiqi/uilib/host/"};
         for (String forbidden : forbiddenTypes) {
             // 核心供应的私有重定位引用有效；原始依赖类型不能由开发classpath补齐。
-            String checked = desktopMode && (forbidden.equals("com/ibm/icu/") || forbidden.equals("org/yaml/snakeyaml/"))
+            String checked = desktopMode && (forbidden.equals("com/ibm/icu/") || forbidden.equals("org/yaml/snakeyaml/")
+                    || forbidden.equals("org/commonmark/") || forbidden.equals("org/nibor/autolink/"))
                     ? value.replace("club/heiqi/uilib/shadow/" + forbidden, "uilib-private/") : value;
             require(!checked.contains(forbidden), "成品字节码引用边界外实现：" + name + " -> " + value);
         }

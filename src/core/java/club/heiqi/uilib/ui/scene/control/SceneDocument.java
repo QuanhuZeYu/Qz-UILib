@@ -113,12 +113,7 @@ public final class SceneDocument {
             ReadableSignal<SceneTheme> theme,
             DocumentResources resources,
             Consumer<String> activate) {
-        DocumentContent.Block block = signal.get();
-        if (block.paragraph != null)
-            return paragraph(context, () -> signal.get().paragraph, theme, resources, activate)
-                    .size(Size.fill(1), Size.natural());
-        return SceneMath.create(
-                context, () -> signal.get().math, theme, block.style, Collections.emptyMap());
+        return SceneDocumentBlocks.create(context, signal, theme, resources, activate);
     }
 
     private static ReadableSignal<SceneTheme> scopedTheme(

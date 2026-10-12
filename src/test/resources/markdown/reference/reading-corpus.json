@@ -1,0 +1,2823 @@
+{
+  "reference": {
+    "vscode": "1.140.0",
+    "commit": "07f806f999227108933c2e30515b26eecc1fda74",
+    "markdownIt": "14.2.0",
+    "mathPlugin": "1.1.2",
+    "katex": "0.16.21",
+    "markdownItSha256": "eba61f8fc103a8f8caae93c6ab82d9248ab622e65726ebbf56f5409fa2ec3529",
+    "katexSha256": "65e825a9ca4ff2a8e85a52d765436f347c212a2241aed1f2ad1b13532e136c39",
+    "pluginSha256": "27f34d152f9773e5f7200effaab9157bbd2669409e85a0a5faa86ff85c05f1f9",
+    "options": {
+      "html": true,
+      "breaks": false,
+      "linkify": true,
+      "fuzzyLink": false,
+      "typographer": false
+    },
+    "scope": "固定基础parser/math plugin真实tokens及renderer入口语义，不代表Webview或宿主实机；不存巨大HTML字面输出"
+  },
+  "cases": [
+    {
+      "id": "headings",
+      "source": "# h\n\nsetext\n---\n\n---",
+      "tokens": [
+        {
+          "type": "heading_open",
+          "tag": "h1",
+          "nesting": 1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": [
+            0,
+            1
+          ],
+          "children": []
+        },
+        {
+          "type": "inline",
+          "tag": "",
+          "nesting": 0,
+          "attrs": [],
+          "content": "h",
+          "info": "",
+          "hidden": false,
+          "map": [
+            0,
+            1
+          ],
+          "children": [
+            {
+              "type": "text",
+              "tag": "",
+              "nesting": 0,
+              "attrs": [],
+              "content": "h",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            }
+          ]
+        },
+        {
+          "type": "heading_close",
+          "tag": "h1",
+          "nesting": -1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": null,
+          "children": []
+        },
+        {
+          "type": "heading_open",
+          "tag": "h2",
+          "nesting": 1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": [
+            2,
+            4
+          ],
+          "children": []
+        },
+        {
+          "type": "inline",
+          "tag": "",
+          "nesting": 0,
+          "attrs": [],
+          "content": "setext",
+          "info": "",
+          "hidden": false,
+          "map": [
+            2,
+            3
+          ],
+          "children": [
+            {
+              "type": "text",
+              "tag": "",
+              "nesting": 0,
+              "attrs": [],
+              "content": "setext",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            }
+          ]
+        },
+        {
+          "type": "heading_close",
+          "tag": "h2",
+          "nesting": -1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": null,
+          "children": []
+        },
+        {
+          "type": "hr",
+          "tag": "hr",
+          "nesting": 0,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": [
+            5,
+            6
+          ],
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "styles",
+      "source": "***both*** ~~strike~~ ~single~ a_b_c ** a **",
+      "tokens": [
+        {
+          "type": "paragraph_open",
+          "tag": "p",
+          "nesting": 1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": [
+            0,
+            1
+          ],
+          "children": []
+        },
+        {
+          "type": "inline",
+          "tag": "",
+          "nesting": 0,
+          "attrs": [],
+          "content": "***both*** ~~strike~~ ~single~ a_b_c ** a **",
+          "info": "",
+          "hidden": false,
+          "map": [
+            0,
+            1
+          ],
+          "children": [
+            {
+              "type": "em_open",
+              "tag": "em",
+              "nesting": 1,
+              "attrs": [],
+              "content": "",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            },
+            {
+              "type": "text",
+              "tag": "",
+              "nesting": 0,
+              "attrs": [],
+              "content": "",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            },
+            {
+              "type": "strong_open",
+              "tag": "strong",
+              "nesting": 1,
+              "attrs": [],
+              "content": "",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            },
+            {
+              "type": "text",
+              "tag": "",
+              "nesting": 0,
+              "attrs": [],
+              "content": "both",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            },
+            {
+              "type": "strong_close",
+              "tag": "strong",
+              "nesting": -1,
+              "attrs": [],
+              "content": "",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            },
+            {
+              "type": "text",
+              "tag": "",
+              "nesting": 0,
+              "attrs": [],
+              "content": "",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            },
+            {
+              "type": "em_close",
+              "tag": "em",
+              "nesting": -1,
+              "attrs": [],
+              "content": "",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            },
+            {
+              "type": "text",
+              "tag": "",
+              "nesting": 0,
+              "attrs": [],
+              "content": " ",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            },
+            {
+              "type": "s_open",
+              "tag": "s",
+              "nesting": 1,
+              "attrs": [],
+              "content": "",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            },
+            {
+              "type": "text",
+              "tag": "",
+              "nesting": 0,
+              "attrs": [],
+              "content": "strike",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            },
+            {
+              "type": "s_close",
+              "tag": "s",
+              "nesting": -1,
+              "attrs": [],
+              "content": "",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            },
+            {
+              "type": "text",
+              "tag": "",
+              "nesting": 0,
+              "attrs": [],
+              "content": " ~single~ a_b_c ** a **",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            }
+          ]
+        },
+        {
+          "type": "paragraph_close",
+          "tag": "p",
+          "nesting": -1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": null,
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "strike-runs",
+      "source": "~~~a~~~\n\n~~a\nb~~",
+      "tokens": [
+        {
+          "type": "fence",
+          "tag": "code",
+          "nesting": 0,
+          "attrs": [],
+          "content": "\n~~a\nb~~",
+          "info": "a~~~",
+          "hidden": false,
+          "map": [
+            0,
+            4
+          ],
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "reference-links",
+      "source": "[r][id] [id][] [id]\n\n[id]: <../a.md> \"T\"",
+      "tokens": [
+        {
+          "type": "paragraph_open",
+          "tag": "p",
+          "nesting": 1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": [
+            0,
+            1
+          ],
+          "children": []
+        },
+        {
+          "type": "inline",
+          "tag": "",
+          "nesting": 0,
+          "attrs": [],
+          "content": "[r][id] [id][] [id]",
+          "info": "",
+          "hidden": false,
+          "map": [
+            0,
+            1
+          ],
+          "children": [
+            {
+              "type": "link_open",
+              "tag": "a",
+              "nesting": 1,
+              "attrs": [
+                [
+                  "href",
+                  "../a.md"
+                ],
+                [
+                  "title",
+                  "T"
+                ]
+              ],
+              "content": "",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            },
+            {
+              "type": "text",
+              "tag": "",
+              "nesting": 0,
+              "attrs": [],
+              "content": "r",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            },
+            {
+              "type": "link_close",
+              "tag": "a",
+              "nesting": -1,
+              "attrs": [],
+              "content": "",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            },
+            {
+              "type": "text",
+              "tag": "",
+              "nesting": 0,
+              "attrs": [],
+              "content": " ",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            },
+            {
+              "type": "link_open",
+              "tag": "a",
+              "nesting": 1,
+              "attrs": [
+                [
+                  "href",
+                  "../a.md"
+                ],
+                [
+                  "title",
+                  "T"
+                ]
+              ],
+              "content": "",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            },
+            {
+              "type": "text",
+              "tag": "",
+              "nesting": 0,
+              "attrs": [],
+              "content": "id",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            },
+            {
+              "type": "link_close",
+              "tag": "a",
+              "nesting": -1,
+              "attrs": [],
+              "content": "",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            },
+            {
+              "type": "text",
+              "tag": "",
+              "nesting": 0,
+              "attrs": [],
+              "content": " ",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            },
+            {
+              "type": "link_open",
+              "tag": "a",
+              "nesting": 1,
+              "attrs": [
+                [
+                  "href",
+                  "../a.md"
+                ],
+                [
+                  "title",
+                  "T"
+                ]
+              ],
+              "content": "",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            },
+            {
+              "type": "text",
+              "tag": "",
+              "nesting": 0,
+              "attrs": [],
+              "content": "id",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            },
+            {
+              "type": "link_close",
+              "tag": "a",
+              "nesting": -1,
+              "attrs": [],
+              "content": "",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            }
+          ]
+        },
+        {
+          "type": "paragraph_close",
+          "tag": "p",
+          "nesting": -1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": null,
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "auto-links",
+      "source": "https://example.com a@example.com example.com www.example.com <https://example.com> <a@example.com>",
+      "tokens": [
+        {
+          "type": "paragraph_open",
+          "tag": "p",
+          "nesting": 1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": [
+            0,
+            1
+          ],
+          "children": []
+        },
+        {
+          "type": "inline",
+          "tag": "",
+          "nesting": 0,
+          "attrs": [],
+          "content": "https://example.com a@example.com example.com www.example.com <https://example.com> <a@example.com>",
+          "info": "",
+          "hidden": false,
+          "map": [
+            0,
+            1
+          ],
+          "children": [
+            {
+              "type": "link_open",
+              "tag": "a",
+              "nesting": 1,
+              "attrs": [
+                [
+                  "href",
+                  "https://example.com"
+                ]
+              ],
+              "content": "",
+              "info": "auto",
+              "hidden": false,
+              "map": null,
+              "children": []
+            },
+            {
+              "type": "text",
+              "tag": "",
+              "nesting": 0,
+              "attrs": [],
+              "content": "https://example.com",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            },
+            {
+              "type": "link_close",
+              "tag": "a",
+              "nesting": -1,
+              "attrs": [],
+              "content": "",
+              "info": "auto",
+              "hidden": false,
+              "map": null,
+              "children": []
+            },
+            {
+              "type": "text",
+              "tag": "",
+              "nesting": 0,
+              "attrs": [],
+              "content": " ",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            },
+            {
+              "type": "link_open",
+              "tag": "a",
+              "nesting": 1,
+              "attrs": [
+                [
+                  "href",
+                  "mailto:a@example.com"
+                ]
+              ],
+              "content": "",
+              "info": "auto",
+              "hidden": false,
+              "map": null,
+              "children": []
+            },
+            {
+              "type": "text",
+              "tag": "",
+              "nesting": 0,
+              "attrs": [],
+              "content": "a@example.com",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            },
+            {
+              "type": "link_close",
+              "tag": "a",
+              "nesting": -1,
+              "attrs": [],
+              "content": "",
+              "info": "auto",
+              "hidden": false,
+              "map": null,
+              "children": []
+            },
+            {
+              "type": "text",
+              "tag": "",
+              "nesting": 0,
+              "attrs": [],
+              "content": " example.com www.example.com ",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            },
+            {
+              "type": "link_open",
+              "tag": "a",
+              "nesting": 1,
+              "attrs": [
+                [
+                  "href",
+                  "https://example.com"
+                ]
+              ],
+              "content": "",
+              "info": "auto",
+              "hidden": false,
+              "map": null,
+              "children": []
+            },
+            {
+              "type": "text",
+              "tag": "",
+              "nesting": 0,
+              "attrs": [],
+              "content": "https://example.com",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            },
+            {
+              "type": "link_close",
+              "tag": "a",
+              "nesting": -1,
+              "attrs": [],
+              "content": "",
+              "info": "auto",
+              "hidden": false,
+              "map": null,
+              "children": []
+            },
+            {
+              "type": "text",
+              "tag": "",
+              "nesting": 0,
+              "attrs": [],
+              "content": " ",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            },
+            {
+              "type": "link_open",
+              "tag": "a",
+              "nesting": 1,
+              "attrs": [
+                [
+                  "href",
+                  "mailto:a@example.com"
+                ]
+              ],
+              "content": "",
+              "info": "auto",
+              "hidden": false,
+              "map": null,
+              "children": []
+            },
+            {
+              "type": "text",
+              "tag": "",
+              "nesting": 0,
+              "attrs": [],
+              "content": "a@example.com",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            },
+            {
+              "type": "link_close",
+              "tag": "a",
+              "nesting": -1,
+              "attrs": [],
+              "content": "",
+              "info": "auto",
+              "hidden": false,
+              "map": null,
+              "children": []
+            }
+          ]
+        },
+        {
+          "type": "paragraph_close",
+          "tag": "p",
+          "nesting": -1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": null,
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "breaks",
+      "source": "a\nb  \nc\\\nd",
+      "tokens": [
+        {
+          "type": "paragraph_open",
+          "tag": "p",
+          "nesting": 1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": [
+            0,
+            4
+          ],
+          "children": []
+        },
+        {
+          "type": "inline",
+          "tag": "",
+          "nesting": 0,
+          "attrs": [],
+          "content": "a\nb  \nc\\\nd",
+          "info": "",
+          "hidden": false,
+          "map": [
+            0,
+            4
+          ],
+          "children": [
+            {
+              "type": "text",
+              "tag": "",
+              "nesting": 0,
+              "attrs": [],
+              "content": "a",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            },
+            {
+              "type": "softbreak",
+              "tag": "br",
+              "nesting": 0,
+              "attrs": [],
+              "content": "",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            },
+            {
+              "type": "text",
+              "tag": "",
+              "nesting": 0,
+              "attrs": [],
+              "content": "b",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            },
+            {
+              "type": "hardbreak",
+              "tag": "br",
+              "nesting": 0,
+              "attrs": [],
+              "content": "",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            },
+            {
+              "type": "text",
+              "tag": "",
+              "nesting": 0,
+              "attrs": [],
+              "content": "c",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            },
+            {
+              "type": "hardbreak",
+              "tag": "br",
+              "nesting": 0,
+              "attrs": [],
+              "content": "",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            },
+            {
+              "type": "text",
+              "tag": "",
+              "nesting": 0,
+              "attrs": [],
+              "content": "d",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            }
+          ]
+        },
+        {
+          "type": "paragraph_close",
+          "tag": "p",
+          "nesting": -1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": null,
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "lists",
+      "source": "3. a\n4. b\n\n   continuation\n   - nested",
+      "tokens": [
+        {
+          "type": "ordered_list_open",
+          "tag": "ol",
+          "nesting": 1,
+          "attrs": [
+            [
+              "start",
+              3
+            ]
+          ],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": [
+            0,
+            5
+          ],
+          "children": []
+        },
+        {
+          "type": "list_item_open",
+          "tag": "li",
+          "nesting": 1,
+          "attrs": [],
+          "content": "",
+          "info": "3",
+          "hidden": false,
+          "map": [
+            0,
+            1
+          ],
+          "children": []
+        },
+        {
+          "type": "paragraph_open",
+          "tag": "p",
+          "nesting": 1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": [
+            0,
+            1
+          ],
+          "children": []
+        },
+        {
+          "type": "inline",
+          "tag": "",
+          "nesting": 0,
+          "attrs": [],
+          "content": "a",
+          "info": "",
+          "hidden": false,
+          "map": [
+            0,
+            1
+          ],
+          "children": [
+            {
+              "type": "text",
+              "tag": "",
+              "nesting": 0,
+              "attrs": [],
+              "content": "a",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            }
+          ]
+        },
+        {
+          "type": "paragraph_close",
+          "tag": "p",
+          "nesting": -1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": null,
+          "children": []
+        },
+        {
+          "type": "list_item_close",
+          "tag": "li",
+          "nesting": -1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": null,
+          "children": []
+        },
+        {
+          "type": "list_item_open",
+          "tag": "li",
+          "nesting": 1,
+          "attrs": [],
+          "content": "",
+          "info": "4",
+          "hidden": false,
+          "map": [
+            1,
+            5
+          ],
+          "children": []
+        },
+        {
+          "type": "paragraph_open",
+          "tag": "p",
+          "nesting": 1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": [
+            1,
+            2
+          ],
+          "children": []
+        },
+        {
+          "type": "inline",
+          "tag": "",
+          "nesting": 0,
+          "attrs": [],
+          "content": "b",
+          "info": "",
+          "hidden": false,
+          "map": [
+            1,
+            2
+          ],
+          "children": [
+            {
+              "type": "text",
+              "tag": "",
+              "nesting": 0,
+              "attrs": [],
+              "content": "b",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            }
+          ]
+        },
+        {
+          "type": "paragraph_close",
+          "tag": "p",
+          "nesting": -1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": null,
+          "children": []
+        },
+        {
+          "type": "paragraph_open",
+          "tag": "p",
+          "nesting": 1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": [
+            3,
+            4
+          ],
+          "children": []
+        },
+        {
+          "type": "inline",
+          "tag": "",
+          "nesting": 0,
+          "attrs": [],
+          "content": "continuation",
+          "info": "",
+          "hidden": false,
+          "map": [
+            3,
+            4
+          ],
+          "children": [
+            {
+              "type": "text",
+              "tag": "",
+              "nesting": 0,
+              "attrs": [],
+              "content": "continuation",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            }
+          ]
+        },
+        {
+          "type": "paragraph_close",
+          "tag": "p",
+          "nesting": -1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": null,
+          "children": []
+        },
+        {
+          "type": "bullet_list_open",
+          "tag": "ul",
+          "nesting": 1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": [
+            4,
+            5
+          ],
+          "children": []
+        },
+        {
+          "type": "list_item_open",
+          "tag": "li",
+          "nesting": 1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": [
+            4,
+            5
+          ],
+          "children": []
+        },
+        {
+          "type": "paragraph_open",
+          "tag": "p",
+          "nesting": 1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": true,
+          "map": [
+            4,
+            5
+          ],
+          "children": []
+        },
+        {
+          "type": "inline",
+          "tag": "",
+          "nesting": 0,
+          "attrs": [],
+          "content": "nested",
+          "info": "",
+          "hidden": false,
+          "map": [
+            4,
+            5
+          ],
+          "children": [
+            {
+              "type": "text",
+              "tag": "",
+              "nesting": 0,
+              "attrs": [],
+              "content": "nested",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            }
+          ]
+        },
+        {
+          "type": "paragraph_close",
+          "tag": "p",
+          "nesting": -1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": true,
+          "map": null,
+          "children": []
+        },
+        {
+          "type": "list_item_close",
+          "tag": "li",
+          "nesting": -1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": null,
+          "children": []
+        },
+        {
+          "type": "bullet_list_close",
+          "tag": "ul",
+          "nesting": -1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": null,
+          "children": []
+        },
+        {
+          "type": "list_item_close",
+          "tag": "li",
+          "nesting": -1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": null,
+          "children": []
+        },
+        {
+          "type": "ordered_list_close",
+          "tag": "ol",
+          "nesting": -1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": null,
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "quote",
+      "source": "> a\n>\n> - b\n>   continued\n\nlater",
+      "tokens": [
+        {
+          "type": "blockquote_open",
+          "tag": "blockquote",
+          "nesting": 1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": [
+            0,
+            4
+          ],
+          "children": []
+        },
+        {
+          "type": "paragraph_open",
+          "tag": "p",
+          "nesting": 1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": [
+            0,
+            1
+          ],
+          "children": []
+        },
+        {
+          "type": "inline",
+          "tag": "",
+          "nesting": 0,
+          "attrs": [],
+          "content": "a",
+          "info": "",
+          "hidden": false,
+          "map": [
+            0,
+            1
+          ],
+          "children": [
+            {
+              "type": "text",
+              "tag": "",
+              "nesting": 0,
+              "attrs": [],
+              "content": "a",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            }
+          ]
+        },
+        {
+          "type": "paragraph_close",
+          "tag": "p",
+          "nesting": -1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": null,
+          "children": []
+        },
+        {
+          "type": "bullet_list_open",
+          "tag": "ul",
+          "nesting": 1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": [
+            2,
+            4
+          ],
+          "children": []
+        },
+        {
+          "type": "list_item_open",
+          "tag": "li",
+          "nesting": 1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": [
+            2,
+            4
+          ],
+          "children": []
+        },
+        {
+          "type": "paragraph_open",
+          "tag": "p",
+          "nesting": 1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": true,
+          "map": [
+            2,
+            4
+          ],
+          "children": []
+        },
+        {
+          "type": "inline",
+          "tag": "",
+          "nesting": 0,
+          "attrs": [],
+          "content": "b\ncontinued",
+          "info": "",
+          "hidden": false,
+          "map": [
+            2,
+            4
+          ],
+          "children": [
+            {
+              "type": "text",
+              "tag": "",
+              "nesting": 0,
+              "attrs": [],
+              "content": "b",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            },
+            {
+              "type": "softbreak",
+              "tag": "br",
+              "nesting": 0,
+              "attrs": [],
+              "content": "",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            },
+            {
+              "type": "text",
+              "tag": "",
+              "nesting": 0,
+              "attrs": [],
+              "content": "continued",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            }
+          ]
+        },
+        {
+          "type": "paragraph_close",
+          "tag": "p",
+          "nesting": -1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": true,
+          "map": null,
+          "children": []
+        },
+        {
+          "type": "list_item_close",
+          "tag": "li",
+          "nesting": -1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": null,
+          "children": []
+        },
+        {
+          "type": "bullet_list_close",
+          "tag": "ul",
+          "nesting": -1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": null,
+          "children": []
+        },
+        {
+          "type": "blockquote_close",
+          "tag": "blockquote",
+          "nesting": -1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": null,
+          "children": []
+        },
+        {
+          "type": "paragraph_open",
+          "tag": "p",
+          "nesting": 1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": [
+            5,
+            6
+          ],
+          "children": []
+        },
+        {
+          "type": "inline",
+          "tag": "",
+          "nesting": 0,
+          "attrs": [],
+          "content": "later",
+          "info": "",
+          "hidden": false,
+          "map": [
+            5,
+            6
+          ],
+          "children": [
+            {
+              "type": "text",
+              "tag": "",
+              "nesting": 0,
+              "attrs": [],
+              "content": "later",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            }
+          ]
+        },
+        {
+          "type": "paragraph_close",
+          "tag": "p",
+          "nesting": -1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": null,
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "code",
+      "source": "`a  b` ``a`b``\n\n    $x$ **b**\n\n```js\n$x$ <b>\n```",
+      "tokens": [
+        {
+          "type": "paragraph_open",
+          "tag": "p",
+          "nesting": 1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": [
+            0,
+            1
+          ],
+          "children": []
+        },
+        {
+          "type": "inline",
+          "tag": "",
+          "nesting": 0,
+          "attrs": [],
+          "content": "`a  b` ``a`b``",
+          "info": "",
+          "hidden": false,
+          "map": [
+            0,
+            1
+          ],
+          "children": [
+            {
+              "type": "code_inline",
+              "tag": "code",
+              "nesting": 0,
+              "attrs": [],
+              "content": "a  b",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            },
+            {
+              "type": "text",
+              "tag": "",
+              "nesting": 0,
+              "attrs": [],
+              "content": " ",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            },
+            {
+              "type": "code_inline",
+              "tag": "code",
+              "nesting": 0,
+              "attrs": [],
+              "content": "a`b",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            }
+          ]
+        },
+        {
+          "type": "paragraph_close",
+          "tag": "p",
+          "nesting": -1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": null,
+          "children": []
+        },
+        {
+          "type": "code_block",
+          "tag": "code",
+          "nesting": 0,
+          "attrs": [],
+          "content": "$x$ **b**\n",
+          "info": "",
+          "hidden": false,
+          "map": [
+            2,
+            3
+          ],
+          "children": []
+        },
+        {
+          "type": "fence",
+          "tag": "code",
+          "nesting": 0,
+          "attrs": [],
+          "content": "$x$ <b>\n",
+          "info": "js",
+          "hidden": false,
+          "map": [
+            4,
+            7
+          ],
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "images",
+      "source": "![*alt*](./a.png \"T\") ![r][img]\n\n[img]: ./b.png",
+      "tokens": [
+        {
+          "type": "paragraph_open",
+          "tag": "p",
+          "nesting": 1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": [
+            0,
+            1
+          ],
+          "children": []
+        },
+        {
+          "type": "inline",
+          "tag": "",
+          "nesting": 0,
+          "attrs": [],
+          "content": "![*alt*](./a.png \"T\") ![r][img]",
+          "info": "",
+          "hidden": false,
+          "map": [
+            0,
+            1
+          ],
+          "children": [
+            {
+              "type": "image",
+              "tag": "img",
+              "nesting": 0,
+              "attrs": [
+                [
+                  "src",
+                  "./a.png"
+                ],
+                [
+                  "alt",
+                  ""
+                ],
+                [
+                  "title",
+                  "T"
+                ]
+              ],
+              "content": "*alt*",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": [
+                {
+                  "type": "em_open",
+                  "tag": "em",
+                  "nesting": 1,
+                  "attrs": [],
+                  "content": "",
+                  "info": "",
+                  "hidden": false,
+                  "map": null,
+                  "children": []
+                },
+                {
+                  "type": "text",
+                  "tag": "",
+                  "nesting": 0,
+                  "attrs": [],
+                  "content": "alt",
+                  "info": "",
+                  "hidden": false,
+                  "map": null,
+                  "children": []
+                },
+                {
+                  "type": "em_close",
+                  "tag": "em",
+                  "nesting": -1,
+                  "attrs": [],
+                  "content": "",
+                  "info": "",
+                  "hidden": false,
+                  "map": null,
+                  "children": []
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "tag": "",
+              "nesting": 0,
+              "attrs": [],
+              "content": " ",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            },
+            {
+              "type": "image",
+              "tag": "img",
+              "nesting": 0,
+              "attrs": [
+                [
+                  "src",
+                  "./b.png"
+                ],
+                [
+                  "alt",
+                  ""
+                ]
+              ],
+              "content": "r",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": [
+                {
+                  "type": "text",
+                  "tag": "",
+                  "nesting": 0,
+                  "attrs": [],
+                  "content": "r",
+                  "info": "",
+                  "hidden": false,
+                  "map": null,
+                  "children": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "paragraph_close",
+          "tag": "p",
+          "nesting": -1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": null,
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "math-boundaries",
+      "source": "$x$ $ x $ 中$x$文 a$x$b $5 and $10 \\$x$\n\n$x\ny$",
+      "tokens": [
+        {
+          "type": "paragraph_open",
+          "tag": "p",
+          "nesting": 1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": [
+            0,
+            1
+          ],
+          "children": []
+        },
+        {
+          "type": "inline",
+          "tag": "",
+          "nesting": 0,
+          "attrs": [],
+          "content": "$x$ $ x $ 中$x$文 a$x$b $5 and $10 \\$x$",
+          "info": "",
+          "hidden": false,
+          "map": [
+            0,
+            1
+          ],
+          "children": [
+            {
+              "type": "math_inline",
+              "tag": "math",
+              "nesting": 0,
+              "attrs": [],
+              "content": "x",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            },
+            {
+              "type": "text",
+              "tag": "",
+              "nesting": 0,
+              "attrs": [],
+              "content": " ",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            },
+            {
+              "type": "math_inline",
+              "tag": "math",
+              "nesting": 0,
+              "attrs": [],
+              "content": " x ",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            },
+            {
+              "type": "text",
+              "tag": "",
+              "nesting": 0,
+              "attrs": [],
+              "content": " 中",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            },
+            {
+              "type": "math_inline",
+              "tag": "math",
+              "nesting": 0,
+              "attrs": [],
+              "content": "x",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            },
+            {
+              "type": "text",
+              "tag": "",
+              "nesting": 0,
+              "attrs": [],
+              "content": "文 a$x$b $5 and ",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            },
+            {
+              "type": "math_inline",
+              "tag": "math",
+              "nesting": 0,
+              "attrs": [],
+              "content": "10 \\$x",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            }
+          ]
+        },
+        {
+          "type": "paragraph_close",
+          "tag": "p",
+          "nesting": -1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": null,
+          "children": []
+        },
+        {
+          "type": "paragraph_open",
+          "tag": "p",
+          "nesting": 1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": [
+            2,
+            4
+          ],
+          "children": []
+        },
+        {
+          "type": "inline",
+          "tag": "",
+          "nesting": 0,
+          "attrs": [],
+          "content": "$x\ny$",
+          "info": "",
+          "hidden": false,
+          "map": [
+            2,
+            4
+          ],
+          "children": [
+            {
+              "type": "math_inline",
+              "tag": "math",
+              "nesting": 0,
+              "attrs": [],
+              "content": "x\ny",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            }
+          ]
+        },
+        {
+          "type": "paragraph_close",
+          "tag": "p",
+          "nesting": -1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": null,
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "display-inline",
+      "source": "before $$x$$ after",
+      "tokens": [
+        {
+          "type": "paragraph_open",
+          "tag": "p",
+          "nesting": 1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": [
+            0,
+            1
+          ],
+          "children": []
+        },
+        {
+          "type": "inline",
+          "tag": "",
+          "nesting": 0,
+          "attrs": [],
+          "content": "before $$x$$ after",
+          "info": "",
+          "hidden": false,
+          "map": [
+            0,
+            1
+          ],
+          "children": [
+            {
+              "type": "text",
+              "tag": "",
+              "nesting": 0,
+              "attrs": [],
+              "content": "before ",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            },
+            {
+              "type": "math_block",
+              "tag": "math",
+              "nesting": 0,
+              "attrs": [],
+              "content": "x",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            },
+            {
+              "type": "text",
+              "tag": "",
+              "nesting": 0,
+              "attrs": [],
+              "content": " after",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            }
+          ]
+        },
+        {
+          "type": "paragraph_close",
+          "tag": "p",
+          "nesting": -1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": null,
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "display-block",
+      "source": "$$\nx+y\n$$\n\nnext",
+      "tokens": [
+        {
+          "type": "math_block",
+          "tag": "math",
+          "nesting": 0,
+          "attrs": [],
+          "content": "x+y\n",
+          "info": "",
+          "hidden": false,
+          "map": [
+            0,
+            3
+          ],
+          "children": []
+        },
+        {
+          "type": "paragraph_open",
+          "tag": "p",
+          "nesting": 1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": [
+            4,
+            5
+          ],
+          "children": []
+        },
+        {
+          "type": "inline",
+          "tag": "",
+          "nesting": 0,
+          "attrs": [],
+          "content": "next",
+          "info": "",
+          "hidden": false,
+          "map": [
+            4,
+            5
+          ],
+          "children": [
+            {
+              "type": "text",
+              "tag": "",
+              "nesting": 0,
+              "attrs": [],
+              "content": "next",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            }
+          ]
+        },
+        {
+          "type": "paragraph_close",
+          "tag": "p",
+          "nesting": -1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": null,
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "math-fence",
+      "source": "``` MaTh \nx+y\n```\n\n```math extra\nx\n```",
+      "tokens": [
+        {
+          "type": "fence",
+          "tag": "code",
+          "nesting": 0,
+          "attrs": [],
+          "content": "x+y\n",
+          "info": " MaTh ",
+          "hidden": false,
+          "map": [
+            0,
+            3
+          ],
+          "children": []
+        },
+        {
+          "type": "fence",
+          "tag": "code",
+          "nesting": 0,
+          "attrs": [],
+          "content": "x\n",
+          "info": "math extra",
+          "hidden": false,
+          "map": [
+            4,
+            7
+          ],
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "entities",
+      "source": "&NotEqualTilde; &amp; 😀",
+      "tokens": [
+        {
+          "type": "paragraph_open",
+          "tag": "p",
+          "nesting": 1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": [
+            0,
+            1
+          ],
+          "children": []
+        },
+        {
+          "type": "inline",
+          "tag": "",
+          "nesting": 0,
+          "attrs": [],
+          "content": "&NotEqualTilde; &amp; 😀",
+          "info": "",
+          "hidden": false,
+          "map": [
+            0,
+            1
+          ],
+          "children": [
+            {
+              "type": "text",
+              "tag": "",
+              "nesting": 0,
+              "attrs": [],
+              "content": "≂̸ & 😀",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            }
+          ]
+        },
+        {
+          "type": "paragraph_close",
+          "tag": "p",
+          "nesting": -1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": null,
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "byte-lines",
+      "source": "# 中文😀\r\n\r\n[链](../目标)\r\n",
+      "tokens": [
+        {
+          "type": "heading_open",
+          "tag": "h1",
+          "nesting": 1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": [
+            0,
+            1
+          ],
+          "children": []
+        },
+        {
+          "type": "inline",
+          "tag": "",
+          "nesting": 0,
+          "attrs": [],
+          "content": "中文😀",
+          "info": "",
+          "hidden": false,
+          "map": [
+            0,
+            1
+          ],
+          "children": [
+            {
+              "type": "text",
+              "tag": "",
+              "nesting": 0,
+              "attrs": [],
+              "content": "中文😀",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            }
+          ]
+        },
+        {
+          "type": "heading_close",
+          "tag": "h1",
+          "nesting": -1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": null,
+          "children": []
+        },
+        {
+          "type": "paragraph_open",
+          "tag": "p",
+          "nesting": 1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": [
+            2,
+            3
+          ],
+          "children": []
+        },
+        {
+          "type": "inline",
+          "tag": "",
+          "nesting": 0,
+          "attrs": [],
+          "content": "[链](../目标)",
+          "info": "",
+          "hidden": false,
+          "map": [
+            2,
+            3
+          ],
+          "children": [
+            {
+              "type": "link_open",
+              "tag": "a",
+              "nesting": 1,
+              "attrs": [
+                [
+                  "href",
+                  "../%E7%9B%AE%E6%A0%87"
+                ]
+              ],
+              "content": "",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            },
+            {
+              "type": "text",
+              "tag": "",
+              "nesting": 0,
+              "attrs": [],
+              "content": "链",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            },
+            {
+              "type": "link_close",
+              "tag": "a",
+              "nesting": -1,
+              "attrs": [],
+              "content": "",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            }
+          ]
+        },
+        {
+          "type": "paragraph_close",
+          "tag": "p",
+          "nesting": -1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": null,
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "unknown-reference",
+      "source": "[unknown][id]",
+      "tokens": [
+        {
+          "type": "paragraph_open",
+          "tag": "p",
+          "nesting": 1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": [
+            0,
+            1
+          ],
+          "children": []
+        },
+        {
+          "type": "inline",
+          "tag": "",
+          "nesting": 0,
+          "attrs": [],
+          "content": "[unknown][id]",
+          "info": "",
+          "hidden": false,
+          "map": [
+            0,
+            1
+          ],
+          "children": [
+            {
+              "type": "text",
+              "tag": "",
+              "nesting": 0,
+              "attrs": [],
+              "content": "[unknown][id]",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            }
+          ]
+        },
+        {
+          "type": "paragraph_close",
+          "tag": "p",
+          "nesting": -1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": null,
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "literal-symbols",
+      "source": "§a $x and example.com www.example.com",
+      "tokens": [
+        {
+          "type": "paragraph_open",
+          "tag": "p",
+          "nesting": 1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": [
+            0,
+            1
+          ],
+          "children": []
+        },
+        {
+          "type": "inline",
+          "tag": "",
+          "nesting": 0,
+          "attrs": [],
+          "content": "§a $x and example.com www.example.com",
+          "info": "",
+          "hidden": false,
+          "map": [
+            0,
+            1
+          ],
+          "children": [
+            {
+              "type": "text",
+              "tag": "",
+              "nesting": 0,
+              "attrs": [],
+              "content": "§a $x and example.com www.example.com",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            }
+          ]
+        },
+        {
+          "type": "paragraph_close",
+          "tag": "p",
+          "nesting": -1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": null,
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "math-backtick",
+      "source": "$`x`$ $$`x`$$",
+      "tokens": [
+        {
+          "type": "paragraph_open",
+          "tag": "p",
+          "nesting": 1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": [
+            0,
+            1
+          ],
+          "children": []
+        },
+        {
+          "type": "inline",
+          "tag": "",
+          "nesting": 0,
+          "attrs": [],
+          "content": "$`x`$ $$`x`$$",
+          "info": "",
+          "hidden": false,
+          "map": [
+            0,
+            1
+          ],
+          "children": [
+            {
+              "type": "math_inline",
+              "tag": "math",
+              "nesting": 0,
+              "attrs": [],
+              "content": "`x`",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            },
+            {
+              "type": "text",
+              "tag": "",
+              "nesting": 0,
+              "attrs": [],
+              "content": " ",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            },
+            {
+              "type": "math_block",
+              "tag": "math",
+              "nesting": 0,
+              "attrs": [],
+              "content": "`x`",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            }
+          ]
+        },
+        {
+          "type": "paragraph_close",
+          "tag": "p",
+          "nesting": -1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": null,
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "quote-math-no-space",
+      "source": "> $$\n>x\n>$$",
+      "tokens": [
+        {
+          "type": "blockquote_open",
+          "tag": "blockquote",
+          "nesting": 1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": [
+            0,
+            3
+          ],
+          "children": []
+        },
+        {
+          "type": "math_block",
+          "tag": "math",
+          "nesting": 0,
+          "attrs": [],
+          "content": "x\n",
+          "info": "",
+          "hidden": false,
+          "map": [
+            0,
+            3
+          ],
+          "children": []
+        },
+        {
+          "type": "blockquote_close",
+          "tag": "blockquote",
+          "nesting": -1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": null,
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "quote-math-empty",
+      "source": "> $$\n> x\n>\n> y\n> $$",
+      "tokens": [
+        {
+          "type": "blockquote_open",
+          "tag": "blockquote",
+          "nesting": 1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": [
+            0,
+            5
+          ],
+          "children": []
+        },
+        {
+          "type": "math_block",
+          "tag": "math",
+          "nesting": 0,
+          "attrs": [],
+          "content": "x\n\ny\n",
+          "info": "",
+          "hidden": false,
+          "map": [
+            0,
+            5
+          ],
+          "children": []
+        },
+        {
+          "type": "blockquote_close",
+          "tag": "blockquote",
+          "nesting": -1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": null,
+          "children": []
+        }
+      ]
+    }
+  ],
+  "acceptedDifferences": [
+    {
+      "id": "unclosed-display",
+      "source": "$$\nx\n\n正文\n# next",
+      "uilib": "未配对按正常文档解释，不吞正文",
+      "reference": [
+        {
+          "type": "math_block",
+          "tag": "math",
+          "nesting": 0,
+          "attrs": [],
+          "content": "x\n\n正文\n# next",
+          "info": "",
+          "hidden": false,
+          "map": [
+            0,
+            6
+          ],
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "list-math-tab",
+      "source": "- $$\n\tx\n\t$$",
+      "uilib": "按CommonMark合法Tab容器完整配对为单个MATH(x)，不复制固定插件empty math吞正文",
+      "reference": [
+        {
+          "type": "bullet_list_open",
+          "tag": "ul",
+          "nesting": 1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": [
+            0,
+            4
+          ],
+          "children": []
+        },
+        {
+          "type": "list_item_open",
+          "tag": "li",
+          "nesting": 1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": [
+            0,
+            4
+          ],
+          "children": []
+        },
+        {
+          "type": "math_block",
+          "tag": "math",
+          "nesting": 0,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": [
+            0,
+            2
+          ],
+          "children": []
+        },
+        {
+          "type": "math_block",
+          "tag": "math",
+          "nesting": 0,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": [
+            2,
+            4
+          ],
+          "children": []
+        },
+        {
+          "type": "list_item_close",
+          "tag": "li",
+          "nesting": -1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": null,
+          "children": []
+        },
+        {
+          "type": "bullet_list_close",
+          "tag": "ul",
+          "nesting": -1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": null,
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "list-math-empty",
+      "source": "- $$\n\tx\n\n\ty\n\t$$",
+      "uilib": "按CommonMark合法Tab容器完整配对为单个MATH(x空行y)，保留全部公式正文",
+      "reference": [
+        {
+          "type": "bullet_list_open",
+          "tag": "ul",
+          "nesting": 1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": [
+            0,
+            6
+          ],
+          "children": []
+        },
+        {
+          "type": "list_item_open",
+          "tag": "li",
+          "nesting": 1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": [
+            0,
+            6
+          ],
+          "children": []
+        },
+        {
+          "type": "math_block",
+          "tag": "math",
+          "nesting": 0,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": [
+            0,
+            2
+          ],
+          "children": []
+        },
+        {
+          "type": "paragraph_open",
+          "tag": "p",
+          "nesting": 1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": [
+            3,
+            4
+          ],
+          "children": []
+        },
+        {
+          "type": "inline",
+          "tag": "",
+          "nesting": 0,
+          "attrs": [],
+          "content": "y",
+          "info": "",
+          "hidden": false,
+          "map": [
+            3,
+            4
+          ],
+          "children": [
+            {
+              "type": "text",
+              "tag": "",
+              "nesting": 0,
+              "attrs": [],
+              "content": "y",
+              "info": "",
+              "hidden": false,
+              "map": null,
+              "children": []
+            }
+          ]
+        },
+        {
+          "type": "paragraph_close",
+          "tag": "p",
+          "nesting": -1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": null,
+          "children": []
+        },
+        {
+          "type": "math_block",
+          "tag": "math",
+          "nesting": 0,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": [
+            4,
+            6
+          ],
+          "children": []
+        },
+        {
+          "type": "list_item_close",
+          "tag": "li",
+          "nesting": -1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": null,
+          "children": []
+        },
+        {
+          "type": "bullet_list_close",
+          "tag": "ul",
+          "nesting": -1,
+          "attrs": [],
+          "content": "",
+          "info": "",
+          "hidden": false,
+          "map": null,
+          "children": []
+        }
+      ]
+    }
+  ],
+  "deferred": [
+    "管道表格",
+    "HTML内容子集",
+    "VSCode YAML frontmatter表格",
+    "heading slug及预览资源重写"
+  ]
+}

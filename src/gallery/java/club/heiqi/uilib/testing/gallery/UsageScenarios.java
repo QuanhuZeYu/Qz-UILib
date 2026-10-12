@@ -82,7 +82,9 @@ final class UsageScenarios {
         } else {
             SceneNode reader = new SceneNode().size(Size.fill(1), Size.natural());
             reader.bind(NodeBinding.value(narrow, (node, valueNarrow) -> node.size(valueNarrow ? Size.fill(1).bounds(0, 560) : Size.fill(1), Size.natural())));
-            reader.add(document(context, () -> content(page, english.get(), value.get()), theme, resources, link));
+            reader.add(page == TestGallery.Page.ARTICLE
+                    ? markdown(context, () -> article(english.get()), theme, resources, link)
+                    : document(context, () -> content(page, english.get(), value.get()), theme, resources, link));
             body.add(reader);
         }
         body.add(GalleryStyle.label(context, link, theme, 13, true));
@@ -93,6 +95,26 @@ final class UsageScenarios {
         club.heiqi.uilib.ui.reactive.Owner scope = context.scope().child();
         ReadableSignal<DocumentContent> content = context.domain().computed(scope, () -> DocumentContent.paragraph(TextContent.richTags(source.get())));
         return SceneDocument.create(context, content, theme, resources, target -> link.set("已激活链接：" + target)).size(Size.fill(1), Size.natural()).own(scope);
+    }
+    private static SceneNode markdown(ScenePageContext context, ReadableSignal<String> source,
+            ReadableSignal<SceneTheme> theme, DocumentResources resources, Signal<String> link) {
+        ReadableSignal<DocumentContent> content = context.domain().computed(context.scope(),
+                () -> club.heiqi.uilib.ui.scene.text.MarkdownDocument.parse(source.get()));
+        return SceneDocument.create(context, content, theme, resources,
+                target -> link.set("已激活链接：" + target)).size(Size.fill(1), Size.natural());
+    }
+    private static String article(boolean english) {
+        return (english ? "# Workshop guide\n\nA production batch combines **materials**, calculations and operator instructions. "
+                : "# 工坊使用说明\n\n一份生产任务同时包含**材料**、计算和操作指引。")
+                + "![工坊示意图](illustration)\n\n"
+                + (english ? "For two inputs per batch: " : "每批需要两份材料，批次数与总需求的关系为：")
+                + "[$N=2b$](checklist)\n\n"
+                + (english ? "> Keep the instructions and material count together.\n\n3. Check the inputs\n4. Confirm the batch\n   - Review the checklist\n\n"
+                        : "> 操作指引与材料数量保持在同一文档中。\n\n3. 核对材料\n4. 确认批次\n   - 复查任务清单\n\n")
+                + "---\n\n$$\nN=2b\n$$\n\n"
+                + "```text\ncount = batches * 2; // $literal$ **code** <plain>\n```\n\n"
+                + (english ? "Read the [checklist](checklist) before starting. Contact help@example.test."
+                        : "开始前阅读[任务清单](checklist)。联系 help@example.test。");
     }
     private static String steps(TestGallery.Page page) {
         switch (page) {

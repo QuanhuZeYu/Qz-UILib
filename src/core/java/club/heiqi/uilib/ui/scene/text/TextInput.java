@@ -121,12 +121,14 @@ public final class TextInput {
             throw new IllegalArgumentException("来源数组长度错误");
         int[] starts = new int[logical.length()], ends = new int[logical.length()];
         ArrayList<SourceSegment> pieces = new ArrayList<SourceSegment>();
-        int previous = 0;
+        int previous = 0, previousStart = -1;
         for (int i = 0; i < logical.length(); ) {
             int next = i + Character.charCount(logical.codePointAt(i)),
                     s = decodedStarts[i],
                     e = decodedEnds[i];
-            if (s < previous
+            // 一个源实体/Tab可展开多个逻辑字符；仅允许紧邻共享同一完整源范围。
+            boolean sharedSource = s == previousStart && e == previous;
+            if (s < previous && !sharedSource
                     || e <= s
                     || e > original.text.length()
                     || s > 0 && Character.isLowSurrogate(original.text.charAt(s))
@@ -139,7 +141,19 @@ public final class TextInput {
                 starts[j] = original.sourceStart(s);
                 ends[j] = original.sourceEnd(e - 1);
             }
-            pieces.add(new SourceSegment(i, next, starts[i], ends[i], false));
+            if (sharedSource) {
+                SourceSegment prior = pieces.remove(pieces.size() - 1);
+                pieces.add(
+                        new SourceSegment(
+                                prior.logicalStart,
+                                next,
+                                prior.sourceStart,
+                                prior.sourceEnd,
+                                false));
+            } else {
+                pieces.add(new SourceSegment(i, next, starts[i], ends[i], false));
+            }
+            previousStart = s;
             previous = e;
             i = next;
         }

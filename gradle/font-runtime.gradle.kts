@@ -12,11 +12,19 @@ val fontNativeRuntime by configurations.creating { extendsFrom(fontBindings) }
 val fontUnicodeRuntime by configurations.creating
 // YAML 由独立核心私有嵌入；开发编译与场景运行使用原始包名。
 val yamlRuntime by configurations.creating
+// 共同内容转换库仅由core私有携带，开发消费者使用原包名。
+val markdownRuntime by configurations.creating
+val coreContentRuntime by configurations.creating {
+    extendsFrom(fontUnicodeRuntime, yamlRuntime, markdownRuntime)
+}
 val isolatedFontRuntime by configurations.creating
 val lwjgl2Bindings by configurations.creating
 dependencies {
     add(fontUnicodeRuntime.name, "com.ibm.icu:icu4j:76.1")
     add(yamlRuntime.name, "org.yaml:snakeyaml:2.4")
+    add(markdownRuntime.name, "org.commonmark:commonmark:0.21.0")
+    add(markdownRuntime.name, "org.commonmark:commonmark-ext-gfm-strikethrough:0.21.0")
+    add(markdownRuntime.name, "org.nibor.autolink:autolink:0.10.0")
     add(lwjgl2Bindings.name, "org.lwjgl.lwjgl:lwjgl:2.9.4-nightly-20150209") { isTransitive = false }
     listOf("lwjgl", "lwjgl-freetype", "lwjgl-harfbuzz").forEach {
         add(isolatedFontRuntime.name, "org.lwjgl:$it:3.4.2") { isTransitive = false }

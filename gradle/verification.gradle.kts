@@ -3,8 +3,7 @@ import org.gradle.jvm.toolchain.JavaToolchainService
 
 val sourceSets = extensions.getByType<SourceSetContainer>()
 val javaToolchains = extensions.getByType<JavaToolchainService>()
-val fontUnicodeRuntime = configurations.getByName("fontUnicodeRuntime")
-val yamlRuntime = configurations.getByName("yamlRuntime")
+val coreContentRuntime = configurations.getByName("coreContentRuntime")
 val fontNativeRuntime = configurations.getByName("fontNativeRuntime")
 val lwjgl2Bindings = configurations.getByName("lwjgl2Bindings")
 val lwjgl2Sources = sourceSets.getByName("lwjgl2")
@@ -34,11 +33,11 @@ tasks.withType<Test>().configureEach {
 // 集成场景直启只包含核心与场景类，不将 MC/Forge/LWJGL 放到执行类路径。
 val coreLoopScenario = registerTestApplication("coreLoopScenario", "运行无平台核心业务与场景闭环", "club.heiqi.uilib.ui.scene.integration.SceneCoreLoopTest") {
     dependsOn(tasks.named("testClasses"))
-    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontUnicodeRuntime + yamlRuntime
+    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + coreContentRuntime
 }
 val orderedBatchScenario = registerTestApplication("orderedBatchScenario", "运行无平台生产合批透明重叠与裁剪出图场景", "club.heiqi.uilib.ui.scene.integration.OrderedBatchScenario") {
     dependsOn(tasks.named("testClasses"))
-    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontUnicodeRuntime + yamlRuntime
+    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + coreContentRuntime
     systemProperty("java.awt.headless", "true")
     args(layout.buildDirectory.dir("font-machine/batch").get().asFile.absolutePath)
 }
@@ -104,7 +103,7 @@ val compileCoreSceneScenario by tasks.registering(JavaCompile::class) {
     dependsOn(tasks.named(coreSources.classesTaskName), tasks.named(testSupportSources.classesTaskName))
     source(coreSceneDeclarations.map { (_, _, application) -> "src/test/java/club/heiqi/uilib/ui/scene/integration/$application.java" })
     source("src/test/java/club/heiqi/uilib/ui/scene/integration/SoftwareSceneScenario.java")
-    classpath = coreSources.output + testSupportSources.output + fontUnicodeRuntime + yamlRuntime
+    classpath = coreSources.output + testSupportSources.output + coreContentRuntime
     destinationDirectory.set(coreSceneClasses)
     sourceCompatibility = "1.8"
     targetCompatibility = "1.8"
@@ -114,7 +113,7 @@ val compileCoreSceneScenario by tasks.registering(JavaCompile::class) {
 val coreSceneApplications = coreSceneDeclarations.associate { (taskName, summary, application) ->
     taskName to registerTestApplication(taskName, summary, "club.heiqi.uilib.ui.scene.integration.$application") {
         dependsOn(compileCoreSceneScenario)
-        classpath = files(coreSceneClasses) + coreSources.output + fontUnicodeRuntime + yamlRuntime
+        classpath = files(coreSceneClasses) + coreSources.output + coreContentRuntime
         if (taskName == "localizationResourceScenario") {
             dependsOn("galleryClasses")
             classpath += sourceSets.getByName("gallery").output + files("src/test/resources")
@@ -128,7 +127,7 @@ val compileRichTextScenario by tasks.registering(JavaCompile::class) {
     dependsOn(tasks.named(coreSources.classesTaskName), tasks.named(testSupportSources.classesTaskName))
     dependsOn(tasks.named(fontAdapterSources.classesTaskName))
     source("src/test/java/club/heiqi/uilib/ui/scene/integration/RichTextScenario.java")
-    classpath = coreSources.output + fontAdapterSources.output + testSupportSources.output + fontNativeRuntime + fontUnicodeRuntime + yamlRuntime
+    classpath = coreSources.output + fontAdapterSources.output + testSupportSources.output + fontNativeRuntime + coreContentRuntime
     destinationDirectory.set(richTextClasses)
     sourceCompatibility = "1.8"
     targetCompatibility = "1.8"
@@ -136,14 +135,14 @@ val compileRichTextScenario by tasks.registering(JavaCompile::class) {
 }
 val richTextScenario = registerTestApplication("richTextScenario", "正式富文本解析字体布局与唯一链接路由", "club.heiqi.uilib.ui.scene.integration.RichTextScenario") {
     dependsOn(compileRichTextScenario)
-    classpath = files(richTextClasses) + coreSources.output + fontAdapterSources.output + fontNativeRuntime + fontUnicodeRuntime + yamlRuntime
+    classpath = files(richTextClasses) + coreSources.output + fontAdapterSources.output + fontNativeRuntime + coreContentRuntime
 }
 tasks.named("check") { dependsOn(richTextScenario) }
 val coreFontClasses = layout.buildDirectory.dir("classes/core-font")
 val compileCoreFontScenario by tasks.registering(JavaCompile::class) {
     dependsOn(tasks.named(coreSources.classesTaskName), tasks.named(testSupportSources.classesTaskName))
     source("src/test/java/club/heiqi/uilib/ui/scene/integration/CoreFontEngineScenario.java")
-    classpath = coreSources.output + fontUnicodeRuntime + testSupportSources.output + yamlRuntime
+    classpath = coreSources.output + coreContentRuntime + testSupportSources.output + coreContentRuntime
     destinationDirectory.set(coreFontClasses)
     sourceCompatibility = "1.8"
     targetCompatibility = "1.8"
@@ -151,7 +150,7 @@ val compileCoreFontScenario by tasks.registering(JavaCompile::class) {
 }
 val coreFontEngineScenario = registerTestApplication("coreFontEngineScenario", "不含Minecraft、Forge或LWJGL的真实核心合同运行", "club.heiqi.uilib.ui.scene.integration.CoreFontEngineScenario") {
     dependsOn(compileCoreFontScenario)
-    classpath = files(coreFontClasses) + coreSources.output + fontUnicodeRuntime + yamlRuntime
+    classpath = files(coreFontClasses) + coreSources.output + coreContentRuntime
 }
 val testApplicationScenario = registerTestApplication("testApplicationScenario", "测试应用作用域与失败语义", "club.heiqi.uilib.testing.TestApplicationScenario") {
     classpath = testSupportSources.output
@@ -165,10 +164,10 @@ tasks.register("coreSceneCheck") {
 }
 val lwjgl2TestSources = sourceSets.create("lwjgl2Test") {
     java.srcDir("src/lwjgl2Test/java")
-    compileClasspath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + lwjgl2Sources.output + lwjgl2Bindings + testSupportSources.output + yamlRuntime + sourceSets.getByName("main").compileClasspath.filter { !it.name.contains("jabel") }
+    compileClasspath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + lwjgl2Sources.output + lwjgl2Bindings + testSupportSources.output + coreContentRuntime + sourceSets.getByName("main").compileClasspath.filter { !it.name.contains("jabel") }
     // 原LWJGL2独立应用只装配真实所需输出与运行库。MC编译依赖含旧ICU及
     // 未初始化的Angelica等可选mod，不能把整套编译类路径冒充此运行环境。
-    runtimeClasspath = output + sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + lwjgl2Sources.output + lwjgl2Bindings + testSupportSources.output + fontUnicodeRuntime + yamlRuntime
+    runtimeClasspath = output + sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + lwjgl2Sources.output + lwjgl2Bindings + testSupportSources.output + coreContentRuntime
 }
 tasks.named<JavaCompile>(lwjgl2TestSources.compileJavaTaskName) {
     dependsOn(tasks.named(lwjgl2Sources.classesTaskName))
@@ -202,12 +201,12 @@ val imageLwjgl2Scenario = registerTestApplication("imageLwjgl2Scenario", "原LWJ
 }
 val nativeFontScenario = registerTestApplication("nativeFontScenario", "Java8独立运行正式字体整形/彩色像素与资源生命周期场景", "club.heiqi.uilib.ui.scene.integration.NativeFontScenario") {
     dependsOn(tasks.named("testClasses"))
-    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + yamlRuntime
+    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + coreContentRuntime
     args(file("src/core/resources/assets/qz_uilib/fonts/noto").absolutePath)
 }
 val nativeFontVisualScenario = registerTestApplication("nativeFontVisualScenario", "回放生产字体定位和FT光栅生成多语言PNG", "club.heiqi.uilib.ui.scene.integration.NativeFontVisualScenario") {
     dependsOn(tasks.named("testClasses"))
-    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + yamlRuntime
+    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + coreContentRuntime
     systemProperty("java.awt.headless", "true")
     args(file("src/core/resources/assets/qz_uilib/fonts/noto").absolutePath,
         layout.buildDirectory.dir("font-machine/native").get().asFile.absolutePath)
@@ -230,39 +229,39 @@ tasks.named("check") { dependsOn(packagedFontScenarios) }
 
 val glBatchScenario = registerTestApplication("glBatchScenario", "独立GLFW上下文对照真实二维纹理及数组回放（需本机GL设备）", "club.heiqi.uilib.ui.scene.integration.GlBatchScenario") {
     dependsOn(tasks.named("testClasses"))
-    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + yamlRuntime
+    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + coreContentRuntime
     args(layout.buildDirectory.dir("font-machine/gl").get().asFile.absolutePath)
 }
 val fontProjectionScenario = registerTestApplication("fontProjectionScenario", "透视采样、矩阵快照与有界光栅档位验收", "club.heiqi.uilib.ui.scene.integration.FontProjectionScenario") {
     dependsOn(tasks.named("testClasses"))
-    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime + yamlRuntime
+    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + coreContentRuntime
     args("cpu")
 }
 val fontContextGlScenario = registerTestApplication("fontContextGlScenario", "Core与Compatibility有效字体上下文捕获（需要设备）", "club.heiqi.uilib.ui.scene.integration.FontProjectionScenario") {
     dependsOn(tasks.named("testClasses"))
-    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime + yamlRuntime
+    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + coreContentRuntime
 }
 tasks.named("check") { dependsOn(fontProjectionScenario) }
 val vanillaTextScenario = registerTestApplication("vanillaTextScenario", "原版文字统一测量、安全裁剪换行、混淆与有界热缓存验收", "club.heiqi.uilib.ui.scene.integration.VanillaTextScenario") {
     dependsOn(tasks.named("testClasses"))
-    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime + yamlRuntime
+    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + coreContentRuntime
 }
 val fontHostOrderScenario = registerTestApplication("fontHostOrderScenario", "宿主延期票据保序、异常清理与资源lease验收", "club.heiqi.uilib.ui.scene.integration.FontHostOrderScenario") {
     dependsOn(tasks.named("testClasses"))
-    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime + yamlRuntime
+    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + coreContentRuntime
 }
 val fontDeferredStateScenario = registerTestApplication("fontDeferredStateScenario", "Core与Compatibility延期文字历史状态快照验收（需要设备）", "club.heiqi.uilib.ui.scene.integration.FontDeferredStateScenario") {
     dependsOn(tasks.named("testClasses"))
-    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime + yamlRuntime
+    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + coreContentRuntime
 }
 val vanillaFontGlScenario = registerTestApplication("vanillaFontGlScenario", "原版世界文字透视、光照、历史状态与图集视图验收（需要设备）", "club.heiqi.uilib.ui.scene.integration.VanillaFontGlScenario") {
     dependsOn(tasks.named("testClasses"))
-    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime + yamlRuntime
+    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + coreContentRuntime
     args(providers.gradleProperty("fontWorldAtlasMode").getOrElse("2d"))
 }
 val fontPlanSamplingScenario = registerTestApplication("fontPlanSamplingScenario", "近裁面可见墨迹、保守采样封顶与GUI快速路径验收", "club.heiqi.uilib.ui.scene.integration.FontPlanSamplingScenario") {
     dependsOn(tasks.named("testClasses"))
-    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime + yamlRuntime
+    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + coreContentRuntime
 }
 val vanillaFontThreadScenario = registerTestApplication("vanillaFontThreadScenario", "真实安装后Splash线程十个标准入口不接管，主线程保留接管", "club.heiqi.uilib.ui.scene.integration.VanillaFontThreadScenario") {
     dependsOn(tasks.named("testClasses"))
@@ -271,12 +270,12 @@ val vanillaFontThreadScenario = registerTestApplication("vanillaFontThreadScenar
 tasks.named("check") { dependsOn(vanillaTextScenario, fontHostOrderScenario, fontPlanSamplingScenario, vanillaFontThreadScenario) }
 val attributedGlyphGlScenario = registerTestApplication("attributedGlyphGlScenario", "整簇属性字形采样、彩色与装饰真实GL验收（需要设备）", "club.heiqi.uilib.ui.scene.integration.AttributedGlyphGlScenario") {
     dependsOn(tasks.named("testClasses"))
-    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime + yamlRuntime
+    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + coreContentRuntime
     args(layout.buildDirectory.dir("font-machine/attributed-gl").get().asFile.absolutePath)
 }
 val presentationEpochScenario = registerTestApplication("presentationEpochScenario", "多消费者字形需求与总帧上传预算（需要设备）", "club.heiqi.uilib.ui.scene.integration.PresentationEpochScenario") {
     dependsOn(tasks.named("testClasses"))
-    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime + yamlRuntime
+    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + coreContentRuntime
 }
 // SDL场景单独编译与执行，不将MC/Forge、GLFW或字体native服务放入运行路径。
 // SDL使用GTNH宿主实际缓存的时间戳绑定，core固定3.4.2；正常解析依赖，不绑定本机缓存目录。
@@ -298,7 +297,7 @@ val sdlTextInputClasses = layout.buildDirectory.dir("classes/sdl-text-input")
 val compileSdlTextInputScenario by tasks.registering(JavaCompile::class) {
     dependsOn(tasks.named("classes"), tasks.named(testSupportSources.classesTaskName))
     source("src/sdlTest/java")
-    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + testSupportSources.output + sdlTextInputRuntime + yamlRuntime
+    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + testSupportSources.output + sdlTextInputRuntime + coreContentRuntime
     destinationDirectory.set(sdlTextInputClasses)
     javaCompiler.set(javaToolchains.compilerFor { languageVersion.set(JavaLanguageVersion.of(25)) })
     options.release.set(8)
@@ -307,40 +306,40 @@ val compileSdlTextInputScenario by tasks.registering(JavaCompile::class) {
 val sdlTextInputScenario = registerTestApplication("sdlTextInputScenario", "真实SDL hidden window、生产Watch观察与scene原子IME（不开游戏）", "club.heiqi.uilib.ui.scene.integration.SdlTextInputScenario", useDefaultLauncher = false) {
     dependsOn(compileSdlTextInputScenario)
     javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(25)) })
-    classpath = files(sdlTextInputClasses) + sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sdlTextInputRuntime + fontUnicodeRuntime + yamlRuntime
+    classpath = files(sdlTextInputClasses) + sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sdlTextInputRuntime + coreContentRuntime
 }
 
 val clientFontServicesScenario = registerTestApplication("clientFontServicesScenario", "共享字体owner、原生framebuffer scene与输入资源生命周期（需要设备）", "club.heiqi.uilib.ui.scene.integration.ClientFontServicesScenario") {
     dependsOn(tasks.named("testClasses"))
-    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime + yamlRuntime
+    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + coreContentRuntime
     args(layout.buildDirectory.dir("font-machine/client").get().asFile.absolutePath)
 }
 val glyphPipelineScenario = registerTestApplication("glyphPipelineScenario", "真实共享定位、后台光栅、有界图集和GL回放对照（需要设备）", "club.heiqi.uilib.ui.scene.integration.GlyphPipelineScenario") {
     dependsOn(tasks.named("testClasses"))
-    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime + yamlRuntime
+    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + coreContentRuntime
     args(layout.buildDirectory.dir("font-machine/glyph").get().asFile.absolutePath)
 }
 val fontTextScenario = registerTestApplication("fontTextScenario", "真实共享Unicode/Bidi/复杂脚本与Emoji17全量候选匹配", "club.heiqi.uilib.ui.scene.integration.FontTextScenario") {
     dependsOn(tasks.named("testClasses"))
-    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime + yamlRuntime
+    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + coreContentRuntime
     args(projectDir.absolutePath)
 }
 val fontRealStyleScenario = registerTestApplication("fontRealStyleScenario", "真实系统字族及可变字体实际样式验收", "club.heiqi.uilib.ui.scene.integration.FontRealStyleScenario") {
     dependsOn(tasks.named("testClasses"))
-    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime + yamlRuntime
+    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + coreContentRuntime
 }
 val fontRealStyleGlScenario = registerTestApplication("fontRealStyleGlScenario", "真实微软雅黑原版样式GPU图像", "club.heiqi.uilib.ui.scene.integration.FontRealStyleGlScenario") {
     dependsOn(tasks.named("testClasses"))
-    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime + yamlRuntime
+    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + coreContentRuntime
     args(layout.buildDirectory.file("font-real-style/font-real-style-msyh.png").get().asFile.absolutePath)
 }
 val attributedTextScenario = registerTestApplication("attributedTextScenario", "整簇属性文本、格式来源与逻辑采样分离验收", "club.heiqi.uilib.ui.scene.integration.AttributedTextScenario") {
     dependsOn(tasks.named("testClasses"))
-    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime + yamlRuntime
+    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + coreContentRuntime
 }
 val glyphRasterStyleScenario = registerTestApplication("glyphRasterStyleScenario", "真实原生字形合成样式、墨迹范围与有界资源验收", "club.heiqi.uilib.ui.scene.integration.GlyphRasterStyleScenario") {
     dependsOn(tasks.named("testClasses"))
-    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime + yamlRuntime
+    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + coreContentRuntime
     args(file("src/core/resources/assets/qz_uilib/fonts").absolutePath,
         layout.buildDirectory.dir("font-machine/raster-style").get().asFile.absolutePath)
 }
@@ -352,111 +351,122 @@ val minecraftDurabilityScenario = registerTestApplication("minecraftDurabilitySc
 }
 val galleryScenario = registerTestApplication("galleryScenario", "同一测试广场无平台真实字体输入旅程", "club.heiqi.uilib.ui.scene.integration.GalleryScenario") {
     dependsOn("testClasses")
-    classpath = fontUnicodeRuntime + yamlRuntime + sourceSets.getByName("test").runtimeClasspath
+    classpath = coreContentRuntime + sourceSets.getByName("test").runtimeClasspath
 }
 tasks.named("check") { dependsOn(galleryScenario) }
 
 val coreAssetResourceScenario = registerTestApplication("coreAssetResourceScenario", "MC资源链的独立Core资产、Emoji及用户覆盖重载回归", "club.heiqi.uilib.host.client.font.CoreAssetResourceScenario") {
     dependsOn(tasks.named("testClasses"))
     // 未重定位开发输出使用Core的ICU版本，不能先加载原版随附的ICU51。
-    classpath = fontUnicodeRuntime + yamlRuntime + sourceSets.getByName("test").runtimeClasspath + sourceSets.getByName("patchedMc").output
+    classpath = coreContentRuntime + sourceSets.getByName("test").runtimeClasspath + sourceSets.getByName("patchedMc").output
 }
 
 tasks.named("check") { dependsOn(minecraftDurabilityScenario, coreAssetResourceScenario) }
 
 val imageServiceScenario = registerTestApplication("imageServiceScenario", "真实本地HTTP与图像共享、来源切换和scene文档策略", "club.heiqi.uilib.ui.scene.integration.ImageServiceScenario") {
     dependsOn(tasks.named("testClasses"))
-    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime + yamlRuntime
+    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + coreContentRuntime
     systemProperty("java.awt.headless", "true")
 }
 tasks.named("check") { dependsOn(imageServiceScenario) }
 
 val mathFontScenario = registerTestApplication("mathFontScenario", "正式数学字体 MATH 常量、真实伸缩字形及资源代际验收", "club.heiqi.uilib.ui.scene.integration.MathFontScenario") {
     dependsOn(tasks.named("testClasses"))
-    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime + yamlRuntime
+    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + coreContentRuntime
 }
 val mathLayoutScenario = registerTestApplication("mathLayoutScenario", "自有数学盒的真实字体与嵌入基线净空验收", "club.heiqi.uilib.ui.scene.integration.MathLayoutScenario") {
     dependsOn(tasks.named("testClasses"))
-    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime + yamlRuntime
+    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + coreContentRuntime
 }
+val markdownReadingScenario = registerTestApplication("markdownReadingScenario", "固定Markdown参照的文档结构、来源、链接与动态重排", "club.heiqi.uilib.ui.scene.integration.MarkdownReadingScenario") {
+    dependsOn(tasks.named("testClasses"))
+    classpath = coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + testSupportSources.output + fontNativeRuntime + coreContentRuntime
+}
+tasks.named("check") { dependsOn(markdownReadingScenario) }
+
 val documentGlScenario = registerTestApplication("documentGlScenario", "共同文档正文公式图像真实GPU与短视口裁剪（需要设备）", "club.heiqi.uilib.ui.scene.integration.DocumentGlScenario") {
-    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime + yamlRuntime
+    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + coreContentRuntime
     args(layout.buildDirectory.dir("document-gl").get().asFile.absolutePath)
+}
+val markdownGlScenario = registerTestApplication("markdownGlScenario", "Markdown共同段落链接公式图像真实GPU与裁剪（需要设备）", "club.heiqi.uilib.ui.scene.integration.MarkdownGlScenario") {
+    dependsOn(tasks.named("testClasses"))
+    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + coreContentRuntime
+    args(layout.buildDirectory.dir("markdown-gl").get().asFile.absolutePath)
 }
 val typedParagraphScenario = registerTestApplication("typedParagraphScenario", "typed共同声明、来源映射与DSL转换边界", "club.heiqi.uilib.ui.scene.integration.TypedParagraphScenario") {
     dependsOn(tasks.named("testClasses"))
-    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontUnicodeRuntime + yamlRuntime
+    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + coreContentRuntime
 }
 tasks.named("check") { dependsOn(typedParagraphScenario) }
 val inlineBoxScenario = registerTestApplication("inlineBoxScenario", "真实Unicode/Bidi原子对象、安全断行与同代行高", "club.heiqi.uilib.ui.scene.integration.InlineBoxScenario") {
-    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime + yamlRuntime
+    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + coreContentRuntime
 }
 tasks.named("check") { dependsOn(inlineBoxScenario) }
 val documentSceneScenario = registerTestApplication("documentSceneScenario", "共同文档真实字体、数学图像基线换行与裁剪输入", "club.heiqi.uilib.ui.scene.integration.DocumentSceneScenario") {
-    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime + yamlRuntime
+    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + coreContentRuntime
 }
 tasks.named("check") { dependsOn(documentSceneScenario) }
 val mathSceneScenario = registerTestApplication("mathSceneScenario", "正式数学图像控件同代几何输入与生命周期验收", "club.heiqi.uilib.ui.scene.integration.MathSceneScenario") {
     dependsOn(tasks.named("testClasses"))
-    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime + yamlRuntime
+    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + coreContentRuntime
 }
 val mathGlScenario = registerTestApplication("mathGlScenario", "正式数学字形规则线与内联图像真实 GPU 出图验收", "club.heiqi.uilib.ui.scene.integration.MathGlScenario") {
     dependsOn(tasks.named("testClasses"))
-    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime + yamlRuntime
+    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + coreContentRuntime
     args(layout.buildDirectory.dir("math-embed/gpu").get().asFile.absolutePath)
 }
 val mathCatalogScenario = registerTestApplication("mathCatalogScenario", "固定数学符号命令宏目录的真实静态语义消费", "club.heiqi.uilib.ui.scene.integration.MathCatalogScenario") {
     dependsOn(tasks.named("testClasses"))
-    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime + yamlRuntime
+    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + coreContentRuntime
 }
 val mathMacroScenario = registerTestApplication("mathMacroScenario", "数学词法宏的原文来源作用域与显式文档上下文", "club.heiqi.uilib.ui.scene.integration.MathMacroScenario") {
     dependsOn(tasks.named("testClasses"))
-    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime + yamlRuntime
+    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + coreContentRuntime
 }
 val paintPrimitiveScenario = registerTestApplication("paintPrimitiveScenario", "同树局部后置绘制顺序与真实斜线GPU图元", "club.heiqi.uilib.ui.scene.integration.PaintPrimitiveScenario") {
     dependsOn(tasks.named("testClasses"))
-    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime + yamlRuntime
+    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + coreContentRuntime
     args(layout.buildDirectory.dir("math-complete/paint-gpu").get().asFile.absolutePath)
 }
 val mathArrayScenario = registerTestApplication("mathArrayScenario", "二维数学环境共享列行及物品基线与显式编号验收", "club.heiqi.uilib.ui.scene.integration.MathArrayScenario") {
     dependsOn(tasks.named("testClasses"))
-    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime + yamlRuntime
+    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + coreContentRuntime
 }
 val mathDecorationScenario = registerTestApplication("mathDecorationScenario", "数学饰件颜色盒与变换的真实字体有序几何验收", "club.heiqi.uilib.ui.scene.integration.MathDecorationScenario") {
     dependsOn(tasks.named("testClasses"))
-    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime + yamlRuntime
+    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + coreContentRuntime
 }
 val mathStructureScenario = registerTestApplication("mathStructureScenario", "完整数学函数模式参数和环境的结构来源验收", "club.heiqi.uilib.ui.scene.text.math.MathStructureScenario") {
     dependsOn(tasks.named("testClasses"))
-    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime + yamlRuntime
+    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + coreContentRuntime
 }
 tasks.named("check") { dependsOn(mathFontScenario, mathLayoutScenario, mathSceneScenario, mathCatalogScenario, mathMacroScenario, mathStructureScenario, mathArrayScenario, mathDecorationScenario) }
 val mathTextFontScenario = registerTestApplication("mathTextFontScenario", "数学文字真实字族字重姿态及显式候选与资源代际", "club.heiqi.uilib.ui.scene.integration.MathTextFontScenario") {
     dependsOn(tasks.named("testClasses"))
-    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime + yamlRuntime
+    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + coreContentRuntime
     args(layout.buildDirectory.dir("math-text-fonts").get().asFile.absolutePath)
 }
 tasks.named("check") { dependsOn(mathTextFontScenario) }
 val mathCoverageScenario = registerTestApplication("mathCoverageScenario", "固定数学全身份语料的真实同树字形与GPU证据", "club.heiqi.uilib.ui.scene.integration.MathCoverageScenario") {
     dependsOn(tasks.named("testClasses"))
-    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime + yamlRuntime
+    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + coreContentRuntime
     args(layout.buildDirectory.dir("math-complete/coverage").get().asFile.absolutePath)
 }
 val imageGlScenario = registerTestApplication("imageGlScenario", "真实RGBA图像fit与有序GL回放及状态/上传预算（需要设备）", "club.heiqi.uilib.ui.scene.integration.ImageGlScenario") {
     dependsOn(tasks.named("testClasses"))
-    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime + yamlRuntime
+    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + coreContentRuntime
     args(layout.buildDirectory.dir("image-system/gpu").get().asFile.absolutePath)
 }
 
 // 一次迁移解析属于 MC 宿主，但此真实旧文件路径本身只使用标准 Java I/O。
 val legacyFontConfigurationScenario = registerTestApplication("legacyFontConfigurationScenario", "旧字体配置只读迁移及损坏文件失败验收", "club.heiqi.uilib.ui.scene.integration.LegacyFontConfigurationScenario") {
     dependsOn(tasks.named("testClasses"))
-    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + sourceSets.getByName("test").output + fontUnicodeRuntime + yamlRuntime
+    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + sourceSets.getByName("test").output + coreContentRuntime
 }
 tasks.named("check") { dependsOn(legacyFontConfigurationScenario) }
 val fontConfigurationFilesScenario = registerTestApplication("fontConfigurationFilesScenario", "正式宿主YAML权威与Properties/Forge三来源迁移验收", "club.heiqi.uilib.ui.scene.integration.FontConfigurationFilesScenario") {
     dependsOn(tasks.named("testClasses"))
-    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + sourceSets.getByName("test").output + fontUnicodeRuntime + yamlRuntime
+    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + sourceSets.getByName("test").output + coreContentRuntime
 }
 tasks.named("check") { dependsOn(fontConfigurationFilesScenario) }
 
