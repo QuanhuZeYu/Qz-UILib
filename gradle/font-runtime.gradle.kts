@@ -24,6 +24,8 @@ dependencies {
     add(yamlRuntime.name, "org.yaml:snakeyaml:2.4")
     add(markdownRuntime.name, "org.commonmark:commonmark:0.21.0")
     add(markdownRuntime.name, "org.commonmark:commonmark-ext-gfm-strikethrough:0.21.0")
+    add(markdownRuntime.name, "org.commonmark:commonmark-ext-gfm-tables:0.21.0")
+    add(markdownRuntime.name, "org.jsoup:jsoup:1.19.1")
     add(markdownRuntime.name, "org.nibor.autolink:autolink:0.10.0")
     add(lwjgl2Bindings.name, "org.lwjgl.lwjgl:lwjgl:2.9.4-nightly-20150209") { isTransitive = false }
     listOf("lwjgl", "lwjgl-freetype", "lwjgl-harfbuzz").forEach {

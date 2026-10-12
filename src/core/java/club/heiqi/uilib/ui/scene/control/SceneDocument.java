@@ -107,6 +107,12 @@ public final class SceneDocument {
         return root;
     }
 
+    /** 文档表格的列语义沿共同段落呈现，不在绘制端维护另一套命中位置。 */
+    static void alignParagraph(
+            SceneNode node, club.heiqi.uilib.ui.scene.text.TableContent.Alignment alignment) {
+        if (node.control() instanceof Paragraph) ((Paragraph) node.control()).alignment = alignment;
+    }
+
     private static SceneNode createBlockChild(
             ScenePageContext context,
             ReadableSignal<DocumentContent.Block> signal,
@@ -239,6 +245,8 @@ public final class SceneDocument {
         final Consumer<String> activate;
         final DocumentResources resources;
         final Map<InlineContent, SceneNode> items = new IdentityHashMap<>();
+        club.heiqi.uilib.ui.scene.text.TableContent.Alignment alignment =
+                club.heiqi.uilib.ui.scene.text.TableContent.Alignment.DEFAULT;
         TextContent declaration;
         // 只表示当前声明已解析且可检查链接身份，不代表最后一次布局宽度或呈现。
         TextContent interactionDeclaration;
@@ -374,7 +382,8 @@ public final class SceneDocument {
                 int height,
                 SceneTextMeasurer text,
                 SceneChildMeasurer children) {
-            return presentParagraph(full, width, children);
+            return presentParagraph(
+                    SceneTextPresentation.align(full, width, alignment), width, children);
         }
 
         private TextLayout presentParagraph(

@@ -81,8 +81,16 @@ public final class TextContent {
     public static final class Link {
         public final String target;
 
+        /** 可选内容说明；声明保留数据，激活动作仍只发布target。 */
+        public final String title;
+
         public Link(String target) {
+            this(target, "");
+        }
+
+        public Link(String target, String title) {
             this.target = Objects.requireNonNull(target, "target");
+            this.title = Objects.requireNonNull(title, "title");
         }
     }
 

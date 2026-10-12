@@ -41,7 +41,7 @@ import java.util.Objects;
 
 /**
  * 固定成熟解析器的阅读语义对照；期望只消费 oracle token，不调用生产 parser。 字符投影比较阅读结果而非 AST/属性片段的切分方式；真实字体场景另验声明身份与输入。
- * HTML/表格是后续切片，本应用只要求当前保留源文并提供来源诊断。
+ * HTML/表格采用正式内容语义；详尽的表格来源与场景输入见 MarkdownTableHtmlScenario。
  */
 public final class MarkdownReadingScenario extends TestApplication {
     private static final TextStyle BASE = new TextStyle("default", 22, 0xffabcdef);
@@ -71,7 +71,7 @@ public final class MarkdownReadingScenario extends TestApplication {
         List<Throwable> failures = new ArrayList<>();
         runScenario("独立token的块结构显示文字typed样式链接与原子语义", this::oracle, failures);
         runScenario("多码点实体CRLF代理对的UTF16及BYTE原位置", this::sourceExamples, failures);
-        runScenario("后续HTML表格保源定位及未闭合公式正文边界", this::boundaries, failures);
+        runScenario("HTML表格正式内容保源定位及未闭合公式正文边界", this::boundaries, failures);
         runScenario("合法quote列表容器公式空行Tab精确来源不吞外部正文", this::containerMath, failures);
         runScenario("真实字体scene主题宽度变化保持链接身份并取消旧声明", this::scene, failures);
         runScenario("CODE独立滚动capture动态范围释放与嵌套列表正文", this::blockScene, failures);
@@ -589,37 +589,67 @@ public final class MarkdownReadingScenario extends TestApplication {
                 Arrays.asList("<section>保留正文</section>\n\n后续正文", "| 列 |\n| --- |\n| 值 |\n\n后续正文")) {
             for (boolean bytes : new boolean[] {false, true}) {
                 DocumentContent doc = parse(source, bytes);
-                equal(source, doc.input().text, "后续切片原始文档可读");
+                equal(source, doc.input().text, "HTML表格原始文档保留");
                 StringBuilder readable = new StringBuilder();
                 collectText(doc.blocks(), readable);
-                for (String line : source.split("\n"))
-                    require(
-                            readable.toString().contains(line),
-                            "未支持内容静默丢弃 line=" + line + " actual=" + readable);
-                require(
-                        !doc.diagnostics().isEmpty(),
-                        "后续切片缺少定位诊断 bytes="
-                                + bytes
-                                + " source="
-                                + source
-                                + " readable="
-                                + readable);
                 int length =
                         bytes ? source.getBytes(StandardCharsets.UTF_8).length : source.length();
+                TextInput.SourceUnit unit =
+                        bytes ? TextInput.SourceUnit.BYTE : TextInput.SourceUnit.UTF16;
+                if (source.startsWith("|")) {
+                    equal(DocumentContent.Block.Kind.TABLE, doc.blocks().get(0).kind, "管道表格正式结构");
+                    club.heiqi.uilib.ui.scene.text.TableContent table = doc.blocks().get(0).table;
+                    equal(1, table.columnCount(), "单列表格列数");
+                    equal(2, table.rows().size(), "表头和正文行");
+                    require(
+                            table.rows().get(0).cells().get(0).header
+                                    && !table.rows().get(1).cells().get(0).header,
+                            "表头和正文语义");
+                    equal(
+                            "列",
+                            table.rows()
+                                    .get(0)
+                                    .cells()
+                                    .get(0)
+                                    .content()
+                                    .get(0)
+                                    .paragraph
+                                    .resolve(BASE)
+                                    .text
+                                    .input
+                                    .text,
+                            "表头阅读文字");
+                    equal(
+                            "值",
+                            table.rows()
+                                    .get(1)
+                                    .cells()
+                                    .get(0)
+                                    .content()
+                                    .get(0)
+                                    .paragraph
+                                    .resolve(BASE)
+                                    .text
+                                    .input
+                                    .text,
+                            "正文阅读文字");
+                    for (club.heiqi.uilib.ui.scene.text.TableContent.Row row : table.rows())
+                        for (club.heiqi.uilib.ui.scene.text.TableContent.Cell cell : row.cells())
+                            for (DocumentContent.Block block : cell.content())
+                                verifyBlock(block, length, unit);
+                } else {
+                    require(readable.toString().contains("保留正文"), "未知HTML容器必须保留正文");
+                    require(!readable.toString().contains("<section>"), "未知HTML容器忽略标签本身");
+                    require(!doc.diagnostics().isEmpty(), "未知HTML容器降级需要原位置诊断");
+                }
+                require(readable.toString().contains("后续正文"), "HTML或表格截断后文");
                 for (TextLayout.Diagnostic d : doc.diagnostics())
                     require(
                             d.sourceStart >= 0
                                     && d.sourceEnd > d.sourceStart
-                                    && d.sourceEnd <= length
-                                    && d.sourceStart
-                                            < (bytes
-                                                    ? byteOffset(source, source.indexOf("\n\n"))
-                                                    : source.indexOf("\n\n")),
-                            "诊断没有关联未支持的原始内容");
-                verifySources(
-                        doc,
-                        length,
-                        bytes ? TextInput.SourceUnit.BYTE : TextInput.SourceUnit.UTF16);
+                                    && d.sourceEnd <= length,
+                            "HTML/table诊断范围非法");
+                verifySources(doc, length, unit);
             }
         }
         String unclosed = "$$\nx\n\n正文\n# next";

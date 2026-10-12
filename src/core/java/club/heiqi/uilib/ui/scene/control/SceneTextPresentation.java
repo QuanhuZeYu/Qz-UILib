@@ -61,6 +61,94 @@ final class SceneTextPresentation {
                 full.input);
     }
 
+    /** 列对齐是纯定位投影；字形、装饰、簇和原子项共用偏移，输入仍读同一TextLayout。 */
+    static TextLayout align(
+            TextLayout full,
+            int width,
+            club.heiqi.uilib.ui.scene.text.TableContent.Alignment alignment) {
+        if (alignment != club.heiqi.uilib.ui.scene.text.TableContent.Alignment.CENTER
+                && alignment != club.heiqi.uilib.ui.scene.text.TableContent.Alignment.RIGHT)
+            return full;
+        List<TextLayout.Line> lines = new ArrayList<>();
+        for (TextLayout.Line line : full.lines()) {
+            float extra = Math.max(0, width - right(line));
+            float dx =
+                    alignment == club.heiqi.uilib.ui.scene.text.TableContent.Alignment.CENTER
+                            ? extra / 2
+                            : extra;
+            List<TextLayout.Glyph> glyphs = new ArrayList<>();
+            for (TextLayout.Glyph glyph : line.glyphs())
+                glyphs.add(
+                        move(
+                                glyph,
+                                dx,
+                                0,
+                                glyph.clusterIndex,
+                                glyph.logicalStart,
+                                glyph.logicalEnd,
+                                glyph.sourceStart,
+                                glyph.sourceEnd));
+            List<TextLayout.Cluster> clusters = new ArrayList<>();
+            for (TextLayout.Cluster cluster : line.clusters())
+                clusters.add(
+                        new TextLayout.Cluster(
+                                cluster.logicalStart,
+                                cluster.logicalEnd,
+                                cluster.sourceStart,
+                                cluster.sourceEnd,
+                                cluster.glyphIndexStart,
+                                cluster.glyphIndexEnd,
+                                cluster.x + dx,
+                                cluster.advance,
+                                cluster.style,
+                                cluster.rtl));
+            List<TextLayout.Decoration> decorations = new ArrayList<>();
+            for (TextLayout.Decoration decoration : line.decorations())
+                decorations.add(
+                        new TextLayout.Decoration(
+                                decoration.kind,
+                                decoration.x + dx,
+                                decoration.y,
+                                decoration.width,
+                                decoration.height,
+                                decoration.color,
+                                decoration.logicalStart,
+                                decoration.logicalEnd,
+                                decoration.sourceStart,
+                                decoration.sourceEnd));
+            lines.add(
+                    new TextLayout.Line(
+                            line.text,
+                            line.x,
+                            line.y,
+                            line.logicalStart,
+                            line.logicalEnd,
+                            line.sourceStart,
+                            line.sourceEnd,
+                            line.advance + dx,
+                            line.baseline,
+                            line.ascent,
+                            line.descent,
+                            line.lineHeight,
+                            glyphs,
+                            clusters,
+                            decorations,
+                            line.paragraphRtl));
+        }
+        return new TextLayout(
+                Math.max(full.width, width),
+                full.height,
+                Math.max(full.advanceWidth, width),
+                full.advanceHeight,
+                full.style,
+                lines,
+                full.logicalText,
+                full.originalText,
+                full.generation,
+                full.diagnostics(),
+                full.input);
+    }
+
     static float right(TextLayout.Line line) {
         float right = line.advance;
         for (TextLayout.Glyph g : line.glyphs())

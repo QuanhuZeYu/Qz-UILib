@@ -72,6 +72,7 @@ val coreJar by tasks.registering(ShadowJar::class) {
     relocate("com.ibm.icu", "club.heiqi.uilib.shadow.com.ibm.icu")
     relocate("org.yaml.snakeyaml", "club.heiqi.uilib.shadow.org.yaml.snakeyaml")
     relocate("org.commonmark", "club.heiqi.uilib.shadow.org.commonmark")
+    relocate("org.jsoup", "club.heiqi.uilib.shadow.org.jsoup")
     relocate("org.nibor.autolink", "club.heiqi.uilib.shadow.org.nibor.autolink")
     exclude("META-INF/versions/**", "META-INF/*.SF", "META-INF/*.RSA", "META-INF/*.DSA", "module-info.class")
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
@@ -87,6 +88,7 @@ tasks.named<ShadowJar>("shadowJar") {
     relocate("com.ibm.icu", "club.heiqi.uilib.shadow.com.ibm.icu")
     relocate("org.yaml.snakeyaml", "club.heiqi.uilib.shadow.org.yaml.snakeyaml")
     relocate("org.commonmark", "club.heiqi.uilib.shadow.org.commonmark")
+    relocate("org.jsoup", "club.heiqi.uilib.shadow.org.jsoup")
     relocate("org.nibor.autolink", "club.heiqi.uilib.shadow.org.nibor.autolink")
 }
 tasks.named("assemble") { dependsOn(coreJar, fontAdapterJar) }

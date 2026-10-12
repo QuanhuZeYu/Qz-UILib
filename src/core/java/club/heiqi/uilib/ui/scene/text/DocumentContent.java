@@ -19,12 +19,14 @@ public final class DocumentContent {
             LIST_ITEM,
             CODE,
             RULE,
-            MATH
+            MATH,
+            TABLE
         }
 
         public final Kind kind;
         public final TextContent paragraph;
         public final MathContent math;
+        public final TableContent table;
         public final MathStyle style;
         public final int headingLevel, orderedStart, sourceStart, sourceEnd;
         public final boolean ordered, tight;
@@ -36,6 +38,7 @@ public final class DocumentContent {
                 TextContent paragraph,
                 MathContent math,
                 MathStyle style,
+                TableContent table,
                 List<Block> children,
                 int headingLevel,
                 boolean ordered,
@@ -50,6 +53,7 @@ public final class DocumentContent {
             this.paragraph = paragraph;
             this.math = math;
             this.style = style;
+            this.table = table;
             this.children = copy(children);
             this.headingLevel = headingLevel;
             this.ordered = ordered;
@@ -65,6 +69,7 @@ public final class DocumentContent {
             return new Block(
                     kind,
                     Objects.requireNonNull(text, "text"),
+                    null,
                     null,
                     null,
                     Collections.<Block>emptyList(),
@@ -103,7 +108,8 @@ public final class DocumentContent {
                 int start,
                 int end) {
             return new Block(
-                    kind, null, null, null, children, 0, ordered, number, tight, "", start, end);
+                    kind, null, null, null, null, children, 0, ordered, number, tight, "", start,
+                    end);
         }
 
         public static Block quote(List<Block> children, int start, int end) {
@@ -139,6 +145,24 @@ public final class DocumentContent {
                     null,
                     Objects.requireNonNull(math, "math"),
                     Objects.requireNonNull(style, "style"),
+                    null,
+                    Collections.<Block>emptyList(),
+                    0,
+                    false,
+                    1,
+                    false,
+                    "",
+                    start,
+                    end);
+        }
+
+        public static Block table(TableContent table, int start, int end) {
+            return new Block(
+                    Kind.TABLE,
+                    null,
+                    null,
+                    null,
+                    Objects.requireNonNull(table, "table"),
                     Collections.<Block>emptyList(),
                     0,
                     false,

@@ -383,6 +383,11 @@ val markdownReadingScenario = registerTestApplication("markdownReadingScenario",
     classpath = coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + testSupportSources.output + fontNativeRuntime + coreContentRuntime
 }
 tasks.named("check") { dependsOn(markdownReadingScenario) }
+val markdownTableHtmlScenario = registerTestApplication("markdownTableHtmlScenario", "共同表格HTML结构来源动态列布局局部滚动与正式输入", "club.heiqi.uilib.ui.scene.integration.MarkdownTableHtmlScenario") {
+    dependsOn("coreClasses", "fontAdapterClasses", "testClasses", "testSupportClasses")
+    classpath = sourceSets.getByName("core").output + sourceSets.getByName("fontAdapter").output + sourceSets.getByName("test").output + sourceSets.getByName("testSupport").output + fontNativeRuntime + coreContentRuntime
+}
+tasks.named("check") { dependsOn(markdownTableHtmlScenario) }
 
 val documentGlScenario = registerTestApplication("documentGlScenario", "共同文档正文公式图像真实GPU与短视口裁剪（需要设备）", "club.heiqi.uilib.ui.scene.integration.DocumentGlScenario") {
     classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + coreContentRuntime

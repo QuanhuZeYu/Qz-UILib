@@ -18,6 +18,10 @@ public final class InlineContent {
     public final MathContent math;
     public final MathStyle mathStyle;
     public final String source, alt;
+
+    /** 原内容的可选说明；不隐含浏览器tooltip或独立输入层。 */
+    public final String title;
+
     public final Integer width, height;
     public final ImageOptions.Fit fit;
 
@@ -42,6 +46,20 @@ public final class InlineContent {
         return new InlineContent(offset, sourceStart, sourceEnd, source, alt, width, height, fit);
     }
 
+    public static InlineContent image(
+            int offset,
+            int sourceStart,
+            int sourceEnd,
+            String source,
+            String alt,
+            Integer width,
+            Integer height,
+            ImageOptions.Fit fit,
+            String title) {
+        return new InlineContent(
+                offset, sourceStart, sourceEnd, source, alt, width, height, fit, title);
+    }
+
     private static void validateRange(int offset, int start, int end) {
         if (offset < 0 || start < 0 || end <= start) throw new IllegalArgumentException("无效行内声明范围");
     }
@@ -56,6 +74,7 @@ public final class InlineContent {
         mathStyle = Objects.requireNonNull(style, "style");
         source = math.source;
         alt = "";
+        title = "";
         width = height = null;
         fit = ImageOptions.Fit.CONTAIN;
     }
@@ -69,6 +88,19 @@ public final class InlineContent {
             Integer width,
             Integer height,
             ImageOptions.Fit fit) {
+        this(offset, start, end, source, alt, width, height, fit, "");
+    }
+
+    private InlineContent(
+            int offset,
+            int start,
+            int end,
+            String source,
+            String alt,
+            Integer width,
+            Integer height,
+            ImageOptions.Fit fit,
+            String title) {
         validateRange(offset, start, end);
         if (width != null && width < 0 || height != null && height < 0)
             throw new IllegalArgumentException("图像尺寸不能为负数");
@@ -78,6 +110,7 @@ public final class InlineContent {
         kind = Kind.IMAGE;
         this.source = Objects.requireNonNull(source, "source");
         this.alt = Objects.requireNonNull(alt, "alt");
+        this.title = Objects.requireNonNull(title, "title");
         this.width = width;
         this.height = height;
         this.fit = Objects.requireNonNull(fit, "fit");

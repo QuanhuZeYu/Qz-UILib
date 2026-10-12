@@ -53,6 +53,8 @@ final class SceneDocumentBlocks {
                         theme,
                         block.style,
                         Collections.emptyMap());
+            case TABLE:
+                return SceneDocumentTable.create(context, source, theme, resources, activate);
             case RULE:
                 SceneNode rule = new SceneNode().size(Size.fill(1), Size.fixed(1));
                 rule.bind(
