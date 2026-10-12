@@ -3,7 +3,7 @@ package club.heiqi.uilib.host.client.settings;
 import java.util.Collections;
 import java.util.Set;
 
-import club.heiqi.uilib.host.client.font.VanillaFontOptions;
+import club.heiqi.uilib.host.client.settings.MinecraftApplicationConfiguration;
 import club.heiqi.uilib.ui.host.minecraft.MinecraftSceneScreen;
 import club.heiqi.uilib.ui.settings.SettingsConfiguration;
 import club.heiqi.uilib.ui.settings.SettingsPage;
@@ -30,7 +30,7 @@ public final class UILibGuiFactory implements IModGuiFactory {
     /** Forge通过公开GuiScreen父屏幕构造器打开，借用同一个MC配置域。 */
     public static final class SettingsScreen extends MinecraftSceneScreen {
         public SettingsScreen(GuiScreen parent) {
-            this(parent, VanillaFontOptions.settingsConfiguration());
+            this(parent, MinecraftApplicationConfiguration.settings());
         }
 
         private SettingsScreen(GuiScreen parent, SettingsConfiguration configuration) {

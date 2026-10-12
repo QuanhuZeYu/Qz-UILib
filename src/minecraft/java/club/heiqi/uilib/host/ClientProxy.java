@@ -4,7 +4,7 @@ package club.heiqi.uilib.host;
 public final class ClientProxy extends CommonProxy {
     @Override
     public void preInit(cpw.mods.fml.common.event.FMLPreInitializationEvent event) {
-        club.heiqi.uilib.host.client.font.VanillaFontOptions.load(
+        club.heiqi.uilib.host.client.settings.MinecraftApplicationConfiguration.load(
                 event.getSuggestedConfigurationFile());
     }
 

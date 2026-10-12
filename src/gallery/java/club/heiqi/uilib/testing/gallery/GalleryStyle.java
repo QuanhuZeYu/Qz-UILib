@@ -16,7 +16,7 @@ import club.heiqi.uilib.ui.scene.layout.SceneChildMeasurer;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometryView;
 import club.heiqi.uilib.ui.scene.layout.Size;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
-import club.heiqi.uilib.ui.scene.paint.PaintCommand;
+import club.heiqi.uilib.ui.scene.paint.ScenePaintShapes;
 import club.heiqi.uilib.ui.scene.paint.PaintPlanBuilder;
 import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
 import club.heiqi.uilib.ui.scene.text.TextLayout;
@@ -96,20 +96,8 @@ final class GalleryStyle {
             SceneGeometryView.Entry entry = geometry.get(node);
             LayoutBox box = entry.box;
             int border = theme.get().panel == 0xffffffff ? 0xffe4e4e7 : 0xff27272a;
-            rounded(paint, box, entry.clip, border, 8);
-            rounded(paint, new LayoutBox(box.x + 1, box.y + 1, Math.max(0, box.width - 2), Math.max(0, box.height - 2)), entry.clip, theme.get().panel, 7);
-        }
-    }
-    /** 固定圆角仅装饰当前值几何，输出正式RECT命令；不回访节点或增建渲染器。 */
-    private static void rounded(PaintPlanBuilder paint, LayoutBox box, LayoutBox clip, int color, int requested) {
-        int radius = Math.min(requested, Math.min(box.width, box.height) / 2);
-        if (box.width <= 0 || box.height <= 0) return;
-        paint.add(PaintCommand.rect(new LayoutBox(box.x, box.y + radius, box.width, box.height - radius * 2), clip, color));
-        for (int y = 0; y < radius; y++) {
-            double dy = radius - y - 0.5;
-            int inset = (int) Math.ceil(radius - Math.sqrt(radius * radius - dy * dy));
-            paint.add(PaintCommand.rect(new LayoutBox(box.x + inset, box.y + y, box.width - inset * 2, 1), clip, color));
-            paint.add(PaintCommand.rect(new LayoutBox(box.x + inset, box.y + box.height - y - 1, box.width - inset * 2, 1), clip, color));
+            ScenePaintShapes.rounded(paint, box, entry.clip, border, 8);
+            ScenePaintShapes.rounded(paint, new LayoutBox(box.x + 1, box.y + 1, Math.max(0, box.width - 2), Math.max(0, box.height - 2)), entry.clip, theme.get().panel, 7);
         }
     }
 }

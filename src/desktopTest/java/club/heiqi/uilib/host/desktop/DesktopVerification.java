@@ -2,8 +2,9 @@ package club.heiqi.uilib.host.desktop;
 
 import static org.lwjgl.glfw.GLFW.*;
 import static org.lwjgl.opengl.GL11.*;
+import static club.heiqi.uilib.host.desktop.DesktopTestFrames.*;
+import static club.heiqi.uilib.host.desktop.DesktopTestInput.geometry;
 import java.awt.image.BufferedImage;
-import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -12,14 +13,6 @@ import java.nio.file.StandardCopyOption;
 import java.util.Collections;
 import java.util.Objects;
 import javax.imageio.ImageIO;
-import org.lwjgl.glfw.GLFWCharCallback;
-import org.lwjgl.glfw.GLFWCursorPosCallback;
-import org.lwjgl.glfw.GLFWKeyCallback;
-import org.lwjgl.glfw.GLFWMouseButtonCallback;
-import org.lwjgl.glfw.GLFWScrollCallback;
-import org.lwjgl.glfw.GLFWWindowCloseCallback;
-import org.lwjgl.glfw.GLFWWindowFocusCallback;
-import org.lwjgl.system.MemoryUtil;
 import club.heiqi.uilib.host.client.font.FramebufferSceneRenderer;
 import club.heiqi.uilib.ui.config.ConfigSchema;
 import club.heiqi.uilib.ui.config.ConfigSession;
@@ -30,8 +23,6 @@ import club.heiqi.uilib.ui.scene.control.SceneButton;
 import club.heiqi.uilib.ui.scene.control.SceneTheme;
 import club.heiqi.uilib.ui.scene.control.ThemeConfiguration;
 import club.heiqi.uilib.ui.scene.control.ThemeMode;
-import club.heiqi.uilib.ui.scene.layout.LayoutBox;
-import club.heiqi.uilib.ui.scene.layout.SceneGeometryView;
 import club.heiqi.uilib.ui.scene.layout.Size;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.PaintCommand;
@@ -57,7 +48,7 @@ public final class DesktopVerification {
         try {
             window = DesktopWindow.open(config);
             final DesktopWindow w = window;
-            NativeInput input = new NativeInput(w.handle());
+            DesktopTestInput input = new DesktopTestInput(w);
             DesktopPage view = w.samplePage;
             ScenePageSession session = w.page;
             AsyncGlyphRasterizer rasterizer = w.fonts.rasterizer();
@@ -71,22 +62,23 @@ public final class DesktopVerification {
                 require(w.configuration.get(ThemeConfiguration.KEY)==ThemeMode.LIGHT,"新配置主题不是默认浅色");
                 require(view.root.background()==SceneTheme.light().panel,"旧sample.dark压过全局默认浅色");
             });
+            settle(w);
             BufferedImage initial = capture(w, w.lastPlan);
             ImageIO.write(initial, "png", output.resolve("initial.png").toFile());
-            PaintPlan titlePlan = titlePlan(w, DesktopPage.DEFAULT.text);
+            PaintPlan titlePlan = titlePlan(w, DesktopWindowConfiguration.DEFAULT.text);
             BufferedImage glyphs = capture(w, titlePlan);
             int glyphPixels = nonBlack(glyphs);
             require(glyphPixels > 0, "标题字形没有真实GL像素");
             ImageIO.write(glyphs, "png", output.resolve("glyphs.png").toFile());
             pass("TEXT-only GL readback glyphPixels=" + glyphPixels);
 
-            moveTo(w, input, view.button);
+            input.moveTo(view.button);
             input.mouse.invoke(w.handle(), GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 0);
             input.mouse.invoke(w.handle(), GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, 0);
             frames(w, 2);
             w.domain.execute(() -> require(view.counter.get() == 1, "按钮未写入业务signal"));
             pass("installed mouse callback DOWN/UP -> counter signal=1");
-            moveTo(w, input, view.field);
+            input.moveTo(view.field);
             input.mouse.invoke(w.handle(), 0, GLFW_PRESS, 0);
             input.mouse.invoke(w.handle(), 0, GLFW_RELEASE, 0);
             input.key.invoke(w.handle(), GLFW_KEY_A, 0, GLFW_PRESS, GLFW_MOD_CONTROL);
@@ -111,7 +103,7 @@ public final class DesktopVerification {
             w.domain.execute(() -> require(edited.equals(view.editing.text().get()), "剪切粘贴未恢复文本"));
             pass("installed key/char callbacks -> supplementary Unicode, single space, native clipboard cut/paste/confirm");
 
-            moveTo(w, input, view.scroll);
+            input.moveTo(view.scroll);
             int beforeScroll = geometry(w, view.scroll).scrollOffset;
             input.scroll.invoke(w.handle(), 0, -3);
             frames(w, 2);
@@ -136,10 +128,10 @@ public final class DesktopVerification {
             Path selectedFont = fixtures.resolve("selected.ttf").toAbsolutePath();
             Files.copy(systemFont, selectedFont, StandardCopyOption.REPLACE_EXISTING);
             writerDomain.execute(() -> {
-                ConfigSession writer = new ConfigSession(writerDomain, ConfigSchema.of(DesktopPage.PROFILE, w.fontCandidates, ThemeConfiguration.KEY));
+                ConfigSession writer = new ConfigSession(writerDomain, ConfigSchema.of(DesktopWindowConfiguration.PROFILE, w.fontCandidates, ThemeConfiguration.KEY));
                 try {
                     writer.load(config);
-                    writer.set(DesktopPage.PROFILE, new DesktopPage.WindowProfile("Desktop reloaded", "Reloaded title 中文", false, 26));
+                    writer.set(DesktopWindowConfiguration.PROFILE, new DesktopWindowConfiguration.WindowProfile("Desktop reloaded", "Reloaded title 中文", false, 26));
                     writer.set(ThemeConfiguration.KEY, ThemeMode.DARK);
                     writer.set(w.fontCandidates, Collections.singletonList("file:" + selectedFont));
                     writer.save(config);
@@ -150,6 +142,7 @@ public final class DesktopVerification {
             frames(w, 24);
             require("Desktop reloaded".equals(w.title()), "Ctrl+R未更新窗口标题");
             require(w.fonts.fonts().generation() != oldGeneration, "字体来源未换代");
+            settle(w);
             PaintPlan reloadedText = titlePlan(w, "Reloaded title 中文");
             BufferedImage reloaded = capture(w, w.lastPlan);
             ImageIO.write(reloaded, "png", output.resolve("reloaded.png").toFile());
@@ -172,7 +165,7 @@ public final class DesktopVerification {
             require(java.util.Arrays.equals(themeSaved,Files.readAllBytes(config)),"内存主题发布隐式写盘");
             pass("application theme light/dark publishes dynamically to existing sample, legacy dark ignored, fontSize/state preserved, no implicit save");
             long reloadedGeneration = w.fonts.fonts().generation();
-            moveTo(w, input, view.reloadButton);
+            input.moveTo(view.reloadButton);
             input.mouse.invoke(w.handle(), 0, GLFW_PRESS, 0);
             input.mouse.invoke(w.handle(), 0, GLFW_RELEASE, 0);
             frames(w, 4);
@@ -183,7 +176,7 @@ public final class DesktopVerification {
             frames(w, 2);
             w.domain.execute(() -> require(w.page.runtime().focusRouter().focused().get() == null, "窗口失焦未清理核心焦点"));
             // 同一输入批次：先收到DOWN，随后失焦，最后收到文字；失焦不可越过DOWN结算。
-            moveTo(w, input, view.field);
+            input.moveTo(view.field);
             input.mouse.invoke(w.handle(), 0, GLFW_PRESS, 0);
             input.focus.invoke(w.handle(), false);
             input.character.invoke(w.handle(), 'Q');
@@ -195,7 +188,7 @@ public final class DesktopVerification {
             pass("installed focus callback queued after DOWN and before TEXT -> focus cleared, draft unchanged");
             input.focus.invoke(w.handle(), true);
             input.mouse.invoke(w.handle(), 0, GLFW_RELEASE, 0);
-            moveTo(w, input, view.field);
+            input.moveTo(view.field);
             input.mouse.invoke(w.handle(), 0, GLFW_PRESS, 0);
             input.mouse.invoke(w.handle(), 0, GLFW_RELEASE, 0);
             input.key.invoke(w.handle(), GLFW_KEY_END, 0, GLFW_PRESS, 0);
@@ -208,7 +201,7 @@ public final class DesktopVerification {
             });
             pass("installed TEXT before focus loss -> committed draft preserved in collection order");
             input.focus.invoke(w.handle(), true);
-            moveTo(w, input, view.field);
+            input.moveTo(view.field);
             input.mouse.invoke(w.handle(), 0, GLFW_PRESS, 0);
             input.mouse.invoke(w.handle(), 0, GLFW_RELEASE, 0);
             input.key.invoke(w.handle(), GLFW_KEY_END, 0, GLFW_PRESS, 0);
@@ -261,7 +254,7 @@ public final class DesktopVerification {
             nativePosition[0] = x[0]; nativePosition[1] = y[0];
             require(x[0] > 0 && y[0] > 0, "native光标未设置到首击目标区域");
         })) {
-            NativeInput input = new NativeInput(custom.handle());
+            DesktopTestInput input = new DesktopTestInput(custom);
             input.mouse.invoke(custom.handle(), 0, GLFW_PRESS, 0);
             input.mouse.invoke(custom.handle(), 0, GLFW_RELEASE, 0);
             frames(custom, 1);
@@ -269,23 +262,6 @@ public final class DesktopVerification {
             pass("same-process reopen + public business ScenePage + first mouse DOWN/UP without MOVE -> native cursor="
                     + nativePosition[0] + "," + nativePosition[1] + ", business signal=1");
         }
-    }
-    private static void frames(DesktopWindow window, int count) {
-        for (int i = 0; i < count; i++) { require(!window.shouldClose(), "验收窗口提前关闭"); window.frame(); }
-    }
-    private static SceneGeometryView.Entry geometry(DesktopWindow w, SceneNode n) {
-        SceneGeometryView.Entry[] result = new SceneGeometryView.Entry[1];
-        w.domain.execute(() -> result[0] = w.page.pipeline().current().geometry.get(n));
-        return Objects.requireNonNull(result[0], "节点缺少统一几何");
-    }
-    private static void moveTo(DesktopWindow w, NativeInput input, SceneNode node) {
-        LayoutBox box = geometry(w, node).box;
-        require(box.width > 0 && box.height > 0, "目标没有可命中空间");
-        int[] ww = new int[1], wh = new int[1];
-        glfwGetWindowSize(w.handle(), ww, wh);
-        double x = (box.x + box.width / 2.0) * ww[0] / w.width();
-        double y = (box.y + box.height / 2.0) * wh[0] / w.height();
-        input.cursor.invoke(w.handle(), x, y);
     }
     private static PaintPlan titlePlan(DesktopWindow w, String title) {
         PaintPlanBuilder builder = new PaintPlanBuilder();
@@ -305,20 +281,7 @@ public final class DesktopVerification {
         try (FramebufferSceneRenderer renderer = new FramebufferSceneRenderer(w.fonts)) {
             renderer.replay(plan, w.width(), w.height());
         } finally { w.fonts.endPresentation(); }
-        glFinish();
-        ByteBuffer bytes = MemoryUtil.memAlloc(w.width() * w.height() * 4);
-        try {
-            glReadBuffer(GL_BACK);
-            glReadPixels(0, 0, w.width(), w.height(), GL_RGBA, GL_UNSIGNED_BYTE, bytes);
-            require(glGetError() == GL_NO_ERROR, "GL回放/读回报错");
-            BufferedImage image = new BufferedImage(w.width(), w.height(), BufferedImage.TYPE_INT_ARGB);
-            for (int y = 0; y < w.height(); y++) for (int x = 0; x < w.width(); x++) {
-                int p = (y * w.width() + x) * 4;
-                int argb = ((bytes.get(p+3)&255)<<24)|((bytes.get(p)&255)<<16)|((bytes.get(p+1)&255)<<8)|(bytes.get(p+2)&255);
-                image.setRGB(x, w.height() - y - 1, argb);
-            }
-            return image;
-        } finally { MemoryUtil.memFree(bytes); }
+        return DesktopTestReadback.readBack(w);
     }
     private static int nonBlack(BufferedImage image) {
         int pixels = 0;
@@ -326,24 +289,5 @@ public final class DesktopVerification {
             if ((image.getRGB(x, y) & 0xFFFFFF) != 0) pixels++;
         return pixels;
     }
-    private static final class NativeInput {
-        final GLFWCursorPosCallback cursor;
-        final GLFWMouseButtonCallback mouse;
-        final GLFWScrollCallback scroll;
-        final GLFWCharCallback character;
-        final GLFWKeyCallback key;
-        final GLFWWindowFocusCallback focus;
-        final GLFWWindowCloseCallback close;
-        NativeInput(long window) {
-            cursor = glfwSetCursorPosCallback(window, null); glfwSetCursorPosCallback(window, cursor);
-            mouse = glfwSetMouseButtonCallback(window, null); glfwSetMouseButtonCallback(window, mouse);
-            scroll = glfwSetScrollCallback(window, null); glfwSetScrollCallback(window, scroll);
-            character = glfwSetCharCallback(window, null); glfwSetCharCallback(window, character);
-            key = glfwSetKeyCallback(window, null); glfwSetKeyCallback(window, key);
-            focus = glfwSetWindowFocusCallback(window, null); glfwSetWindowFocusCallback(window, focus);
-            close = glfwSetWindowCloseCallback(window, null); glfwSetWindowCloseCallback(window, close);
-            require(cursor != null && mouse != null && scroll != null && character != null && key != null && focus != null && close != null,
-                    "生产宿主未安装标准GLFW回调");
-        }
-    }
+
 }

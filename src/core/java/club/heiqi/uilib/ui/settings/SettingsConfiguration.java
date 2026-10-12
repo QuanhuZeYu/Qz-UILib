@@ -103,6 +103,15 @@ public final class SettingsConfiguration {
     /** 仅为宿主字体资源更新提供已知失败边界；不捕获域、布局或绘制的一般异常。
      * 配置已经发布后资源失败仍保留当前值，错误交给共享工作区显示；无回滚或自动重试。 */
     public void updateResources(Runnable update) {
+        updateResources(update, false);
+    }
+
+    /** 显式宿主资源入口记录相同字体诊断，并将原异常继续交所属资源通道。 */
+    public void updateResourcesOrThrow(Runnable update) {
+        updateResources(update, true);
+    }
+
+    private void updateResources(Runnable update, boolean propagate) {
         domain.checkWrite();
         Objects.requireNonNull(update, "update");
         try {
@@ -112,6 +121,7 @@ public final class SettingsConfiguration {
             String reason = failure.getMessage();
             if (reason == null || reason.isEmpty()) reason = failure.getClass().getSimpleName();
             resourceError.set("字体资源更新失败：" + path + " — " + reason);
+            if (propagate) throw failure;
         }
     }
 

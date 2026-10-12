@@ -4,7 +4,7 @@ import org.lwjgl.opengl.Display;
 import club.heiqi.uilib.host.client.font.ClientFontServices;
 import club.heiqi.uilib.host.client.font.FramebufferSceneRenderer;
 import club.heiqi.uilib.host.client.font.MinecraftFontServices;
-import club.heiqi.uilib.host.client.font.VanillaFontOptions;
+import club.heiqi.uilib.host.client.settings.MinecraftApplicationConfiguration;
 import club.heiqi.uilib.ui.scene.control.ThemeConfiguration;
 import club.heiqi.uilib.ui.scene.host.SceneHost;
 import club.heiqi.uilib.ui.scene.paint.PaintPlan;
@@ -23,7 +23,7 @@ public final class MinecraftSceneHost implements SceneHost, SceneTextMeasurer, A
 
     @Override
     public ThemeConfiguration themeConfiguration() {
-        return VanillaFontOptions.themeConfiguration();
+        return MinecraftApplicationConfiguration.themes();
     }
 
     public club.heiqi.uilib.ui.scene.image.ImageService images() {

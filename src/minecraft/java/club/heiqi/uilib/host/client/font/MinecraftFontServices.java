@@ -1,6 +1,7 @@
 package club.heiqi.uilib.host.client.font;
 
 import java.io.IOException;
+import club.heiqi.uilib.host.client.settings.MinecraftApplicationConfiguration;
 import club.heiqi.uilib.host.font.IsolatedFontEngine;
 import club.heiqi.uilib.host.client.gl.GlApi;
 import club.heiqi.uilib.host.client.font.compat.IrisProgramProvider;
@@ -72,20 +73,23 @@ public final class MinecraftFontServices {
                                 checkThread();
                                 resourceReloading = true;
                                 try {
-                                    VanillaFontOptions.reload();
-                                    reloadSources(manager, VanillaFontOptions.candidates());
+                                    MinecraftApplicationConfiguration.reload();
+                                    MinecraftApplicationConfiguration.updateFontResourcesOrThrow(
+                                            () -> reloadSources(manager, VanillaFontOptions.candidates()));
                                 } finally { resourceReloading = false; }
                             }
                         });
     }
 
     /** 配置入口不安装服务；启动前只保留快照，退出后通知也不能重新创建owner。 */
-    static void configurationChanged() {
-        configurationChanged(VanillaFontOptions.candidates());
+    public static boolean configurationUpdateAvailable() {
+        if (shared == null) return false;
+        checkThread();
+        return !resourceReloading;
     }
 
     /** apply只消费当前发布值；文件读取属于显式F3T或共享配置页reload。 */
-    static void configurationChanged(List<String> declarations) {
+    public static void configurationChanged(List<String> declarations) {
         if (shared == null) return;
         checkThread();
         if (resourceReloading) return;
@@ -93,7 +97,7 @@ public final class MinecraftFontServices {
     }
 
     /** 页面校验复用同一来源解析，不发布配置或资源代际，也不读取配置文件。 */
-    static void validateCandidates(List<String> declarations) {
+    public static void validateCandidates(List<String> declarations) {
         if (shared == null) throw new IllegalStateException("客户端字体服务尚未安装/已关闭");
         checkThread();
         try { resolveCandidates(declarations, loader, revision + 1); }

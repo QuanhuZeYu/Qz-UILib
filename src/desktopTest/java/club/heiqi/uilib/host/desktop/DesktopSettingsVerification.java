@@ -2,8 +2,10 @@ package club.heiqi.uilib.host.desktop;
 
 import static org.lwjgl.glfw.GLFW.*;
 import static org.lwjgl.opengl.GL11.*;
+import static club.heiqi.uilib.host.desktop.DesktopTestFrames.settle;
+import static club.heiqi.uilib.host.desktop.DesktopTestInput.geometry;
+import static club.heiqi.uilib.host.desktop.DesktopTestInput.hit;
 import java.awt.image.BufferedImage;
-import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -11,16 +13,9 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 import javax.imageio.ImageIO;
-import org.lwjgl.glfw.GLFWCharCallback;
-import org.lwjgl.glfw.GLFWCursorPosCallback;
-import org.lwjgl.glfw.GLFWKeyCallback;
-import org.lwjgl.glfw.GLFWMouseButtonCallback;
-import org.lwjgl.glfw.GLFWScrollCallback;
-import org.lwjgl.glfw.GLFWWindowCloseCallback;
 import club.heiqi.uilib.ui.scene.control.SceneTheme;
 import club.heiqi.uilib.ui.scene.control.ThemeConfiguration;
 import club.heiqi.uilib.ui.scene.control.ThemeMode;
-import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometryView;
 import club.heiqi.uilib.ui.scene.paint.PaintCommand;
 
@@ -31,7 +26,7 @@ public final class DesktopSettingsVerification {
         Path output=args.length==0?Paths.get("settings-report"):Paths.get(args[0]);Files.createDirectories(output);
         Path path=output.resolve("settings.yaml");Files.deleteIfExists(path);
         try(DesktopWindow w=DesktopWindow.openSettings(path)) {
-            glfwSetWindowSize(w.handle(),1440,1000);settle(w);Input input=new Input(w);
+            glfwSetWindowSize(w.handle(),1440,1000);settle(w);DesktopTestInput input=new DesktopTestInput(w);
             List<String> original=current(w);byte[] before=Files.readAllBytes(path);
             require(!original.isEmpty(),"默认字体候选为空");
             screenshot(w,output.resolve("settings-light.png"));
@@ -75,8 +70,8 @@ public final class DesktopSettingsVerification {
             Files.write(path,validSaved);input.click("从文件重新加载");settle(w);require(!hasTextContaining(w,"字体资源更新失败：")&&current(w).equals(applied),"成功资源加载未清错误");
             input.click("字体与排版");
             input.click("+ 添加来源");input.click("本地字体文件");input.click("添加到末尾");require(hasText(w,"请输入字体文件路径。"),"空路径误关闭或未定位错误");
-            input.clickField();input.type("C:/nonexistent/uilib-settings-test.ttf");input.click("添加到末尾");require(hasText(w,"添加字体来源"),"读取来源失败丢失模态");
-            input.escape();require(!hasText(w,"添加字体来源"),"ESC未关闭添加模态");
+            clickField(w,input);"C:/nonexistent/uilib-settings-test.ttf".codePoints().forEach(cp -> input.character.invoke(w.handle(),cp));w.frame();input.click("添加到末尾");require(hasText(w,"添加字体来源"),"读取来源失败丢失模态");
+            input.key.invoke(w.handle(),GLFW_KEY_ESCAPE,0,GLFW_PRESS,0);input.key.invoke(w.handle(),GLFW_KEY_ESCAPE,0,GLFW_RELEASE,0);w.frame();require(!hasText(w,"添加字体来源"),"ESC未关闭添加模态");
             glfwSetWindowSize(w.handle(),1024,768);settle(w);screenshot(w,output.resolve("settings-medium.png"));require(visible(w,"应用全部更改"),"中窗口footer不可达");
             glfwSetWindowSize(w.handle(),480,900);settle(w);screenshot(w,output.resolve("settings-narrow.png"));require(visible(w,"应用全部更改")&&visible(w,"配置文件"),"窄窗口操作或分类不可达");
             glfwSetWindowSize(w.handle(),1440,1000);settle(w);input.enqueueClick("下移");input.close.invoke(w.handle());w.frame();
@@ -101,7 +96,7 @@ public final class DesktopSettingsVerification {
             byte[] saved=Files.readAllBytes(path);
             sample.domain.execute(() -> sample.configuration.set(ThemeConfiguration.KEY,ThemeMode.LIGHT));settle(sample);
             sample.domain.execute(() -> {
-                require(sample.configuration.get(DesktopPage.PROFILE).dark,"兼容旧示例dark字段丢失");
+                require(sample.configuration.get(DesktopWindowConfiguration.PROFILE).dark,"兼容旧示例dark字段丢失");
                 require(sample.samplePage.root.background()==SceneTheme.light().panel,"sample未动态跟随全局浅色，或旧dark字段覆盖主题");
                 require(sample.samplePage.builds==1,"全局主题更新重建sample页面");
             });
@@ -113,39 +108,25 @@ public final class DesktopSettingsVerification {
     private static List<String> current(DesktopWindow w){final List<String>[] result=new List[1];w.domain.execute(() -> result[0]=new ArrayList<>(w.configuration.get(w.fontCandidates)));return result[0];}
     private static ThemeMode currentTheme(DesktopWindow w){final ThemeMode[] result={null};w.domain.execute(() -> result[0]=w.configuration.get(ThemeConfiguration.KEY));return result[0];}
     private static int titleInk(DesktopWindow w){return w.lastPlan.commands().stream().filter(c -> c.kind==PaintCommand.Kind.TEXT&&c.text.originalText.equals("QZ  /  UILib 设置")).findFirst().orElseThrow(() -> new AssertionError("正式设置标题缺失")).color;}
-    private static SceneGeometryView geometry(DesktopWindow w){final SceneGeometryView[] result={null};w.domain.execute(() -> result[0]=w.page.pipeline().current().geometry);return result[0];}
     private static boolean hasText(DesktopWindow w,String text){return geometry(w).ordered().stream().anyMatch(e -> e.text!=null&&e.text.originalText.equals(text));}
     private static boolean hasTextContaining(DesktopWindow w,String text){return geometry(w).ordered().stream().anyMatch(e -> e.text!=null&&e.text.originalText.contains(text)&&hit(e).width>0&&hit(e).height>0);}
-    private static LayoutBox hit(SceneGeometryView.Entry e){return e.clip==null?e.box:e.box.intersect(e.clip);}
     private static boolean visible(DesktopWindow w,String text){return geometry(w).ordered().stream().anyMatch(e -> e.text!=null&&e.text.originalText.equals(text)&&hit(e).width>0&&hit(e).height>0);}
     private static void require(boolean value,String message){if(!value)throw new AssertionError(message);}
-    private static void settle(DesktopWindow w){long deadline=System.nanoTime()+5000000000L;int stable=0;do{w.frame();if(w.fonts.rasterizer().stats().pending==0&&w.fonts.rasterizer().stats().ready==0&&w.fonts.presentationStats().uploadCalls==0)stable++;else stable=0;if(stable>=4)break;}while(System.nanoTime()<deadline);require(stable>=4&&w.fonts.rasterizer().stats().pending==0&&w.fonts.rasterizer().stats().errors==0,"设置字形未完成或有raster错误");}
     private static void screenshot(DesktopWindow w,Path path) throws Exception {
-        w.fonts.beginPresentation(1000000);try{w.replay(w.lastPlan);}finally{w.fonts.endPresentation();}glFinish();
-        ByteBuffer bytes=ByteBuffer.allocateDirect(w.width()*w.height()*4);glReadPixels(0,0,w.width(),w.height(),GL_RGBA,GL_UNSIGNED_BYTE,bytes);
-        BufferedImage image=new BufferedImage(w.width(),w.height(),BufferedImage.TYPE_INT_ARGB);
-        for(int y=0;y<w.height();y++)for(int x=0;x<w.width();x++){int i=((w.height()-1-y)*w.width()+x)*4;image.setRGB(x,y,0xff000000|((bytes.get(i)&255)<<16)|((bytes.get(i+1)&255)<<8)|(bytes.get(i+2)&255));}
+        w.fonts.beginPresentation(1000000);try{w.replay(w.lastPlan);}finally{w.fonts.endPresentation();}
+        BufferedImage image=DesktopTestReadback.readBack(w);
         PaintCommand title=w.lastPlan.commands().stream().filter(c -> c.kind==PaintCommand.Kind.TEXT&&c.text.originalText.equals("QZ  /  UILib 设置")).findFirst().orElseThrow(() -> new AssertionError("正式设置标题缺失"));
         int ink=0,background=image.getRGB(Math.min(w.width()-1,title.box.x),Math.min(w.height()-1,title.box.y));
         for(int y=Math.max(0,title.box.y);y<Math.min(w.height(),title.box.y+title.box.height);y++)for(int x=Math.max(0,title.box.x);x<Math.min(w.width(),title.box.x+title.box.width);x++)if(image.getRGB(x,y)!=background)ink++;
         require(ink>0&&glGetError()==GL_NO_ERROR,"设置标题无真实GL字形像素");ImageIO.write(image,"png",path.toFile());
     }
-    private static final class Input {
-        final DesktopWindow w;final GLFWCursorPosCallback cursor;final GLFWMouseButtonCallback mouse;final GLFWScrollCallback scroll;final GLFWKeyCallback key;final GLFWCharCallback character;final GLFWWindowCloseCallback close;
-        Input(DesktopWindow w){this.w=w;cursor=glfwSetCursorPosCallback(w.handle(),null);glfwSetCursorPosCallback(w.handle(),cursor);mouse=glfwSetMouseButtonCallback(w.handle(),null);glfwSetMouseButtonCallback(w.handle(),mouse);scroll=glfwSetScrollCallback(w.handle(),null);glfwSetScrollCallback(w.handle(),scroll);key=glfwSetKeyCallback(w.handle(),null);glfwSetKeyCallback(w.handle(),key);character=glfwSetCharCallback(w.handle(),null);glfwSetCharCallback(w.handle(),character);close=glfwSetWindowCloseCallback(w.handle(),null);glfwSetWindowCloseCallback(w.handle(),close);}
-        void click(String text){for(int attempt=0;attempt<40;attempt++){
-            SceneGeometryView.Entry e=geometry(w).ordered().stream().filter(g -> g.text!=null&&g.text.originalText.equals(text)&&g.node.clickAction()!=null&&g.node.enabled()&&hit(g).width>0&&hit(g).height>0).findFirst().orElse(null);
-            if(e!=null){click(e);return;}
-            SceneGeometryView.Entry clipped=geometry(w).ordered().stream().filter(g -> g.text!=null&&g.text.originalText.equals(text)&&g.node.clickAction()!=null&&g.node.enabled()).findFirst().orElse(null);
-            if(clipped==null)throw new AssertionError("找不到可操作按钮："+text+"；当前文本："+geometry(w).ordered().stream().filter(g -> g.text!=null).map(g -> g.text.originalText).collect(java.util.stream.Collectors.joining(" | ")));
-            LayoutBox b=clipped.clip==null?new LayoutBox(0,0,w.width(),w.height()):clipped.clip;point(b.x+b.width/2.0,b.y+b.height/2.0);scroll.invoke(w.handle(),0,clipped.box.y<b.y?5:-5);w.frame();
-        }throw new AssertionError("按钮不可显露："+text);}
-        void click(SceneGeometryView.Entry e){enqueue(e);w.frame();}
-        void enqueueClick(String text){SceneGeometryView.Entry e=geometry(w).ordered().stream().filter(g -> g.text!=null&&g.text.originalText.equals(text)&&g.node.clickAction()!=null&&g.node.enabled()&&hit(g).width>0&&hit(g).height>0).findFirst().orElseThrow(() -> new AssertionError("找不到同批按钮："+text));enqueue(e);}
-        void enqueue(SceneGeometryView.Entry e){LayoutBox b=hit(e);point(b.x+b.width/2.0,b.y+b.height/2.0);mouse.invoke(w.handle(),GLFW_MOUSE_BUTTON_LEFT,GLFW_PRESS,0);mouse.invoke(w.handle(),GLFW_MOUSE_BUTTON_LEFT,GLFW_RELEASE,0);}
-        void point(double x,double y){int[] width={0},height={0};glfwGetWindowSize(w.handle(),width,height);cursor.invoke(w.handle(),x*width[0]/w.width(),y*height[0]/w.height());}
-        void clickField(){SceneGeometryView.Entry e=geometry(w).ordered().stream().filter(g -> g.node.control()!=null&&g.node.control().capturesPointer()&&hit(g).width>0&&hit(g).height>0).reduce((previous,next) -> next).orElseThrow(() -> new AssertionError("找不到模态文件路径编辑器"));click(e);}
-        void type(String value){value.codePoints().forEach(cp -> character.invoke(w.handle(),cp));w.frame();}
-        void escape(){key.invoke(w.handle(),GLFW_KEY_ESCAPE,0,GLFW_PRESS,0);key.invoke(w.handle(),GLFW_KEY_ESCAPE,0,GLFW_RELEASE,0);w.frame();}
+    private static void clickField(DesktopWindow w, DesktopTestInput input) {
+        SceneGeometryView.Entry entry = geometry(w).ordered().stream()
+                .filter(g -> g.node.control() != null && g.node.control().capturesPointer()
+                        && hit(g).width > 0 && hit(g).height > 0)
+                .reduce((previous, next) -> next)
+                .orElseThrow(() -> new AssertionError("找不到模态文件路径编辑器"));
+        input.click(entry);
     }
+
 }

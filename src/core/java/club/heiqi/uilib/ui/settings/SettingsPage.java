@@ -53,6 +53,7 @@ public final class SettingsPage implements ScenePage {
         final Signal<String> selectedBuiltin;
         final ReadableSignal<SettingsStyle.Palette> palette;
         final SceneEditState path, sample;
+        final SettingsStyle.NavigationLayout navigationLayout = new SettingsStyle.NavigationLayout();
         final String defaultSample="每一种语言，都值得被认真呈现。\nGood typography makes a difference.";
         View(ScenePageContext ctx) {
             this.ctx=ctx;model=new SettingsModel(configuration,ctx.scope());
@@ -67,10 +68,15 @@ public final class SettingsPage implements ScenePage {
         SceneNode text(String value,int em,boolean muted) { return text(() -> value,em,muted); }
         SceneNode text(ReadableSignal<String> value,int em,boolean muted) { return SettingsStyle.label(ctx,value,palette,em,muted); }
         SceneNode button(String value,Runnable action) { return button(() -> value,action,false,false); }
-        SceneNode button(ReadableSignal<String> value,Runnable action,boolean primary,boolean ghost) { return SettingsStyle.button(ctx,value,palette,action,primary,ghost); }
+        SceneNode button(ReadableSignal<String> value,Runnable action,boolean primary,boolean ghost) { return SettingsStyle.button(ctx,value,palette,action,primary,ghost).view; }
         SceneNode actions(SceneNode... nodes) { SceneNode result=SettingsStyle.column(0).control(new SettingsStyle.WrapRow(8));for(SceneNode n:nodes)result.add(n);return result; }
-        SceneNode enabled(SceneNode wrapper,ReadableSignal<Boolean> enabled) {
-            wrapper.children().get(0).bind(NodeBinding.value(enabled,SceneNode::enabled));return wrapper;
+        SceneNode enabledButton(String value,Runnable action,ReadableSignal<Boolean> enabled) {
+            return enabledButton(() -> value,action,false,false,enabled);
+        }
+        SceneNode enabledButton(ReadableSignal<String> value,Runnable action,boolean primary,boolean ghost,ReadableSignal<Boolean> enabled) {
+            SettingsStyle.Button button=SettingsStyle.button(ctx,value,palette,action,primary,ghost);
+            button.target.bind(NodeBinding.value(enabled,SceneNode::enabled));
+            return button.view;
         }
         void build() {
             SceneNode shell=SettingsStyle.column(0).size(Size.fill(1),Size.fill(1))
@@ -83,7 +89,7 @@ public final class SettingsPage implements ScenePage {
                     .add(text("应用后全局生效，保存后重启保留",11,true)));
             toolbar.add(button(() -> "返回",this::closeRequested,false,true));
             shell.add(toolbar).add(SettingsStyle.line(palette));
-            SceneNode workspace=SettingsStyle.column(0).size(Size.fill(1),Size.fill(1)).control(new SettingsStyle.Workspace());
+            SceneNode workspace=SettingsStyle.column(0).size(Size.fill(1),Size.fill(1)).control(new SettingsStyle.Workspace(navigationLayout));
             workspace.add(navigation());
             SceneNode body=SettingsStyle.column(0).size(Size.fill(1),Size.fill(1));
             SceneNode content=SettingsStyle.column(20).padding(28).size(Size.fill(1),Size.fill(1)).clip(true).scrollable(true);
@@ -114,15 +120,16 @@ public final class SettingsPage implements ScenePage {
             SceneNode h=SettingsStyle.column(8);
             h.add(text(() -> section.get()==Section.FONT?"字体与排版":section.get()==Section.MINECRAFT?"Minecraft 接入":"配置文件",26,false));
             h.add(text(() -> section.get()==Section.FONT?"管理字体来源与优先顺序，让每一种文字都有合适的呈现。":section.get()==Section.MINECRAFT?"选择原版文字接入方式，保持游戏与 UILib 页面职责清晰。":"查看配置来源，显式保存或从文件重新加载。",13,true));
-            SceneNode status=actions(text(this::state,12,true),button(() -> "恢复默认",() -> {if(section.get()==Section.FONT)model.resetFonts();else model.resetMinecraft();},false,true));
-            status.children().get(1).bind(NodeBinding.value(section,(n,s) -> n.visible(s!=Section.FILE)));h.add(status);
+            SceneNode reset=button(() -> "恢复默认",() -> {if(section.get()==Section.FONT)model.resetFonts();else model.resetMinecraft();},false,true);
+            reset.bind(NodeBinding.value(section,(n,s) -> n.visible(s!=Section.FILE)));
+            h.add(actions(text(this::state,12,true),reset));
             return h;
         }
         SceneNode navigation() {
-            SceneNode nav=SettingsStyle.column(0).size(Size.fill(1),Size.fill(1)).control(new SettingsStyle.Navigation())
+            SceneNode nav=SettingsStyle.column(0).size(Size.fill(1),Size.fill(1)).control(new SettingsStyle.Navigation(navigationLayout))
                     .bind(NodeBinding.value(palette,(n,p) -> n.background(p.panel)));
             SceneNode brand=SettingsStyle.column(10).clip(true).add(text("配置工作区",13,true));
-            SceneNode buttons=SettingsStyle.column(0).control(new SettingsStyle.NavigationButtons());
+            SceneNode buttons=SettingsStyle.column(0).control(new SettingsStyle.NavigationButtons(navigationLayout));
             buttons.add(navButton(Section.FONT,"字体与排版"));
             if(configuration.hasMinecraft())buttons.add(navButton(Section.MINECRAFT,"Minecraft 接入"));
             buttons.add(navButton(Section.FILE,"配置文件"));
@@ -165,8 +172,8 @@ public final class SettingsPage implements ScenePage {
                             club.heiqi.uilib.ui.scene.text.TextPolicy.Wrap.EMERGENCY,"und",0,0));
             info.add(declaration);
             SceneNode buttons=SettingsStyle.row(2).size(Size.natural(),Size.natural());
-            buttons.add(enabled(button("上移",() -> model.move(source.get(),-1)),() -> model.sources().get().indexOf(source.get())>0));
-            buttons.add(enabled(button("下移",() -> model.move(source.get(),1)),() -> model.sources().get().indexOf(source.get())<model.sources().get().size()-1));
+            buttons.add(enabledButton("上移",() -> model.move(source.get(),-1),() -> model.sources().get().indexOf(source.get())>0));
+            buttons.add(enabledButton("下移",() -> model.move(source.get(),1),() -> model.sources().get().indexOf(source.get())<model.sources().get().size()-1));
             buttons.add(button("移除",() -> model.remove(source.get())));
             return SettingsStyle.column(0).add(SettingsStyle.row(10).padding(10).add(info).add(buttons)).add(SettingsStyle.line(palette));
         }
@@ -217,9 +224,9 @@ public final class SettingsPage implements ScenePage {
             SceneNode status=SettingsStyle.column(5).add(text(this::footerState,13,false));
             status.add(text(() -> model.dirty().get()?"应用全部分类的更改后，才能保存到文件。":model.unsaved().get()?"当前运行使用新的配置；保存后用于下次启动。":"可以继续编辑；应用与保存分别执行。",12,true));
             status.add(error(model.error()));
-            SceneNode controls=actions(enabled(button(() -> "放弃编辑",model::discard,false,true),model.dirty()),
-                    enabled(button("保存到文件",model::save),() -> !model.dirty().get()&&model.unsaved().get()),
-                    enabled(button(() -> "应用全部更改",model::apply,true,false),model.dirty()));
+            SceneNode controls=actions(enabledButton(() -> "放弃编辑",model::discard,false,true,model.dirty()),
+                    enabledButton("保存到文件",model::save,() -> !model.dirty().get()&&model.unsaved().get()),
+                    enabledButton(() -> "应用全部更改",model::apply,true,false,model.dirty()));
             return SettingsStyle.column(0).padding(14).add(SettingsStyle.column(0).control(new SettingsStyle.Footer()).add(status).add(controls));
         }
         String state() { return model.dirty().get()?"有待应用修改":model.unsaved().get()?"已应用，未保存":"已保存"; }
@@ -243,11 +250,11 @@ public final class SettingsPage implements ScenePage {
             SceneNode content=SettingsStyle.column(16);
             content.add(text(kind==Dialog.CLOSE?"离开配置工作区？":"从文件重新加载？",20,false));
             content.add(text(kind==Dialog.CLOSE?"未应用的草稿将被放弃；已经应用的值保留在当前运行中。离开不会保存文件。":"未应用的草稿及已应用但未保存的更改，将被文件中的配置替换。",14,true));
-            SceneNode cancel=button("继续编辑",() -> dialog.set(Dialog.NONE));
-            content.add(actions(cancel,button(() -> kind==Dialog.CLOSE?"不保存并离开":"放弃更改并加载",() -> {
+            SettingsStyle.Button cancel=SettingsStyle.button(ctx,() -> "继续编辑",palette,() -> dialog.set(Dialog.NONE),false,false);
+            content.add(actions(cancel.view,button(() -> kind==Dialog.CLOSE?"不保存并离开":"放弃更改并加载",() -> {
                 if(kind==Dialog.CLOSE){model.discard();leave.run();}else{dialog.set(Dialog.NONE);model.reload();}
             },true,false)));
-            return modal(content).initialFocus(cancel.children().get(0));
+            return modal(content).initialFocus(cancel.target);
         }
         SceneNode addDialog() {
             SceneNode content=SettingsStyle.column(14).add(text("添加字体来源",20,false))
@@ -262,12 +269,12 @@ public final class SettingsPage implements ScenePage {
                     .add(text("例如 C:/Fonts/Example.ttf；应用前会检查字体来源。",12,true));
             file.bind(NodeBinding.value(fileSource,SceneNode::visible));content.add(file);
             content.add(error(() -> path.snapshot().get().error==null?model.fontError().get():path.snapshot().get().error));
-            SceneNode cancel=button("取消",() -> dialog.set(Dialog.NONE));
-            content.add(actions(cancel,button(() -> "添加到末尾",() -> {
+            SettingsStyle.Button cancel=SettingsStyle.button(ctx,() -> "取消",palette,() -> dialog.set(Dialog.NONE),false,false);
+            content.add(actions(cancel.view,button(() -> "添加到末尾",() -> {
                 if(fileSource.get())addFile(path.request(true));
                 else if(!selectedBuiltin.get().isEmpty()){model.add(selectedBuiltin.get());if(model.fontError().get().isEmpty())dialog.set(Dialog.NONE);}
             },true,false)));
-            return modal(content).initialFocus(cancel.children().get(0));
+            return modal(content).initialFocus(cancel.target);
         }
         void addFile(SceneEditState.Submission submission) {
             String value=submission.text.trim();

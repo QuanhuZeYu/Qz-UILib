@@ -5,7 +5,6 @@ import static org.lwjgl.opengl.GL11.*;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayDeque;
@@ -30,10 +29,8 @@ import club.heiqi.uilib.host.client.image.JavaImageLoader;
 import club.heiqi.uilib.ui.scene.image.ImageService;
 import club.heiqi.uilib.ui.scene.image.SharedImageService;
 import club.heiqi.uilib.ui.config.ConfigKey;
-import club.heiqi.uilib.ui.config.ConfigSchema;
 import club.heiqi.uilib.ui.config.ConfigSession;
 import club.heiqi.uilib.ui.scene.control.ThemeConfiguration;
-import club.heiqi.uilib.ui.reactive.Owner;
 import club.heiqi.uilib.ui.reactive.ReactiveDomain;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.settings.SettingsConfiguration;
@@ -55,7 +52,8 @@ import club.heiqi.uilib.ui.scene.text.font.FontTextService;
  * 所有操作须在创建线程执行；关闭仍在有效GL上下文内结束GPU资源。
  */
 public final class DesktopWindow implements SceneHost, AutoCloseable {
-    final ReactiveDomain domain = ReactiveDomain.direct();
+    final DesktopApplicationConfiguration applicationConfiguration;
+    final ReactiveDomain domain;
     final DesktopPage samplePage;
     final Path configPath;
     private final Thread thread = Thread.currentThread();
@@ -65,7 +63,6 @@ public final class DesktopWindow implements SceneHost, AutoCloseable {
     private double cursorX, cursorY, scrollRemainder;
     private boolean closed;
     private String title;
-    private Owner owner;
     private SettingsConfiguration settingsConfiguration;
     private ThemeConfiguration themeConfiguration;
     private SettingsPage settingsPage;
@@ -80,7 +77,9 @@ public final class DesktopWindow implements SceneHost, AutoCloseable {
     int resizeCallbacks;
 
     private DesktopWindow(Path path, boolean sample) {
-        configPath = Objects.requireNonNull(path, "configPath").toAbsolutePath().normalize();
+        applicationConfiguration = new DesktopApplicationConfiguration(path);
+        domain = applicationConfiguration.domain;
+        configPath = applicationConfiguration.path;
         samplePage = sample ? new DesktopPage() : null;
     }
     public static DesktopWindow open(Path configuration) throws IOException {
@@ -152,38 +151,27 @@ public final class DesktopWindow implements SceneHost, AutoCloseable {
         own(this::closeImages);
         renderer = own(new FramebufferSceneRenderer(fonts, images));
         List<FontSource> defaults = FontTextService.defaultSources(loader, 1);
-        fontCandidates = FontCandidateConfiguration.key(defaults);
+        own(applicationConfiguration);
+        applicationConfiguration.initialize(defaults, this::validateFontCandidates, this::resourcesReloaded);
+        configuration = applicationConfiguration.session;
+        fontCandidates = applicationConfiguration.fontCandidates;
+        themeConfiguration = applicationConfiguration.theme;
+        settingsConfiguration = applicationConfiguration.settings;
         domain.execute(() -> {
-            owner = domain.owner();
-            own(() -> domain.execute(owner::close));
-            configuration = new ConfigSession(domain, ConfigSchema.of(DesktopPage.PROFILE, fontCandidates, ThemeConfiguration.KEY));
-            try {
-                if (Files.exists(configPath)) configuration.load(configPath);
-                else {
-                    Path parent = configPath.getParent();
-                    if (parent != null) Files.createDirectories(parent);
-                    configuration.save(configPath);
-                }
-            } catch (IOException failure) { throw new UncheckedIOException(failure); }
-            // 配置load完成后再发布初值；所有页面（含gallery）借用同一宿主主题。
-            themeConfiguration = new ThemeConfiguration(domain, configuration, owner);
-            if (settings) settingsConfiguration = new SettingsConfiguration(domain, configuration,
-                    fontCandidates, null, configPath, FontCandidateConfiguration.defaults(defaults),
-                    this::validateFontCandidates, this::settingsResourcesReloaded);
             Signal<Long> reload = domain.signal(0L);
             reloadRevision = reload;
-            domain.effect(owner, () -> {
-                title = configuration.get(DesktopPage.PROFILE).title;
+            domain.effect(applicationConfiguration.owner, () -> {
+                title = applicationConfiguration.title.get();
                 glfwSetWindowTitle(window, title);
             });
-            domain.effect(owner, () -> {
+            domain.effect(applicationConfiguration.owner, () -> {
                 reload.get();
                 List<String> declarations = configuration.get(fontCandidates);
                 Runnable update = () -> {
                     try { applyFonts(declarations); }
                     catch (IOException failure) { throw new UncheckedIOException(failure); }
                 };
-                if (settingsConfiguration != null) settingsConfiguration.updateResources(update);
+                if (settings) settingsConfiguration.updateResources(update);
                 else update.run();
             });
         });
@@ -198,7 +186,7 @@ public final class DesktopWindow implements SceneHost, AutoCloseable {
         glfwShowWindow(window);
     }
     private Signal<Long> reloadRevision;
-    private void settingsResourcesReloaded() {
+    private void resourcesReloaded() {
         domain.checkWrite();
         reloadRevision.set(reloadRevision.get() + 1);
         images.resourcesReloaded();
@@ -253,10 +241,8 @@ public final class DesktopWindow implements SceneHost, AutoCloseable {
         if (settingsPage != null) { pendingSettingsReload = true; return; }
         try {
             domain.execute(() -> {
-                try { configuration.load(configPath); }
+                try { applicationConfiguration.reload(); }
                 catch (IOException failure) { throw new UncheckedIOException(failure); }
-                reloadRevision.set(reloadRevision.get() + 1);
-                images.resourcesReloaded();
             });
         } catch (UncheckedIOException failure) { throw failure.getCause(); }
     }

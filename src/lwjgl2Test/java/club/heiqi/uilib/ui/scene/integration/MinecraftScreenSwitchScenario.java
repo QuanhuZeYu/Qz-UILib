@@ -38,6 +38,17 @@ public final class MinecraftScreenSwitchScenario extends TestApplication {
         field.set(target, value);
     }
 
+    private AutoCloseable installSession(MinecraftSceneScreen screen, ScenePageSession session) throws Exception {
+        field(MinecraftSceneScreen.class, screen, "session", session);
+        // 本场景绕过完整MC字体/原生文本安装，只注入宿主环境；同次会话借用仍用生产对象。
+        Class<?> type = Class.forName(MinecraftSceneScreen.class.getName() + "$Inputs");
+        java.lang.reflect.Constructor<?> constructor = type.getDeclaredConstructor(MinecraftSceneScreen.class, ScenePageSession.class);
+        constructor.setAccessible(true);
+        Object inputs = constructor.newInstance(screen, session);
+        field(MinecraftSceneScreen.class, screen, "inputs", inputs);
+        return (AutoCloseable) inputs;
+    }
+
     @Override
     protected void runTests() throws Exception {
         own(new DisplayTestEnvironment(80, 60, "UILib MC screen same-frame switch"));
@@ -64,8 +75,8 @@ public final class MinecraftScreenSwitchScenario extends TestApplication {
                                 previous[0].close();
                                 mc.currentScreen = second;
                             }))));
-            field(MinecraftSceneScreen.class, first, "session", previous[0]);
-            field(MinecraftSceneScreen.class, second, "session", next);
+            own(installSession(first, previous[0]));
+            own(installSession(second, next));
             mc.currentScreen = first;
             first.drawScreen(10, 10, 0);
             require(oldHost.frames == 1, "初始旧页未呈现");

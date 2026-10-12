@@ -97,6 +97,36 @@ public final class SettingsConfigurationScenario extends TestApplication {
         scenario("真实文件错误保留路径草稿和保存基线", this::fileErrors);
         scenario("显式同值重载资源与失败后的文件事实", this::reloadResources);
         scenario("同步观察及延后资源Effect错误按已发布事实反馈", this::resourceErrors);
+        scenario("显式宿主资源失败记录诊断且继续原异常通道", this::explicitResourceFailure);
+    }
+
+    private void explicitResourceFailure() throws Exception {
+        Fixture f = new Fixture(true, false);
+        try {
+            Path missing = f.file.resolveSibling("missing-font.ttf");
+            Files.deleteIfExists(missing);
+            f.run(() -> {
+                SettingsConfiguration.Snapshot live=f.configuration.current();
+                SettingsConfiguration.Snapshot saved=f.configuration.saved().get();
+                final RuntimeException[] raised={null};
+                try {
+                    f.configuration.updateResourcesOrThrow(() -> {
+                        try { Files.readAllBytes(missing); }
+                        catch (IOException failure) {
+                            raised[0]=new java.io.UncheckedIOException(failure);
+                            throw raised[0];
+                        }
+                    });
+                    throw new AssertionError("显式资源入口吞掉原异常");
+                } catch (java.io.UncheckedIOException failure) {
+                    require(failure==raised[0],"异常继续原资源通道，不能另包改变身份");
+                }
+                require(f.configuration.resourceError().get().contains("missing-font.ttf"),"实际资源失败没有写共享诊断");
+                require(f.configuration.current().equals(live)&&f.configuration.saved().get().equals(saved),"资源失败回滚了配置或文件基线");
+                f.configuration.updateResourcesOrThrow(() -> {});
+                require(f.configuration.resourceError().get().isEmpty(),"实际资源更新成功后未清诊断");
+            });
+        } finally { f.run(f.owner::dispose); }
     }
 
     private void themeLifecycle() throws Exception {

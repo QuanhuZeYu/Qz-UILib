@@ -19,7 +19,7 @@ import club.heiqi.uilib.ui.scene.layout.SceneChildMeasurer;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometryView;
 import club.heiqi.uilib.ui.scene.layout.Size;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
-import club.heiqi.uilib.ui.scene.paint.PaintCommand;
+import club.heiqi.uilib.ui.scene.paint.ScenePaintShapes;
 import club.heiqi.uilib.ui.scene.paint.PaintPlanBuilder;
 import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
 import club.heiqi.uilib.ui.scene.text.TextLayout;
@@ -57,12 +57,17 @@ final class SettingsStyle {
     static SceneNode label(ScenePageContext ctx, ReadableSignal<String> text, ReadableSignal<Palette> p, int em, boolean muted) {
         return SceneLabel.create(ctx, text, () -> p.get().theme(em, muted ? p.get().muted : p.get().text, 0, false));
     }
-    static SceneNode button(ScenePageContext ctx, ReadableSignal<String> text, ReadableSignal<Palette> p,
+    static final class Button {
+        final SceneNode view, target;
+        Button(SceneNode view, SceneNode target) { this.view=view; this.target=target; }
+    }
+    static Button button(ScenePageContext ctx, ReadableSignal<String> text, ReadableSignal<Palette> p,
                             Runnable action, boolean primary, boolean ghost) {
         SceneNode control = SceneButton.create(ctx, text,
                 () -> p.get().theme(13, primary ? p.get().onPrimary : p.get().text, 9, true), action,
                 SceneTextPolicy.WRAP).size(Size.natural(), Size.natural());
-        return new SceneNode().size(Size.natural(), Size.natural()).control(new Surface(p, primary, ghost, control, 7)).add(control);
+        SceneNode view = new SceneNode().size(Size.natural(), Size.natural()).control(new Surface(p, primary, ghost, control, 7)).add(control);
+        return new Button(view, control);
     }
     static SceneNode navigationButton(ScenePageContext ctx,ReadableSignal<String> text,ReadableSignal<Boolean> selected,ReadableSignal<Palette> p,Runnable action) {
         SceneNode control=SceneButton.create(ctx,text,() -> p.get().theme(14,selected.get()?p.get().accent:p.get().text,10,true),action)
@@ -139,8 +144,8 @@ final class SettingsStyle {
             if(button!=null && !enabled) fill=p.panel;
             if(ghost && button!=null && !hovered && !pressed) fill=p.background;
             int edge=focus?p.accent:primary?fill:ghost?fill:p.border;
-            rounded(paint,entry.box,entry.clip,edge,radius);
-            rounded(paint,new LayoutBox(entry.box.x+1,entry.box.y+1,Math.max(0,entry.box.width-2),Math.max(0,entry.box.height-2)),entry.clip,fill,Math.max(0,radius-1));
+            ScenePaintShapes.rounded(paint,entry.box,entry.clip,edge,radius);
+            ScenePaintShapes.rounded(paint,new LayoutBox(entry.box.x+1,entry.box.y+1,Math.max(0,entry.box.width-2),Math.max(0,entry.box.height-2)),entry.clip,fill,Math.max(0,radius-1));
         }
     }
     private static final class NavigationSurface extends Surface {
@@ -152,8 +157,8 @@ final class SettingsStyle {
             boolean focus=button.runtime()!=null&&button.runtime().focusRouter().focused().get()==button;
             boolean hover=button.runtime()!=null&&button.runtime().pointerRouter().hovered(g)==button;
             int fill=selected.get()?p.selected:hover?p.hover:p.panel;
-            rounded(paint,e.box,e.clip,focus?p.accent:fill,7);
-            rounded(paint,new LayoutBox(e.box.x+1,e.box.y+1,Math.max(0,e.box.width-2),Math.max(0,e.box.height-2)),e.clip,fill,6);
+            ScenePaintShapes.rounded(paint,e.box,e.clip,focus?p.accent:fill,7);
+            ScenePaintShapes.rounded(paint,new LayoutBox(e.box.x+1,e.box.y+1,Math.max(0,e.box.width-2),Math.max(0,e.box.height-2)),e.clip,fill,6);
         }
     }
     private static final class SwitchSurface extends Arrangement {
@@ -164,8 +169,8 @@ final class SettingsStyle {
         @Override public void paint(SceneNode n,SceneGeometryView g,PaintPlanBuilder paint){
             SceneGeometryView.Entry e=g.get(n);Palette p=colors.get();
             boolean focus=button.runtime()!=null&&button.runtime().focusRouter().focused().get()==button;
-            rounded(paint,e.box,e.clip,focus?p.accent:checked.get()?p.primary:p.border,14);
-            rounded(paint,new LayoutBox(e.box.x+1,e.box.y+1,Math.max(0,e.box.width-2),Math.max(0,e.box.height-2)),e.clip,checked.get()?p.primary:p.hover,13);
+            ScenePaintShapes.rounded(paint,e.box,e.clip,focus?p.accent:checked.get()?p.primary:p.border,14);
+            ScenePaintShapes.rounded(paint,new LayoutBox(e.box.x+1,e.box.y+1,Math.max(0,e.box.width-2),Math.max(0,e.box.height-2)),e.clip,checked.get()?p.primary:p.hover,13);
         }
     }
     static final class Columns extends Arrangement {
@@ -184,11 +189,20 @@ final class SettingsStyle {
             return new Prepared(width,height,e);
         }
     }
+    /** 本次布局的局部模式；由Workspace选择，子布局明确消费，不以子宽猜测。
+     * 仅保存布局准备事实，不写业务Signal；视口变化沿正式测量失效路径重算。 */
+    static final class NavigationLayout {
+        static final int BREAKPOINT=760, SIDEBAR_WIDTH=210, HORIZONTAL_PADDING=12;
+        boolean sidebar;
+    }
     static final class Workspace extends Arrangement {
+        final NavigationLayout navigation;
+        Workspace(NavigationLayout navigation) { this.navigation=navigation; }
         @Override Prepared layout(SceneNode n,Constraints c,SceneChildMeasurer m) {
             List<ChildPlacements.Entry> e=new ArrayList<>();SceneNode nav=n.children().get(0),body=n.children().get(1);
-            if(c.availableWidth>=760) {
-                int sidebar=210,bodyWidth=Math.max(0,c.availableWidth-sidebar);
+            navigation.sidebar=c.availableWidth>=NavigationLayout.BREAKPOINT;
+            if(navigation.sidebar) {
+                int sidebar=NavigationLayout.SIDEBAR_WIDTH,bodyWidth=Math.max(0,c.availableWidth-sidebar);
                 m.measureChild(nav,new Constraints(sidebar,c.availableHeight));m.measureChild(body,new Constraints(bodyWidth,c.availableHeight));
                 place(e,nav,0,0,sidebar,c.availableHeight);place(e,body,sidebar,0,bodyWidth,c.availableHeight);
             } else {
@@ -200,28 +214,31 @@ final class SettingsStyle {
         }
     }
     static final class Navigation extends Arrangement {
+        final NavigationLayout navigation;
+        Navigation(NavigationLayout navigation) { this.navigation=navigation; }
         @Override Prepared layout(SceneNode n,Constraints c,SceneChildMeasurer m) {
             List<ChildPlacements.Entry> e=new ArrayList<>();int width=c.availableWidth;
             SceneNode brand=n.children().get(0),buttons=n.children().get(1),info=n.children().get(2);
-            if(width<=210) {
+            if(navigation.sidebar) {
                 MeasuredSize bs=m.measureChild(brand,new Constraints(Math.max(0,width-32),c.availableHeight));
-                MeasuredSize ns=m.measureChild(buttons,new Constraints(Math.max(0,width-24),c.availableHeight));
+                MeasuredSize ns=m.measureChild(buttons,new Constraints(Math.max(0,width-NavigationLayout.HORIZONTAL_PADDING*2),c.availableHeight));
                 MeasuredSize is=m.measureChild(info,new Constraints(Math.max(0,width-32),c.availableHeight));
-                place(e,brand,16,16,width-32,bs.height);place(e,buttons,12,bs.height+40,width-24,ns.height);
+                place(e,brand,16,16,width-32,bs.height);place(e,buttons,NavigationLayout.HORIZONTAL_PADDING,bs.height+40,width-NavigationLayout.HORIZONTAL_PADDING*2,ns.height);
                 place(e,info,16,Math.max(bs.height+ns.height+64,c.availableHeight-is.height-18),width-32,is.height);
                 return new Prepared(width,c.availableHeight,e);
             }
             // 窄工作区只展示分类导航；同一分类按钮仍由原逻辑树持有。
             m.measureChild(brand,new Constraints(0,0));m.measureChild(info,new Constraints(0,0));
-            MeasuredSize ns=m.measureChild(buttons,new Constraints(Math.max(0,width-24),c.availableHeight));
-            place(e,brand,0,0,0,0);place(e,buttons,12,10,width-24,ns.height);place(e,info,0,0,0,0);
+            MeasuredSize ns=m.measureChild(buttons,new Constraints(Math.max(0,width-NavigationLayout.HORIZONTAL_PADDING*2),c.availableHeight));
+            place(e,brand,0,0,0,0);place(e,buttons,NavigationLayout.HORIZONTAL_PADDING,10,width-NavigationLayout.HORIZONTAL_PADDING*2,ns.height);place(e,info,0,0,0,0);
             return new Prepared(width,ns.height+20,e);
         }
     }
     static final class NavigationButtons extends Arrangement {
+        final NavigationLayout navigation;
+        NavigationButtons(NavigationLayout navigation) { this.navigation=navigation; }
         @Override Prepared layout(SceneNode n,Constraints c,SceneChildMeasurer m) {
-            // 侧栏由Workspace分配210，Navigation两侧各留12；顶部导航使用本次余宽换行。
-            if(c.availableWidth>186)return new WrapRow(8).layout(n,c,m);
+            if(!navigation.sidebar)return new WrapRow(8).layout(n,c,m);
             List<ChildPlacements.Entry> e=new ArrayList<>();int y=0;
             for(SceneNode child:n.children())if(child.visible()){
                 MeasuredSize s=m.measureChild(child,c);place(e,child,0,y,c.availableWidth,s.height);y+=s.height+8;
@@ -269,16 +286,6 @@ final class SettingsStyle {
                 place(e,child,centered?(c.availableWidth-w)/2:0,centered?(c.availableHeight-h)/2:0,w,h);
             }
             return new Prepared(c.availableWidth,c.availableHeight,e);
-        }
-    }
-    /** 固定局部圆角只输出同代RECT值；不创建渲染器或保存字体/窗口快照。 */
-    private static void rounded(PaintPlanBuilder paint,LayoutBox box,LayoutBox clip,int color,int wanted) {
-        int r=Math.min(wanted,Math.min(box.width,box.height)/2);if(box.width<=0||box.height<=0)return;
-        paint.add(PaintCommand.rect(new LayoutBox(box.x,box.y+r,box.width,box.height-r*2),clip,color));
-        for(int y=0;y<r;y++) {
-            double dy=r-y-.5;int inset=(int)Math.ceil(r-Math.sqrt(r*r-dy*dy));
-            paint.add(PaintCommand.rect(new LayoutBox(box.x+inset,box.y+y,box.width-inset*2,1),clip,color));
-            paint.add(PaintCommand.rect(new LayoutBox(box.x+inset,box.y+box.height-y-1,box.width-inset*2,1),clip,color));
         }
     }
 }
