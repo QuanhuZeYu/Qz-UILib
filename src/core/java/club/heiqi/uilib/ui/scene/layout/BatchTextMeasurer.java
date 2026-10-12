@@ -52,6 +52,9 @@ final class BatchTextMeasurer implements SceneTextMeasurer, SceneChildMeasurer {
     }
 
     @Override
+    public TextStyle resolveStyle(TextStyle style) { return delegate.resolveStyle(style); }
+
+    @Override
     public club.heiqi.uilib.ui.scene.text.math.MathFont mathFont(TextStyle style) {
         return delegate.mathFont(style);
     }

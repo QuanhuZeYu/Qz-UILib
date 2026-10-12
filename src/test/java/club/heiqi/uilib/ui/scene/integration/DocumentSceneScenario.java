@@ -58,6 +58,7 @@ public final class DocumentSceneScenario extends TestApplication {
     @Override
     protected void runTests() throws Exception {
         scenario("DSL公式捕获图像声明与整段非法内容边界", this::syntax);
+        scenario("上下标数学图像同树基线与主题更新", this::scriptedInline);
         scenario("正式同树文字公式图像换行基线与动态重排", this::flow);
         scenario("链接公式图像统一点击提示与声明替换取消", this::interaction);
         scenario("同帧滚轮提示裁剪与纯滚动复用度量", this::scroll);
@@ -70,6 +71,27 @@ public final class DocumentSceneScenario extends TestApplication {
 
     private static String tex(String text) {
         return text.replace('@', (char) 92);
+    }
+
+    private void scriptedInline() throws Exception {
+        try (Fixture f = new Fixture("A<mark><sup><u><latex>x+1</latex></u></sup>B<sub><img src=\"ore\" width=\"24\"/></sub></mark>C")) {
+            f.ready();
+            f.domain.execute(() -> {
+                SceneGeometryView geometry = f.geometry();
+                TextLayout layout = geometry.get(f.paragraph).text;
+                verify(f, geometry);
+                SceneNode math = f.paragraph.children().get(0);
+                require(geometry.get(math).text.lines().stream().flatMap(line -> line.glyphs().stream())
+                        .anyMatch(g -> g.logicalEm < 28), "脚本公式未消费共同字体解析后的字号");
+                require(layout.lines().stream().flatMap(line -> line.clusters().stream())
+                        .anyMatch(c -> c.style.baselineShift < 0), "数学脚本缺少父层基线");
+                require(layout.lines().stream().flatMap(line -> line.clusters().stream())
+                        .anyMatch(c -> c.style.baselineShift > 0), "图像脚本缺少父层基线");
+                f.theme.set(SceneTheme.light().withTextStyle(new TextStyle("default", 38, -1)));
+            });
+            f.page.frame();
+            f.domain.execute(() -> verify(f, f.geometry()));
+        }
     }
 
     private void syntax() {
@@ -118,6 +140,8 @@ public final class DocumentSceneScenario extends TestApplication {
                         if (!text.inlineBoxes().isEmpty()) attributedCalls++;
                         return fonts.layout(text, width, policy);
                     }
+
+                    public TextStyle resolveStyle(TextStyle style) { return fonts.resolveStyle(style); }
 
                     public MathFont mathFont(TextStyle style) {
                         mathCalls++;
@@ -699,7 +723,8 @@ public final class DocumentSceneScenario extends TestApplication {
                                                         - parent.box.y
                                                         - f.paragraph.padding()
                                                         + baseline
-                                                        - line.baseline)
+                                                        - line.baseline
+                                                        - cluster.style.baselineShift)
                                         < 1.01f,
                                 "原子项基线错误");
                         require(

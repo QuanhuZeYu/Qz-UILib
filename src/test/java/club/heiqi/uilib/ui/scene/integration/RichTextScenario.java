@@ -220,6 +220,9 @@ public final class RichTextScenario extends TestApplication {
                                 "字面模式未沿正式同代绘制计划");
                     }
                 });
+        scenario("扩展样式嵌套来源与往返", this::extendedDeclarations);
+        scenario("真实字体上下标及完整簇字距", this::extendedGeometry);
+        scenario("动态高亮重排与同一链接手势", this::extendedPage);
         scenario("来源映射与非法整段呈现", this::sourceAndFailure);
         scenario("正式字段使用最终RTL方向及声明行高", this::fieldDirectionPolicy);
         scenario("单行字段可见硬换行标记且Area与NoWrap标签保硬行", this::fieldHardBreaks);
@@ -295,6 +298,116 @@ public final class RichTextScenario extends TestApplication {
                                     .equals("§l<b>\n\t👩‍💻"),
                             "PLAIN猜语法");
                 });
+    }
+
+    private void extendedDeclarations() {
+        TextStyle base = new TextStyle("default", 24, 0xffeeeeee).withDefaultHighlightColor(0xff336699);
+        String source = "<mark>A<mark color=\"#00000000\">B</mark>C</mark>D<sup>E<sub>F</sub>G</sup><spacing value=\"-0.5\">H</spacing>";
+        TextContent.Resolved r = TextContent.of(TextContent.Mode.RICH_TAGS, TextInput.utf8(source.getBytes(StandardCharsets.UTF_8))).resolve(base);
+        require(r.text.input.text.equals("ABCDEFGH") && r.text.diagnostics().isEmpty(), "扩展标签未沿正常词法转换");
+        require(r.text.styleAt(0).highlightColor == base.defaultHighlightColor
+                && r.text.styleAt(1).highlightColor == 0
+                && r.text.styleAt(2).highlightColor == base.defaultHighlightColor
+                && r.text.styleAt(3).highlightColor == null, "背景嵌套、透明色或闭合恢复错误");
+        require(r.text.styleAt(4).script.steps().size() == 1
+                && r.text.styleAt(5).script.steps().size() == 2
+                && r.text.styleAt(6).script.steps().size() == 1, "脚本嵌套未保留有序意图");
+        require(r.text.styleAt(7).letterSpacing == -0.5f, "负字距丢失");
+        TextContent.Resolved copy = TextContent.richTags(r.serializeRichTags()).resolve(base);
+        for (int i = 0; i < r.text.input.text.length(); i++)
+            require(r.text.styleAt(i).equals(copy.text.styleAt(i)), "扩展样式序列化丢失语义");
+        for (String invalid : new String[] {"<spacing value=\"NaN\">A</spacing>", "<mark other=\"x\">A</mark>", "<sup value=\"2\">A</sup>"}) {
+            TextContent.Resolved failure = TextContent.richTags(invalid).resolve(base);
+            require(failure.text.input.text.equals(invalid) && !failure.text.diagnostics().isEmpty(), "非法扩展输入未整段字面呈现");
+        }
+    }
+
+    private TextLayout extendedLayout(String source, TextStyle base, int width) {
+        return font.layout(TextContent.richTags(source).resolve(base).text, width,
+                club.heiqi.uilib.ui.scene.text.TextPolicy.NORMAL);
+    }
+
+    private void extendedGeometry() {
+        TextStyle base = new TextStyle("default", 32, 0xffeeeeee);
+        TextLayout scripts = extendedLayout("A<sup>2<sup>3</sup></sup>B<sub>4</sub>", base, 500);
+        TextLayout.Line line = scripts.lines().get(0);
+        TextLayout.Glyph sup = line.glyphs().stream().filter(g -> g.logicalStart == 1).findFirst().get();
+        TextLayout.Glyph nested = line.glyphs().stream().filter(g -> g.logicalStart == 2).findFirst().get();
+        TextLayout.Glyph sub = line.glyphs().stream().filter(g -> g.logicalStart == 4).findFirst().get();
+        require(sup.logicalEm < base.logicalEm && sup.y < line.baseline, "上标没有依据字体缩小并上移");
+        require(nested.logicalEm < sup.logicalEm && nested.y < sup.y, "嵌套上标字号/基线未继续协调");
+        require(sub.logicalEm < base.logicalEm && sub.y > line.baseline, "下标没有缩小并下移");
+        for (TextLayout.Glyph glyph : line.glyphs()) {
+            require(glyph.y - glyph.resolvedStyle.logicalEm <= line.baseline + line.descent, "脚本不属于当前行几何");
+        }
+        TextLayout inside = extendedLayout("<sup><size value=\"28\">x</size></sup>", base, 500);
+        require(inside.lines().get(0).glyphs().get(0).logicalEm == 28, "内层绝对字号未覆盖脚本字号");
+        for (String text : new String[] {"office", "A👩‍💻éB", "אבג مرحبا ABC"}) {
+            TextLayout original = font.layout(text, base, 500);
+            for (float spacing : new float[] {2, -0.5f}) {
+                TextLayout spaced = font.layout(text, base.withLetterSpacing(spacing), 500);
+                List<TextLayout.Cluster> before = original.lines().get(0).clusters();
+                List<TextLayout.Cluster> after = spaced.lines().get(0).clusters();
+                require(before.size() == after.size(), "字距切开完整整形簇");
+                float expected = original.advanceWidth;
+                for (int i = 0; i < after.size(); i++) {
+                    require(before.get(i).logicalStart == after.get(i).logicalStart
+                            && before.get(i).logicalEnd == after.get(i).logicalEnd, "字距破坏Unicode/Bidi簇来源");
+                    if (i + 1 < after.size() && before.get(i).advance > 0) expected += spacing;
+                }
+                require(Math.abs(spaced.advanceWidth - expected) < 0.02f, "字距被遗漏、重复或加到行尾");
+            }
+        }
+        TextStyle emOnly = base.withScript(club.heiqi.uilib.ui.scene.text.TextScript.NONE.appendEm(20));
+        require(font.layout("x", emOnly, 500).advanceWidth
+                == extendedLayout("x", emOnly, 500).advanceWidth, "共同内容继承吞掉仅含字号的脚本意图");
+        TextLayout decorated = extendedLayout("<sup><u>x</u></sup>", base, 500);
+        TextLayout.Glyph scriptGlyph = decorated.lines().get(0).glyphs().get(0);
+        TextLayout.Decoration underline = decorated.lines().get(0).decorations().get(0);
+        require(Math.abs(underline.y - scriptGlyph.y - scriptGlyph.logicalEm / 12f) < 0.02f,
+                "派生下划线未沿脚本最终字号及基线更新");
+        TextLayout tabbed = font.layout("A\tB", base.withLetterSpacing(2), 500);
+        TextLayout tabbedPlain = font.layout("A\tB", base, 500);
+        require(Math.abs(tabbed.advanceWidth - tabbedPlain.advanceWidth) < 0.02f, "字距跨过Tab或破坏Tabstop");
+        boolean rejected = false;
+        try { font.layout("AB", base.withLetterSpacing(-1000), 500); }
+        catch (IllegalArgumentException invalid) { rejected = invalid.getMessage().contains("source=["); }
+        require(rejected, "无效负字距未明确指出来源");
+        TextLayout wide = extendedLayout("<mark>多行高亮背景带有足够长的内容</mark>", base, 500);
+        TextLayout narrow = extendedLayout("<mark>多行高亮背景带有足够长的内容</mark>", base, 90);
+        require(narrow.lines().size() > wide.lines().size(), "窄宽未自动重排");
+        for (TextLayout.Line row : narrow.lines())
+            require(row.decorations().stream().anyMatch(d -> d.kind == TextLayout.Decoration.Kind.HIGHLIGHT
+                    && d.height == row.ascent + row.descent), "跨行高亮没有消费本行几何");
+    }
+
+    private void extendedPage() {
+        ReactiveDomain domain = ReactiveDomain.direct();
+        Host host = new Host();
+        Signal<SceneTheme>[] theme = new Signal[1];
+        SceneNode[] node = new SceneNode[1];
+        List<String> activated = new ArrayList<>();
+        TextContent declaration = TextContent.richTags("<a href=\"report\"><mark><spacing value=\"1\">复核 CO<sub>2</sub> 数据</spacing></mark></a>");
+        ScenePageSession page = own(ScenePageSession.open(domain, host, font, ctx -> {
+            theme[0] = domain.signal(SceneTheme.light());
+            node[0] = SceneRichText.create(ctx, () -> declaration, theme[0], activated::add);
+            ctx.mount(node[0]);
+        }));
+        page.frame();
+        SceneGeometryView.Entry initial = read(domain, () -> page.pipeline().current().geometry.get(node[0]));
+        TextLayout.Cluster first = initial.text.lines().get(0).clusters().get(0);
+        int x = initial.box.x + (int) (first.x + first.advance / 2), y = initial.box.y + 5;
+        page.pointer(ScenePointerEvent.down(0, x, y));
+        domain.execute(() -> theme[0].set(SceneTheme.dark()));
+        page.frame();
+        SceneGeometryView.Entry changed = read(domain, () -> page.pipeline().current().geometry.get(node[0]));
+        require(changed.text.lines().get(0).decorations().stream()
+                .filter(d -> d.kind == TextLayout.Decoration.Kind.HIGHLIGHT)
+                .allMatch(d -> d.color == SceneTheme.dark().textStyle.defaultHighlightColor), "默认高亮色冻结旧主题");
+        page.pointer(ScenePointerEvent.up(0, x, y));
+        page.frame();
+        require(activated.size() == 1 && activated.get(0).equals("report"), "样式更新破坏稳定链接手势");
+        require(host.plan.commands().stream().anyMatch(c -> c.kind == PaintCommand.Kind.TEXT && c.text == changed.text), "画面与输入未共用当前扩展几何");
     }
 
     private void fieldHardBreaks() {
@@ -617,7 +730,7 @@ public final class RichTextScenario extends TestApplication {
                     "<b>中</i>",
                     "<a href='x'>中</a>",
                     "<a href=\"x\">中",
-                    "<mark>中</mark>",
+                    "<unknown>中</unknown>",
                     "<b color=\"#ffffff\">中</b>",
                     "&quot;",
                     "<B>中</B>",

@@ -361,7 +361,7 @@ public final class SceneDocument {
                     if (measured == null || cluster.logicalEnd != cluster.logicalStart + 1)
                         continue;
                     InlineBox box = measured.box;
-                    float x = cluster.x, y = line.baseline - box.baseline;
+                    float x = cluster.x, y = line.baseline + cluster.style.baselineShift - box.baseline;
                     int left = (int) Math.floor(x), top = (int) Math.floor(y);
                     arranged.add(
                             new ChildPlacements.Entry(

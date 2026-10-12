@@ -11,6 +11,7 @@ import club.heiqi.uilib.ui.scene.text.TextInput;
 import club.heiqi.uilib.ui.scene.text.TextLayout;
 import club.heiqi.uilib.ui.scene.text.TextLayout.Diagnostic;
 import club.heiqi.uilib.ui.scene.text.TextPolicy;
+import club.heiqi.uilib.ui.scene.text.TextScript;
 import club.heiqi.uilib.ui.scene.text.TextStyle;
 import club.heiqi.uilib.ui.scene.text.font.UnicodeText.Unit;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.FontEngine;
@@ -392,7 +393,12 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                                     Collections.singletonList(source),
                                     style.effects,
                                     style.decoration,
-                                    style.fontStyle);
+                                    style.fontStyle,
+                                    style.baselineShift,
+                                    style.letterSpacing,
+                                    style.highlightColor,
+                                    style.defaultHighlightColor,
+                                    style.script);
                     return new MathSelection(source, current, selected, doc.diagnostics);
                 }
             }
@@ -988,7 +994,11 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
         Objects.requireNonNull(style, "style");
         Objects.requireNonNull(policy, "policy");
         if (!style.effects.equals(TextEffects.NORMAL)
-                || !style.decoration.equals(TextDecoration.NONE))
+                || !style.decoration.equals(TextDecoration.NONE)
+                || style.baselineShift != 0
+                || style.letterSpacing != 0
+                || style.highlightColor != null
+                || !style.script.equals(TextScript.NONE))
             return layout(
                     new AttributedText(
                             TextInput.string(text),
@@ -1021,9 +1031,15 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                 || !candidates(style).equals(resolvedSources)
                 || cached.style.logicalEm != style.logicalEm
                 || !cached.style.effects.equals(style.effects)
-                || !cached.style.decoration.equals(style.decoration))
+                || !cached.style.decoration.equals(style.decoration)
+                || cached.style.baselineShift != style.baselineShift
+                || cached.style.letterSpacing != style.letterSpacing
+                || !cached.style.script.equals(style.script)
+                || !Objects.equals(cached.style.highlightColor, style.highlightColor))
             throw new IllegalArgumentException("缓存样式没有等价的实际字体身份");
-        if (cached.style.sameFont(style)) return cached.withStyle(style);
+        if (cached.style.sameFont(style)
+                && cached.style.defaultHighlightColor == style.defaultHighlightColor)
+            return cached.withStyle(style);
         List<TextLayout.Line> lines = new ArrayList<TextLayout.Line>();
         for (TextLayout.Line line : cached.lines()) {
             List<TextLayout.Glyph> glyphs = new ArrayList<TextLayout.Glyph>();
@@ -1074,7 +1090,7 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                                 d.y,
                                 d.width,
                                 d.height,
-                                style.color,
+                                d.kind == TextLayout.Decoration.Kind.HIGHLIGHT ? d.color : style.color,
                                 d.logicalStart,
                                 d.logicalEnd,
                                 d.sourceStart,
@@ -1210,13 +1226,13 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                         && !units.get(j).emoji
                         && bidi.getLevelAt(units.get(j).start - paragraphStart)
                                 == bidi.getLevelAt(first.start - paragraphStart)
-                        && units.get(j).shapeStyle.sameFont(first.shapeStyle)) j++;
+                        && sameShapingFont(units.get(j).shapeStyle, first.shapeStyle)) j++;
             }
             int start = first.start, end = units.get(j - 1).end;
             TextStyle leading = first.shapeStyle;
             for (int k = i; k < j; k++) {
                 Unit unit = units.get(k);
-                if (!unit.shapeStyle.sameFont(leading)) {
+                if (!sameShapingFont(unit.shapeStyle, leading)) {
                     doc.diagnostics.add(
                             new Diagnostic(
                                     Diagnostic.Kind.STYLE_COALESCED,
@@ -1419,6 +1435,84 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
         return build(text, text.originalText, width, policy);
     }
 
+    @Override
+    public TextStyle resolveStyle(TextStyle style) {
+        return resolveScript(style);
+    }
+
+    /** 将公开字号/上下标意图解析为当前字体的实际字号与基线；供共同内容内联排版复用。 */
+    public TextStyle resolveScript(TextStyle style) {
+        check();
+        return resolveScript(Objects.requireNonNull(style, "style"), new UnicodeText(TextInput.string("")));
+    }
+
+    private AttributedText resolveScripts(AttributedText value) {
+        boolean needed = !value.baseStyle.script.equals(TextScript.NONE)
+                || !value.trailingStyle.script.equals(TextScript.NONE);
+        for (StyleSpan span : value.spans()) needed |= !span.style.script.equals(TextScript.NONE);
+        if (!needed) return value;
+        UnicodeText doc = new UnicodeText(value.input);
+        int existing = doc.diagnostics.size();
+        Map<TextStyle, TextStyle> resolved = new HashMap<>();
+        java.util.function.Function<TextStyle, TextStyle> resolve =
+                style -> resolved.computeIfAbsent(style, key -> resolveScript(key, doc));
+        TextStyle base = resolve.apply(value.baseStyle);
+        List<StyleSpan> spans = new ArrayList<>();
+        for (StyleSpan span : value.spans())
+            spans.add(new StyleSpan(span.logicalStart, span.logicalEnd, resolve.apply(span.style)));
+        TextStyle trailing = resolve.apply(value.trailingStyle);
+        List<Diagnostic> diagnostics = new ArrayList<>(value.diagnostics());
+        diagnostics.addAll(doc.diagnostics.subList(existing, doc.diagnostics.size()));
+        return new AttributedText(value.input, value.originalText, base, spans, trailing, diagnostics)
+                .withInlineBoxes(value.inlineBoxes());
+    }
+
+    private TextStyle resolveScript(TextStyle style, UnicodeText doc) {
+        if (style.script.equals(TextScript.NONE)) return style;
+        float em = style.logicalEm, shift = style.baselineShift;
+        int depth = 0;
+        for (TextScript.Step step : style.script.steps()) {
+            if (step.em != null) { em = step.em; depth = 0; continue; }
+            TextStyle current = style.withScript(TextScript.NONE).withEm(em);
+            FontFace selected = null;
+            for (FontSource source : resolvedCandidates(current, doc)) {
+                FontFace candidate = face(source, em, doc);
+                if (candidate != null) { selected = candidate; break; }
+            }
+            if (selected == null)
+                throw new IllegalStateException("上下标候选列表无有效文字字体: " + candidates(current));
+            float scale, rise, drop;
+            FontMetrics metrics = selected.metrics();
+            if (selected.hasMathData()) {
+                float first = selected.mathConstant(MathFont.Constant.SCRIPT_PERCENT_SCALE_DOWN.id);
+                float second = selected.mathConstant(MathFont.Constant.SCRIPT_SCRIPT_PERCENT_SCALE_DOWN.id);
+                scale = depth == 0 ? first / 100f : depth == 1 ? second / first : 1;
+                rise = selected.mathConstant(MathFont.Constant.SUPERSCRIPT_SHIFT_UP.id);
+                drop = selected.mathConstant(MathFont.Constant.SUBSCRIPT_SHIFT_DOWN.id);
+            } else {
+                // 无MATH的正文face使用真实x-height/cap-height比例；无轮廓事实时用字体度量比例。
+                int xId = selected.glyphIndex('x'), capId = selected.glyphIndex('H');
+                InkBounds x = xId == 0 ? InkBounds.UNKNOWN : selected.glyphOutlineBounds(xId);
+                InkBounds cap = capId == 0 ? InkBounds.UNKNOWN : selected.glyphOutlineBounds(capId);
+                float xHeight = x.known ? Math.max(0, -x.top) : 0;
+                float capHeight = cap.known ? Math.max(0, -cap.top) : 0;
+                scale = xHeight > 0 && capHeight > xHeight ? xHeight / capHeight
+                        : metrics.ascent / (metrics.ascent + metrics.descent);
+                rise = metrics.ascent * (1 - scale);
+                drop = metrics.descent + metrics.descent * (1 - scale);
+            }
+            if (!Float.isFinite(scale) || scale <= 0 || scale > 1
+                    || !Float.isFinite(rise) || rise < 0 || !Float.isFinite(drop) || drop < 0)
+                throw new IllegalStateException("字体上下标度量无效: em=" + em + ", scale=" + scale);
+            shift += step.superscript ? -rise : drop;
+            em *= scale;
+            depth++;
+        }
+        return new TextStyle(style.font, em, style.color, style.candidates(), style.effects,
+                style.decoration.resolveEm(em), style.fontStyle, shift, style.letterSpacing,
+                style.highlightColor, style.defaultHighlightColor, TextScript.NONE);
+    }
+
     /** 属性布局不实现动画；保留真实正文及来源，给出稳定范围诊断，不在 paint 反复抛错。 */
     private static AttributedText supportedText(AttributedText value) {
         boolean unsupported =
@@ -1471,7 +1565,7 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
 
     private TextLayout build(
             AttributedText attributed, String original, float width, TextPolicy policy) {
-        attributed = supportedText(attributed);
+        attributed = supportedText(resolveScripts(attributed));
         TextInput input = attributed.input;
         TextStyle style = attributed.baseStyle;
         List<FontSource> sources = candidates(style);
@@ -1620,13 +1714,26 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                                     c.style,
                                     finalDirection != null
                                             && (finalDirection.getLevelAt(c.start - a) & 1) != 0));
+                    if (c.style.highlightColor != null)
+                        decorations.add(
+                                new TextLayout.Decoration(
+                                        TextLayout.Decoration.Kind.HIGHLIGHT,
+                                        c.x,
+                                        baseline - chosen.ascent,
+                                        c.advance,
+                                        chosen.ascent + chosen.descent,
+                                        c.style.highlightColor,
+                                        ls,
+                                        le,
+                                        ss,
+                                        se));
                     TextDecoration d = c.style.decoration;
                     if (c.style.effects.underline && d.underlineThickness > 0)
                         decorations.add(
                                 new TextLayout.Decoration(
                                         TextLayout.Decoration.Kind.UNDERLINE,
                                         c.x + d.underlineStartOffset,
-                                        baseline + d.underlineTop,
+                                        baseline + c.style.baselineShift + d.underlineTop,
                                         c.advance - d.underlineStartOffset,
                                         d.underlineThickness,
                                         c.style.color,
@@ -1639,7 +1746,7 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                                 new TextLayout.Decoration(
                                         TextLayout.Decoration.Kind.STRIKE,
                                         c.x,
-                                        baseline + d.strikeTop,
+                                        baseline + c.style.baselineShift + d.strikeTop,
                                         c.advance,
                                         d.strikeThickness,
                                         c.style.color,
@@ -1661,7 +1768,7 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                                     doc.source(g.cell.start),
                                     doc.sourceEnd(g.cell.end),
                                     g.x,
-                                    baseline + g.y,
+                                    baseline + paint.baselineShift + g.y,
                                     g.advance,
                                     g.yAdvance,
                                     g.color,
@@ -1890,7 +1997,7 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                                     sourceStart,
                                     sourceEnd,
                                     x + (width - (chosen.advance) * fit) / 2,
-                                    line.baseline,
+                                    line.baseline + cell.style.baselineShift,
                                     width,
                                     0,
                                     false,
@@ -2151,7 +2258,7 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                         && !last.special
                         && last.unit.source.equals(u.source)
                         && last.unit.script == u.script
-                        && last.unit.shapeStyle.sameFont(u.shapeStyle)
+                        && sameShapingFont(last.unit.shapeStyle, u.shapeStyle)
                         && last.end == s) last.end = e;
                 else spans.add(new Span(s, e, u, special));
             }
@@ -2176,8 +2283,10 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                                     glyphBegin));
                     // prefix 对无字形 advance 使用同一 Gap 事实，只累计一次对象宽度。
                     draft.spaces.add(new Gap(span.start, span.end, box.width));
-                    draft.ascent = Math.max(draft.ascent, box.baseline);
-                    draft.descent = Math.max(draft.descent, box.height - box.baseline);
+                    draft.ascent = Math.max(draft.ascent, Math.max(0, box.baseline - u.style.baselineShift));
+                    draft.descent = Math.max(draft.descent,
+                            Math.max(0, box.height - box.baseline + u.style.baselineShift));
+                    draft.metricHeight = Math.max(draft.metricHeight, box.height);
                     pen += box.width;
                     continue;
                 }
@@ -2218,7 +2327,6 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                 }
                 FontFace f = face(u.source, style.logicalEm, doc);
                 if (f == null) throw new IllegalStateException("已匹配字体无法重开");
-                draft.metrics(f.metrics());
                 if (u.replacement) {
                     // U+FFFD 不可用时使用同列表第一有效 face 的 .notdef；身份仍可真实光栅。
                     List<ShapedGlyph> replacement =
@@ -2286,7 +2394,7 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                 pen = finishSpan(draft, units, doc, glyphBegin, spanPen, pen, u.script);
             }
         }
-        draft.width = pen;
+        draft.width = applyLetterSpacing(draft, doc, pen, policy);
         if (draft.ascent + draft.descent == 0) defaultMetrics(draft, style, doc, sources);
         return draft;
     }
@@ -2316,7 +2424,12 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                                 shape.candidates(),
                                 paint.effects,
                                 paint.decoration,
-                                shape.fontStyle);
+                                shape.fontStyle,
+                                paint.baselineShift,
+                                paint.letterSpacing,
+                                paint.highlightColor,
+                                paint.defaultHighlightColor,
+                                paint.script);
                 cell = new Cell(g.start, g.end, nativePen, 0, paint, i, i);
                 grouped.put(g.start, cell);
             }
@@ -2344,19 +2457,25 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                                 prev.style.candidates(),
                                 requested.effects,
                                 requested.decoration,
-                                prev.style.fontStyle);
+                                prev.style.fontStyle,
+                                requested.baselineShift,
+                                requested.letterSpacing,
+                                requested.highlightColor,
+                                requested.defaultHighlightColor,
+                                requested.script);
                 for (int g = next.glyphStart; g < next.glyphEnd; g++)
                     draft.glyphs.get(g).cell = prev;
                 cells.remove(i);
             } else i++;
         }
-        float extra = 0;
         for (Cell cell : cells) {
-            float delta = 0;
             for (Unit unit : units.starts.subMap(cell.start, true, cell.end, false).values())
                 if (!unit.style.effects.equals(cell.style.effects)
                         || unit.style.color != cell.style.color
-                        || !unit.style.decoration.equals(cell.style.decoration)) {
+                        || !unit.style.decoration.equals(cell.style.decoration)
+                        || unit.style.baselineShift != cell.style.baselineShift
+                        || unit.style.letterSpacing != cell.style.letterSpacing
+                        || !Objects.equals(unit.style.highlightColor, cell.style.highlightColor)) {
                     boolean exists = false;
                     for (Diagnostic d : doc.diagnostics)
                         if (d.kind == Diagnostic.Kind.STYLE_COALESCED
@@ -2374,16 +2493,67 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                                         "HB安全簇内部效果统一使用逻辑首样式"));
                     break;
                 }
-            cell.x += extra;
-            cell.advance += delta;
-            if (!UnicodeText.complex(script))
-                for (int i = cell.glyphStart; i < cell.glyphEnd; i++)
-                    draft.glyphs.get(i).x += extra;
-            if (delta != 0) draft.glyphs.get(cell.glyphEnd - 1).advance += delta;
-            extra += delta;
+            FontFace metricsFace = face(draft.glyphs.get(cell.glyphStart).source, cell.style.logicalEm, doc);
+            if (metricsFace == null) throw new IllegalStateException("已匹配字体无法重开");
+            draft.metrics(metricsFace.metrics(), cell.style.baselineShift);
             draft.cells.add(cell);
         }
+        return pen;
+    }
+
+    /** 只有真实字体/字号变化才分开HB请求；基线、字距与背景由最终安全簇消费。 */
+    private static boolean sameShapingFont(TextStyle a, TextStyle b) {
+        return a.logicalEm == b.logicalEm
+                && a.font.equals(b.font)
+                && Objects.equals(a.candidates(), b.candidates())
+                && a.fontStyle.equals(b.fontStyle);
+    }
+
+    /**
+     * 在完整HB/Unicode安全簇之间增加一次字距。所有脚本同步平移墨迹及命中cell，
+     * 簇内部的HB offset/连字保持；零advance控制不增距，Tab/嵌入盒作为间距边界。
+     * 不裁剪负值：使cell反向的声明立即拒绝，来源仍用原输入单位。
+     */
+    private float applyLetterSpacing(Draft draft, UnicodeText doc, float pen, TextPolicy policy) {
+        boolean[] followedByText = new boolean[draft.cells.size()];
+        boolean nextText = false;
+        for (int i = draft.cells.size() - 1; i >= 0; i--) {
+            Cell cell = draft.cells.get(i);
+            followedByText[i] = nextText;
+            if (cell.advance > 0) nextText = spacingCell(cell, doc);
+        }
+        float extra = 0;
+        for (int i = 0; i < draft.cells.size(); i++) {
+            Cell cell = draft.cells.get(i);
+            cell.x += extra;
+            for (int g = cell.glyphStart; g < cell.glyphEnd; g++) draft.glyphs.get(g).x += extra;
+            float delta = 0;
+            if (doc.display.charAt(cell.start) == '\t') {
+                float tab = policy.tabSize > 0 ? policy.tabSize
+                        : spaceAdvance(cell.style, doc, candidates(cell.style), policy) * 4;
+                float advance = (float) ((Math.floor(cell.x / tab) + 1) * tab - cell.x);
+                delta = advance - cell.advance;
+            } else if (spacingCell(cell, doc) && followedByText[i]) {
+                delta = cell.style.letterSpacing;
+            }
+            float advance = cell.advance + delta;
+            if (!Float.isFinite(advance) || advance < 0)
+                throw new IllegalArgumentException("字距使完整文字簇advance无效: source=["
+                        + doc.source(cell.start) + "," + doc.sourceEnd(cell.end)
+                        + "), advance=" + cell.advance + ", letterSpacing=" + cell.style.letterSpacing);
+            cell.advance = advance;
+            // 前缀与最终cell共用相同修正，glyph自身advance仍保留字体事实。
+            if (delta != 0) draft.spaces.add(new Gap(cell.start, cell.end, delta));
+            extra += delta;
+        }
         return pen + extra;
+    }
+
+    private static boolean spacingCell(Cell cell, UnicodeText doc) {
+        return cell.advance > 0
+                && doc.display.charAt(cell.start) != '\t'
+                && cell.glyphStart < cell.glyphEnd
+                && UnicodeText.visible(doc.display, cell.start, cell.end);
     }
 
     private static final class Cell {
@@ -2415,11 +2585,12 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
         for (FontSource source : resolvedCandidates(style, doc)) {
             FontFace f = face(source, style.logicalEm, doc);
             if (f != null) {
-                draft.metrics(f.metrics());
+                draft.metrics(f.metrics(), style.baselineShift);
                 return;
             }
         }
-        draft.ascent = style.logicalEm;
+        draft.ascent = Math.max(0, style.logicalEm - style.baselineShift);
+        draft.descent = Math.max(0, style.baselineShift);
         draft.metricHeight = style.logicalEm;
     }
 
@@ -2709,9 +2880,9 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
         final List<Cell> cells = new ArrayList<Cell>();
         float width, ascent, descent, metricHeight;
 
-        void metrics(FontMetrics m) {
-            ascent = Math.max(ascent, m.ascent);
-            descent = Math.max(descent, m.descent);
+        void metrics(FontMetrics m, float shift) {
+            ascent = Math.max(ascent, Math.max(0, m.ascent - shift));
+            descent = Math.max(descent, Math.max(0, m.descent + shift));
             metricHeight = Math.max(metricHeight, m.lineHeight);
         }
 

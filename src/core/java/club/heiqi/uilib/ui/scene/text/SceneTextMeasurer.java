@@ -4,6 +4,9 @@ package club.heiqi.uilib.ui.scene.text;
 public interface SceneTextMeasurer {
     TextLayout layout(String text, TextStyle style, int availableWidth);
 
+    /** 字体相关样式意图在同一字体代际内解析，供共同文字与数学内容共用。 */
+    default TextStyle resolveStyle(TextStyle style) { return style; }
+
     /** 当前样式的数学字体；无 MATH 能力时由数学呈现保留源码并诊断。 */
     default club.heiqi.uilib.ui.scene.text.math.MathFont mathFont(TextStyle style) {
         return null;

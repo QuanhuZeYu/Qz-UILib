@@ -14,6 +14,12 @@ public final class TextStyle {
     public final TextEffects effects;
     public final FontStyle fontStyle;
     public final TextDecoration decoration;
+    /** 正值基线下移；字距只作用于完整安全簇之间，不能使簇 advance 为负。 */
+    public final float baselineShift, letterSpacing;
+    /** null 表示无背景；0 是有效透明背景。默认色供未显式着色的 mark 动态继承。 */
+    public final Integer highlightColor;
+    public final int defaultHighlightColor;
+    public final TextScript script;
     private final List<FontSource> candidates;
 
     public TextStyle(String font, int size, int color) {
@@ -49,6 +55,28 @@ public final class TextStyle {
             TextEffects effects,
             TextDecoration decoration,
             FontStyle fontStyle) {
+        this(font, logicalEm, color, candidates, effects, decoration, fontStyle,
+                0, 0, null, 0x66FFD54F, TextScript.NONE);
+    }
+
+    public TextStyle(String font, float logicalEm, int color, List<FontSource> candidates,
+            TextEffects effects, TextDecoration decoration, FontStyle fontStyle,
+            float baselineShift, float letterSpacing, Integer highlightColor, int defaultHighlightColor) {
+        this(font, logicalEm, color, candidates, effects, decoration, fontStyle,
+                baselineShift, letterSpacing, highlightColor, defaultHighlightColor, TextScript.NONE);
+    }
+
+    public TextStyle(String font, float logicalEm, int color, List<FontSource> candidates,
+            TextEffects effects, TextDecoration decoration, FontStyle fontStyle,
+            float baselineShift, float letterSpacing, Integer highlightColor, int defaultHighlightColor,
+            TextScript script) {
+        if (!Float.isFinite(baselineShift) || !Float.isFinite(letterSpacing))
+            throw new IllegalArgumentException("基线与字距必须为有限 logical px");
+        this.baselineShift = baselineShift;
+        this.letterSpacing = letterSpacing;
+        this.highlightColor = highlightColor;
+        this.defaultHighlightColor = defaultHighlightColor;
+        this.script = Objects.requireNonNull(script, "script");
         this.fontStyle = Objects.requireNonNull(fontStyle, "fontStyle");
         if (!Float.isFinite(logicalEm) || logicalEm <= 0 || logicalEm > 32767)
             throw new IllegalArgumentException("字号必须为有效正数");
@@ -81,21 +109,48 @@ public final class TextStyle {
         return candidates;
     }
 
+    public TextStyle withEm(float value) {
+        return new TextStyle(font, value, color, candidates, effects, decoration, fontStyle,
+                baselineShift, letterSpacing, highlightColor, defaultHighlightColor, script);
+    }
     public TextStyle withColor(int color) {
-        return new TextStyle(font, logicalEm, color, candidates, effects, decoration, fontStyle);
+        return new TextStyle(font, logicalEm, color, candidates, effects, decoration, fontStyle, baselineShift, letterSpacing, highlightColor, defaultHighlightColor, script);
     }
 
     public TextStyle withEffects(TextEffects value) {
-        return new TextStyle(font, logicalEm, color, candidates, value, decoration, fontStyle);
+        return new TextStyle(font, logicalEm, color, candidates, value, decoration, fontStyle, baselineShift, letterSpacing, highlightColor, defaultHighlightColor, script);
     }
 
     public TextStyle withFontStyle(FontStyle value) {
-        return new TextStyle(font, logicalEm, color, candidates, effects, decoration, value);
+        return new TextStyle(font, logicalEm, color, candidates, effects, decoration, value, baselineShift, letterSpacing, highlightColor, defaultHighlightColor, script);
     }
 
+    public TextStyle withBaselineShift(float value) {
+        return new TextStyle(font, logicalEm, color, candidates, effects, decoration, fontStyle,
+                value, letterSpacing, highlightColor, defaultHighlightColor, script);
+    }
+    public TextStyle withLetterSpacing(float value) {
+        return new TextStyle(font, logicalEm, color, candidates, effects, decoration, fontStyle,
+                baselineShift, value, highlightColor, defaultHighlightColor, script);
+    }
+    public TextStyle withHighlight(Integer value) {
+        return new TextStyle(font, logicalEm, color, candidates, effects, decoration, fontStyle,
+                baselineShift, letterSpacing, value, defaultHighlightColor, script);
+    }
+    public TextStyle withDefaultHighlightColor(int value) {
+        return new TextStyle(font, logicalEm, color, candidates, effects, decoration, fontStyle,
+                baselineShift, letterSpacing, highlightColor, value, script);
+    }
+    public TextStyle withScript(TextScript value) {
+        return new TextStyle(font, logicalEm, color, candidates, effects, decoration, fontStyle,
+                baselineShift, letterSpacing, highlightColor, defaultHighlightColor, value);
+    }
     public boolean sameFont(TextStyle s) {
         return fontStyle.equals(s.fontStyle)
                 && logicalEm == s.logicalEm
+                && baselineShift == s.baselineShift
+                && letterSpacing == s.letterSpacing
+                && script.equals(s.script)
                 && font.equals(s.font)
                 && Objects.equals(candidates, s.candidates);
     }
@@ -107,11 +162,13 @@ public final class TextStyle {
         return sameFont(s)
                 && color == s.color
                 && effects.equals(s.effects)
-                && decoration.equals(s.decoration);
+                && decoration.equals(s.decoration)
+                && Objects.equals(highlightColor, s.highlightColor)
+                && defaultHighlightColor == s.defaultHighlightColor;
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(font, logicalEm, color, candidates, effects, decoration, fontStyle);
+        return Objects.hash(font, logicalEm, color, candidates, effects, decoration, fontStyle, baselineShift, letterSpacing, highlightColor, defaultHighlightColor, script);
     }
 }

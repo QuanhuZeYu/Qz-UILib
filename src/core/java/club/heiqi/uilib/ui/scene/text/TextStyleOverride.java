@@ -9,7 +9,10 @@ public final class TextStyleOverride {
     private final String font;
     private final boolean inheritAlpha;
     private final FontStyle.Posture posture;
-    private final Float em;
+    private final Float em, letterSpacing;
+    private final Boolean highlighted;
+    private final Integer highlightColor;
+    private final TextScript script;
     private final Boolean underline, strike, obfuscated;
     private final boolean decorationFromEm;
 
@@ -20,6 +23,10 @@ public final class TextStyleOverride {
         inheritAlpha = b.inheritAlpha;
         posture = b.posture;
         em = b.em;
+        letterSpacing = b.letterSpacing;
+        highlighted = b.highlighted;
+        highlightColor = b.highlightColor;
+        script = b.script;
         underline = b.underline;
         strike = b.strike;
         obfuscated = b.obfuscated;
@@ -36,7 +43,14 @@ public final class TextStyleOverride {
 
     public TextStyle resolve(TextStyle base) {
         Objects.requireNonNull(base, "base");
-        float size = em == null ? base.logicalEm : em;
+        TextScript operations = base.script.then(script);
+        float size = base.logicalEm;
+        if (!operations.hasScript()) {
+            for (TextScript.Step step : operations.steps()) size = step.em;
+            operations = TextScript.NONE;
+        }
+        Integer background = highlighted == null ? base.highlightColor
+                : !highlighted ? null : highlightColor == null ? base.defaultHighlightColor : highlightColor;
         int tint =
                 color == null
                         ? base.color
@@ -56,16 +70,9 @@ public final class TextStyleOverride {
                         old.boldAdvance,
                         old.italicShear);
         TextDecoration d = base.decoration;
-        if (decorationFromEm) {
-            float thickness = Math.max(1, size / 16f);
-            d =
-                    new TextDecoration(
-                            Boolean.TRUE.equals(underline) ? size / 12f : d.underlineTop,
-                            Boolean.TRUE.equals(underline) ? thickness : d.underlineThickness,
-                            d.underlineStartOffset,
-                            Boolean.TRUE.equals(strike) ? -size / 3f : d.strikeTop,
-                            Boolean.TRUE.equals(strike) ? thickness : d.strikeThickness);
-        }
+        if (decorationFromEm)
+            d = d.fromEm(size, Boolean.TRUE.equals(underline), Boolean.TRUE.equals(strike));
+        else d = d.resolveEm(size);
         return new TextStyle(
                 this.font == null ? base.font : this.font,
                 size,
@@ -73,7 +80,8 @@ public final class TextStyleOverride {
                 this.font == null ? base.candidates() : null,
                 effects,
                 d,
-                font);
+                font, base.baselineShift, letterSpacing == null ? base.letterSpacing : letterSpacing,
+                background, base.defaultHighlightColor, operations);
     }
 
     public static final class Builder {
@@ -81,7 +89,10 @@ public final class TextStyleOverride {
         private String font;
         private boolean inheritAlpha;
         private FontStyle.Posture posture;
-        private Float em;
+        private Float em, letterSpacing;
+        private Boolean highlighted;
+        private Integer highlightColor;
+        private TextScript script = TextScript.NONE;
         private Boolean underline, strike, obfuscated;
         private boolean decorationFromEm;
 
@@ -94,6 +105,10 @@ public final class TextStyleOverride {
             inheritAlpha = s.inheritAlpha;
             posture = s.posture;
             em = s.em;
+            letterSpacing = s.letterSpacing;
+            highlighted = s.highlighted;
+            highlightColor = s.highlightColor;
+            script = s.script;
             underline = s.underline;
             strike = s.strike;
             obfuscated = s.obfuscated;
@@ -134,9 +149,22 @@ public final class TextStyleOverride {
             if (!Float.isFinite(value) || value <= 0 || value > 32767)
                 throw new IllegalArgumentException("无效字号");
             em = value;
+            script = script.appendEm(value);
             return this;
         }
 
+        /** 每层脚本保留独立步骤，闭合由声明作用域恢复。 */
+        public Builder superscript() { script = script.appendScript(true); return this; }
+        public Builder subscript() { script = script.appendScript(false); return this; }
+        /** 未显式着色的高亮在每次 resolve 时读取当前主题默认色。 */
+        public Builder highlight() { highlighted = true; highlightColor = null; return this; }
+        public Builder highlight(int argb) { highlighted = true; highlightColor = argb; return this; }
+        public Builder noHighlight() { highlighted = false; highlightColor = null; return this; }
+        public Builder letterSpacing(float value) {
+            if (!Float.isFinite(value)) throw new IllegalArgumentException("字距必须为有限 logical px");
+            letterSpacing = value;
+            return this;
+        }
         public Builder underline(boolean value) {
             underline = value;
             return this;

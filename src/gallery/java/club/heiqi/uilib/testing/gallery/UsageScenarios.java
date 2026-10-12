@@ -52,8 +52,7 @@ final class UsageScenarios {
                                 () -> {
                                     SceneTheme base = baseTheme.get();
                                     return base.withTextStyle(
-                                            new TextStyle(
-                                                    "default", em.get(), base.textStyle.color));
+                                            base.textStyle.withEm(em.get()));
                                 });
         Signal<ImageSource> item =
                 context.domain()
@@ -302,6 +301,13 @@ final class UsageScenarios {
                 formulaCard.add(
                         SceneMath.create(context, formula, theme, MathStyle.DISPLAY, slots));
                 reader.add(GalleryStyle.frame(formulaCard, theme));
+            }
+            if (page == TestGallery.Page.REPORT) {
+                reader.add(document(context,
+                        () -> english.get()
+                                ? "<mark>Verify before dispatch</mark>: CO<sub>2</sub> / m<sup>3</sup> · <spacing value=\"1.5\">READY</spacing> · <spacing value=\"-0.5\">compact</spacing>"
+                                : "<mark>发货前核对</mark>：CO<sub>2</sub> / m<sup>3</sup> · <spacing value=\"1.5\">就绪 READY</spacing> · <spacing value=\"-0.5\">紧凑排版</spacing>",
+                        theme, resources, link));
             }
             body.add(reader);
         }

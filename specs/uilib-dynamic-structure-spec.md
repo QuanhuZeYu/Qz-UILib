@@ -1,6 +1,6 @@
 # UILib 动态节点结构与交互身份规格
 
-状态：**正式模块规格，可据此进行实现设计与验收。** 本文与核心及所属模块规格共同构成行为合同，不表示实现已完成。正文维护目标要求，附录仅说明调查基线与实现证据。
+状态：正式模块规格。
 
 ## 1. 范围、职责与效力
 
@@ -8,14 +8,7 @@
 
 本模块维护动态声明如何对应持续存在的节点，以及何时结束或迁移对应关系。既有生命周期与输入总合同在[核心规格](<2026-10-07-uilib-core-contract-design.md>)维护；草稿与组字目标在[编辑规格](<2026-10-07-uilib-editing-spec.md#2-动态结构中的编辑目标连续性>)维护；打开、关闭和宿主装配在[页面接入规格](<2026-10-07-uilib-page-host-spec.md>)维护；主题及标准控件默认行为在[主题规格](<2026-10-07-uilib-theme-spec.md>)维护。
 
-### 1.1 合同来源与实现自由
-
-| 内容 | 来源与效力 |
-| --- | --- |
-| UUID、单一归属、排序/移动保留合法状态、卸载与销毁、范围恢复、手势吞尾、状态及批次一致性 | 既有正式合同，引用所属规格，不重新定义 |
-| 退出拥有作用域自动销毁、折叠退出布局与交互、同页明确移动、跨页面编辑归业务、失效组字隔离 | 本次逐项裁定，按职责分配到本模块、核心与编辑规格 |
-| 局部稳定键的匹配、尚未生效声明可合并、编辑重置使旧组字失效 | 按本次整理授权对节点连续性、核心批次及编辑代际合同作必要具体化；以第 2—3 节及编辑规格列出的边界为准，不增加隐式缓存或恢复政策 |
-| 公开接口、所有权表达方式、差异算法、Owner 组织、输入联系表示、缓存和调度 | 实现设计选择，必须满足上述行为，不冻结现有字段或签名 |
+公开接口、所有权表达、差异算法、Owner 组织、输入联系、缓存和调度由实现设计选择，须满足本规格行为，不冻结现有字段或签名。
 
 实现优先复用 scene、响应式、标准控件与 PaintCommand。范围限于无平台 Core；Minecraft、GLFW、SDL、原生 IME、剪贴板和 GPU 事实归宿主。虚拟列表、离场动画、撤销删除、节点池、全局键注册表、跨页面连续挂载、业务任务取消及失败回滚不属于本合同。
 
@@ -45,7 +38,7 @@
 
 **业务声明折叠及需要的占位容器；Core 将折叠子树移出布局、绘制和命中，展开后按当前条件重新布局。**
 
-折叠保留逻辑节点及所属状态，不贡献兄弟间距或滚动内容范围。展开使用当前内容、主题、字体及可用空间。本轮不提供隐藏但占位模式，不冻结最后可见尺寸；需要空白空间时使用明确外层容器与尺寸声明。
+折叠保留逻辑节点及所属状态，不贡献兄弟间距或滚动内容范围。展开使用当前内容、主题、字体及可用空间。折叠不提供隐藏但占位语义，不冻结最后可见尺寸；需要空白空间时使用明确外层容器与尺寸声明。
 
 交互释放、草稿不被隐含提交或取消、普通展开不恢复旧交互、真实模态进入与返回策略，统一引用[核心第 5—6 节](<2026-10-07-uilib-core-contract-design.md#5-控件身份归属与生命周期>)。
 
@@ -87,24 +80,11 @@
 
 优先框架正确，其次动态化、运行效率和内存占用。稳定状态不为动态能力每帧重建节点、重接绑定或全量布局。变化按实际依赖失效，允许必要的容器/子树求解，不承诺每次仅重算一个节点。缓存可失效、可释放且有明确生命周期。
 
-## 4. 实施边界与第一切片
-
-第一切片是同父节点下的状态驱动列表和条件条目：复用已有 children/repeat 与正式页面入口，落实条目身份、退出销毁、折叠，以及重排/替换对焦点、手势和独立编辑状态的影响。已有能力验收复用，不重复实现。
-
-| 前提或缺口 | 实施责任 |
-| --- | --- |
-| 声明拥有与显式保留的区分 | 正式声明接入设计，约束在第 2.2 节，不以现有参数形态替代语义 |
-| 节点逻辑资源释放入口 | Core 生命周期能力，复用既有作用域基础；按销毁合同提供正式资源归属 |
-| 新旧组字输入联系区分 | 无平台输入合同提供可辨识来源，Core 核验有效性；不扩成原生平台工程 |
-| 同页明确跨父移动的声明表达 | 后续切片复用已有 move 基础，验证归属、绑定及输入范围 |
-
-接口、差异算法、Owner 组织、缓存和调度交给实现设计。生产代码不为验收增加专用接缝。具体第一切片与后续切片应分别记录执行结果；本阶段只交付规格。
-
-## 5. 可观察验收条件
+## 4. 可观察验收条件
 
 使用 [ScenePageSession.open](<../src/core/java/club/heiqi/uilib/ui/scene/host/ScenePageSession.java#L24>) 创建正式页面，页面只声明状态、标准控件与业务动作。测试宿主供给窗口、度量、软件绘制和输入；通过 session 的 pointer/navigation/edit/frame/close 执行。frame 是宿主正常推进，页面业务不调用管线。复用[测试应用规格](<2026-10-07-uilib-testing-spec.md>)，不用测试专用树或生产接缝。
 
-下表是待执行场景，不是已通过记录。业务期望先于实现确定；输出以业务动作记录、独立编辑状态、可见内容、实际位置与输入结果为主。
+验收输出以业务动作记录、独立编辑状态、可见内容、实际位置与输入结果为主。
 
 | 场景 | 独立业务期望 |
 | --- | --- |
@@ -123,26 +103,6 @@
 | 一次结算前移除又加回甲；另一轮先使退出生效，再加回 | 前者允许保持原甲而不承诺中间生命周期动作；后者必须释放旧甲，新甲不能接续旧输入 |
 | 无状态/环境变化连续呈现，再只改一条业务内容 | 稳定期间无条目重建、绑定重接或布局求解；变化后目标内容自动更新，未变条目的编辑/交互状态连续 |
 
-资源与稳定性观测可使用已有 NodeBinding/Owner 扩展的挂载建立/释放行为、正式 SceneControl.measure/arrange 调用、现有度量服务调用及常规 profiler；单看文字度量次数不能证明没有布局，需结合排列调用或布局入口观测。永久逻辑资源的释放验收使用后续补齐的正式生命周期能力，不以页面 own 或挂载关闭冒充永久销毁观测；不添加测试专用计数器或读取内部缓存快照。软件画面与输入结合验证命中，须使用实际软件光栅 replay；仅记录 PaintPlan 的宿主只证明计划与路由，不能冒充像素证据。业务预期不从待测布局算法复制出来。
+资源与稳定性观测可使用已有 NodeBinding/Owner 扩展的挂载建立/释放行为、正式 SceneControl.measure/arrange 调用、现有度量服务调用及常规 profiler；单看文字度量次数不能证明没有布局，需结合排列调用或布局入口观测。永久逻辑资源的释放验收使用正式生命周期能力，不以页面 own 或挂载关闭冒充永久销毁观测；不添加测试专用计数器或读取内部缓存快照。软件画面与输入结合验证命中，须使用实际软件光栅 replay；仅记录 PaintPlan 的宿主只证明计划与路由，不能冒充像素证据。业务预期不从待测布局算法复制出来。
 
-注入组字/物理事件只证明 Core 语义，不能外推 Windows、SDL、GLFW、Minecraft 原生输入或 GPU 通过。实施验收需另记录实际提交、执行命令和结果。
-
-## 附录 A. 调查证据（不定义要求）
-
-静态调查基线：`e1b75168b56f5c09562f31718155159a8f4f3a5b`（`refactor/uilib-core`）。证据说明当时实现能力与缺口，不表示当前合同已经运行通过，也不以旧实现约束正文。
-
-### A.1 可复用能力与实现缺口
-
-| 能力 | 证据 | 当前结论 |
-| --- | --- | --- |
-| 节点身份与静态组合 | [SceneNode](<../src/core/java/club/heiqi/uilib/ui/scene/node/SceneNode.java#L19>) | 默认 UUID、逻辑 parent、运行时与销毁标记已存在；不需要另造身份树 |
-| 状态驱动子序列、按键列表 | [NodeBinding](<../src/core/java/club/heiqi/uilib/ui/scene/runtime/NodeBinding.java#L21>)、[RepeatBinding](<../src/core/java/club/heiqi/uilib/ui/scene/runtime/RepeatBinding.java#L38>) | children/repeat 已有；repeat 同键更新条目来源、复用节点、检查重复键，并在缺席后删除映射；当前实现具备键匹配基础；正式语义见第 2 节 |
-| 挂载与绑定作用域 | [SceneRuntime](<../src/core/java/club/heiqi/uilib/ui/scene/runtime/SceneRuntime.java#L217>) | 挂载建立子 Owner 和绑定；卸载释放作用域，与逻辑树保留分开 |
-| 子序列协调 | [SceneRuntime.reconcile](<../src/core/java/club/heiqi/uilib/ui/scene/runtime/SceneRuntime.java#L349>) | 保留节点不卸载，缺席节点解除挂载及归属；这不是永久销毁。不能以当前缺席处理反向确定声明所有权 |
-| 明确移动与销毁 | [SceneRuntime](<../src/core/java/club/heiqi/uilib/ui/scene/runtime/SceneRuntime.java#L307>) | 同 runtime 移动迁移 Owner、保留挂载；销毁另有路径。两个独立 children 声明并不构成跨父连续移动合同 |
-| 显隐与布局 | [SceneLayoutEngine](<../src/core/java/club/heiqi/uilib/ui/scene/layout/SceneLayoutEngine.java#L138>) | scene 的 visible=false 按不占布局处理；交互目标仍须按核心第 5 节释放，已取消 collapsed 例外 |
-| 正式无平台页面与事件结算 | [ScenePageSession](<../src/core/java/club/heiqi/uilib/ui/scene/host/ScenePageSession.java#L24>)、[SceneFramePipeline](<../src/core/java/club/heiqi/uilib/ui/scene/host/SceneFramePipeline.java#L148>) | 页面与输入复用正式管线，每事件准备结构/几何后路由；无需测试另装管线 |
-| 焦点、指针与编辑 | [SceneFocusRouter](<../src/core/java/club/heiqi/uilib/ui/scene/runtime/SceneFocusRouter.java#L173>)、[ScenePointerRouter](<../src/core/java/club/heiqi/uilib/ui/scene/runtime/ScenePointerRouter.java#L61>)、[编辑调查](<2026-10-07-uilib-editing-spec.md#2-动态结构中的编辑目标连续性>) | 已有范围核验、挂载联系和失活吞尾；旧组字跨重挂/重置的归属尚有缺口，不等于已经复现误写 |
-| 稳定呈现复用 | [SceneFramePipeline.prepare](<../src/core/java/club/heiqi/uilib/ui/scene/host/SceneFramePipeline.java#L467>) | 已依据变化复用几何和绘制计划；不能把“不每帧全量重建”当成全新能力，也不能外推已实现最小范围增量布局 |
-
-已有场景代码可作后续验收起点：[SoftwareSceneScenario](<../src/test/java/club/heiqi/uilib/ui/scene/integration/SoftwareSceneScenario.java>)、[PointerInputScenario](<../src/test/java/club/heiqi/uilib/ui/scene/integration/PointerInputScenario.java>)。其存在不等于本轮执行通过，也不使字段快照成为验收标准。
+注入组字/物理事件仅验证 Core 语义；Windows、SDL、GLFW、Minecraft 原生输入及 GPU 各按实际环境取证，记录提交、执行命令和结果。

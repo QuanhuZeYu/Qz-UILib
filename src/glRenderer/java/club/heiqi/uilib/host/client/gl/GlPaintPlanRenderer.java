@@ -501,7 +501,13 @@ public final class GlPaintPlanRenderer implements AutoCloseable {
                                 0,
                                 0xFFFFFFFF));
                 drawPlan(command.readyOverlay);
-            } else if (command.text != null)
+            } else if (command.text != null) {
+                // 显式小行高允许墨迹溢出：所有行的背景先输出，后行高亮不覆盖前行字形。
+                for (TextLayout.Line line : command.text.lines())
+                    for (TextLayout.Decoration decoration : line.decorations())
+                        if (decoration.kind == TextLayout.Decoration.Kind.HIGHLIGHT)
+                            solid(command.box.x + decoration.x, command.box.y + decoration.y,
+                                    decoration.width, decoration.height, decoration.color, clip);
                 for (TextLayout.Line line : command.text.lines()) {
                     for (TextLayout.Glyph glyph : line.glyphs()) {
                         if (context == null
@@ -592,6 +598,7 @@ public final class GlPaintPlanRenderer implements AutoCloseable {
                         drawnGlyphs++;
                     }
                     for (TextLayout.Decoration decoration : line.decorations()) {
+                        if (decoration.kind == TextLayout.Decoration.Kind.HIGHLIGHT) continue;
                         solid(
                                 command.box.x + decoration.x,
                                 command.box.y + decoration.y,
@@ -601,6 +608,7 @@ public final class GlPaintPlanRenderer implements AutoCloseable {
                                 clip);
                     }
                 }
+            }
         }
 
         private void drawPlan(PaintPlan plan) {

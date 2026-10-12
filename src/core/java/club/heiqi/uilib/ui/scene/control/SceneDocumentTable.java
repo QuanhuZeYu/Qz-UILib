@@ -87,15 +87,7 @@ final class SceneDocumentTable implements SceneControl {
                                         if (!cell.get().header) return current;
                                         TextStyle base = current.textStyle;
                                         return current.withTextStyle(
-                                                new TextStyle(
-                                                        base.font,
-                                                        base.logicalEm,
-                                                        base.color,
-                                                        base.candidates(),
-                                                        base.effects,
-                                                        base.decoration,
-                                                        new FontStyle(
-                                                                700, base.fontStyle.posture)));
+                                                base.withFontStyle(new FontStyle(700, base.fontStyle.posture)));
                                     };
                             cellNode.bind(
                                     NodeBinding.repeat(

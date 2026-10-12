@@ -33,15 +33,8 @@ final class SceneDocumentBlocks {
                             TextStyle base = theme.get().textStyle;
                             float scale = headingScale(source.get().headingLevel);
                             TextStyle style =
-                                    new TextStyle(
-                                            base.font,
-                                            base.logicalEm * scale,
-                                            base.color,
-                                            base.candidates(),
-                                            base.effects,
-                                            base.decoration,
-                                            new club.heiqi.uilib.ui.scene.text.FontStyle(
-                                                    700, base.fontStyle.posture));
+                                    base.withEm(base.logicalEm * scale).withFontStyle(
+                                            new club.heiqi.uilib.ui.scene.text.FontStyle(700, base.fontStyle.posture));
                             return theme.get().withTextStyle(style);
                         },
                         resources,

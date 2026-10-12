@@ -74,6 +74,7 @@ public final class DocumentGlScenario extends TestApplication {
     private Path output;
     private BufferedImage background;
     private final List<BufferedImage> frames = new ArrayList<>();
+    private Signal<club.heiqi.uilib.ui.scene.text.TextPolicy> textPolicy;
     private final List<String> clicks = new ArrayList<>();
     private final StringBuilder evidence = new StringBuilder();
 
@@ -208,6 +209,7 @@ public final class DocumentGlScenario extends TestApplication {
                                                                             28,
                                                                             0xffffffff)));
                                     imageSource = domain.signal(ImageSource.bitmap(bitmap(false)));
+                                    textPolicy = domain.signal(club.heiqi.uilib.ui.scene.text.TextPolicy.NORMAL);
                                     width = domain.signal(500);
                                     height = domain.signal(280);
                                     Map<String, DocumentResources.ImageReference> refs =
@@ -231,6 +233,7 @@ public final class DocumentGlScenario extends TestApplication {
                                                             resources,
                                                             clicks::add)
                                                     .size(Size.fill(1), Size.natural());
+                                    paragraph.bind(NodeBinding.value(textPolicy, (node, value) -> node.textPolicy(value)));
                                     viewport =
                                             new SceneNode()
                                                     .clip(true)
@@ -405,6 +408,72 @@ public final class DocumentGlScenario extends TestApplication {
                             "atlas PNG编码失败");
                     saveEvidence();
                 });
+        if (!markdown) {
+            scenario("扩展样式真实GPU背景顺序与上下标", this::extendedStylesGpu);
+            scenario("小行高后行背景不覆盖前行字形", this::overlappingHighlightGpu);
+        }
+    }
+
+    private void overlappingHighlightGpu() throws Exception {
+        domain.execute(() -> {
+            content.set(TextContent.richTags("<mark color=\"#FF551122\">MMMMM<br/>     </mark>"));
+            textPolicy.set(new club.heiqi.uilib.ui.scene.text.TextPolicy(
+                    club.heiqi.uilib.ui.scene.text.TextPolicy.Direction.AUTO,
+                    club.heiqi.uilib.ui.scene.text.TextPolicy.Wrap.NONE, "und", 0, 5));
+        });
+        BufferedImage pixels = renderReady();
+        save("document-overlapping-highlight.png", pixels);
+        domain.execute(() -> {
+            SceneGeometryView.Entry entry = geometry().get(paragraph);
+            TextLayout.Line first = entry.text.lines().get(0);
+            TextLayout.Line second = entry.text.lines().get(1);
+            require(second.y < first.ascent + first.descent, "反例没有形成行内容重叠");
+            int foreground = 0;
+            for (int y = entry.box.y + 10; y < entry.box.y + first.ascent + first.descent; y++)
+                for (int x = entry.box.x; x < entry.box.x + second.advance; x++) {
+                    int rgb = pixels.getRGB(x, y);
+                    if ((rgb & 0xff) > 220 && (rgb >> 8 & 0xff) > 220 && (rgb >> 16 & 0xff) > 220) foreground++;
+                }
+            require(foreground > 0, "后行背景覆盖前行溢出字形");
+            evidence.append("overlappingHighlight foregroundPixels=").append(foreground).append('\n');
+        });
+        saveEvidence();
+    }
+
+    private void extendedStylesGpu() throws Exception {
+        domain.execute(() -> {
+            width.set(420);
+            height.set(180);
+            theme.set(SceneTheme.dark().withTextStyle(new TextStyle("default", 30, 0xffffffff)));
+            content.set(TextContent.richTags("<mark color=\"#FF551122\">发货核对 CO<sub>2</sub> / m<sup>3</sup> <spacing value=\"2\">READY</spacing></mark><br/><spacing value=\"-0.5\">紧凑文字 office אבג</spacing>"));
+        });
+        BufferedImage pixels = renderReady();
+        save("document-extended-styles.png", pixels);
+        domain.execute(() -> {
+            SceneGeometryView.Entry entry = geometry().get(paragraph);
+            LayoutBox clip = geometry().get(viewport).box;
+            int backgroundPixels = 0, foregroundPixels = 0;
+            for (TextLayout.Line line : entry.text.lines())
+                for (TextLayout.Decoration d : line.decorations()) {
+                    if (d.kind != TextLayout.Decoration.Kind.HIGHLIGHT) continue;
+                    LayoutBox area = bounds(entry.box.x + d.x, entry.box.y + d.y, d.width, d.height).intersect(clip);
+                    for (int y = area.y; y < area.y + area.height; y++)
+                        for (int x = area.x; x < area.x + area.width; x++) {
+                            int rgb = pixels.getRGB(x, y);
+                            if ((rgb & 0xffffff) == 0x551122) backgroundPixels++;
+                            if ((rgb & 0xff) > 220 && (rgb >> 8 & 0xff) > 220 && (rgb >> 16 & 0xff) > 220) foregroundPixels++;
+                        }
+                }
+            require(backgroundPixels > 0 && foregroundPixels > 0, "背景缺GPU像素或绘制顺序覆盖白色字形");
+            require(entry.text.lines().stream().flatMap(line -> line.glyphs().stream())
+                    .anyMatch(g -> g.resolvedStyle.baselineShift < 0), "GPU场景未命中上标布局");
+            require(entry.text.lines().stream().flatMap(line -> line.glyphs().stream())
+                    .anyMatch(g -> g.resolvedStyle.baselineShift > 0), "GPU场景未命中下标布局");
+            evidence.append("extendedStyles backgroundPixels=").append(backgroundPixels)
+                    .append(" foregroundPixels=").append(foregroundPixels).append('\n');
+        });
+        require(glGetError() == GL_NO_ERROR, "扩展样式GL错误");
+        saveEvidence();
     }
 
     private SceneGeometryView geometry() {
@@ -490,14 +559,12 @@ public final class DocumentGlScenario extends TestApplication {
             clear();
             page.frame();
             boolean[] loaded = {false};
-            domain.execute(
-                    () ->
-                            loaded[0] =
-                                    paragraph.children().size() == 2
-                                            && SceneImage.state(paragraph.children().get(1))
-                                                            .get()
-                                                            .content
-                                                    != null);
+            domain.execute(() -> {
+                loaded[0] = true;
+                for (SceneNode child : paragraph.children())
+                    if (child.control() instanceof SceneImage)
+                        loaded[0] &= SceneImage.state(child).get().content != null;
+            });
             if (loaded[0] && ready == demand) {
                 glFinish();
                 return read();

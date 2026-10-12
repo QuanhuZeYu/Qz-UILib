@@ -250,7 +250,8 @@ public final class SceneMath implements SceneControl {
                 || cachedInitialEquationNumber != initialEquationNumber) {
             cachedLayout =
                     engine.layout(
-                            current, node.style(), mathStyle, text, metrics, initialEquationNumber);
+                            current, text.resolveStyle(node.style()).withBaselineShift(0).withLetterSpacing(0).withHighlight(null),
+                            mathStyle, text, metrics, initialEquationNumber);
             cachedInitialEquationNumber = initialEquationNumber;
             cachedContent = current;
             cachedStyle = node.style();

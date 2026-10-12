@@ -39,7 +39,7 @@ public final class SceneTheme {
 
     public static SceneTheme light() {
         return new SceneTheme(
-                new TextStyle("default", 18, 0xFF20252B),
+                new TextStyle("default", 18, 0xFF20252B).withDefaultHighlightColor(0x88FFD54F),
                 0xFFF4F6F8,
                 0xFFE2E8EF,
                 0xFFD1E1F2,
@@ -55,7 +55,7 @@ public final class SceneTheme {
 
     public static SceneTheme dark() {
         return new SceneTheme(
-                new TextStyle("default", 18, 0xFFF1F4F8),
+                new TextStyle("default", 18, 0xFFF1F4F8).withDefaultHighlightColor(0x887A5A16),
                 0xFF20252B,
                 0xFF37414D,
                 0xFF465C74,

@@ -347,6 +347,7 @@ public final class TextLayout {
 
     public static final class Decoration {
         public enum Kind {
+            HIGHLIGHT,
             UNDERLINE,
             STRIKE
         }
@@ -617,7 +618,12 @@ public final class TextLayout {
         if (style.equals(this.style)) return this;
         if (!style.sameFont(this.style)
                 || !style.effects.equals(this.style.effects)
-                || !style.decoration.equals(this.style.decoration))
+                || !style.decoration.equals(this.style.decoration)
+                || style.baselineShift != this.style.baselineShift
+                || style.letterSpacing != this.style.letterSpacing
+                || !style.script.equals(this.style.script)
+                || !Objects.equals(style.highlightColor, this.style.highlightColor)
+                || style.defaultHighlightColor != this.style.defaultHighlightColor)
             throw new IllegalArgumentException("已定位计划只允许统一颜色重绑定");
         List<Line> recolored = new ArrayList<Line>();
         for (Line line : lines) {
@@ -672,7 +678,7 @@ public final class TextLayout {
                                 d.y,
                                 d.width,
                                 d.height,
-                                style.color,
+                                d.kind == Decoration.Kind.HIGHLIGHT ? d.color : style.color,
                                 d.logicalStart,
                                 d.logicalEnd,
                                 d.sourceStart,

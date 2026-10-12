@@ -378,10 +378,13 @@ final class RichTagsParser {
         boolean selfClosing = token.selfClosing;
         if (selfClosing) fail(start, token.end, "成对标签不能自闭合：" + name);
         String expected =
-                name.equals("color") || name.equals("size")
+                name.equals("color") || name.equals("size") || name.equals("spacing")
                         ? "value"
                         : name.equals("a") ? "href" : null;
-        if (expected == null
+        if (name.equals("mark")) {
+            if (attributes.size() > 1 || !attributes.isEmpty() && !attributes.containsKey("color"))
+                fail(start, token.end, "mark仅支持可选color属性");
+        } else if (expected == null
                 ? !attributes.isEmpty()
                 : attributes.size() != 1 || !attributes.containsKey(expected))
             fail(start, token.end, "无效或缺失属性：" + name);
@@ -390,12 +393,18 @@ final class RichTagsParser {
         if (name.equals("i")) next.posture(FontStyle.Posture.ITALIC);
         if (name.equals("u")) next.underline(true).decorationFromEm(true);
         if (name.equals("s")) next.strike(true).decorationFromEm(true);
+        if (name.equals("sup")) next.superscript();
+        if (name.equals("sub")) next.subscript();
+        if (name.equals("spacing")) {
+            try { next.letterSpacing(Float.parseFloat(attributes.get("value"))); }
+            catch (IllegalArgumentException invalid) { fail(start, token.end, "无效 logical px 字距"); }
+        }
+        if (name.equals("mark")) {
+            if (attributes.containsKey("color")) next.highlight(color(attributes.get("color"), start, token.end));
+            else next.highlight();
+        }
         if (name.equals("color")) {
-            String value = attributes.get("value");
-            if (!value.matches("#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?"))
-                fail(start, token.end, "颜色必须为 #RRGGBB 或 #AARRGGBB");
-            long color = Long.parseLong(value.substring(1), 16);
-            next.argb((int) (value.length() == 7 ? color | 0xff000000L : color));
+            next.argb(color(attributes.get("value"), start, token.end));
         }
         if (name.equals("size")) {
             try {
@@ -419,6 +428,13 @@ final class RichTagsParser {
         canonical.append('>');
     }
 
+    private int color(String value, int start, int end) {
+        if (!value.matches("#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?"))
+            fail(start, end, "颜色必须为 #RRGGBB 或 #AARRGGBB");
+        long parsed = Long.parseLong(value.substring(1), 16);
+        return (int) (value.length() == 7 ? parsed | 0xff000000L : parsed);
+    }
+
     private Integer imageSize(String value, int start, int end) {
         if (value == null) return null;
         try {
@@ -437,6 +453,10 @@ final class RichTagsParser {
                 || name.equals("i")
                 || name.equals("u")
                 || name.equals("s")
+                || name.equals("mark")
+                || name.equals("sup")
+                || name.equals("sub")
+                || name.equals("spacing")
                 || name.equals("color")
                 || name.equals("size")
                 || name.equals("br")
