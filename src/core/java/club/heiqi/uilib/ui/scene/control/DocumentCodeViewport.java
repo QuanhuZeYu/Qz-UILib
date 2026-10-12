@@ -115,7 +115,6 @@ final class DocumentCodeViewport implements SceneControl {
                                         offset - (long) event.delta * node.scrollStep()));
         if (next == offset) return false;
         offset = next;
-        node.runtime().invalidate();
         return true;
     }
 }

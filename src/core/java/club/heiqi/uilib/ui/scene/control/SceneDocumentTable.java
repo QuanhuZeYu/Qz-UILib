@@ -13,6 +13,7 @@ import club.heiqi.uilib.ui.scene.layout.Size;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.PaintCommand;
 import club.heiqi.uilib.ui.scene.paint.PaintPlanBuilder;
+import club.heiqi.uilib.ui.scene.runtime.BindingActivation;
 import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
 import club.heiqi.uilib.ui.scene.text.DocumentContent;
 import club.heiqi.uilib.ui.scene.text.FontStyle;
@@ -30,6 +31,8 @@ final class SceneDocumentTable implements SceneControl {
     private final ReadableSignal<DocumentContent.Block> source;
     private int offset, maximum;
     private ChildPlacements prepared;
+    // 仅在本次测量到排列之间复用；arrange后及卸载时释放，不保活旧测量批次。
+    private GridRequest request;
 
     private SceneDocumentTable(ReadableSignal<DocumentContent.Block> source) {
         this.source = source;
@@ -41,11 +44,21 @@ final class SceneDocumentTable implements SceneControl {
             ReadableSignal<SceneTheme> theme,
             DocumentResources resources,
             Consumer<String> activate) {
+        SceneDocumentTable control = new SceneDocumentTable(source);
         SceneNode table =
-                new SceneNode()
-                        .control(new SceneDocumentTable(source))
-                        .clip(true)
-                        .size(Size.fill(1), Size.natural());
+                new SceneNode().control(control).clip(true).size(Size.fill(1), Size.natural());
+        table.bind(
+                (runtime, node, owner) ->
+                        new BindingActivation() {
+                            public void refresh() {
+                                control.request = null;
+                            }
+
+                            public void close() {
+                                control.request = null;
+                                control.prepared = null;
+                            }
+                        });
         table.bind(
                 NodeBinding.value(
                         theme, (node, value) -> node.gap(1).background(value.disabledText)));
@@ -123,10 +136,31 @@ final class SceneDocumentTable implements SceneControl {
         }
     }
 
-    private Grid grid(SceneNode node, int availableWidth, SceneChildMeasurer children) {
+    private static final class GridRequest {
+        final TableContent table;
+        final SceneChildMeasurer children;
+        final int gap;
+        final int[] minimum, natural;
+        int solvedWidth = -1;
+        Grid solved;
+
+        GridRequest(TableContent table, SceneChildMeasurer children, int gap) {
+            this.table = table;
+            this.children = children;
+            this.gap = gap;
+            minimum = new int[table.columnCount()];
+            natural = new int[table.columnCount()];
+        }
+    }
+
+    private GridRequest intrinsic(SceneNode node, SceneChildMeasurer children) {
         TableContent table = source.get().table;
-        int count = table.columnCount(), gap = node.gap();
-        int[] minimum = new int[count], natural = new int[count];
+        int gap = node.gap();
+        if (request != null
+                && request.table == table
+                && request.children == children
+                && request.gap == gap) return request;
+        GridRequest current = new GridRequest(table, children, gap);
         int index = 0;
         // 同一正式子测量的NORMAL零宽请求暴露不可拆分词/图像/公式，MAX请求给自然宽度。
         for (TableContent.Row row : table.rows()) {
@@ -137,10 +171,21 @@ final class SceneDocumentTable implements SceneControl {
                 MeasuredSize preferred =
                         children.measureChild(
                                 cell, new Constraints(Integer.MAX_VALUE, Integer.MAX_VALUE));
-                minimum[col] = Math.max(minimum[col], min.width);
-                natural[col] = Math.max(natural[col], Math.max(min.width, preferred.width));
+                current.minimum[col] = Math.max(current.minimum[col], min.width);
+                current.natural[col] =
+                        Math.max(current.natural[col], Math.max(min.width, preferred.width));
             }
         }
+        request = current;
+        return current;
+    }
+
+    private Grid grid(SceneNode node, int availableWidth, SceneChildMeasurer children) {
+        GridRequest current = intrinsic(node, children);
+        if (current.solved != null && current.solvedWidth == availableWidth) return current.solved;
+        TableContent table = current.table;
+        int count = table.columnCount(), gap = current.gap;
+        int[] minimum = current.minimum, natural = current.natural;
         long minTotal = 0, naturalTotal = 0;
         for (int col = 0; col < count; col++) {
             minTotal += minimum[col];
@@ -168,7 +213,7 @@ final class SceneDocumentTable implements SceneControl {
                 }
         }
         int[] heights = new int[table.rows().size()];
-        index = 0;
+        int index = 0;
         for (int row = 0; row < heights.length; row++) {
             List<TableContent.Cell> cells = table.rows().get(row).cells();
             for (int col = 0; col < cells.size(); col++) {
@@ -179,7 +224,9 @@ final class SceneDocumentTable implements SceneControl {
                 heights[row] = Math.max(heights[row], size.height);
             }
         }
-        return new Grid(widths, heights, gap);
+        current.solvedWidth = availableWidth;
+        current.solved = new Grid(widths, heights, gap);
+        return current.solved;
     }
 
     @Override
@@ -230,6 +277,7 @@ final class SceneDocumentTable implements SceneControl {
     public ChildPlacements arrange(SceneNode node, LayoutBox box) {
         ChildPlacements result = prepared;
         prepared = null;
+        request = null;
         return result;
     }
 
@@ -262,7 +310,6 @@ final class SceneDocumentTable implements SceneControl {
                                         offset - (long) event.delta * node.scrollStep()));
         if (next == offset) return false;
         offset = next;
-        node.runtime().invalidate();
         return true;
     }
 

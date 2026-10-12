@@ -27,6 +27,7 @@ import club.heiqi.uilib.ui.scene.text.TextStyle;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
@@ -320,7 +321,6 @@ public final class SceneDocument {
                             resolved, measureInline(resolved, children, width), fontRequest);
             fontRequest = current;
             TextLayout layout = text.layout(current.text, width, node.textPolicy());
-            placements = place(layout, current.inline);
             List<TextLayout.Diagnostic> diagnostics = new ArrayList<>(layout.diagnostics());
             for (TextLayout.Line line : layout.lines())
                 for (TextLayout.Cluster cluster : line.clusters())
@@ -350,26 +350,28 @@ public final class SceneDocument {
         }
 
         private List<ChildPlacements.Entry> place(TextLayout layout, List<MeasuredInline> inline) {
+            if (inline.isEmpty()) return Collections.emptyList();
             List<ChildPlacements.Entry> arranged = new ArrayList<>();
-            for (MeasuredInline measured : inline) {
-                InlineBox box = measured.box;
-                for (TextLayout.Line line : layout.lines())
-                    for (TextLayout.Cluster cluster : line.clusters()) {
-                        if (cluster.logicalStart == box.offset
-                                && cluster.logicalEnd == box.offset + 1) {
-                            float x = cluster.x, y = line.baseline - box.baseline;
-                            int left = (int) Math.floor(x), top = (int) Math.floor(y);
-                            arranged.add(
-                                    new ChildPlacements.Entry(
-                                            measured.child,
-                                            new LayoutBox(
-                                                    left,
-                                                    top,
-                                                    (int) Math.ceil(x + box.width) - left,
-                                                    (int) Math.ceil(y + box.height) - top)));
-                        }
-                    }
-            }
+            Map<Integer, MeasuredInline> offsets = new HashMap<>();
+            for (MeasuredInline measured : inline) offsets.put(measured.box.offset, measured);
+            // 视觉簇可因双向文字重排；按逻辑offset关联，一次遍历，不假定视觉顺序。
+            for (TextLayout.Line line : layout.lines())
+                for (TextLayout.Cluster cluster : line.clusters()) {
+                    MeasuredInline measured = offsets.get(cluster.logicalStart);
+                    if (measured == null || cluster.logicalEnd != cluster.logicalStart + 1)
+                        continue;
+                    InlineBox box = measured.box;
+                    float x = cluster.x, y = line.baseline - box.baseline;
+                    int left = (int) Math.floor(x), top = (int) Math.floor(y);
+                    arranged.add(
+                            new ChildPlacements.Entry(
+                                    measured.child,
+                                    new LayoutBox(
+                                            left,
+                                            top,
+                                            (int) Math.ceil(x + box.width) - left,
+                                            (int) Math.ceil(y + box.height) - top)));
+                }
             return arranged;
         }
 
@@ -420,7 +422,8 @@ public final class SceneDocument {
                 right = Math.max(right, SceneTextPresentation.right(line));
                 bottom = Math.max(bottom, SceneTextPresentation.bottom(line));
             }
-            for (ChildPlacements.Entry placed : placements) {
+            // 测量外沿是本次请求的局部值，不覆盖最终呈现的placements。
+            for (ChildPlacements.Entry placed : place(layout, fontRequest.inline)) {
                 right = Math.max(right, placed.relativeBox.x + placed.relativeBox.width);
                 bottom = Math.max(bottom, placed.relativeBox.y + placed.relativeBox.height);
             }

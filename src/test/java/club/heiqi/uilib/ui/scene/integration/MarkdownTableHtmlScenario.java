@@ -216,8 +216,8 @@ public final class MarkdownTableHtmlScenario extends TestApplication {
                     + " start='7'><li>outer<ul><li>inner</li></ul></li></ol></blockquote><pre><code>"
                     + "  *literal* $x$ &lt;b&gt;\n"
                     + "\tend</code></pre><table><thead><tr><th align='left'>H</th><th"
-                    + " align='center'>J</th><th align='right'>K</th></tr></thead>"
-                    + "<tbody><tr><td>*cell*</td><td><b>bold</b></td><td>body</td></tr></tbody><tfoot><tr><td>foot</td><td></td><td>end</td></tr></tfoot></table></section>\n\n"
+                    + " align='center'>J</th><th"
+                    + " align='right'>K</th></tr></thead><tbody><tr><td>*cell*</td><td><b>bold</b></td><td>body</td></tr></tbody><tfoot><tr><td>foot</td><td></td><td>end</td></tr></tfoot></table></section>\n\n"
                     + "tail";
         for (boolean bytes : new boolean[] {false, true}) {
             DocumentContent doc = checked(blocks, bytes);
@@ -460,9 +460,17 @@ public final class MarkdownTableHtmlScenario extends TestApplication {
                         targetPoint(link[0], g, point);
                     });
             // 使用该页面实际声明，而不是另一次parse的同值链接作为输入身份。
+            long[] measureBefore = new long[1];
+            f.domain.execute(() -> measureBefore[0] = f.page.runtime().measureRevision());
             f.page.pointer(ScenePointerEvent.down(0, point[0], point[1]));
             f.page.pointer(ScenePointerEvent.scroll(wheel[0], wheel[1], Integer.MIN_VALUE));
             f.page.frame();
+            f.domain.execute(
+                    () ->
+                            equal(
+                                    measureBefore[0],
+                                    f.page.runtime().measureRevision(),
+                                    "纯表格横滚不改变文字和内容测量代际"));
             f.domain.execute(
                     () -> {
                         SceneGeometryView g = f.geometry();

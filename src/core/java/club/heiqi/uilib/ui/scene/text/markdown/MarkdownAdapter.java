@@ -2,7 +2,6 @@ package club.heiqi.uilib.ui.scene.text.markdown;
 
 import club.heiqi.uilib.ui.scene.image.ImageOptions;
 import club.heiqi.uilib.ui.scene.text.DocumentContent;
-import club.heiqi.uilib.ui.scene.text.FontStyle;
 import club.heiqi.uilib.ui.scene.text.InlineContent;
 import club.heiqi.uilib.ui.scene.text.ParagraphContent;
 import club.heiqi.uilib.ui.scene.text.StyledText;
@@ -12,26 +11,15 @@ import club.heiqi.uilib.ui.scene.text.TextInput;
 import club.heiqi.uilib.ui.scene.text.TextLayout;
 import club.heiqi.uilib.ui.scene.text.TextStyleOverride;
 import club.heiqi.uilib.ui.scene.text.TextStyleOverrideSpan;
-import club.heiqi.uilib.ui.scene.text.font.MathTextFontSources;
 import club.heiqi.uilib.ui.scene.text.math.MathContent;
 import club.heiqi.uilib.ui.scene.text.math.MathStyle;
 
-import org.commonmark.Extension;
 import org.commonmark.ext.gfm.strikethrough.Strikethrough;
 import org.commonmark.ext.gfm.strikethrough.StrikethroughExtension;
 import org.commonmark.ext.gfm.tables.TableBlock;
 import org.commonmark.ext.gfm.tables.TableCell;
 import org.commonmark.ext.gfm.tables.TableRow;
-import org.commonmark.ext.gfm.tables.internal.TableBlockParser;
-import org.commonmark.internal.BlockQuoteParser;
-import org.commonmark.internal.BlockStartImpl;
-import org.commonmark.internal.FencedCodeBlockParser;
-import org.commonmark.internal.HeadingParser;
-import org.commonmark.internal.HtmlBlockParser;
-import org.commonmark.internal.ListBlockParser;
-import org.commonmark.internal.ThematicBreakParser;
 import org.commonmark.internal.util.Html5Entities;
-import org.commonmark.node.Block;
 import org.commonmark.node.BlockQuote;
 import org.commonmark.node.Code;
 import org.commonmark.node.Emphasis;
@@ -57,16 +45,6 @@ import org.commonmark.node.ThematicBreak;
 import org.commonmark.parser.IncludeSourceSpans;
 import org.commonmark.parser.InlineParser;
 import org.commonmark.parser.Parser;
-import org.commonmark.parser.SourceLine;
-import org.commonmark.parser.SourceLines;
-import org.commonmark.parser.block.AbstractBlockParser;
-import org.commonmark.parser.block.AbstractBlockParserFactory;
-import org.commonmark.parser.block.BlockContinue;
-import org.commonmark.parser.block.BlockParser;
-import org.commonmark.parser.block.BlockParserFactory;
-import org.commonmark.parser.block.BlockStart;
-import org.commonmark.parser.block.MatchedBlockParser;
-import org.commonmark.parser.block.ParserState;
 import org.jsoup.nodes.Attribute;
 import org.jsoup.nodes.Element;
 import org.jsoup.nodes.Range;
@@ -75,7 +53,6 @@ import org.nibor.autolink.LinkExtractor;
 import org.nibor.autolink.LinkSpan;
 import org.nibor.autolink.LinkType;
 
-import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -92,8 +69,7 @@ public final class MarkdownAdapter {
     private final String raw;
     private final int[] lines;
     private final List<TextLayout.Diagnostic> diagnostics = new ArrayList<>();
-    private static final TextStyleOverride CODE_STYLE =
-            TextStyleOverride.builder().font(MathTextFontSources.MONO).build();
+    private static final MarkdownStyleIntent CODE_STYLE = MarkdownStyleIntent.INHERIT.mono();
     private static final LinkExtractor AUTOLINK =
             LinkExtractor.builder().linkTypes(EnumSet.of(LinkType.URL, LinkType.EMAIL)).build();
 
@@ -135,7 +111,7 @@ public final class MarkdownAdapter {
                                         StrikethroughExtension.builder()
                                                 .requireTwoTildes(true)
                                                 .build(),
-                                        tableExtension()))
+                                        GfmSyntax.extension()))
                         .inlineParserFactory(
                                 context -> tableInlineParser(MathSyntax.inlineParser(context)))
                         .customBlockParserFactory(new MathSyntax.BlockFactory(lines, complete))
@@ -210,121 +186,6 @@ public final class MarkdownAdapter {
         return out;
     }
 
-    /**
-     * 固定 CommonMark GFM 0.21 的成熟 factory/split 接缝：该版接受分隔列多于表头； 此处仅校验成熟 split
-     * 的数量，不另写表格词法。升级至严格匹配版本后删除反射。
-     */
-    static Extension tableExtension() {
-        return (Parser.ParserExtension)
-                builder -> builder.customBlockParserFactory(new StrictTableFactory());
-    }
-
-    private static final class StrictTableFactory extends AbstractBlockParserFactory {
-        private final TableBlockParser.Factory delegate = new TableBlockParser.Factory();
-        private final Method split;
-        private final Method separator;
-
-        StrictTableFactory() {
-            try {
-                split = TableBlockParser.class.getDeclaredMethod("split", SourceLine.class);
-                separator =
-                        TableBlockParser.class.getDeclaredMethod(
-                                "parseSeparator", CharSequence.class);
-                split.setAccessible(true);
-                separator.setAccessible(true);
-            } catch (ReflectiveOperationException failure) {
-                throw new IllegalStateException("固定 GFM0.21 表格接缝不匹配", failure);
-            }
-        }
-
-        @Override
-        public BlockStart tryStart(ParserState state, MatchedBlockParser matched) {
-            List<SourceLine> lines = matched.getParagraphLines().getLines();
-            if (lines.size() != 1) return BlockStart.none();
-            BlockStart start = delegate.tryStart(state, matched);
-            if (start == null) return BlockStart.none();
-            try {
-                List<?> columns =
-                        (List<?>)
-                                separator.invoke(
-                                        null,
-                                        state.getLine()
-                                                .getContent()
-                                                .subSequence(
-                                                        state.getIndex(),
-                                                        state.getLine().getContent().length()));
-                if (columns == null
-                        || columns.size() != ((List<?>) split.invoke(null, lines.get(0))).size())
-                    return BlockStart.none();
-                BlockStartImpl result = (BlockStartImpl) start;
-                return BlockStart.of(
-                                new TableBoundaryParser(
-                                        (TableBlockParser) result.getBlockParsers()[0]))
-                        .atIndex(result.getNewIndex())
-                        .replaceActiveBlockParser();
-            } catch (ReflectiveOperationException failure) {
-                throw new IllegalStateException("固定 GFM0.21 表格接缝不匹配", failure);
-            }
-        }
-    }
-
-    /**
-     * 0.21 的表格继续阶段会吞掉含管道的标题，同时拒绝仅管道的空行。 固定阅读参照允许缺列正文；此接缝仅替换继续判定，块起点仍由成熟 factory 判定， 成熟
-     * split/parseCell 仍生成全部行、补空与裁剪。升级匹配参照后删除此包装。
-     */
-    private static final class TableBoundaryParser extends AbstractBlockParser {
-        private static final List<BlockParserFactory> TERMINATORS =
-                Arrays.asList(
-                        new BlockQuoteParser.Factory(), new HeadingParser.Factory(),
-                        new FencedCodeBlockParser.Factory(), new HtmlBlockParser.Factory(),
-                        new ThematicBreakParser.Factory(), new ListBlockParser.Factory());
-        private final TableBlockParser delegate;
-
-        TableBoundaryParser(TableBlockParser delegate) {
-            this.delegate = delegate;
-        }
-
-        @Override
-        public Block getBlock() {
-            return delegate.getBlock();
-        }
-
-        @Override
-        public void addLine(SourceLine line) {
-            delegate.addLine(line);
-        }
-
-        @Override
-        public void closeBlock() {
-            delegate.closeBlock();
-        }
-
-        @Override
-        public void parseInlines(InlineParser parser) {
-            delegate.parseInlines(parser);
-        }
-
-        @Override
-        public BlockContinue tryContinue(ParserState state) {
-            if (state.isBlank()) return BlockContinue.none();
-            MatchedBlockParser matched =
-                    new MatchedBlockParser() {
-                        @Override
-                        public BlockParser getMatchedBlockParser() {
-                            return TableBoundaryParser.this;
-                        }
-
-                        @Override
-                        public SourceLines getParagraphLines() {
-                            return SourceLines.empty();
-                        }
-                    };
-            for (BlockParserFactory factory : TERMINATORS)
-                if (factory.tryStart(state, matched) != null) return BlockContinue.none();
-            return BlockContinue.atIndex(state.getIndex());
-        }
-    }
-
     private TableContent table(Node table) {
         List<TableContent.Row> rows = new ArrayList<>();
         for (Node group = table.getFirstChild(); group != null; group = group.getNext()) {
@@ -364,14 +225,8 @@ public final class MarkdownAdapter {
             }
             SourceSpan cell = node.getSourceSpans().get(0);
             int begin = at(cell), finish = begin + cell.getLength();
-            List<Integer> positions = new ArrayList<>();
-            StringBuilder normalized = new StringBuilder();
-            for (int p = begin; p < finish; p++) {
-                int s = p;
-                if (raw.charAt(p) == '\\' && p + 1 < finish && raw.charAt(p + 1) == '|') p++;
-                positions.add(s);
-                normalized.append(raw.charAt(p));
-            }
+            SourceProjection projection = SourceProjection.cell(raw, begin, finish);
+            String normalized = projection.text;
             int first = 0, last = normalized.length();
             while (first < last
                     && (normalized.charAt(first) == ' ' || normalized.charAt(first) == '\t'))
@@ -382,24 +237,24 @@ public final class MarkdownAdapter {
             // source 的 span 使用已裁剪后的虚拟列，结束位置需映射至原始单元格。
             delegate.parse(source, node);
             int virtual = begin + first;
-            remapTableChildren(node, positions, first, last, virtual, finish);
+            remapTableChildren(node, projection, first, last, virtual);
         };
     }
 
     private void remapTableChildren(
-            Node parent, List<Integer> positions, int first, int last, int virtual, int finish) {
+            Node parent, SourceProjection projection, int first, int last, int virtual) {
         for (Node child = parent.getFirstChild(); child != null; child = child.getNext()) {
             List<SourceSpan> mapped = new ArrayList<>();
             for (SourceSpan span : child.getSourceSpans()) {
                 int from = at(span) - virtual + first, to = from + span.getLength();
                 if (from < first || to > last) throw new IllegalStateException("GFM 行内来源超出单元格");
-                int s = from < positions.size() ? positions.get(from) : finish;
-                int e = to < positions.size() ? positions.get(to) : finish;
+                int s = projection.start(from);
+                int e = projection.start(to);
                 mapped.add(
                         SourceSpan.of(span.getLineIndex(), s - lines[span.getLineIndex()], e - s));
             }
             child.setSourceSpans(mapped);
-            remapTableChildren(child, positions, first, last, virtual, finish);
+            remapTableChildren(child, projection, first, last, virtual);
         }
     }
 
@@ -440,9 +295,9 @@ public final class MarkdownAdapter {
 
     private TextContent paragraph(Node n) {
         ParagraphBuilder b = new ParagraphBuilder();
-        b.contentNode = n;
-        inline(n, b, TextStyleOverride.INHERIT, null);
-        b.finishHtml(end(n));
+        InlineHtmlSession session = new InlineHtmlSession(n, b);
+        inline(n, session, MarkdownStyleIntent.INHERIT, null);
+        session.finishHtml(end(n));
         return b.finish();
     }
 
@@ -452,25 +307,41 @@ public final class MarkdownAdapter {
         for (int i = 0; i < spans.size(); i++) {
             SourceSpan sp = spans.get(i);
             if (i != 0)
-                b.newlineBetween(spans.get(i - 1), sp, "\n", TextStyleOverride.INHERIT, null);
-            b.verbatim(at(sp), at(sp) + sp.getLength(), TextStyleOverride.INHERIT, null);
+                newlineBetween(b, spans.get(i - 1), sp, "\n", MarkdownStyleIntent.INHERIT, null);
+            verbatim(b, at(sp), at(sp) + sp.getLength(), MarkdownStyleIntent.INHERIT, null);
         }
         return b.finish();
     }
 
     private void inline(
-            Node parent, ParagraphBuilder b, TextStyleOverride style, TextContent.Link link) {
+            Node parent,
+            InlineHtmlSession session,
+            MarkdownStyleIntent style,
+            TextContent.Link link) {
+        ParagraphBuilder b = session.output;
         for (Node n = parent.getFirstChild(); n != null; n = n.getNext()) {
             if (n instanceof HtmlInline) {
-                htmlToken((HtmlInline) n, b, style, link);
+                session.token((HtmlInline) n, style, link);
                 continue;
             }
-            if (b.htmlSuppressed() || b.htmlCodeStart >= 0) {
-                inline(n, b, style, link);
+            if (session.htmlSuppressed() || session.capture != null) {
+                inline(n, session, style, link);
                 continue;
             }
-            if (n instanceof Text) b.text(n, style, link, link == null && b.htmlLink() == null);
-            else if (n instanceof Code) b.inlineCode(n, ((Code) n).getLiteral(), style, link);
+            if (n instanceof Text)
+                text(
+                        b,
+                        n,
+                        session.style(style, link),
+                        session.link(link),
+                        link == null && session.htmlLink() == null);
+            else if (n instanceof Code)
+                inlineCode(
+                        b,
+                        n,
+                        ((Code) n).getLiteral(),
+                        session.style(style, link),
+                        session.link(link));
             else if (n instanceof SoftLineBreak || n instanceof HardLineBreak) {
                 int s = start(n), e = end(n);
                 if (s == e) {
@@ -484,12 +355,17 @@ public final class MarkdownAdapter {
                 if (p < raw.length() && (raw.charAt(p) == '\r' || raw.charAt(p) == '\n')) {
                     int q = p + 1;
                     if (raw.charAt(p) == '\r' && q < raw.length() && raw.charAt(q) == '\n') q++;
-                    b.append(n instanceof SoftLineBreak ? " " : "\n", p, q, style, link);
+                    b.append(
+                            n instanceof SoftLineBreak ? " " : "\n",
+                            p,
+                            q,
+                            session.style(style, link),
+                            session.link(link));
                 }
             } else if (n instanceof Image) {
                 Image image = (Image) n;
                 int offset = b.value.length(), s = start(n), e = end(n);
-                b.append("\ufffc", s, e, style, link);
+                b.append("\ufffc", s, e, session.style(style, link), session.link(link));
                 b.objects.add(
                         InlineContent.image(
                                 offset,
@@ -503,7 +379,7 @@ public final class MarkdownAdapter {
                                 title(image.getTitle())));
             } else if (n instanceof MathSyntax.MathInline) {
                 int offset = b.value.length(), s = start(n), e = end(n);
-                b.append("\ufffc", s, e, style, link);
+                b.append("\ufffc", s, e, session.style(style, link), session.link(link));
                 b.objects.add(
                         InlineContent.formula(
                                 offset,
@@ -516,17 +392,14 @@ public final class MarkdownAdapter {
             } else if (n instanceof Link) {
                 inline(
                         n,
-                        b,
-                        style.toBuilder().underline(true).decorationFromEm(true).build(),
+                        session,
+                        style.underline(),
                         new TextContent.Link(
                                 ((Link) n).getDestination(), title(((Link) n).getTitle())));
-            } else if (n instanceof Emphasis)
-                inline(n, b, style.toBuilder().posture(FontStyle.Posture.ITALIC).build(), link);
-            else if (n instanceof StrongEmphasis)
-                inline(n, b, style.toBuilder().weight(700).build(), link);
-            else if (n instanceof Strikethrough)
-                inline(n, b, style.toBuilder().strike(true).decorationFromEm(true).build(), link);
-            else inline(n, b, style, link);
+            } else if (n instanceof Emphasis) inline(n, session, style.italic(), link);
+            else if (n instanceof StrongEmphasis) inline(n, session, style.bold(), link);
+            else if (n instanceof Strikethrough) inline(n, session, style.strike(), link);
+            else inline(n, session, style, link);
         }
     }
 
@@ -546,23 +419,23 @@ public final class MarkdownAdapter {
         }
     }
 
-    private static TextStyleOverride htmlStyle(String tag, TextStyleOverride style) {
+    private static MarkdownStyleIntent htmlStyle(String tag, MarkdownStyleIntent style) {
         switch (tag) {
             case "strong":
             case "b":
-                return style.toBuilder().weight(700).build();
+                return style.bold();
             case "em":
             case "i":
-                return style.toBuilder().posture(FontStyle.Posture.ITALIC).build();
+                return style.italic();
             case "u":
             case "a":
-                return style.toBuilder().underline(true).decorationFromEm(true).build();
+                return style.underline();
             case "s":
             case "del":
-                return style.toBuilder().strike(true).decorationFromEm(true).build();
+                return style.strike();
             case "code":
             case "pre":
-                return style.toBuilder().font(MathTextFontSources.MONO).build();
+                return style.mono();
             default:
                 return style;
         }
@@ -607,102 +480,8 @@ public final class MarkdownAdapter {
                 || tag.equals("td");
     }
 
-    private void htmlToken(
-            HtmlInline token, ParagraphBuilder b, TextStyleOverride style, TextContent.Link link) {
-        int s = start(token), e = end(token);
-        String literal = ((HtmlInline) token).getLiteral();
-        Matcher closing = HTML_CLOSE.matcher(literal);
-        if (closing.matches()) {
-            String tag = closing.group(1).toLowerCase(java.util.Locale.ROOT);
-            if (b.htmlCodeStart >= 0) {
-                if (!tag.equals("code")) return;
-                b.finishHtml(s);
-            }
-            for (int i = b.htmlFrames.size() - 1; i >= 0; i--) {
-                if (b.htmlFrames.get(i).tag.equals(tag)) {
-                    b.htmlFrames.subList(i, b.htmlFrames.size()).clear();
-                    break;
-                }
-            }
-            return;
-        }
-        if (b.htmlCodeStart >= 0) return;
-        HtmlSource source = htmlSource(token);
-        List<org.jsoup.nodes.Node> nodes = source.parse();
-        Element element = null;
-        for (org.jsoup.nodes.Node node : nodes)
-            if (node instanceof Element) {
-                element = (Element) node;
-                break;
-            }
-        if (element == null) {
-            if (!literal.startsWith("<!--")) {
-                diagnose(s, e, "无法解释的 HTML 行内内容，保留原文");
-                b.verbatim(s, e, style, link);
-            }
-            return;
-        }
-        String tag = element.normalName();
-        htmlAttributes(element, source);
-        if (tag.equals("script") || tag.equals("style")) diagnose(s, e, "HTML 非正文内容不显示");
-        else if (!htmlSupported(tag)) diagnose(s, e, "忽略未知 HTML 容器，保留正文");
-        if (b.htmlSuppressed()) {
-            b.htmlFrames.add(new HtmlFrame(tag, null));
-        } else if (tag.equals("br")) b.append("\n", s, e, style, link);
-        else if (tag.equals("img")) htmlImage(element, source, b, style, link);
-        else {
-            TextContent.Link target =
-                    tag.equals("a") && element.hasAttr("href")
-                            ? new TextContent.Link(element.attr("href"), element.attr("title"))
-                            : null;
-            b.htmlFrames.add(new HtmlFrame(tag, target));
-            if (tag.equals("code")) {
-                b.htmlCodeStart = e;
-                b.htmlCodeStyle = htmlStyle("code", style);
-                b.htmlCodeLink = link;
-            }
-            if (element.tag().isEmpty() || literal.endsWith("/>"))
-                b.htmlFrames.remove(b.htmlFrames.size() - 1);
-        }
-    }
-
     private HtmlSource htmlSource(Node node) {
-        StringBuilder text = new StringBuilder();
-        List<Integer> starts = new ArrayList<>(), ends = new ArrayList<>();
-        List<SourceSpan> spans = node.getSourceSpans();
-        for (int i = 0; i < spans.size(); i++) {
-            SourceSpan span = spans.get(i);
-            int s = at(span), e = s + span.getLength();
-            for (int p = s; p < e; p++) {
-                int originalStart = p;
-                if (inTableCell(node)
-                        && raw.charAt(p) == '\\'
-                        && p + 1 < e
-                        && raw.charAt(p + 1) == '|') p++;
-                text.append(raw.charAt(p));
-                starts.add(originalStart);
-                ends.add(p + 1);
-            }
-            int next = i + 1 < spans.size() ? at(spans.get(i + 1)) : e;
-            if (i + 1 < spans.size()
-                    && e < next
-                    && e < raw.length()
-                    && (raw.charAt(e) == '\r' || raw.charAt(e) == '\n')) {
-                int q = e + 1;
-                if (raw.charAt(e) == '\r' && q < raw.length() && raw.charAt(q) == '\n') q++;
-                for (int p = e; p < q; p++) {
-                    text.append(raw.charAt(p));
-                    starts.add(p);
-                    ends.add(p + 1);
-                }
-            }
-        }
-        return new HtmlSource(
-                text.toString(),
-                starts.stream().mapToInt(Integer::intValue).toArray(),
-                ends.stream().mapToInt(Integer::intValue).toArray(),
-                start(node),
-                end(node));
+        return SourceProjection.of(node, raw, lines, true).html(start(node), end(node));
     }
 
     private void htmlParseDiagnostics(HtmlSource source) {
@@ -717,13 +496,13 @@ public final class MarkdownAdapter {
         HtmlSource source = htmlSource(node);
         List<org.jsoup.nodes.Node> nodes = source.parse();
         htmlParseDiagnostics(source);
-        return htmlBlocks(nodes, source, TextStyleOverride.INHERIT, null);
+        return htmlBlocks(nodes, source, MarkdownStyleIntent.INHERIT, null);
     }
 
     private List<DocumentContent.Block> htmlBlocks(
             List<org.jsoup.nodes.Node> nodes,
             HtmlSource source,
-            TextStyleOverride style,
+            MarkdownStyleIntent style,
             TextContent.Link link) {
         List<DocumentContent.Block> out = new ArrayList<>();
         ParagraphBuilder paragraph = new ParagraphBuilder();
@@ -777,7 +556,7 @@ public final class MarkdownAdapter {
     }
 
     private List<DocumentContent.Block> htmlBlock(
-            Element element, HtmlSource source, TextStyleOverride style, TextContent.Link link) {
+            Element element, HtmlSource source, MarkdownStyleIntent style, TextContent.Link link) {
         htmlAttributes(element, source);
         String tag = element.normalName();
         int s = sourceStart(source.start(element)), e = sourceEnd(source.end(element));
@@ -826,7 +605,7 @@ public final class MarkdownAdapter {
     }
 
     private TableContent htmlTable(
-            Element table, HtmlSource source, TextStyleOverride style, TextContent.Link link) {
+            Element table, HtmlSource source, MarkdownStyleIntent style, TextContent.Link link) {
         List<TableContent.Row> rows = new ArrayList<>();
         htmlRows(table, source, style, link, rows);
         return new TableContent(rows);
@@ -835,7 +614,7 @@ public final class MarkdownAdapter {
     private void htmlRows(
             Element parent,
             HtmlSource source,
-            TextStyleOverride style,
+            MarkdownStyleIntent style,
             TextContent.Link link,
             List<TableContent.Row> rows) {
         for (Element element : parent.children()) {
@@ -869,7 +648,7 @@ public final class MarkdownAdapter {
             org.jsoup.nodes.Node node,
             HtmlSource source,
             ParagraphBuilder b,
-            TextStyleOverride style,
+            MarkdownStyleIntent style,
             TextContent.Link link,
             boolean code) {
         if (node instanceof TextNode) {
@@ -915,7 +694,7 @@ public final class MarkdownAdapter {
             int begin,
             int finish,
             ParagraphBuilder b,
-            TextStyleOverride style,
+            MarkdownStyleIntent style,
             TextContent.Link link,
             boolean code,
             String expected) {
@@ -982,7 +761,7 @@ public final class MarkdownAdapter {
             Element element,
             HtmlSource source,
             ParagraphBuilder b,
-            TextStyleOverride style,
+            MarkdownStyleIntent style,
             TextContent.Link link) {
         int s = source.start(element), e = source.end(element), offset = b.value.length();
         b.append("\ufffc", s, e, style, link);
@@ -1117,7 +896,7 @@ public final class MarkdownAdapter {
                     throw new IllegalStateException("CommonMark code缩进来源不一致");
                 b.append(target.substring(0, expanded), pos + tab, pos + tab + 1, CODE_STYLE, null);
             }
-            b.verbatim(pos + consumed, e, CODE_STYLE, null);
+            verbatim(b, pos + consumed, e, CODE_STYLE, null);
             if (e < raw.length() && (raw.charAt(e) == '\n' || raw.charAt(e) == '\r')) {
                 int q = e + 1;
                 if (raw.charAt(e) == '\r' && q < raw.length() && raw.charAt(q) == '\n') q++;
@@ -1139,50 +918,187 @@ public final class MarkdownAdapter {
         }
     }
 
-    private static boolean inTableCell(Node n) {
-        for (Node p = n; p != null; p = p.getParent()) if (p instanceof TableCell) return true;
-        return false;
-    }
-
-    private List<Unit> rawUnits(Node n, boolean breaks) {
+    private List<Unit> rawUnits(Node node, boolean breaks) {
+        SourceProjection projection = SourceProjection.of(node, raw, lines, breaks);
         List<Unit> out = new ArrayList<>();
-        List<SourceSpan> spans = n.getSourceSpans();
-        for (int k = 0; k < spans.size(); k++) {
-            SourceSpan sp = spans.get(k);
-            if (breaks && k > 0) {
-                SourceSpan prev = spans.get(k - 1);
-                int p = at(prev) + prev.getLength();
-                if (p < raw.length() && (raw.charAt(p) == '\r' || raw.charAt(p) == '\n')) {
-                    int e = p + 1;
-                    if (raw.charAt(p) == '\r' && e < raw.length() && raw.charAt(e) == '\n') e++;
-                    out.add(new Unit(" ", p, e));
-                }
+        for (int p = 0; p < projection.text.length(); ) {
+            int q = p + Character.charCount(projection.text.codePointAt(p));
+            String value = projection.text.substring(p, q);
+            if (breaks && (value.equals("\r") || value.equals("\n"))) {
+                q = SourceProjection.newlineEnd(projection.text, p);
+                value = " ";
             }
-            int p = at(sp), e = p + sp.getLength();
-            boolean table = inTableCell(n);
-            while (p < e) {
-                int s = p;
-                if (table && raw.charAt(p) == '\\' && p + 1 < e && raw.charAt(p + 1) == '|') p++;
-                int q = p + Character.charCount(raw.codePointAt(p));
-                out.add(new Unit(raw.substring(p, q).replace((char) 0, (char) 0xfffd), s, q));
-                p = q;
-            }
+            out.add(new Unit(value, projection.start(p), projection.end(q)));
+            p = q;
         }
         return out;
     }
 
-    private final class ParagraphBuilder {
-        final StringBuilder value = new StringBuilder();
-        final List<Integer> starts = new ArrayList<>(), ends = new ArrayList<>();
-        final List<TextStyleOverrideSpan> styles = new ArrayList<>();
-        final List<TextContent.LinkSpan> links = new ArrayList<>();
-        final List<InlineContent> objects = new ArrayList<>();
-        final List<HtmlFrame> htmlFrames = new ArrayList<>();
-        Node contentNode;
-        HtmlSource contentSource;
-        int htmlCodeStart = -1;
-        TextStyleOverride htmlCodeStyle;
-        TextContent.Link htmlCodeLink;
+    private void verbatim(
+            ParagraphBuilder output,
+            int s,
+            int e,
+            MarkdownStyleIntent style,
+            TextContent.Link link) {
+        for (int p = s; p < e; ) {
+            int q = p + Character.charCount(raw.codePointAt(p));
+            output.append(raw.substring(p, q).replace((char) 0, (char) 0xfffd), p, q, style, link);
+            p = q;
+        }
+    }
+
+    private void newlineBetween(
+            ParagraphBuilder output,
+            SourceSpan prev,
+            SourceSpan next,
+            String text,
+            MarkdownStyleIntent style,
+            TextContent.Link link) {
+        int p = at(prev) + prev.getLength();
+        if (p < raw.length() && (raw.charAt(p) == '\r' || raw.charAt(p) == '\n')) {
+            int e = p + 1;
+            if (raw.charAt(p) == '\r' && e < raw.length() && raw.charAt(e) == '\n') e++;
+            output.append(text, p, e, style, link);
+        }
+    }
+
+    private void text(
+            ParagraphBuilder output,
+            Node n,
+            MarkdownStyleIntent style,
+            TextContent.Link link,
+            boolean auto) {
+        List<Unit> units = rawUnits(n, false), decoded = new ArrayList<>();
+        for (int i = 0; i < units.size(); ) {
+            Unit u = units.get(i);
+            if (u.text.equals(String.valueOf((char) 0))) {
+                decoded.add(new Unit("\ufffd", u.start, u.end));
+                i++;
+            } else if (u.text.equals("\\")
+                    && i + 1 < units.size()
+                    && units.get(i + 1).text.length() == 1
+                    && units.get(i + 1).text.charAt(0) >= 33
+                    && units.get(i + 1).text.charAt(0) <= 126
+                    && !Character.isLetterOrDigit(units.get(i + 1).text.charAt(0))) {
+                Unit next = units.get(i + 1);
+                decoded.add(new Unit(next.text, u.start, next.end));
+                i += 2;
+            } else if (u.text.equals("&")) {
+                int j = i + 1;
+                StringBuilder entity = new StringBuilder("&");
+                while (j < units.size()
+                        && j - i < 50
+                        && units.get(j).start == units.get(j - 1).end) {
+                    entity.append(units.get(j).text);
+                    if (units.get(j).text.equals(";")) break;
+                    j++;
+                }
+                String named = entity.toString();
+                String expanded =
+                        named.matches(
+                                        "&(?:#[0-9]{1,7}|#[xX][0-9a-fA-F]{1,6}|[A-Za-z][A-Za-z0-9]*);")
+                                ? Html5Entities.entityToString(named)
+                                : named;
+                if (!expanded.equals(named)) {
+                    decoded.add(new Unit(expanded, u.start, units.get(j).end));
+                    i = j + 1;
+                } else {
+                    decoded.add(u);
+                    i++;
+                }
+            } else {
+                decoded.add(u);
+                i++;
+            }
+        }
+        String expected = ((Text) n).getLiteral();
+        int decodedLength = 0;
+        for (Unit u : decoded) decodedLength += u.text.length();
+        // CommonMark Text span保留被行末规则去除的空白，literal只发布可见内容。
+        while (decodedLength > expected.length() && !decoded.isEmpty()) {
+            Unit last = decoded.get(decoded.size() - 1);
+            if (!last.text.equals(" ") && !last.text.equals("\t")) break;
+            decoded.remove(decoded.size() - 1);
+            decodedLength -= last.text.length();
+        }
+        StringBuilder s = new StringBuilder();
+        for (Unit u : decoded) s.append(u.text);
+        // 成熟 parser 的 literal 是语义事实；源词法只重建对应范围，绝不定位搜索重复文本。
+        if (!s.toString().equals(((Text) n).getLiteral()))
+            throw new IllegalStateException("CommonMark Text 来源解码不一致: " + n.getSourceSpans());
+        List<LinkSpan> autoLinks = new ArrayList<>();
+        if (auto) for (LinkSpan a : AUTOLINK.extractLinks(s)) autoLinks.add(a);
+        int logical = 0, ai = 0;
+        TextContent.Link active = null;
+        for (Unit u : decoded) {
+            while (ai < autoLinks.size() && logical >= autoLinks.get(ai).getEndIndex()) {
+                ai++;
+                active = null;
+            }
+            TextContent.Link current = link;
+            if (ai < autoLinks.size()) {
+                LinkSpan a = autoLinks.get(ai);
+                if (logical >= a.getBeginIndex() && logical < a.getEndIndex()) {
+                    if (active == null) {
+                        String target = s.substring(a.getBeginIndex(), a.getEndIndex());
+                        active =
+                                new TextContent.Link(
+                                        a.getType() == LinkType.EMAIL
+                                                ? "mailto:" + target
+                                                : target);
+                    }
+                    current = active;
+                }
+            }
+            MarkdownStyleIntent resolved = current == null ? style : style.underline();
+            output.append(u.text, u.start, u.end, resolved, current);
+            logical += u.text.length();
+        }
+    }
+
+    private void inlineCode(
+            ParagraphBuilder output,
+            Node n,
+            String literal,
+            MarkdownStyleIntent style,
+            TextContent.Link link) {
+        style = style.mono();
+        List<Unit> units = rawUnits(n, true);
+        int begin = 0, end = units.size();
+        while (begin < end && units.get(begin).text.equals("`")) begin++;
+        while (end > begin && units.get(end - 1).text.equals("`")) end--;
+        if (end - begin >= 3
+                && units.get(begin).text.equals(" ")
+                && units.get(end - 1).text.equals(" ")) {
+            boolean nonspace = false;
+            for (int i = begin; i < end; i++) if (!units.get(i).text.equals(" ")) nonspace = true;
+            if (nonspace) {
+                begin++;
+                end--;
+            }
+        }
+        StringBuilder decoded = new StringBuilder();
+        for (int i = begin; i < end; i++) decoded.append(units.get(i).text);
+        if (!decoded.toString().equals(literal))
+            throw new IllegalStateException("CommonMark Code 来源解码不一致");
+        for (int i = begin; i < end; i++) {
+            Unit u = units.get(i);
+            output.append(u.text, u.start, u.end, style, link);
+        }
+    }
+
+    /** 跨 token 的 HTML 解释只属于本段会话；共同累积器不持有解析状态。 */
+    private final class InlineHtmlSession {
+        final ParagraphBuilder output;
+        private final Node contentNode;
+        private final List<HtmlFrame> htmlFrames = new ArrayList<>();
+        private HtmlSource contentSource;
+        private HtmlCodeCapture capture;
+
+        InlineHtmlSession(Node contentNode, ParagraphBuilder output) {
+            this.contentNode = contentNode;
+            this.output = output;
+        }
 
         boolean htmlSuppressed() {
             for (HtmlFrame frame : htmlFrames) if (frame.suppressed) return true;
@@ -1195,178 +1111,146 @@ public final class MarkdownAdapter {
             return null;
         }
 
-        void finishHtml(int end) {
-            if (htmlCodeStart >= 0) {
-                if (contentSource == null) contentSource = htmlSource(contentNode);
-                HtmlSource source = contentSource.sliceOriginal(htmlCodeStart, end);
-                List<org.jsoup.nodes.Node> nodes = source.parse();
-                htmlParseDiagnostics(source);
-                for (org.jsoup.nodes.Node node : nodes)
-                    htmlInline(node, source, this, htmlCodeStyle, htmlCodeLink, true);
-                htmlCodeStart = -1;
-            }
+        TextContent.Link link(TextContent.Link markdown) {
+            return markdown == null ? htmlLink() : markdown;
         }
 
-        void append(String text, int s, int e, TextStyleOverride style, TextContent.Link link) {
-            if (text.isEmpty() || htmlSuppressed()) return;
-            for (HtmlFrame frame : htmlFrames) style = htmlStyle(frame.tag, style);
-            if (link == null) link = htmlLink();
-            if (link != null)
-                style = style.toBuilder().underline(true).decorationFromEm(true).build();
+        MarkdownStyleIntent style(MarkdownStyleIntent markdown, TextContent.Link link) {
+            for (HtmlFrame frame : htmlFrames) markdown = htmlStyle(frame.tag, markdown);
+            return link(link) == null ? markdown : markdown.underline();
+        }
+
+        void finishHtml(int end) {
+            if (capture == null) return;
+            if (contentSource == null) contentSource = htmlSource(contentNode);
+            HtmlSource source = contentSource.sliceOriginal(capture.start, end);
+            List<org.jsoup.nodes.Node> nodes = source.parse();
+            htmlParseDiagnostics(source);
+            for (org.jsoup.nodes.Node node : nodes)
+                htmlInline(
+                        node,
+                        source,
+                        output,
+                        style(capture.style, capture.link),
+                        link(capture.link),
+                        true);
+            capture = null;
+        }
+
+        void token(HtmlInline token, MarkdownStyleIntent style, TextContent.Link link) {
+            int s = start(token), e = end(token);
+            String literal = ((HtmlInline) token).getLiteral();
+            Matcher closing = HTML_CLOSE.matcher(literal);
+            if (closing.matches()) {
+                String tag = closing.group(1).toLowerCase(java.util.Locale.ROOT);
+                if (capture != null) {
+                    if (!tag.equals("code")) return;
+                    finishHtml(s);
+                }
+                for (int i = htmlFrames.size() - 1; i >= 0; i--) {
+                    if (htmlFrames.get(i).tag.equals(tag)) {
+                        htmlFrames.subList(i, htmlFrames.size()).clear();
+                        break;
+                    }
+                }
+                return;
+            }
+            if (capture != null) return;
+            HtmlSource source = htmlSource(token);
+            List<org.jsoup.nodes.Node> nodes = source.parse();
+            Element element = null;
+            for (org.jsoup.nodes.Node node : nodes)
+                if (node instanceof Element) {
+                    element = (Element) node;
+                    break;
+                }
+            if (element == null) {
+                if (!literal.startsWith("<!--")) {
+                    diagnose(s, e, "无法解释的 HTML 行内内容，保留原文");
+                    if (!htmlSuppressed()) verbatim(output, s, e, style(style, link), link(link));
+                }
+                return;
+            }
+            String tag = element.normalName();
+            htmlAttributes(element, source);
+            if (tag.equals("script") || tag.equals("style")) diagnose(s, e, "HTML 非正文内容不显示");
+            else if (!htmlSupported(tag)) diagnose(s, e, "忽略未知 HTML 容器，保留正文");
+            if (htmlSuppressed()) {
+                htmlFrames.add(new HtmlFrame(tag, null));
+            } else if (tag.equals("br")) output.append("\n", s, e, style(style, link), link(link));
+            else if (tag.equals("img"))
+                htmlImage(element, source, output, style(style, link), link(link));
+            else {
+                TextContent.Link target =
+                        tag.equals("a") && element.hasAttr("href")
+                                ? new TextContent.Link(element.attr("href"), element.attr("title"))
+                                : null;
+                htmlFrames.add(new HtmlFrame(tag, target));
+                if (tag.equals("code")) {
+                    capture = new HtmlCodeCapture(e, htmlStyle("code", style), link);
+                }
+                if (element.tag().isEmpty() || literal.endsWith("/>"))
+                    htmlFrames.remove(htmlFrames.size() - 1);
+            }
+        }
+    }
+
+    /** code 的起点、样式与链接在开启时一起生效，关闭时由所属会话一起消费。 */
+    private static final class HtmlCodeCapture {
+        final int start;
+        final MarkdownStyleIntent style;
+        final TextContent.Link link;
+
+        HtmlCodeCapture(int start, MarkdownStyleIntent style, TextContent.Link link) {
+            this.start = start;
+            this.style = style;
+            this.link = link;
+        }
+    }
+
+    /** 可变终点仅存在累积阶段；finish 一次生成共同模型的不可变声明。 */
+    private static final class StyleRun {
+        final int start;
+        int end;
+        final MarkdownStyleIntent style;
+        final TextContent.Link link;
+
+        StyleRun(int start, int end, MarkdownStyleIntent style, TextContent.Link link) {
+            this.start = start;
+            this.end = end;
+            this.style = style;
+            this.link = link;
+        }
+    }
+
+    private final class ParagraphBuilder {
+        final StringBuilder value = new StringBuilder();
+        final List<Integer> starts = new ArrayList<>(), ends = new ArrayList<>();
+        final List<StyleRun> styleRuns = new ArrayList<>();
+        final List<TextContent.LinkSpan> links = new ArrayList<>();
+        final List<InlineContent> objects = new ArrayList<>();
+
+        void append(String text, int s, int e, MarkdownStyleIntent style, TextContent.Link link) {
+            if (text.isEmpty()) return;
             int p = value.length();
             value.append(text);
             for (int i = 0; i < text.length(); i++) {
                 starts.add(s);
                 ends.add(e);
             }
-            styles.add(new TextStyleOverrideSpan(p, value.length(), style));
+            // 来源仍逐字符保留；样式比较声明意图，并保留不同链接声明的身份分界。
+            StyleRun previous = styleRuns.isEmpty() ? null : styleRuns.get(styleRuns.size() - 1);
+            if (previous != null
+                    && previous.style.key == style.key
+                    && previous.link == link
+                    && previous.end == p) previous.end = value.length();
+            else styleRuns.add(new StyleRun(p, value.length(), style, link));
             if (link != null) {
                 int last = links.size() - 1;
                 if (last >= 0 && links.get(last).end == p && links.get(last).link == link) {
                     TextContent.LinkSpan old = links.remove(last);
                     links.add(new TextContent.LinkSpan(old.start, value.length(), link));
                 } else links.add(new TextContent.LinkSpan(p, value.length(), link));
-            }
-        }
-
-        void verbatim(int s, int e, TextStyleOverride style, TextContent.Link link) {
-            for (int p = s; p < e; ) {
-                int q = p + Character.charCount(raw.codePointAt(p));
-                append(raw.substring(p, q).replace((char) 0, (char) 0xfffd), p, q, style, link);
-                p = q;
-            }
-        }
-
-        void newlineBetween(
-                SourceSpan prev,
-                SourceSpan next,
-                String text,
-                TextStyleOverride style,
-                TextContent.Link link) {
-            int p = at(prev) + prev.getLength();
-            if (p < raw.length() && (raw.charAt(p) == '\r' || raw.charAt(p) == '\n')) {
-                int e = p + 1;
-                if (raw.charAt(p) == '\r' && e < raw.length() && raw.charAt(e) == '\n') e++;
-                append(text, p, e, style, link);
-            }
-        }
-
-        void text(Node n, TextStyleOverride style, TextContent.Link link, boolean auto) {
-            List<Unit> units = rawUnits(n, false), decoded = new ArrayList<>();
-            for (int i = 0; i < units.size(); ) {
-                Unit u = units.get(i);
-                if (u.text.equals(String.valueOf((char) 0))) {
-                    decoded.add(new Unit("\ufffd", u.start, u.end));
-                    i++;
-                } else if (u.text.equals("\\")
-                        && i + 1 < units.size()
-                        && units.get(i + 1).text.length() == 1
-                        && units.get(i + 1).text.charAt(0) >= 33
-                        && units.get(i + 1).text.charAt(0) <= 126
-                        && !Character.isLetterOrDigit(units.get(i + 1).text.charAt(0))) {
-                    Unit next = units.get(i + 1);
-                    decoded.add(new Unit(next.text, u.start, next.end));
-                    i += 2;
-                } else if (u.text.equals("&")) {
-                    int j = i + 1;
-                    StringBuilder entity = new StringBuilder("&");
-                    while (j < units.size()
-                            && j - i < 50
-                            && units.get(j).start == units.get(j - 1).end) {
-                        entity.append(units.get(j).text);
-                        if (units.get(j).text.equals(";")) break;
-                        j++;
-                    }
-                    String named = entity.toString();
-                    String expanded =
-                            named.matches(
-                                            "&(?:#[0-9]{1,7}|#[xX][0-9a-fA-F]{1,6}|[A-Za-z][A-Za-z0-9]*);")
-                                    ? Html5Entities.entityToString(named)
-                                    : named;
-                    if (!expanded.equals(named)) {
-                        decoded.add(new Unit(expanded, u.start, units.get(j).end));
-                        i = j + 1;
-                    } else {
-                        decoded.add(u);
-                        i++;
-                    }
-                } else {
-                    decoded.add(u);
-                    i++;
-                }
-            }
-            String expected = ((Text) n).getLiteral();
-            int decodedLength = 0;
-            for (Unit u : decoded) decodedLength += u.text.length();
-            // CommonMark Text span保留被行末规则去除的空白，literal只发布可见内容。
-            while (decodedLength > expected.length() && !decoded.isEmpty()) {
-                Unit last = decoded.get(decoded.size() - 1);
-                if (!last.text.equals(" ") && !last.text.equals("\t")) break;
-                decoded.remove(decoded.size() - 1);
-                decodedLength -= last.text.length();
-            }
-            StringBuilder s = new StringBuilder();
-            for (Unit u : decoded) s.append(u.text);
-            // 成熟 parser 的 literal 是语义事实；源词法只重建对应范围，绝不定位搜索重复文本。
-            if (!s.toString().equals(((Text) n).getLiteral()))
-                throw new IllegalStateException("CommonMark Text 来源解码不一致: " + n.getSourceSpans());
-            List<LinkSpan> autoLinks = new ArrayList<>();
-            if (auto) for (LinkSpan a : AUTOLINK.extractLinks(s)) autoLinks.add(a);
-            int logical = 0, ai = 0;
-            TextContent.Link active = null;
-            for (Unit u : decoded) {
-                while (ai < autoLinks.size() && logical >= autoLinks.get(ai).getEndIndex()) {
-                    ai++;
-                    active = null;
-                }
-                TextContent.Link current = link;
-                if (ai < autoLinks.size()) {
-                    LinkSpan a = autoLinks.get(ai);
-                    if (logical >= a.getBeginIndex() && logical < a.getEndIndex()) {
-                        if (active == null) {
-                            String target = s.substring(a.getBeginIndex(), a.getEndIndex());
-                            active =
-                                    new TextContent.Link(
-                                            a.getType() == LinkType.EMAIL
-                                                    ? "mailto:" + target
-                                                    : target);
-                        }
-                        current = active;
-                    }
-                }
-                TextStyleOverride resolved =
-                        current == null
-                                ? style
-                                : style.toBuilder().underline(true).decorationFromEm(true).build();
-                append(u.text, u.start, u.end, resolved, current);
-                logical += u.text.length();
-            }
-        }
-
-        void inlineCode(Node n, String literal, TextStyleOverride style, TextContent.Link link) {
-            style = style.toBuilder().font(MathTextFontSources.MONO).build();
-            List<Unit> units = rawUnits(n, true);
-            int begin = 0, end = units.size();
-            while (begin < end && units.get(begin).text.equals("`")) begin++;
-            while (end > begin && units.get(end - 1).text.equals("`")) end--;
-            if (end - begin >= 3
-                    && units.get(begin).text.equals(" ")
-                    && units.get(end - 1).text.equals(" ")) {
-                boolean nonspace = false;
-                for (int i = begin; i < end; i++)
-                    if (!units.get(i).text.equals(" ")) nonspace = true;
-                if (nonspace) {
-                    begin++;
-                    end--;
-                }
-            }
-            StringBuilder decoded = new StringBuilder();
-            for (int i = begin; i < end; i++) decoded.append(units.get(i).text);
-            if (!decoded.toString().equals(literal))
-                throw new IllegalStateException("CommonMark Code 来源解码不一致");
-            for (int i = begin; i < end; i++) {
-                Unit u = units.get(i);
-                append(u.text, u.start, u.end, style, link);
             }
         }
 
@@ -1386,6 +1270,9 @@ public final class MarkdownAdapter {
                         new TextInput.SourceSegment(
                                 value.length(), value.length(), p, raw.length(), true));
             TextInput mapped = TextInput.fromMapped(input, value.toString(), ss, es, gaps);
+            List<TextStyleOverrideSpan> styles = new ArrayList<>();
+            for (StyleRun run : styleRuns)
+                styles.add(new TextStyleOverrideSpan(run.start, run.end, run.style.declaration));
             StyledText styled =
                     new StyledText(
                             mapped,

@@ -1037,8 +1037,16 @@ public final class MarkdownReadingScenario extends TestApplication {
                             wheel[1] = box.y + Math.max(1, viewport[0].padding());
                             verifyList(root[0], g, BASE.logicalEm);
                         });
+                long[] measureBefore = new long[1];
+                domain.execute(() -> measureBefore[0] = page.runtime().measureRevision());
                 page.pointer(ScenePointerEvent.scroll(wheel[0], wheel[1], -2));
                 page.frame();
+                domain.execute(
+                        () ->
+                                equal(
+                                        measureBefore[0],
+                                        page.runtime().measureRevision(),
+                                        "纯代码横滚不改变文字和内容测量代际"));
                 domain.execute(
                         () -> {
                             SceneGeometryView g = page.pipeline().current().geometry;

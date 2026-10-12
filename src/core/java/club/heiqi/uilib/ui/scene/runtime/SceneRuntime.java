@@ -662,7 +662,8 @@ public final class SceneRuntime implements AutoCloseable {
         } finally {
             routing = false;
         }
-        if (consumed) invalidate(); // 内视口偏移属于控件呈现缓存，重新发布文字几何与绘制供下一事件共用。
+        // 滚动只更新视图位置；唯一分发负责发布同代几何，保留不变的字体与内容度量。
+        if (consumed) invalidateArrangement();
         return consumed;
     }
 

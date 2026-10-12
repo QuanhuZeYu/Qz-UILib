@@ -129,7 +129,7 @@ final class MathSyntax {
             Scan scan = new Scan();
             Parser.builder()
                     .includeSourceSpans(IncludeSourceSpans.BLOCKS)
-                    .extensions(Collections.singletonList(MarkdownAdapter.tableExtension()))
+                    .extensions(Collections.singletonList(GfmSyntax.extension()))
                     .inlineParserFactory(context -> (source, node) -> {})
                     .customBlockParserFactory(new BlockFactory(starts, rejected, scan))
                     .build()
