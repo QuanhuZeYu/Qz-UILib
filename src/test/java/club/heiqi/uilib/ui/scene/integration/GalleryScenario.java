@@ -6,6 +6,7 @@ import club.heiqi.uilib.ui.reactive.ReactiveDomain;
 import club.heiqi.uilib.ui.scene.host.SceneHost;
 import club.heiqi.uilib.ui.scene.host.ScenePageSession;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometryView;
+import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.PaintPlan;
 import club.heiqi.uilib.ui.scene.input.ScenePointerEvent;
 import club.heiqi.uilib.ui.scene.input.SceneEditEvent;
@@ -42,6 +43,7 @@ public final class GalleryScenario extends TestApplication {
                 try (ScenePageSession session = ScenePageSession.open(domain, host, fonts, new TestGallery(() -> images))) {
                     GalleryJourney.run(new GalleryJourney.Driver() {
                         public void frame() { session.frame(); }
+                        public SceneNode focused() { final SceneNode[] value = {null}; domain.execute(() -> value[0] = session.runtime().focusRouter().focused().get()); return value[0]; }
                         public PaintPlan paint() { return host.paint; }
                         public SceneGeometryView geometry() { final SceneGeometryView[] result = {null}; domain.execute(() -> result[0] = session.pipeline().current().geometry); return result[0]; }
                         public void click(int x, int y) { session.pointer(ScenePointerEvent.down(0,x,y)); session.pointer(ScenePointerEvent.up(0,x,y)); }

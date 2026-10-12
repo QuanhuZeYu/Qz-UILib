@@ -100,6 +100,8 @@ public final class ScenePointerRouter implements AutoCloseable {
                                 runtime.focusRouter().request(runtime.captureMount(hit));
                             runtime.dispatchControlPointer(hit, event, geometry);
                         }
+                    } else {
+                        blurOutsideFocus(geometry);
                     }
                 }
                 return;
@@ -146,6 +148,21 @@ public final class ScenePointerRouter implements AutoCloseable {
             default:
                 throw new AssertionError(event.kind);
         }
+    }
+
+    /** 仅首次主键空命中离开；保留物理占位，尾部不能激活拖入的邻控件。
+     * clip 与 viewport 均来自同代几何，裁掉的旧 box 不能阻止正常失焦。 */
+    private void blurOutsideFocus(SceneGeometryView geometry) {
+        if (!geometry.viewport().contains(x, y)) return;
+        SceneNode modal = runtime.activeModal();
+        if (modal != null && !inside(geometry.get(modal))) return;
+        SceneNode focused = runtime.focusRouter().focused().get();
+        if (focused != null && !inside(geometry.get(focused))) runtime.focusRouter().clear();
+    }
+
+    private boolean inside(SceneGeometryView.Entry entry) {
+        return entry != null && entry.box.contains(x, y)
+                && (entry.clip == null || entry.clip.contains(x, y));
     }
 
     /** 本批次handler失败后只记物理尾部，不再执行业务handler；原异常由管线上抛。

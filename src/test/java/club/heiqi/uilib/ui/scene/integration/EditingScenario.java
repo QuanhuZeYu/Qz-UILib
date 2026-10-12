@@ -243,7 +243,7 @@ public final class EditingScenario extends TestApplication {
         scenario("控制符和独立Extend保留强制字素边界", this::controlGraphemes);
         scenario("自定义字素规则换代保留草稿并校正编辑与历史位置", this::profileSelectionUpgrade);
         scenario("正式页面文字空格确认Tab和IME及ESC沿唯一焦点序列", this::pageEditing);
-        scenario("仅真实blur请求完成，禁用模态与关闭不自动提交", this::blurEligibility);
+        scenario("空白主键正常blur仅提交一次，同批文本隔离且失活不提交", this::blurEligibility);
         scenario("只读选择复制拒绝修改，粘贴单步撤销与生产文字簇指针定位", this::clipboardAndPointer);
     }
 
@@ -615,9 +615,19 @@ public final class EditingScenario extends TestApplication {
         ReactiveDomain d = ReactiveDomain.direct();
         Page p = new Page(d, state(d, ""), SceneTextField.SubmitPolicy.BLUR);
         p.edit(SceneEditEvent.text("draft"));
-        p.session.navigation(SceneNavigationEvent.NEXT);
+        p.session.pointer(ScenePointerEvent.down(0, p.host.width() - 1, p.host.height() - 1));
+        p.session.edit(SceneEditEvent.text("must not edit blurred field"));
+        p.session.pointer(ScenePointerEvent.up(0, p.host.width() - 1, p.host.height() - 1));
         p.session.frame();
-        require(p.submissions.size() == 1 && p.submissions.get(0).complete, "真实blur未请求完成");
+        p.expect("draft");
+        d.execute(() -> require(p.session.runtime().focusRouter().focused().get() == null
+                && p.snapshot().active, "背景失焦没有清焦点或擅自结束独立草稿会话"));
+        require(p.submissions.size() == 1 && p.submissions.get(0).complete
+                && "draft".equals(p.submissions.get(0).text), "空白正常blur未单次提交已有草稿");
+        p.session.pointer(ScenePointerEvent.down(0, p.host.width() - 1, p.host.height() - 1));
+        p.session.pointer(ScenePointerEvent.up(0, p.host.width() - 1, p.host.height() - 1));
+        p.session.frame();
+        require(p.submissions.size() == 1, "已无焦点的后续空白点击重复提交");
         p.focusField();
         d.execute(() -> p.enabled.set(false));
         p.session.frame();

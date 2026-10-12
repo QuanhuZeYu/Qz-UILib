@@ -10,6 +10,7 @@ import club.heiqi.uilib.ui.scene.host.SceneFramePipeline;
 import club.heiqi.uilib.ui.scene.host.ScenePageSession;
 import club.heiqi.uilib.ui.scene.host.ScenePageContext;
 import club.heiqi.uilib.ui.scene.input.ScenePointerEvent;
+import club.heiqi.uilib.ui.scene.layout.SceneGeometryView;
 import club.heiqi.uilib.ui.scene.layout.Size;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.PaintCommand;
@@ -35,7 +36,9 @@ public final class PointerInputScenario extends TestApplication {
         MountHandle mount;
         int releases;
 
-        Page() {
+        Page() { this(false); }
+
+        Page(boolean focusable) {
             session =
                     ScenePageSession.open(
                             domain,
@@ -53,6 +56,7 @@ public final class PointerInputScenario extends TestApplication {
                                         new SceneNode()
                                                 .size(Size.fixed(40), Size.fixed(20))
                                                 .background(0xFF112233)
+                                                .focusable(focusable)
                                                 .bind(
                                                         NodeBinding.value(
                                                                 count,
@@ -136,6 +140,99 @@ public final class PointerInputScenario extends TestApplication {
                         }
                     }
                 });
+        scenario("焦点外空白主键失焦且物理尾部不夺回", () -> {
+            Page p = new Page(true);
+            p.domain.execute(() -> {
+                require(p.runtime.focusRouter().request(p.runtime.captureMount(p.button)), "未建立初始焦点");
+            });
+            p.events(ScenePointerEvent.down(0, 5, 40));
+            p.domain.execute(() -> require(p.runtime.focusRouter().focused().get() == null,
+                    "焦点外背景主键按下未正常失焦"));
+            p.events(ScenePointerEvent.up(0, 5, 5));
+            p.domain.execute(() -> require(p.runtime.focusRouter().focused().get() == null && p.count.get() == 0,
+                    "空白起始手势尾部激活或夺回焦点"));
+            p.session.close();
+        });
+        scenario("次键起手与CANCEL物理尾部不清焦点", () -> {
+            Page p = new Page(true);
+            p.events(ScenePointerEvent.down(1, 5, 40));
+            p.domain.execute(() -> require(p.runtime.focusRouter().focused().get() == p.button,
+                    "次键空白起手清除了焦点"));
+            p.events(ScenePointerEvent.down(0, 5, 40), ScenePointerEvent.up(0, 5, 40),
+                    ScenePointerEvent.up(1, 5, 40));
+            p.domain.execute(() -> require(p.runtime.focusRouter().focused().get() == p.button,
+                    "次键仍按时主键空白尾部清除了焦点"));
+            p.down();
+            p.events(ScenePointerEvent.cancel());
+            p.domain.execute(() -> require(p.runtime.focusRouter().focused().get() == p.button,
+                    "普通CANCEL清除了键盘焦点"));
+            p.events(ScenePointerEvent.down(1, 5, 40), ScenePointerEvent.up(0, 5, 40),
+                    ScenePointerEvent.down(0, 5, 40), ScenePointerEvent.up(0, 5, 40),
+                    ScenePointerEvent.up(1, 5, 40));
+            p.domain.execute(() -> require(p.runtime.focusRouter().focused().get() == p.button
+                    && p.count.get() == 0, "取消尾部清焦点或发布了点击"));
+            p.events(ScenePointerEvent.down(0, 5, 40), ScenePointerEvent.up(0, 5, 40));
+            p.domain.execute(() -> require(p.runtime.focusRouter().focused().get() == null,
+                    "物理尾部结束后新的空白主键未失焦"));
+        });
+        scenario("viewport与模态外不失焦，模态内背景正常失焦", () -> {
+            Page p = new Page(true);
+            SceneNode[] focused = new SceneNode[1];
+            p.domain.execute(() -> {
+                focused[0] = new SceneNode().size(Size.fixed(20), Size.fixed(10)).focusable(true);
+                p.overlay = new SceneNode().size(Size.fixed(40), Size.fixed(30)).modal(true)
+                        .initialFocus(focused[0]).add(focused[0]);
+                p.children.set(Collections.singletonList(p.overlay));
+            });
+            p.session.frame();
+            p.domain.execute(() -> {
+                SceneGeometryView geometry = p.pipe.current().geometry;
+                require(p.runtime.focusRouter().focused().get() == focused[0]
+                        && geometry.get(p.overlay).box.contains(5, 20)
+                        && !geometry.get(p.overlay).box.contains(60, 40)
+                        && !geometry.get(focused[0]).box.contains(5, 20),
+                        "fixture没有建立模态焦点与内外背景位置");
+            });
+            p.events(ScenePointerEvent.down(0, p.host.width + 1, 5),
+                    ScenePointerEvent.up(0, p.host.width + 1, 5));
+            p.domain.execute(() -> require(p.runtime.focusRouter().focused().get() == focused[0],
+                    "viewport外按下清除了模态焦点"));
+            p.events(ScenePointerEvent.down(0, 60, 40), ScenePointerEvent.up(0, 60, 40));
+            p.domain.execute(() -> require(p.runtime.focusRouter().focused().get() == focused[0],
+                    "模态外背景清除了前台焦点"));
+            p.events(ScenePointerEvent.down(0, 5, 5), ScenePointerEvent.up(0, 5, 5));
+            p.domain.execute(() -> require(p.runtime.focusRouter().focused().get() == focused[0],
+                    "无clickAction的焦点节点内部被当作外部背景"));
+            p.events(ScenePointerEvent.down(0, 5, 20));
+            p.domain.execute(() -> require(p.runtime.focusRouter().focused().get() == null,
+                    "模态内焦点外背景未清除焦点"));
+            p.events(ScenePointerEvent.up(0, 5, 20));
+            p.expect(0, "模态内外背景不得激活后台");
+        });
+        scenario("焦点raw box内但祖先clip外的背景正常失焦", () -> {
+            Page p = new Page(true);
+            SceneNode[] focused = new SceneNode[1];
+            p.domain.execute(() -> {
+                focused[0] = new SceneNode().size(Size.fixed(40), Size.fixed(20)).focusable(true)
+                        .onClick(() -> p.count.set(p.count.get() + 1));
+                SceneNode clipped = new SceneNode().size(Size.fixed(40), Size.fixed(10)).clip(true)
+                        .initialFocus(focused[0]).add(focused[0]);
+                p.children.set(Collections.singletonList(clipped));
+            });
+            p.session.frame();
+            p.domain.execute(() -> {
+                require(p.runtime.focusRouter().request(p.runtime.captureMount(focused[0])),
+                        "裁剪目标无法建立合法焦点");
+                SceneGeometryView.Entry entry =
+                        p.pipe.current().geometry.get(focused[0]);
+                require(entry.box.contains(5, 15) && entry.clip != null && !entry.clip.contains(5, 15),
+                        "fixture没有产生raw box内但clip外的位置");
+            });
+            p.events(ScenePointerEvent.down(0, 5, 15), ScenePointerEvent.up(0, 5, 15));
+            p.domain.execute(() -> require(p.runtime.focusRouter().focused().get() == null,
+                    "裁掉的raw box阻止背景失焦"));
+            p.expect(0, "裁掉的节点不得接收点击");
+        });
         scenario(
                 "业务Effect结算异常仍保留本批第二键尾部",
                 () -> {

@@ -51,8 +51,20 @@ final class InteractionScenarios {
 
     private static SceneNode action(ScenePageContext context, ReadableSignal<SceneTheme> theme,
             ReadableSignal<String> text, Runnable run) {
-        // 保留字段焦点，让显隐、禁用和重排自身决定是否结束交互；键盘仍可 Tab 到按钮。
-        return SceneButton.create(context, text, theme, run).clickFocus(false);
+        return SceneButton.create(context, text, theme, run);
+    }
+
+    /** 工具仅保留自己作用区域内的编辑焦点；从其他按钮点击时仍按标准按钮转焦点。
+     * 不能把同区工具也视作保焦目标，否则按钮之间仍会黏住焦点。 */
+    private static SceneNode editorAction(ScenePageContext context, ReadableSignal<SceneTheme> theme,
+            ReadableSignal<String> text, Runnable run, SceneNode region) {
+        return action(context, theme, text, run).bind(NodeBinding.value(() -> {
+            SceneNode focused = context.runtime().focusRouter().focused().get();
+            if (focused == null || focused.control() == null || !focused.control().capturesPointer()) return true;
+            for (SceneNode node = focused; node != null; node = node.parent())
+                if (node == region) return false;
+            return true;
+        }, SceneNode::clickFocus));
     }
 
     private static void title(SceneNode node, ScenePageContext context,
@@ -99,33 +111,33 @@ final class InteractionScenarios {
                 ? "操作：修改文字后按 Enter 或请求交接，继续输入，再分别接受或拒绝旧交接。预期：旧请求如实记录结果，不改新草稿、选区或会话，也不更新当前已接受值。空白交接会被业务拒绝。"
                 : "操作：Enter 换行、上下移动、Home / End 到视觉行首尾，Ctrl+Home / End 到文档首尾；滚轮查看正文。预期：软换行不写入草稿，滚动不修改文字或选区，Ctrl+Enter 接受后完成本次编辑。");
         SceneNode actions = stack();
-        actions.add(action(context, theme, () -> "请求交接", editor::submit)
+        actions.add(editorAction(context, theme, () -> "请求交接", editor::submit, field)
                 .bind(NodeBinding.value(editor::canModify, SceneNode::enabled)));
-        actions.add(action(context, theme, () -> "插入 Unicode 模板（替换当前选区）",
-                () -> editor.insert(UNICODE))
+        actions.add(editorAction(context, theme, () -> "插入 Unicode 模板（替换当前选区）",
+                () -> editor.insert(UNICODE), field)
                 .bind(NodeBinding.value(editor::canModify, SceneNode::enabled)));
-        actions.add(action(context, theme, () -> editor.readOnly.get() ? "恢复可编辑" : "设为只读",
-                () -> editor.readOnly.set(!editor.readOnly.get())));
-        actions.add(action(context, theme, () -> editor.enabled.get() ? "禁用字段" : "启用字段",
-                () -> editor.enabled.set(!editor.enabled.get())));
-        actions.add(action(context, theme, () -> "取消编辑并回到当前已接受值", editor::cancel));
-        actions.add(action(context, theme, () -> "重置基线为当前已接受值（清空历史）", editor::reset));
-        actions.add(action(context, theme, () -> "收到外部更新", editor::external));
+        actions.add(editorAction(context, theme, () -> editor.readOnly.get() ? "恢复可编辑" : "设为只读",
+                () -> editor.readOnly.set(!editor.readOnly.get()), field));
+        actions.add(editorAction(context, theme, () -> editor.enabled.get() ? "禁用字段" : "启用字段",
+                () -> editor.enabled.set(!editor.enabled.get()), field));
+        actions.add(editorAction(context, theme, () -> "取消编辑并回到当前已接受值", editor::cancel, field));
+        actions.add(editorAction(context, theme, () -> "重置基线为当前已接受值（清空历史）", editor::reset, field));
+        actions.add(editorAction(context, theme, () -> "收到外部更新", editor::external, field));
         card.add(actions);
         guide(card, context, theme, "只读仍可选择、复制、Tab 到达和滚动，禁止修改与交接；禁用释放交互，Tab 跳过，不接受尾部点击，也不提交或丢弃草稿。模板是普通编辑，可撤销为一步；取消和重置基线清空历史，不能撤销回旧对象文字。取消 / 重置显式结束旧组字联系。");
         SceneNode conflict = stack().visible(false)
                 .bind(NodeBinding.value(editor.conflict, SceneNode::visible));
         guide(conflict, context, theme, "外部已接受值与活跃草稿冲突。请选择保留草稿继续编辑，或使用外部值重置基线；收到更新本身不会覆盖活跃草稿。");
-        conflict.add(action(context, theme, () -> "保留我的草稿", () -> editor.conflict.set(false)));
-        conflict.add(action(context, theme, () -> "使用外部已接受值", editor::reset));
+        conflict.add(editorAction(context, theme, () -> "保留我的草稿", () -> editor.conflict.set(false), field));
+        conflict.add(editorAction(context, theme, () -> "使用外部已接受值", editor::reset, field));
         card.add(conflict);
         feedback(card, context, theme, editor);
         if (editor.deferred) {
             guide(card, context, theme, "待交接队列保留每一次原始请求。可以先完成后一次，再完成前一次；也可取消 / 重置后再完成旧交接。接受只更新仍对应当前草稿的业务值，拒绝保留草稿。已完成记录可显式清除。");
             SceneNode queue = stack().bind(NodeBinding.repeat(editor.requests, request -> request,
-                    item -> requestCard(context, theme, editor, item.get())));
+                    item -> requestCard(context, theme, editor, item.get(), field)));
             card.add(queue);
-            card.add(action(context, theme, () -> "清除已完成交接记录", editor::clearResolved));
+            card.add(editorAction(context, theme, () -> "清除已完成交接记录", editor::clearResolved, field));
         }
         return GalleryStyle.frame(card, theme);
     }
@@ -162,14 +174,14 @@ final class InteractionScenarios {
     }
 
     private static SceneNode requestCard(ScenePageContext context, ReadableSignal<SceneTheme> theme,
-            Editor editor, Submission request) {
+            Editor editor, Submission request, SceneNode field) {
         SceneNode row = stack();
         row.add(GalleryStyle.label(context, () -> "交接文字：" + request.text, theme, 14, false));
         row.add(GalleryStyle.label(context, () -> "结果：" + status(request), theme, 13, true));
-        row.add(action(context, theme, () -> "接受这次交接", () -> editor.resolve(request, true))
+        row.add(editorAction(context, theme, () -> "接受这次交接", () -> editor.resolve(request, true), field)
                 .bind(NodeBinding.value(() -> request.status().get().status == Status.PENDING,
                         SceneNode::enabled)));
-        row.add(action(context, theme, () -> "拒绝这次交接", () -> editor.resolve(request, false))
+        row.add(editorAction(context, theme, () -> "拒绝这次交接", () -> editor.resolve(request, false), field)
                 .bind(NodeBinding.value(() -> request.status().get().status == Status.PENDING,
                         SceneNode::enabled)));
         return row;
@@ -297,17 +309,17 @@ final class InteractionScenarios {
         SceneNode listCard = GalleryStyle.card(theme);
         title(listCard, context, theme, "订单队列", 20);
         guide(listCard, context, theme, "展开甲订单并编辑备注，再新增、删行、反转顺序或更新首项进度。预期：持续存在的订单保留自己的展开、草稿和合法焦点，操作读取更新后的进度；删除会结束旧行交互。恢复最近删除的订单明确复用业务持有的草稿，但创建新行，不恢复旧焦点或组字。");
-        listCard.add(action(context, theme, () -> "新增订单", orders::add));
-        listCard.add(action(context, theme, () -> "反转订单顺序", orders::reverse));
-        listCard.add(action(context, theme, () -> "更新首项进度", orders::updateFirst));
-        listCard.add(action(context, theme, () -> "恢复最近删除的订单", orders::restore)
-                .bind(NodeBinding.value(() -> orders.removed.get() != null, SceneNode::enabled)));
-        listCard.add(GalleryStyle.label(context, orders.notice, theme, 13, true));
         SceneNode rows = stack().scrollable(true).clip(true)
                 .bind(NodeBinding.value(theme, (node, value) -> node.size(Size.fill(1),
                         Size.fixed(value.textStyle.size * 24))))
                 .bind(NodeBinding.repeat(orders.items, order -> order.key,
                         item -> orderRow(context, theme, orders, item)));
+        listCard.add(editorAction(context, theme, () -> "新增订单", orders::add, rows));
+        listCard.add(editorAction(context, theme, () -> "反转订单顺序", orders::reverse, rows));
+        listCard.add(editorAction(context, theme, () -> "更新首项进度", orders::updateFirst, rows));
+        listCard.add(editorAction(context, theme, () -> "恢复最近删除的订单", orders::restore, rows)
+                .bind(NodeBinding.value(() -> orders.removed.get() != null, SceneNode::enabled)));
+        listCard.add(GalleryStyle.label(context, orders.notice, theme, 13, true));
         listCard.add(rows);
         guide(listCard, context, theme, "滚到队尾再删行：范围缩小后应立即限制偏移，反向滚动立即响应；裁掉的行不命中。按住行按钮再删除或禁用目标时，释放尾部不能激活邻行；下一次完整点击才执行动作。");
         content.add(GalleryStyle.frame(listCard, theme));
@@ -328,16 +340,16 @@ final class InteractionScenarios {
                         item -> SceneTextField.create(context, item.get().state, theme, readOnly,
                                 item.get()::receive).bind(NodeBinding.value(focusable, SceneNode::focusable))));
         qualifications.add(holder);
-        qualifications.add(action(context, theme, () -> shown.get() ? "隐藏当前字段" : "显示当前字段",
-                () -> shown.set(!shown.get())));
-        qualifications.add(action(context, theme, () -> enabled.get() ? "禁用当前字段" : "启用当前字段",
-                () -> enabled.set(!enabled.get())));
-        qualifications.add(action(context, theme, () -> readOnly.get() ? "恢复当前字段编辑" : "当前字段只读",
-                () -> readOnly.set(!readOnly.get())));
-        qualifications.add(action(context, theme, () -> focusable.get() ? "取消当前字段聚焦资格" : "恢复聚焦资格",
-                () -> focusable.set(!focusable.get())));
-        qualifications.add(action(context, theme, () -> selected.get() == first ? "切换到乙对象" : "切换到甲对象",
-                () -> selected.set(selected.get() == first ? second : first)));
+        qualifications.add(editorAction(context, theme, () -> shown.get() ? "隐藏当前字段" : "显示当前字段",
+                () -> shown.set(!shown.get()), holder));
+        qualifications.add(editorAction(context, theme, () -> enabled.get() ? "禁用当前字段" : "启用当前字段",
+                () -> enabled.set(!enabled.get()), holder));
+        qualifications.add(editorAction(context, theme, () -> readOnly.get() ? "恢复当前字段编辑" : "当前字段只读",
+                () -> readOnly.set(!readOnly.get()), holder));
+        qualifications.add(editorAction(context, theme, () -> focusable.get() ? "取消当前字段聚焦资格" : "恢复聚焦资格",
+                () -> focusable.set(!focusable.get()), holder));
+        qualifications.add(editorAction(context, theme, () -> selected.get() == first ? "切换到乙对象" : "切换到甲对象",
+                () -> selected.set(selected.get() == first ? second : first), holder));
         qualifications.add(GalleryStyle.label(context, () -> "甲草稿：" + first.state.text().get()
                 + "；乙草稿：" + second.state.text().get(), theme, 14, false));
         content.add(GalleryStyle.frame(qualifications, theme));
@@ -360,17 +372,17 @@ final class InteractionScenarios {
         Editor editor = item.get().editor;
         SceneNode row = GalleryStyle.card(theme);
         row.add(GalleryStyle.label(context, () -> item.get().name + " · " + item.get().stage, theme, 16, false));
-        row.add(action(context, theme, () -> (item.get().expanded.get() ? "收起" : "展开") + item.get().name,
-                () -> item.get().expanded.set(!item.get().expanded.get())));
+        row.add(editorAction(context, theme, () -> (item.get().expanded.get() ? "收起" : "展开") + item.get().name,
+                () -> item.get().expanded.set(!item.get().expanded.get()), row));
         SceneNode detail = stack().bind(NodeBinding.value(() -> item.get().expanded.get(), SceneNode::visible));
         detail.add(editor.field(context, theme, SubmitPolicy.CONFIRM));
         feedback(detail, context, theme, editor);
         row.add(detail);
-        row.add(action(context, theme, () -> "记录" + item.get().name + "当前进度",
-                () -> orders.notice.set("已记录：" + item.get().name + " · " + item.get().stage)));
-        row.add(action(context, theme, () -> "把" + item.get().name + "排到队首",
-                () -> orders.toFront(item.get())));
-        row.add(action(context, theme, () -> "删除" + item.get().name, () -> orders.remove(item.get())));
+        row.add(editorAction(context, theme, () -> "记录" + item.get().name + "当前进度",
+                () -> orders.notice.set("已记录：" + item.get().name + " · " + item.get().stage), row));
+        row.add(editorAction(context, theme, () -> "把" + item.get().name + "排到队首",
+                () -> orders.toFront(item.get()), row));
+        row.add(editorAction(context, theme, () -> "删除" + item.get().name, () -> orders.remove(item.get()), row));
         return GalleryStyle.frame(row, theme);
     }
 
@@ -462,10 +474,10 @@ final class InteractionScenarios {
         moving.add(editor.field(context, theme, SubmitPolicy.CONFIRM));
         feedback(moving, context, theme, editor);
         left.add(moving);
-        card.add(action(context, theme, () -> "移到待办列", () -> destination.set(left)));
-        card.add(action(context, theme, () -> "移到完成列", () -> destination.set(right)));
-        card.add(action(context, theme, () -> rightEnabled.get() ? "禁用完成列" : "启用完成列",
-                () -> rightEnabled.set(!rightEnabled.get())));
+        card.add(editorAction(context, theme, () -> "移到待办列", () -> destination.set(left), moving));
+        card.add(editorAction(context, theme, () -> "移到完成列", () -> destination.set(right), moving));
+        card.add(editorAction(context, theme, () -> rightEnabled.get() ? "禁用完成列" : "启用完成列",
+                () -> rightEnabled.set(!rightEnabled.get()), moving));
         card.add(GalleryStyle.label(context, () -> "交接卡位于：" + (destination.get() == left ? "待办列" : "完成列"), theme, 13, true));
         card.add(GalleryStyle.grid().add(GalleryStyle.frame(left, theme)).add(GalleryStyle.frame(right, theme)));
         return GalleryStyle.frame(card, theme);
@@ -491,12 +503,12 @@ final class InteractionScenarios {
         guide(outer, context, theme, "当前只有外层可交互，后台订单、导航和文字输入被隔离。Tab 在有效外层控件中循环；打开内层后外层也被隔离。ESC 先交组字，再关闭当前范围；已消费事件不继续关闭外层。");
         outer.add(outerField);
         feedback(outer, context, theme, outerEditor);
-        SceneNode openInner = action(context, theme, () -> "打开内层确认", () -> innerOpen.set(true));
+        SceneNode openInner = editorAction(context, theme, () -> "打开内层确认", () -> innerOpen.set(true), outerField);
         outer.add(openInner);
         outer.add(action(context, theme, () -> explicitReturn.get() ? "返回内层前的焦点" : "声明返回到打开内层按钮",
                 () -> explicitReturn.set(!explicitReturn.get())));
-        outer.add(action(context, theme, () -> outerEnabled.get() ? "禁用外层备注" : "启用外层备注",
-                () -> outerEnabled.set(!outerEnabled.get())));
+        outer.add(editorAction(context, theme, () -> outerEnabled.get() ? "禁用外层备注" : "启用外层备注",
+                () -> outerEnabled.set(!outerEnabled.get()), outerField));
         outer.add(action(context, theme, () -> backgroundEnabled.get() ? "禁用后台对象字段" : "启用后台对象字段",
                 () -> backgroundEnabled.set(!backgroundEnabled.get())));
         outer.add(action(context, theme, () -> "关闭外层复核", closeOuter));
@@ -510,7 +522,7 @@ final class InteractionScenarios {
         SceneNode scopeCard = GalleryStyle.card(theme);
         title(scopeCard, context, theme, "范围隔离与返回", 20);
         guide(scopeCard, context, theme, "先聚焦后台字段，再点击打开复核：进入外层初始备注，内层关闭回外层，外层关闭尝试恢复后台原焦点。若后台目标失效，按工作台范围的当前有效首项回退，可能是导航按钮；不自动复活旧焦点。Tab / Shift+Tab 跳过隐藏和禁用目标、保留只读字段，并显露视口外目标。");
-        scopeCard.add(action(context, theme, () -> "打开交接复核", () -> outerOpen.set(true)));
+        scopeCard.add(editorAction(context, theme, () -> "打开交接复核", () -> outerOpen.set(true), content));
         scopeCard.add(GalleryStyle.label(context, () -> {
             SceneNode focused = context.runtime().focusRouter().focused().get();
             return focused == null ? "当前没有有效焦点" : focused == outerField ? "焦点在外层备注"

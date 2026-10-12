@@ -59,6 +59,12 @@ public final class DesktopGallery {
                             window.frame();
                         }
 
+                        public club.heiqi.uilib.ui.scene.node.SceneNode focused() {
+                            final club.heiqi.uilib.ui.scene.node.SceneNode[] value = {null};
+                            window.domain.execute(() -> value[0] = window.page.runtime().focusRouter().focused().get());
+                            return value[0];
+                        }
+
                         public PaintPlan paint() {
                             return window.lastPlan;
                         }

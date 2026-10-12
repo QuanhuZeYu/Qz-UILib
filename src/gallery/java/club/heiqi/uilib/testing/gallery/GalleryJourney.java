@@ -25,6 +25,8 @@ public final class GalleryJourney {
 
         void typeText(String value);
 
+        club.heiqi.uilib.ui.scene.node.SceneNode focused();
+
         default void evidence(String name) {}
     }
 
@@ -206,8 +208,13 @@ public final class GalleryJourney {
         driver.evidence("gallery-editing");
         go(driver, TestGallery.Page.STRUCTURE);
         click(driver, "展开甲订单");
+        click(driver, "甲订单备注：" + unicode);
+        driver.replaceText("甲订单重排草稿"); driver.frame();
+        club.heiqi.uilib.ui.scene.node.SceneNode orderField = driver.focused();
+        require(orderField != null, "订单备注没有有效编辑焦点");
         click(driver, "反转订单顺序");
-        require(contains(driver, "收起甲订单"), "keyed重排丢失展开状态");
+        require(contains(driver, "收起甲订单") && contains(driver, "甲订单重排草稿")
+                && driver.focused() == orderField, "keyed重排丢失展开、原草稿或编辑焦点");
         click(driver, "更新首项进度");
         click(driver, "删除甲订单");
         require(!contains(driver, "收起甲订单"), "删除订单仍然呈现旧行");
@@ -220,6 +227,30 @@ public final class GalleryJourney {
         require(contains(driver, "关闭外层复核") && !contains(driver, "关闭内层，返回外层"), "ESC未逐层关闭模态");
         driver.escape(); driver.frame();
         require(!contains(driver, "关闭外层复核"), "外层模态未关闭");
+        String tip = "完整说明：订单重排保持原订单草稿；真正删除结束原行交互；只读可选择复制；禁用不提交；提示只是阅读辅助，不建立额外输入范围。";
+        click(driver, tip);
+        require(focusedText(driver, tip), "说明按钮点击未聚焦");
+        require(textPaintCount(driver, tip) == 2, "悬停和焦点说明未绘制被动提示");
+        click(driver, "移到待办列");
+        require(focusedText(driver, "移到待办列"), "普通按钮未从说明按钮转移焦点");
+        click(driver, "移到完成列");
+        require(focusedText(driver, "移到完成列"), "同区第二按钮仍黏住前一个按钮焦点");
+        click(driver, tip);
+        click(driver, "完整说明提示");
+        require(driver.focused() == null && textPaintCount(driver, tip) == 1,
+                "焦点外非交互文字未清焦点和关闭旧提示");
+        driver.frame();
+        require(driver.focused() == null, "失焦后下一帧擅自补选焦点");
+        driver.evidence("gallery-focus-blur");
+        click(driver, "随卡移动的独立交接草稿");
+        club.heiqi.uilib.ui.scene.node.SceneNode field = driver.focused();
+        click(driver, "移到待办列");
+        require(driver.focused() == field, "所属移动工具未保留实际编辑字段焦点");
+        click(driver, "移到完成列");
+        require(driver.focused() == field, "同范围编辑节点移动丢失原焦点");
+        click(driver, "甲对象独立草稿");
+        click(driver, "移到待办列");
+        require(focusedText(driver, "移到待办列"), "另一区域工具错误保留了不属于它的字段焦点");
         driver.evidence("gallery-structure");
     }
 
@@ -489,6 +520,16 @@ public final class GalleryJourney {
         return driver.paint().commands().stream()
                 .anyMatch(
                         c -> c.kind == PaintCommand.Kind.TEXT && value.equals(c.text.originalText));
+    }
+
+    private static boolean focusedText(Driver driver, String value) {
+        return driver.geometry().ordered().stream().anyMatch(e -> e.node == driver.focused()
+                && e.text != null && value.equals(e.text.originalText));
+    }
+
+    private static long textPaintCount(Driver driver, String value) {
+        return driver.paint().commands().stream()
+                .filter(c -> c.kind == PaintCommand.Kind.TEXT && value.equals(c.text.originalText)).count();
     }
 
     private static void click(Driver driver, String value) {
