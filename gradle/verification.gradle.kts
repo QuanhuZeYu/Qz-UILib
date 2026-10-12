@@ -94,6 +94,7 @@ val coreSceneDeclarations = listOf(
     Triple("multilineEditingScenario", "多行独立状态与正式Area页面路由验收", "MultilineEditingScenario"),
     Triple("coreStateScenario", "隔离运行状态与生命周期场景", "SceneCoreLoopTest"),
     Triple("configScenario", "独立核心真实配置声明存取与批次通知验收", "ConfigScenario"),
+    Triple("settingsConfigurationScenario", "正式配置工作区草稿与存取状态验收", "SettingsConfigurationScenario"),
     Triple("yamlObjectScenario", "真实复杂对象YAML绑定、注释与修改持久化验收", "YamlObjectScenario"),
     Triple("fontConfigurationScenario", "无平台字体完整候选配置与迁移验收", "FontConfigurationScenario")
 )

@@ -7,7 +7,6 @@ import club.heiqi.uilib.host.client.font.compat.IrisProgramProvider;
 import java.io.InputStream;
 import java.nio.file.Paths;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import cpw.mods.fml.common.FMLLog;
 import club.heiqi.uilib.ui.scene.text.font.FontSource;
@@ -29,6 +28,8 @@ public final class MinecraftFontServices {
     private static Thread thread;
     private static long revision;
     private static boolean installed;
+    // 显式资源重载先读取文件，再统一换代；避免同一load触发配置effect重复换代。
+    private static boolean resourceReloading;
 
     private MinecraftFontServices() {}
 
@@ -69,43 +70,42 @@ public final class MinecraftFontServices {
                             public void onResourceManagerReload(IResourceManager manager) {
                                 if (shared == null) return;
                                 checkThread();
-                                reloadSources(manager);
+                                resourceReloading = true;
+                                try {
+                                    VanillaFontOptions.reload();
+                                    reloadSources(manager, VanillaFontOptions.candidates());
+                                } finally { resourceReloading = false; }
                             }
                         });
     }
 
     /** 配置入口不安装服务；启动前只保留快照，退出后通知也不能重新创建owner。 */
     static void configurationChanged() {
-        if (shared == null) {
-            VanillaFontOptions.reload();
-            return;
-        }
-        checkThread();
-        reloadSources(Minecraft.getMinecraft().getResourceManager());
+        configurationChanged(VanillaFontOptions.candidates());
     }
 
-    private static void reloadSources(IResourceManager resources) {
+    /** apply只消费当前发布值；文件读取属于显式F3T或共享配置页reload。 */
+    static void configurationChanged(List<String> declarations) {
+        if (shared == null) return;
         checkThread();
-        VanillaFontOptions.reload();
+        if (resourceReloading) return;
+        reloadSources(Minecraft.getMinecraft().getResourceManager(), declarations);
+    }
+
+    /** 页面校验复用同一来源解析，不发布配置或资源代际，也不读取配置文件。 */
+    static void validateCandidates(List<String> declarations) {
+        if (shared == null) throw new IllegalStateException("客户端字体服务尚未安装/已关闭");
+        checkThread();
+        try { resolveCandidates(declarations, loader, revision + 1); }
+        catch (IOException failure) { throw new java.io.UncheckedIOException(failure); }
+    }
+
+    private static void reloadSources(IResourceManager resources, List<String> declarations) {
+        checkThread();
         ResourceFonts next = new ResourceFonts(resources, thread);
         long nextRevision = revision + 1;
         try {
-            List<String> declarations = VanillaFontOptions.candidates();
-            List<String> paths = FontCandidateConfiguration.files(declarations);
-            List<java.nio.file.Path> configured = new ArrayList<java.nio.file.Path>();
-            for (String path : paths) configured.add(Paths.get(path));
-            List<java.nio.file.Path> directories = new ArrayList<java.nio.file.Path>();
-            String windows = System.getenv("WINDIR"), local = System.getenv("LOCALAPPDATA");
-            if (windows != null) directories.add(Paths.get(windows, "Fonts"));
-            if (local != null) directories.add(Paths.get(local, "Microsoft", "Windows", "Fonts"));
-            club.heiqi.uilib.ui.scene.text.font.FontFamilyResolver resolver =
-                    paths.isEmpty() ? null : new club.heiqi.uilib.ui.scene.text.font.FontFamilyResolver(
-                            configured, directories, nextRevision,
-                            message -> FMLLog.warning("[Qz-UILib] %s", message));
-            // 完整列表只消费已声明来源；默认内置资源作为可选目录，不再自动追加尾链。
-            List<FontSource> candidates = FontCandidateConfiguration.resolve(
-                    declarations, FontTextService.defaultSources(next, nextRevision),
-                    (path, position) -> resolver.family(Paths.get(path), "system-file-" + position));
+            List<FontSource> candidates = resolveCandidates(declarations, next, nextRevision);
             shared.reload(candidates);
             revision = nextRevision;
             loader.retire();
@@ -120,6 +120,25 @@ public final class MinecraftFontServices {
             next.retire();
             throw new IllegalStateException("客户端字体候选重载失败，revision=" + nextRevision, failure);
         }
+    }
+
+    private static List<FontSource> resolveCandidates(
+            List<String> declarations, ClassLoader resources, long generation) throws IOException {
+        List<String> paths = FontCandidateConfiguration.files(declarations);
+        List<java.nio.file.Path> configured = new ArrayList<java.nio.file.Path>();
+        for (String path : paths) configured.add(Paths.get(path));
+        List<java.nio.file.Path> directories = new ArrayList<java.nio.file.Path>();
+        String windows = System.getenv("WINDIR"), local = System.getenv("LOCALAPPDATA");
+        if (windows != null) directories.add(Paths.get(windows, "Fonts"));
+        if (local != null) directories.add(Paths.get(local, "Microsoft", "Windows", "Fonts"));
+        club.heiqi.uilib.ui.scene.text.font.FontFamilyResolver resolver =
+                paths.isEmpty() ? null : new club.heiqi.uilib.ui.scene.text.font.FontFamilyResolver(
+                        configured, directories, generation,
+                        message -> FMLLog.warning("[Qz-UILib] %s", message));
+        // 完整列表只消费已声明来源；默认内置资源作为可选目录，不再自动追加尾链。
+        return FontCandidateConfiguration.resolve(
+                declarations, FontTextService.defaultSources(resources, generation),
+                (path, position) -> resolver.family(Paths.get(path), "system-file-" + position));
     }
 
     private static void checkThread() {

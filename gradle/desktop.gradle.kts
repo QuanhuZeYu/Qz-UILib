@@ -10,6 +10,7 @@ val fontNativeRuntime = configurations.getByName("fontNativeRuntime")
 val coreContentRuntime = configurations.getByName("coreContentRuntime")
 val javaToolchains = extensions.getByType<JavaToolchainService>()
 val desktopMain = "club.heiqi.uilib.host.desktop.DesktopApplication"
+val desktopSettingsMain = "club.heiqi.uilib.host.desktop.DesktopSettingsMain"
 
 // 只装配窗口与输入；共享呈现和具体绑定直接使用独立编译输出。
 val glRendererSources = sourceSets.getByName("glRenderer")
@@ -59,22 +60,27 @@ val mac = System.getProperty("os.name").lowercase().contains("mac")
 abstract class GenerateDesktopLaunchers : DefaultTask() {
     @get:OutputDirectory abstract val outputDirectory: org.gradle.api.file.DirectoryProperty
     @get:Input abstract val entryPoint: org.gradle.api.provider.Property<String>
+    @get:Input abstract val settingsEntryPoint: org.gradle.api.provider.Property<String>
     @get:Input abstract val firstThread: org.gradle.api.provider.Property<Boolean>
     @TaskAction fun generate() {
         val directory = outputDirectory.get().asFile
-        val desktopMain = entryPoint.get()
+        val launchers = linkedMapOf("qz-desktop" to entryPoint.get(),
+            "qz-desktop-settings" to settingsEntryPoint.get())
         val mac = firstThread.get()
         directory.mkdirs()
-        directory.resolve("qz-desktop.bat").writeText(
-            "@echo off\r\nsetlocal\r\nset \"DESKTOP_JAVA=java\"\r\nif defined JAVA_HOME set \"DESKTOP_JAVA=%JAVA_HOME%\\bin\\java.exe\"\r\n\"%DESKTOP_JAVA%\" -Dfile.encoding=UTF-8 -Xmx1g -cp \"%~dp0..\\lib\\*\" $desktopMain %*\r\nexit /b %errorlevel%\r\n", Charsets.UTF_8)
-        // Java8 不使用 @argfile；lib 仅安装下方三个正式产物，允许目录含空格。
-        directory.resolve("qz-desktop.sh").writeText(
-            "#!/bin/sh\nDESKTOP_HOME=\"\$(CDPATH= cd -- \"\$(dirname -- \"\$0\")/..\" && pwd)\"\nDESKTOP_JAVA=java\nif [ -n \"\$JAVA_HOME\" ]; then DESKTOP_JAVA=\"\$JAVA_HOME/bin/java\"; fi\nexec \"\$DESKTOP_JAVA\" "+ (if (mac) "-XstartOnFirstThread " else "") + "-Dfile.encoding=UTF-8 -Xmx1g -cp \"\$DESKTOP_HOME/lib/*\" $desktopMain \"\$@\"\n", Charsets.UTF_8)
+        for ((name, desktopMain) in launchers) {
+            directory.resolve("$name.bat").writeText(
+                "@echo off\r\nsetlocal\r\nset \"DESKTOP_JAVA=java\"\r\nif defined JAVA_HOME set \"DESKTOP_JAVA=%JAVA_HOME%\\bin\\java.exe\"\r\n\"%DESKTOP_JAVA%\" -Dfile.encoding=UTF-8 -Xmx1g -cp \"%~dp0..\\lib\\*\" $desktopMain %*\r\nexit /b %errorlevel%\r\n", Charsets.UTF_8)
+            // Java8 不使用 @argfile；lib 仅安装下方三个正式产物，允许目录含空格。
+            directory.resolve(if (name == "qz-desktop") "$name.sh" else name).writeText(
+                "#!/bin/sh\nDESKTOP_HOME=\"\$(CDPATH= cd -- \"\$(dirname -- \"\$0\")/..\" && pwd)\"\nDESKTOP_JAVA=java\nif [ -n \"\$JAVA_HOME\" ]; then DESKTOP_JAVA=\"\$JAVA_HOME/bin/java\"; fi\nexec \"\$DESKTOP_JAVA\" "+ (if (mac) "-XstartOnFirstThread " else "") + "-Dfile.encoding=UTF-8 -Xmx1g -cp \"\$DESKTOP_HOME/lib/*\" $desktopMain \"\$@\"\n", Charsets.UTF_8)
+        }
     }
 }
 val generateDesktopLaunchers by tasks.registering(GenerateDesktopLaunchers::class) {
     outputDirectory.set(desktopScripts)
     entryPoint.set(desktopMain)
+    settingsEntryPoint.set(desktopSettingsMain)
     firstThread.set(mac)
 }
 val installDesktop by tasks.registering(Sync::class) {
@@ -139,6 +145,10 @@ fun desktopApplication(name: String, summary: String, verify: Boolean) = tasks.r
     workingDir(layout.buildDirectory.dir("install/desktop"))
 }
 val desktopRun = desktopApplication("desktopRun", "以正式发行组合启动独立桌面单窗口", false)
+val runDesktopSettings = desktopApplication("runDesktopSettings", "以正式发行组合打开共享配置页，不启动MC", false).apply { configure {
+    mainClass.set(desktopSettingsMain)
+}
+}
 val desktopVerify = desktopApplication("desktopVerify", "以正式发行组合运行有限真实窗口绘制交互与释放验收", true)
 val desktopGallery = desktopApplication("desktopGallery", "打开与MC和自动机共用的测试广场", true).apply { configure {
     mainClass.set("club.heiqi.uilib.host.desktop.DesktopGallery")
@@ -150,5 +160,11 @@ val desktopGalleryVerify = desktopApplication("desktopGalleryVerify", "真实桌
     mustRunAfter(desktopVerify)
 }
 }
-tasks.named("check") { dependsOn(desktopVerify, desktopGalleryVerify) }
+val desktopSettingsVerify = desktopApplication("desktopSettingsVerify", "真实桌面验收共享配置页编辑、应用、保存、重载与关闭", true).apply { configure {
+    mainClass.set("club.heiqi.uilib.host.desktop.DesktopSettingsVerification")
+    args(layout.buildDirectory.dir("reports/settings-desktop").get().asFile.absolutePath)
+    mustRunAfter(desktopGalleryVerify)
+}
+}
+tasks.named("check") { dependsOn(desktopVerify, desktopGalleryVerify, desktopSettingsVerify) }
 tasks.named("assemble") { dependsOn(desktopJar, desktopDist) }

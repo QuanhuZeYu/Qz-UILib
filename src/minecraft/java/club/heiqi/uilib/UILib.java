@@ -7,7 +7,8 @@ import cpw.mods.fml.common.event.FMLPreInitializationEvent;
 import club.heiqi.uilib.host.CommonProxy;
 
 /** 平台入口只安装宿主；纯核心无需加载本类。 */
-@Mod(modid = "qz_uilib", name = "Qz UILib", version = Tags.VERSION)
+@Mod(modid = "qz_uilib", name = "Qz UILib", version = Tags.VERSION,
+        guiFactory = "club.heiqi.uilib.host.client.settings.UILibGuiFactory")
 public final class UILib {
     @SidedProxy(
             clientSide = "club.heiqi.uilib.host.ClientProxy",

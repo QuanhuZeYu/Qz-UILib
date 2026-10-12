@@ -83,6 +83,25 @@ public final class ConfigSession {
         publish(changed);
     }
 
+    /** 有界的多键提交：全部键先按原有 checked 合同校验与冻结，再一次发布。
+     * 不改变普通 set 的校验、相同值和观察者失败语义。 */
+    public void setAll(Map<ConfigKey<?>, ?> updates) {
+        domain.checkWrite();
+        Objects.requireNonNull(updates, "updates");
+        Map<ConfigKey<?>, Object> changed = domain.readOnly(() -> {
+            Map<ConfigKey<?>, Object> next = new LinkedHashMap<>(values);
+            for (Map.Entry<ConfigKey<?>, ?> update : updates.entrySet()) {
+                entry(update.getKey());
+                next.put(update.getKey(), checked(update.getKey(), update.getValue()));
+            }
+            return next;
+        });
+        publish(changed);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <T> T checked(ConfigKey<T> key, Object value) { return key.checked((T) value); }
+
     public void load(Path path) throws IOException {
         domain.checkWrite();
         try (Reader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {

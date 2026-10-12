@@ -22,6 +22,7 @@ public final class CoreArtifactScenario extends TestApplication {
         "club/heiqi/uilib/ui/scene/",
         "club/heiqi/uilib/ui/reactive/",
         "club/heiqi/uilib/ui/config/",
+        "club/heiqi/uilib/ui/settings/",
         "club/heiqi/uilib/ui/render/batch/"
     };
     private static final String ADAPTER = "club/heiqi/uilib/host/font/";
