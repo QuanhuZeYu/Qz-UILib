@@ -498,6 +498,16 @@ val coreArtifactScenario = registerTestApplication("coreArtifactScenario", "Java
             testSupportSources.output.classesDirs.singleFile.absolutePath)
     }
 }
+val forgeSettingsEntryScenario = registerTestApplication("forgeSettingsEntryScenario", "真实Forge解析成品元数据并验证配置入口资格", "club.heiqi.uilib.ui.scene.integration.ForgeSettingsEntryScenario") {
+    dependsOn(tasks.named("testClasses"), tasks.named("jar"), tasks.named("shadowJar"), tasks.named("reobfJar"))
+    classpath = sourceSets.getByName("test").runtimeClasspath
+    val artifacts = listOf("jar", "shadowJar", "reobfJar").map { name ->
+        tasks.named(name, org.gradle.api.tasks.bundling.AbstractArchiveTask::class.java).flatMap { it.archiveFile }
+    }
+    inputs.files(artifacts)
+    doFirst { args(artifacts.map { it.get().asFile.absolutePath }) }
+}
+tasks.named("check") { dependsOn(forgeSettingsEntryScenario) }
 val mcArtifactIsolationScenario = registerTestApplication("mcArtifactIsolationScenario", "验证MC成品与独立核心字体适配无重复定义", "club.heiqi.uilib.ui.scene.integration.CoreArtifactScenario") {
     dependsOn(compileCoreArtifactScenario, tasks.named("coreJar"), tasks.named("fontAdapterJar"), tasks.named("jar"), tasks.named("shadowJar"), tasks.named("reobfJar"))
     classpath = files(artifactScenarioClasses)

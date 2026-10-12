@@ -1,0 +1,16 @@
+{
+  "modListVersion": 2,
+  "modList": [{
+    "modid": "${modId}",
+    "name": "${modName}",
+    "description": "Qz-UILib is a UI library mod for Minecraft 1.7.10 + Forge + GTNH.",
+    "version": "${modVersion}",
+    "mcversion": "${minecraftVersion}",
+    "url": "https://github.com/QuanhuZeYu/Qz-UILib",
+    "authorList": ["QuanhuZeyu", "QuanhuHeiqi"],
+    "credits": "",
+    "logoFile": "",
+    "parent": "",
+    "useDependencyInformation": false
+  }]
+}
