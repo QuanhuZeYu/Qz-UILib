@@ -17,6 +17,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import com.ibm.icu.text.BreakIterator;
 import com.ibm.icu.util.ULocale;
 import club.heiqi.uilib.ui.scene.text.TextInput;
+import club.heiqi.uilib.ui.scene.text.TextContent;
 import club.heiqi.uilib.ui.scene.text.TextLayout;
 import club.heiqi.uilib.ui.scene.text.TextPolicy;
 import club.heiqi.uilib.ui.scene.text.TextStyle;
@@ -547,6 +548,62 @@ public final class FontTextScenario extends TestApplication {
                 "PASS WJ/GL prohibited boundaries; resource failure identity/origin/native cause");
     }
 
+    private void softHyphen(FontTextService service, TextStyle style) {
+        String source = "ab\u00adcd";
+        TextLayout reference = service.layout("ab-", style, 1000, TextPolicy.NORMAL);
+        int width = (int) Math.ceil(reference.advanceWidth);
+        TextLayout hidden = service.layout(source, style, 1000, TextPolicy.NORMAL);
+        require(hidden.logicalText.equals(source) && glyphs(hidden).size() == 4, "隐藏SHY修改原文或输出墨迹");
+        require(hidden.diagnostics().stream().noneMatch(d -> d.kind == TextLayout.Diagnostic.Kind.UNSUPPORTED), "合法SHY仍被拒绝");
+        TextLayout adopted = service.layout(source, style, width, TextPolicy.NORMAL);
+        facts(adopted);
+        require(adopted.lines().size() == 2 && adopted.lines().get(0).logicalEnd == 3, "没有采用显式SHY断点");
+        List<TextLayout.Glyph> first = adopted.lines().get(0).glyphs();
+        require(first.size() == 3 && Math.abs(adopted.lines().get(0).advance - reference.advanceWidth) < .001f, "可见连字符未真实整形或宽度丢失");
+        TextLayout.Glyph hyphen = first.get(2);
+        TextLayout.Glyph real = reference.lines().get(0).glyphs().get(2);
+        require(hyphen.glyphId == real.glyphId && hyphen.source.equals(real.source)
+                && hyphen.sourceStart == 2 && hyphen.sourceEnd == 3, "可见字形身份或来源不归原SHY");
+        TextLayout.Cluster cell = adopted.lines().get(0).clusters().stream()
+                .filter(c -> c.logicalStart == 2 && c.logicalEnd == 3 && c.glyphIndexStart < c.glyphIndexEnd).findFirst().orElse(null);
+        require(cell != null && cell.advance > 0, "可见SHY没有可命中的完整来源簇");
+        TextLayout bytes = service.layout(TextInput.utf8(source.getBytes(java.nio.charset.StandardCharsets.UTF_8)), style, width, TextPolicy.NORMAL);
+        require(bytes.lines().get(0).glyphs().stream().anyMatch(g -> g.sourceStart == 2 && g.sourceEnd == 4), "UTF8 SHY字形没有归两字节来源");
+        TextLayout prior = service.layout("X ab\u00adcd", style,
+                (int) Math.ceil(service.layout("X ab-", style, 1000, TextPolicy.NORMAL).advanceWidth) - 1, TextPolicy.NORMAL);
+        require(prior.lines().get(0).logicalEnd == 2, "断点选择只计隐藏宽度，漏掉连字符");
+        for (TextPolicy.Wrap wrap : TextPolicy.Wrap.values()) {
+            TextPolicy policy = new TextPolicy(TextPolicy.Direction.AUTO, wrap, "und", 0, 0);
+            TextLayout end = service.layout("ab\u00ad", style, 1, policy);
+            require(glyphs(end).size() == 2, "段落尾SHY显示连字符");
+            TextLayout narrow = service.layout("a\u00ad\u00adb", style, 0, policy);
+            require(!narrow.lines().isEmpty() && narrow.logicalText.equals("a\u00ad\u00adb"), "窄宽/连续SHY不前进或改源");
+        }
+        TextLayout noWrap = service.layout(source, style, 1, TextPolicy.SINGLE_LINE);
+        require(noWrap.lines().size() == 1 && glyphs(noWrap).size() == 4, "NONE显示了SHY");
+        TextPolicy rtl = new TextPolicy(TextPolicy.Direction.RTL, TextPolicy.Wrap.NORMAL, "he", 0, 0);
+        TextLayout hebrew = service.layout("אב\u00adגד", style, width, rtl);
+        require(hebrew.lines().get(0).clusters().stream().anyMatch(c -> c.logicalStart == 2 && c.rtl && c.glyphIndexStart < c.glyphIndexEnd), "RTL断点未沿视觉run输出连字符");
+        TextPolicy ltr = new TextPolicy(TextPolicy.Direction.LTR, TextPolicy.Wrap.NORMAL, "ar", 0, 0);
+        TextLayout arabic = service.layout("سلام\u00adسلام", style, 60, ltr);
+        TextLayout.Cluster arabicHyphen = arabic.lines().get(0).clusters().stream()
+                .filter(c -> c.logicalStart == 4 && c.glyphIndexStart < c.glyphIndexEnd).findFirst().orElse(null);
+        require(arabicHyphen != null && arabicHyphen.rtl && arabicHyphen.x == 0, "LTR段落里的Arabic行尾SHY错误落到词的视觉右侧");
+        TextLayout mixedRtl = service.layout("אב ab\u00adcd", style, 72, rtl);
+        require(mixedRtl.lines().get(0).clusters().stream().anyMatch(c -> c.logicalStart == 5
+                && c.glyphIndexStart < c.glyphIndexEnd && !c.rtl && c.x > 0), "RTL段落中的Latin连字符被重置到错误视觉端");
+        TextStyle emojiOnly = new TextStyle("explicit", 24, -1, Collections.singletonList(defaults.get(4)));
+        TextLayout rejected = service.layout("😀\u200b😀\u00ad😀", emojiOnly, 60, ltr);
+        require(rejected.lines().get(0).logicalEnd == 3
+                && rejected.diagnostics().stream().noneMatch(d -> d.kind == TextLayout.Diagnostic.Kind.MISSING_GLYPH && d.sourceStart == 5), "被拒绝候选的连字符缺字诊断泄漏到最终布局");
+        TextContent styled = TextContent.richTags("<mark><u><sup><spacing value=\"2\">ab\u00adcd</spacing></sup></u></mark>");
+        TextLayout marked = service.layout(styled.resolve(style).text, width / 2 + 4, TextPolicy.NORMAL);
+        require(marked.lines().get(0).clusters().stream().anyMatch(c -> c.logicalStart == 2 && c.glyphIndexStart < c.glyphIndexEnd && c.style.baselineShift < 0), "脚本SHY没有继承基线和字距");
+        require(marked.lines().get(0).decorations().stream().anyMatch(d -> d.kind == TextLayout.Decoration.Kind.HIGHLIGHT && d.logicalEnd == 3)
+                && marked.lines().get(0).decorations().stream().anyMatch(d -> d.kind == TextLayout.Decoration.Kind.UNDERLINE && d.logicalEnd == 3), "采用SHY断点后装饰来源未覆盖可见连字符");
+        System.out.println("PASS SHY hidden/adopted/trailing/UTF8/width/RTL/script/spacing/highlight/underline");
+    }
+
     public static void main(String[] args) throws Exception {
         new FontTextScenario().run(args);
     }
@@ -576,5 +633,6 @@ public final class FontTextScenario extends TestApplication {
         scenario("控制字符与输入来源", () -> controls(service, style));
         scenario("候选资源换代与缓存边界", () -> resources(service, defaults, style, root));
         scenario("已定位排版回归", () -> reviewRegressions(service, defaults, style));
+        scenario("软连字符采用断点与真实来源几何", () -> softHyphen(service, style));
     }
 }

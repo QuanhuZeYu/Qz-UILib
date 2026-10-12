@@ -91,6 +91,31 @@ public final class DesktopGallery {
                             scroll.invoke(window.handle(), 0, delta);
                         }
 
+                        public void command(club.heiqi.uilib.ui.scene.input.SceneEditEvent.Command command, boolean shift) {
+                            int code, mods = shift ? GLFW_MOD_SHIFT : 0;
+                            switch (command) {
+                                case UNDO: code = GLFW_KEY_Z; mods |= GLFW_MOD_CONTROL; break;
+                                case REDO: code = GLFW_KEY_Y; mods |= GLFW_MOD_CONTROL; break;
+                                case SUBMIT: code = GLFW_KEY_ENTER; mods |= GLFW_MOD_CONTROL; break;
+                                case CONFIRM: code = GLFW_KEY_ENTER; break;
+                                case DOCUMENT_HOME: code = GLFW_KEY_HOME; mods |= GLFW_MOD_CONTROL; break;
+                                case DOCUMENT_END: code = GLFW_KEY_END; mods |= GLFW_MOD_CONTROL; break;
+                                default: throw new IllegalArgumentException("旅程未声明宿主键：" + command);
+                            }
+                            key.invoke(window.handle(), code, 0, GLFW_PRESS, mods);
+                            key.invoke(window.handle(), code, 0, GLFW_RELEASE, mods);
+                        }
+                        public void escape() {
+                            key.invoke(window.handle(), GLFW_KEY_ESCAPE, 0, GLFW_PRESS, 0);
+                            key.invoke(window.handle(), GLFW_KEY_ESCAPE, 0, GLFW_RELEASE, 0);
+                        }
+                        public void typeText(String value) {
+                            value.codePoints().forEach(c -> character.invoke(window.handle(), c));
+                        }
+                        public void evidence(String name) {
+                            try { settle(window); screenshot(window, output.resolve(name + ".png"), 0xfffafafa); }
+                            catch (Exception failure) { throw new IllegalStateException("广场实窗取证失败：" + name, failure); }
+                        }
                         public void replaceText(String value) {
                             key.invoke(
                                     window.handle(), GLFW_KEY_A, 0, GLFW_PRESS, GLFW_MOD_CONTROL);

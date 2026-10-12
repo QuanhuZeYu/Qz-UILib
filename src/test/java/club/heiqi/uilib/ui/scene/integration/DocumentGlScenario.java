@@ -411,7 +411,56 @@ public final class DocumentGlScenario extends TestApplication {
         if (!markdown) {
             scenario("扩展样式真实GPU背景顺序与上下标", this::extendedStylesGpu);
             scenario("小行高后行背景不覆盖前行字形", this::overlappingHighlightGpu);
+            scenario("软连字符像素、链接来源与动态重排", this::softHyphenGpu);
         }
+    }
+
+    private void softHyphenGpu() throws Exception {
+        domain.execute(() -> {
+            width.set(48); height.set(180);
+            textPolicy.set(club.heiqi.uilib.ui.scene.text.TextPolicy.NORMAL);
+            theme.set(SceneTheme.dark().withTextStyle(new TextStyle("default", 30, 0xffffffff)));
+            content.set(TextContent.richTags("<mark color=\"#FF551122\"><u><a href=\"shy-word\">ab\u00adcd</a></u></mark>"));
+        });
+        BufferedImage pixels = renderReady();
+        save("document-soft-hyphen.png", pixels);
+        int[] position = new int[2];
+        domain.execute(() -> {
+            SceneGeometryView.Entry entry = geometry().get(paragraph);
+            require(entry.text.lines().size() == 2, "GPU样本未采用SHY断点");
+            TextLayout.Line line = entry.text.lines().get(0);
+            TextLayout.Cluster cluster = line.clusters().stream().filter(c -> c.logicalStart == 2
+                    && c.glyphIndexStart < c.glyphIndexEnd).findFirst().orElseThrow(() -> new AssertionError("缺可见SHY命中簇"));
+            TextLayout.Glyph hyphen = line.glyphs().get(cluster.glyphIndexStart);
+            LayoutBox ink = bounds(entry.box.x + hyphen.x + hyphen.inkBounds.left,
+                    entry.box.y + hyphen.y + hyphen.inkBounds.top,
+                    hyphen.inkBounds.right - hyphen.inkBounds.left, hyphen.inkBounds.bottom - hyphen.inkBounds.top).intersect(geometry().get(viewport).box);
+            int foreground = 0;
+            for (int y = ink.y; y < ink.y + ink.height; y++)
+                for (int x = ink.x; x < ink.x + ink.width; x++) {
+                    int rgb = pixels.getRGB(x, y);
+                    if ((rgb & 0xff) > 220 && (rgb >> 8 & 0xff) > 220 && (rgb >> 16 & 0xff) > 220) foreground++;
+                }
+            require(foreground > 0, "可见SHY没有真实GPU墨迹");
+            position[0] = (int) (entry.box.x + cluster.x + cluster.advance / 2);
+            position[1] = (int) (entry.box.y + line.y + line.lineHeight / 2);
+            evidence.append("softHyphen foregroundPixels=").append(foreground)
+                    .append(" source=").append(cluster.sourceStart).append("–").append(cluster.sourceEnd).append('\n');
+        });
+        int before = clicks.size();
+        page.pointer(ScenePointerEvent.down(0, position[0], position[1]));
+        page.pointer(ScenePointerEvent.up(0, position[0], position[1]));
+        renderReady();
+        require(clicks.size() == before + 1 && "https://example.test/docs/shy-word".equals(clicks.get(before)), "点击可见SHY未激活原链接：" + clicks + " at=" + position[0] + "," + position[1]);
+        domain.execute(() -> width.set(240));
+        renderReady();
+        domain.execute(() -> require(geometry().get(paragraph).text.lines().size() == 1
+                && geometry().get(paragraph).text.lines().get(0).glyphs().size() == 4, "加宽后SHY未隐藏"));
+        domain.execute(() -> width.set(48));
+        renderReady();
+        domain.execute(() -> require(geometry().get(paragraph).text.lines().get(0).logicalEnd == 3, "缩窄后SHY未再次采用"));
+        require(glGetError() == GL_NO_ERROR, "软连字符GL错误");
+        saveEvidence();
     }
 
     private void overlappingHighlightGpu() throws Exception {

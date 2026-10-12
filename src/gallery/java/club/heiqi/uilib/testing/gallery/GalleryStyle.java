@@ -27,7 +27,7 @@ final class GalleryStyle {
     static final int LIGHT_BACKGROUND = 0xfffafafa, DARK_BACKGROUND = 0xff09090b;
     private GalleryStyle() {}
     static SceneTheme theme(boolean dark) {
-        return new SceneTheme(new TextStyle("default", 15, dark ? 0xfffafafa : 0xff18181b),
+        return new SceneTheme((dark ? SceneTheme.dark() : SceneTheme.light()).textStyle.withEm(15).withColor(dark ? 0xfffafafa : 0xff18181b),
                 dark ? 0xff09090b : 0xffffffff, dark ? 0xff27272a : 0xfff4f4f5,
                 dark ? 0xff3f3f46 : 0xffe4e4e7, dark ? 0xff52525b : 0xffd4d4d8,
                 dark ? 0xffa1a1aa : 0xff71717a, dark ? 0xff27272a : 0xfff4f4f5,
@@ -37,7 +37,7 @@ final class GalleryStyle {
         return new SceneNode().size(Size.fill(1), Size.natural()).padding(20).gap(12);
     }
     static SceneNode label(ScenePageContext context, ReadableSignal<String> value, ReadableSignal<SceneTheme> theme, int em, boolean muted) {
-        return SceneLabel.create(context, value, () -> theme.get().withTextStyle(new TextStyle("default", em,
+        return SceneLabel.create(context, value, () -> theme.get().withTextStyle(theme.get().textStyle.withEm(em).withColor(
                 muted ? 0xff71717a : theme.get().textStyle.color)));
     }
     static SceneNode button(ScenePageContext context, ReadableSignal<String> value, ReadableSignal<SceneTheme> theme, Runnable action) {

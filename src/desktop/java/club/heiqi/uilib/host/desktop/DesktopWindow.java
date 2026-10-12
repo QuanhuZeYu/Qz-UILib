@@ -304,6 +304,8 @@ public final class DesktopWindow implements SceneHost, AutoCloseable {
                 case GLFW_KEY_V: command = SceneEditEvent.Command.PASTE; break;
                 case GLFW_KEY_Z: command = shift ? SceneEditEvent.Command.REDO : SceneEditEvent.Command.UNDO; break;
                 case GLFW_KEY_Y: command = SceneEditEvent.Command.REDO; break;
+                case GLFW_KEY_HOME: command = SceneEditEvent.Command.DOCUMENT_HOME; break;
+                case GLFW_KEY_END: command = SceneEditEvent.Command.DOCUMENT_END; break;
                 default: break;
             }
         } else {
@@ -324,7 +326,8 @@ public final class DesktopWindow implements SceneHost, AutoCloseable {
         if (key == GLFW_KEY_TAB) page.editOrNavigate(SceneEditEvent.command(SceneEditEvent.Command.TAB, shift, clipboard),
                 shift ? SceneNavigationEvent.PREVIOUS : SceneNavigationEvent.NEXT);
         else if (key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER)
-            page.editOrNavigate(SceneEditEvent.command(SceneEditEvent.Command.CONFIRM, shift, clipboard), SceneNavigationEvent.ACTIVATE);
+            // Ctrl+Enter是多行显式提交，普通Enter仍先交编辑目标处理组字/换行。
+            page.editOrNavigate(SceneEditEvent.command(control ? SceneEditEvent.Command.SUBMIT : SceneEditEvent.Command.CONFIRM, shift, clipboard), SceneNavigationEvent.ACTIVATE);
         else if (key == GLFW_KEY_SPACE)
             page.editOrNavigate(SceneEditEvent.command(SceneEditEvent.Command.ACTIVATE_ONLY, shift, clipboard), SceneNavigationEvent.ACTIVATE);
         else if (key == GLFW_KEY_ESCAPE) page.escape(this::requestClose);

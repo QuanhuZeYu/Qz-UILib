@@ -47,6 +47,9 @@ public final class GalleryScenario extends TestApplication {
                         public void click(int x, int y) { session.pointer(ScenePointerEvent.down(0,x,y)); session.pointer(ScenePointerEvent.up(0,x,y)); }
                         public void scroll(int x, int y, int delta) { session.pointer(ScenePointerEvent.scroll(x,y,delta)); }
                         public void replaceText(String value) { session.edit(SceneEditEvent.command(SceneEditEvent.Command.SELECT_ALL,false,null)); session.edit(SceneEditEvent.text(value)); }
+                        public void command(SceneEditEvent.Command command, boolean shift) { session.edit(SceneEditEvent.command(command,shift,null)); }
+                        public void typeText(String value) { session.edit(SceneEditEvent.text(value)); }
+                        public void escape() { session.escape(() -> { throw new AssertionError("共享旅程意外关闭页面"); }); }
                     });
                     System.out.println("GALLERY host=automatic run="+number+" sharedDeclaration=true sharedJourney=true");
                 }

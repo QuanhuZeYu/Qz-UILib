@@ -31,7 +31,12 @@ public final class TestGallery implements ScenePage {
         DETAILS("生产计划", "联动核对材料、产出、配方与计算过程"),
         SETTINGS("项目设置", "编辑项目资料并保存有效设置"),
         MESSAGES("活动中心", "浏览消息与任务详情"),
-        REPORT("数据报告", "切换周期，核对分组明细与完成率");
+        REPORT("数据报告", "切换周期，核对分组明细与完成率"),
+        TEXT("文本与排版", "对比内容模式、完整样式、来源与换行"),
+        MEDIA("图像与公式", "切换来源、适配和公式，查看失败与恢复"),
+        EDITING("编辑与提交", "验证草稿、历史、权限与迟到提交"),
+        STRUCTURE("结构与输入", "增删移动条目，核对焦点、裁剪与手势"),
+        RESOURCES("语言与配置", "加载和重载真实语言资料，编辑独立配置");
         public final String title, purpose;
 
         Page(String title, String purpose) {
@@ -41,6 +46,16 @@ public final class TestGallery implements ScenePage {
 
         String activities() {
             switch (this) {
+                case TEXT:
+                    return "全部文本样式 · Unicode/双向 · 来源诊断 · 宽度/断行";
+                case MEDIA:
+                    return "图像适配 · 加载失败/恢复 · 公式样式/错误 · 图像槽";
+                case EDITING:
+                    return "只读/禁用 · 选区/历史 · 异步接受/拒绝 · 草稿冲突";
+                case STRUCTURE:
+                    return "增删重排/移动 · 状态保持 · 模态/Tab · 失活取消";
+                case RESOURCES:
+                    return "语言选择/重载 · 缺键/格式错误 · 配置保存/重载/拒绝";
                 case ARTICLE:
                     return "文档切换 · 元数据与嵌套列表 · 表格与长代码 · 图片更新";
                 case DETAILS:
@@ -110,7 +125,12 @@ public final class TestGallery implements ScenePage {
             else if (id == Page.SETTINGS) {
                 page = new SceneNode().size(Size.fill(1), Size.fill(1)).scrollable(true);
                 page.add(GalleryStyle.frame(ProjectSettings.create(context, theme), theme));
-            } else page = UsageScenarios.create(context, environment, id, theme);
+            } else if (id == Page.TEXT) page = TextScenarios.create(context, theme);
+            else if (id == Page.MEDIA) page = MediaScenarios.create(context, environment, theme);
+            else if (id == Page.EDITING || id == Page.STRUCTURE)
+                page = InteractionScenarios.create(context, id, theme);
+            else if (id == Page.RESOURCES) page = ResourceScenarios.create(context, theme);
+            else page = UsageScenarios.create(context, environment, id, theme);
             SceneNode layer =
                     new SceneNode().size(Size.fill(1), Size.fill(1)).control(new Layers());
             layer.bind(

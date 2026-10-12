@@ -51,7 +51,7 @@ import java.util.TreeSet;
 /**
  * ICU Unicode 算法 + 真实 FT/HB 共享排版服务。创建、测量、重载、关闭均在创建线程。 度量不申请 GPU 资源；光栅消费者用 Glyph.source.openFace
  * 在自己的 native 线程重开。 有界 face/layout/color-probe 缓存。默认资源只是显式候选列表，不建立第二条 fallback 链。
- * 当前未实现省略、采用软连字符断点时的可见连字符和编辑器双向光标 affinity； 软连字符断点暂禁用并诊断，不能把无连字符的结果冒充该合同。
+ * 当前未实现省略和编辑器双向光标 affinity；软连字符只在采用断点的最终行内投影，不改原文。
  */
 public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
     private final Thread thread = Thread.currentThread();
@@ -1636,17 +1636,6 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
             TreeSet<Integer> normal = new TreeSet<Integer>();
             for (int b = breaks.first(); b != BreakIterator.DONE; b = breaks.next())
                 if (safe.contains(start + b)) normal.add(start + b);
-            for (int p = start; p < end; p++)
-                if (doc.display.charAt(p) == 0x00ad) {
-                    normal.remove(p + 1);
-                    safe.remove(p + 1);
-                    doc.diagnostics.add(
-                            new Diagnostic(
-                                    Diagnostic.Kind.UNSUPPORTED,
-                                    doc.source(p),
-                                    doc.source(p + 1),
-                                    "当前未实现软连字符断点的可见连字符，该断点不采用"));
-                }
             // 段落终点始终结束本行；例如末尾SHY并不是需要显示连字符的自动断点。
             safe.add(end);
             normal.add(end);
@@ -1682,6 +1671,10 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                         chosen = expanded;
                     }
                 }
+                if (b < end && b > a && doc.display.charAt(b - 1) == '\u00ad') {
+                    List<Diagnostic> adopted = index.hyphenDiagnostics.get(b - 1);
+                    if (adopted != null) doc.diagnostics.addAll(adopted);
+                }
                 float h =
                         policy.lineHeight > 0
                                 ? policy.lineHeight
@@ -1692,7 +1685,7 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                 List<TextLayout.Glyph> glyphs = new ArrayList<TextLayout.Glyph>();
                 List<TextLayout.Cluster> cells = new ArrayList<TextLayout.Cluster>();
                 List<TextLayout.Decoration> decorations = new ArrayList<TextLayout.Decoration>();
-                Bidi finalDirection = a == b ? null : bidi.setLine(a - start, b - start);
+                Bidi finalDirection = a == b ? null : lineBidi(doc, bidi, start, a, b);
                 Map<Cell, Integer> cellIds = new java.util.IdentityHashMap<Cell, Integer>();
                 for (Cell c : chosen.cells) {
                     int id = cells.size();
@@ -2235,8 +2228,12 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
             defaultMetrics(draft, style, doc, sources);
             return draft;
         }
-        Bidi lineBidi = paragraphBidi.setLine(start - paragraphStart, end - paragraphStart);
+        Bidi lineBidi = lineBidi(doc, paragraphBidi, paragraphStart, start, end);
         String context = doc.display.substring(start, end);
+        // 只在真正软断行的行尾将SHY投影为字体连字符；段落终点和原文永不改变。
+        boolean hyphenated = end < paragraphStart + paragraphBidi.getLength()
+                && end > start && doc.display.charAt(end - 1) == '\u00ad';
+        if (hyphenated) context = context.substring(0, context.length() - 1) + "-";
         TreeMap<Integer, Unit> unitStarts = units.starts;
         float pen = 0;
         for (int r = 0; r < lineBidi.countRuns(); r++) {
@@ -2244,11 +2241,13 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
             int runStart = start + run.getStart(), runEnd = start + run.getLimit();
             List<Span> spans = new ArrayList<Span>();
             int firstUnit = unitStarts.floorKey(runStart);
-            for (Unit u : unitStarts.subMap(firstUnit, true, runEnd, false).values()) {
+            for (Unit original : unitStarts.subMap(firstUnit, true, runEnd, false).values()) {
+                Unit u = hyphenated && original.start == end - 1
+                        ? hyphen(doc, units, original, policy) : original;
                 int s = Math.max(runStart, u.start), e = Math.min(runEnd, u.end);
                 boolean special =
                         doc.display.charAt(s) == '	'
-                                || !UnicodeText.visible(doc.display, s, e)
+                                || !UnicodeText.visible(context, s - start, e - start)
                                 || u.replacement
                                 || u.inlineBox != null
                                 || u.source == null;
@@ -2309,7 +2308,7 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                     pen += advance;
                     continue;
                 }
-                if (!UnicodeText.visible(doc.display, span.start, span.end)) continue;
+                if (!UnicodeText.visible(context, span.start - start, span.end - start)) continue;
                 if (u.source == null) {
                     float advance = style.logicalEm;
                     draft.cells.add(
@@ -2372,7 +2371,7 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                     Unit atEnd = unitStarts.lowerEntry(next).getValue();
                     clusterStart = atStart.start;
                     clusterEnd = atEnd.end;
-                    boolean draw = UnicodeText.visible(doc.display, c, next);
+                    boolean draw = UnicodeText.visible(context, c - start, next - start);
                     if (draw)
                         draft.glyphs.add(
                                 new Placed(
@@ -2397,6 +2396,45 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
         draft.width = applyLetterSpacing(draft, doc, pen, policy);
         if (draft.ascent + draft.descent == 0) defaultMetrics(draft, style, doc, sources);
         return draft;
+    }
+
+    /** SHY原为BN：L1会把行尾控制归回段落基级，但可见连字符须保留该断点的已解析方向。 */
+    private static Bidi lineBidi(UnicodeText doc, Bidi paragraph, int base, int start, int end) {
+        if (end >= base + paragraph.getLength() || end <= start || doc.display.charAt(end - 1) != '\u00ad')
+            return paragraph.setLine(start - base, end - base);
+        String visible = doc.display.substring(start, end - 1) + "-";
+        byte[] levels = new byte[visible.length()];
+        for (int i = 0; i < levels.length; i++)
+            levels[i] = (byte) (paragraph.getLevelAt(start - base + i) | Bidi.LEVEL_OVERRIDE);
+        Bidi result = new Bidi();
+        result.setPara(visible, paragraph.getParaLevel(), levels);
+        return result;
+    }
+
+    /** 同一段落索引仅匹配每个采用候选的连字符一次，仍使用生产字体回退与原输入来源。 */
+    private Unit hyphen(UnicodeText doc, UnitIndex index, Unit original, TextPolicy policy) {
+        Unit cached = index.hyphens.get(original.start);
+        if (cached != null) return cached;
+        UnicodeText projection = new UnicodeText(TextInput.string("-"), policy);
+        List<Unit> units = projection.units(0, 1, unicodeProfile);
+        Unit local = units.get(0);
+        local.style = original.style;
+        local.shapeStyle = original.shapeStyle;
+        Bidi bidi = new Bidi("-", Bidi.DIRECTION_LEFT_TO_RIGHT);
+        match(projection, units, bidi, 0, local.shapeStyle, policy, candidates(local.shapeStyle));
+        List<Diagnostic> diagnostics = new ArrayList<>();
+        for (Diagnostic diagnostic : projection.diagnostics)
+            diagnostics.add(new Diagnostic(diagnostic.kind,
+                    doc.source(original.start), doc.sourceEnd(original.end), diagnostic.message));
+        index.hyphenDiagnostics.put(original.start, diagnostics);
+        Unit visible = new Unit(original.start, original.end, original.script, false, false);
+        visible.style = original.style;
+        visible.shapeStyle = original.shapeStyle;
+        visible.source = local.source;
+        visible.replacement = local.replacement;
+        visible.replacementId = local.replacementId;
+        index.hyphens.put(original.start, visible);
+        return visible;
     }
 
     /** 必要连接范围内保留HB墨迹相对位置，完整安全簇只增加一次advance。 */
@@ -2552,8 +2590,8 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
     private static boolean spacingCell(Cell cell, UnicodeText doc) {
         return cell.advance > 0
                 && doc.display.charAt(cell.start) != '\t'
-                && cell.glyphStart < cell.glyphEnd
-                && UnicodeText.visible(doc.display, cell.start, cell.end);
+                // 可见SHY投影也由真实字形标识；隐藏控制不会产生glyph cell。
+                && cell.glyphStart < cell.glyphEnd;
     }
 
     private static final class Cell {
@@ -2770,6 +2808,9 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
     }
 
     private static final class UnitIndex {
+        final Map<Integer, Unit> hyphens = new HashMap<>();
+        // 候选试算的缺字/样式诊断只随实际采用的断点发布。
+        final Map<Integer, List<Diagnostic>> hyphenDiagnostics = new HashMap<>();
         final TreeMap<Integer, Unit> starts = new TreeMap<Integer, Unit>();
 
         UnitIndex(List<Unit> units) {

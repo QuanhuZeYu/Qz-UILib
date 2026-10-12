@@ -18,6 +18,14 @@ public final class GalleryJourney {
         void replaceText(String value);
 
         void scroll(int x, int y, int delta);
+
+        void command(club.heiqi.uilib.ui.scene.input.SceneEditEvent.Command command, boolean shift);
+
+        void escape();
+
+        void typeText(String value);
+
+        default void evidence(String name) {}
     }
 
     public static void run(Driver driver) {
@@ -104,6 +112,171 @@ public final class GalleryJourney {
                 driver.paint().commands().stream().anyMatch(c -> c.kind == PaintCommand.Kind.IMAGE),
                 "文章插图未进入正式绘制计划");
         aggregateReading(driver);
+        featureCoverage(driver);
+        go(driver, TestGallery.Page.ARTICLE);
+    }
+
+    private static void featureCoverage(Driver driver) {
+        go(driver, TestGallery.Page.TEXT);
+        require(contains(driver, "粗体") && contains(driver, "来源单位：UTF16"), "文本操作页没有正式DSL内容");
+        click(driver, "输入方式：DSL");
+        require(contains(driver, "来源单位：BYTE"), "UTF8模式未保留byte来源");
+        click(driver, "输入方式：UTF-8 DSL");
+        require(contains(driver, "粗斜体") && contains(driver, "typed完整样式"), "typed样式没有呈现");
+        click(driver, "输入方式：typed完整样式");
+        require(contains(driver, "<b>粗体"), "PLAIN解释了DSL");
+        click(driver, "输入方式：PLAIN");
+        click(driver, "文本样本：基础样式");
+        require(contains(driver, "主题背景"), "高亮场景没有切换");
+        reveal(driver, "主题背景");
+        driver.evidence("gallery-text-styles");
+        click(driver, "文本样本：高亮与嵌套");
+        require(contains(driver, "CO") && contains(driver, "字号与上下标"), "脚本场景没有切换");
+        click(driver, "文本样本：字号与上下标");
+        require(contains(driver, "疏排") && contains(driver, "紧排"), "安全簇字距场景没有切换");
+        click(driver, "文本样本：安全簇字距");
+        require(contains(driver, "ภาษาไทย"), "复杂文字样例未进入生产字体");
+        click(driver, "文本样本：Unicode与控制");
+        require(contains(driver, "错配") && driver.geometry().ordered().stream()
+                .anyMatch(e -> e.text != null && e.text.diagnostics().stream().anyMatch(d -> d.kind == club.heiqi.uilib.ui.scene.text.TextLayout.Diagnostic.Kind.INVALID_INPUT)), "非法DSL未整段降级并定位");
+        click(driver, "预览字号：20");
+        click(driver, "预览宽度：480");
+        click(driver, "断行：正常");
+        click(driver, "段落方向：AUTO");
+        click(driver, "行高：真实度量");
+        go(driver, TestGallery.Page.REPORT);
+        go(driver, TestGallery.Page.TEXT);
+        require(text(driver, "预览字号：32") && text(driver, "预览宽度：160"), "排版设置切页丢失");
+        click(driver, "预览字号：32");
+        click(driver, "预览宽度：160");
+        click(driver, "预览宽度：48");
+        click(driver, "断行：不软换行");
+        click(driver, "断行：紧急换行");
+        click(driver, "行高：显式5");
+        click(driver, "文本样本：来源与非法内容");
+        click(driver, "预览宽度：480");
+        click(driver, "预览宽度：160");
+        reveal(driver, "co\u00adoperate");
+        require(driver.geometry().ordered().stream().filter(e -> e.text != null && e.text.logicalText.startsWith("co\u00adoperate"))
+                .flatMap(e -> e.text.lines().stream()).flatMap(line -> line.clusters().stream())
+                .anyMatch(c -> c.logicalStart == 2 && c.glyphIndexStart < c.glyphIndexEnd), "广场软连字符窄宽没有真实可见来源簇");
+        driver.evidence("gallery-soft-hyphen");
+        click(driver, "断行：正常");
+        require(driver.geometry().ordered().stream().filter(e -> e.text != null && e.text.logicalText.startsWith("co\u00adoperate"))
+                .flatMap(e -> e.text.lines().stream()).flatMap(line -> line.clusters().stream())
+                .noneMatch(c -> c.logicalStart == 2 && c.glyphIndexStart < c.glyphIndexEnd), "广场NONE仍显示软连字符");
+        click(driver, "文本样本：软连字符");
+        click(driver, "输入方式：DSL");
+        SceneGeometryView.Entry damaged = driver.geometry().ordered().stream()
+                .filter(e -> e.text != null && e.text.logicalText.startsWith("A\ufffdB 后续有效文字"))
+                .findFirst().orElseThrow(() -> new AssertionError("损坏UTF8没有正确替代或丢后续文字"));
+        require(damaged.text.input.sourceUnit == club.heiqi.uilib.ui.scene.text.TextInput.SourceUnit.BYTE
+                && damaged.text.diagnostics().stream().anyMatch(d -> d.kind == club.heiqi.uilib.ui.scene.text.TextLayout.Diagnostic.Kind.INVALID_INPUT && d.sourceStart == 1 && d.sourceEnd == 3)
+                && damaged.text.diagnostics().stream().anyMatch(d -> d.kind == club.heiqi.uilib.ui.scene.text.TextLayout.Diagnostic.Kind.CONTROL_MARKER), "损坏UTF8/C0来源诊断丢失");
+        interactions(driver);
+        resourcesAndMedia(driver);
+    }
+
+    private static void interactions(Driver driver) {
+        go(driver, TestGallery.Page.EDITING);
+        String unicode = "工坊 Café e\u0301 · العربية 123 · עברית · 👩🏽‍💻 👨‍👩‍👧‍👦 🇨🇳";
+        click(driver, unicode);
+        driver.replaceText("交接 A e\u0301 👩‍💻"); driver.frame();
+        driver.command(club.heiqi.uilib.ui.scene.input.SceneEditEvent.Command.CONFIRM, false); driver.frame();
+        require(contains(driver, "交接文字：交接 A"), "延迟交接没有保留原请求");
+        driver.replaceText("新草稿 B"); driver.frame();
+        click(driver, "接受这次交接");
+        require(contains(driver, "当前草稿：新草稿 B") && contains(driver, "结果：已接受")
+                && !contains(driver, "已接受值：交接 A"), "迟到接受覆盖了当前草稿或权威值");
+        click(driver, "设为只读");
+        driver.replaceText("只读不许修改"); driver.frame();
+        require(contains(driver, "当前草稿：新草稿 B"), "只读允许改写草稿");
+        click(driver, "恢复可编辑");
+        click(driver, "收到外部更新");
+        require(contains(driver, "活跃草稿冲突"), "外部更新未显示冲突选择");
+        click(driver, "保留我的草稿");
+        require(contains(driver, "当前草稿：新草稿 B"), "保留草稿改写了草稿");
+        click(driver, "交接记录\n" + unicode + "\n下一班请核对材料。\n末尾空行保留：\n");
+        driver.command(club.heiqi.uilib.ui.scene.input.SceneEditEvent.Command.DOCUMENT_HOME, false);
+        driver.command(club.heiqi.uilib.ui.scene.input.SceneEditEvent.Command.DOCUMENT_END, true);
+        driver.typeText("多行替换结果"); driver.frame();
+        require(contains(driver, "当前草稿：多行替换结果") && !contains(driver, "当前草稿：交接记录"), "文档首尾导航选区未覆盖整个多行草稿");
+        driver.command(club.heiqi.uilib.ui.scene.input.SceneEditEvent.Command.SUBMIT, false); driver.frame();
+        require(contains(driver, "已接受值：多行替换结果"), "Ctrl+Enter没有完成多行交接");
+        driver.evidence("gallery-editing");
+        go(driver, TestGallery.Page.STRUCTURE);
+        click(driver, "展开甲订单");
+        click(driver, "反转订单顺序");
+        require(contains(driver, "收起甲订单"), "keyed重排丢失展开状态");
+        click(driver, "更新首项进度");
+        click(driver, "删除甲订单");
+        require(!contains(driver, "收起甲订单"), "删除订单仍然呈现旧行");
+        click(driver, "恢复最近删除的订单");
+        click(driver, "移到完成列");
+        require(contains(driver, "交接卡位于：完成列"), "显式移动没有改变正式目的地");
+        click(driver, "打开交接复核");
+        click(driver, "打开内层确认");
+        driver.escape(); driver.frame();
+        require(contains(driver, "关闭外层复核") && !contains(driver, "关闭内层，返回外层"), "ESC未逐层关闭模态");
+        driver.escape(); driver.frame();
+        require(!contains(driver, "关闭外层复核"), "外层模态未关闭");
+        driver.evidence("gallery-structure");
+    }
+
+    private static void resourcesAndMedia(Driver driver) {
+        go(driver, TestGallery.Page.RESOURCES);
+        require(contains(driver, "资料 A：第 1 次操作") && text(driver, "1,234.50"), "正式语言资料初始值或locale数值格式缺失");
+        click(driver, "参数计数 +1");
+        click(driver, "待加载资料：A → 切换 A/B（不重载）");
+        require(contains(driver, "资料 A：第 2 次操作"), "未重载时标题提前换表");
+        click(driver, "重载当前语言资料");
+        require(contains(driver, "资料 B：第 2 次操作（同语言新内容）"), "同语言重载没有更新标题");
+        click(driver, "切换中文 / English");
+        require(contains(driver, "Resource B: operation 2") && contains(driver, "生效语言：en_US"), "正式语言切换没有更新资料");
+        String languageBefore = textStarting(driver, "生效语言：");
+        String titleBefore = textStarting(driver, "Resource B: operation");
+        click(driver, "预置：读取 IOException 并重载");
+        require(textStarting(driver, "语言结果：").contains("IOException")
+                && languageBefore.equals(textStarting(driver, "生效语言："))
+                && titleBefore.equals(textStarting(driver, "Resource B: operation")), "语言失败改变了已生效语言/标题或发布了新表");
+        click(driver, "待加载资料：读取失败 → 切换 A/B（不重载）");
+        click(driver, "重载当前语言资料");
+        click(driver, "预置：有效嵌套对象 / 对象列表 / map / null");
+        click(driver, "导入编辑区 YAML");
+        require(contains(driver, "Limits { Integer jobs=8") && contains(driver, "值变化通知批次数：1"), "有效配置没有一次发布整批");
+        click(driver, "预置：非法越界 → 无半批");
+        click(driver, "导入编辑区 YAML");
+        require(contains(driver, "workspace.limits.jobs") && contains(driver, "Limits { Integer jobs=8")
+                && contains(driver, "值变化通知批次数：1"), "非法配置出现半批发布");
+        click(driver, "仅改注释并导入已生效配置");
+        require(contains(driver, "值变化通知批次数：1"), "注释导入通知了业务值");
+        click(driver, "修改配置值：切换 enabled");
+        click(driver, "导出已生效配置到下方（StringWriter）");
+        require(contains(driver, "Boolean enabled=true") && followingText(driver, "导出 YAML（只读，可选择复制）").contains("用户：工作区说明"), "配置导出丢失有效值或未改节点注释");
+        driver.evidence("gallery-resources");
+        go(driver, TestGallery.Page.MEDIA);
+        click(driver, "不存在的资源");
+        waitFor(driver, "主图：图像状态：FAILED");
+        click(driver, "运行时位图");
+        waitFor(driver, "主图：图像状态：READY");
+        click(driver, "选择 COVER");
+        require(contains(driver, "已选 COVER"), "Fit选项没有更新");
+        click(driver, "未知命令");
+        require(driver.geometry().ordered().stream().filter(e -> e.node.control() instanceof club.heiqi.uilib.ui.scene.control.SceneMath)
+                .anyMatch(e -> { club.heiqi.uilib.ui.scene.text.math.MathLayout layout = club.heiqi.uilib.ui.scene.control.SceneMath.layout(e.node);
+                    return layout != null && layout.fallback && !layout.diagnostics.isEmpty()
+                            && layout.sourceFallback.logicalText.contains("galleryUnknown"); }), "公式失败没有正式降级源文与数学诊断");
+        click(driver, "复杂分式、根号与双脚本");
+        require(formula(driver, "\\frac{1+\\frac{x_1^2}{\\sqrt[3]{y^2+1}}}{\\sqrt{1+\\frac{a_i}{b^{n+1}}}}"), "合法公式恢复后没有正式公式布局");
+        click(driver, "选择 SCRIPT");
+        require(contains(driver, "已选 SCRIPT"), "数学样式没有切换");
+        driver.evidence("gallery-media");
+    }
+
+    private static void waitFor(Driver driver, String value) {
+        long end = System.nanoTime() + 5000000000L;
+        do { driver.frame(); if (contains(driver, value)) return; } while (System.nanoTime() < end);
+        throw new AssertionError("没有观察到：" + value);
     }
 
     private static void aggregateReading(Driver driver) {
@@ -269,12 +442,27 @@ public final class GalleryJourney {
     }
 
     private static boolean formula(Driver driver, String source) {
-        return driver.geometry().ordered().stream()
-                .anyMatch(
-                        e ->
-                                e.text != null
-                                        && source.equals(e.text.originalText)
-                                        && e.text.diagnostics().isEmpty());
+        return driver.geometry().ordered().stream().anyMatch(e ->
+                e.node.control() instanceof club.heiqi.uilib.ui.scene.control.SceneMath
+                && e.text != null && source.equals(e.text.originalText)
+                && club.heiqi.uilib.ui.scene.control.SceneMath.layout(e.node) != null
+                && !club.heiqi.uilib.ui.scene.control.SceneMath.layout(e.node).fallback
+                && club.heiqi.uilib.ui.scene.control.SceneMath.layout(e.node).diagnostics.isEmpty());
+    }
+
+    private static String textStarting(Driver driver, String prefix) {
+        return driver.geometry().ordered().stream().filter(e -> e.text != null && e.text.logicalText.startsWith(prefix))
+                .map(e -> e.text.logicalText).findFirst().orElseThrow(() -> new AssertionError("找不到输出：" + prefix));
+    }
+
+    private static String followingText(Driver driver, String label) {
+        SceneGeometryView.Entry heading = driver.geometry().ordered().stream()
+                .filter(e -> e.text != null && label.equals(e.text.originalText)).findFirst()
+                .orElseThrow(() -> new AssertionError("找不到输出区标题：" + label));
+        java.util.List<club.heiqi.uilib.ui.scene.node.SceneNode> siblings = heading.node.parent().children();
+        SceneGeometryView.Entry output = driver.geometry().get(siblings.get(siblings.indexOf(heading.node) + 1));
+        require(output != null && output.text != null, "输出区没有正式文本布局：" + label);
+        return output.text.logicalText;
     }
 
     private static SceneGeometryView.Entry article(Driver driver) {
@@ -289,7 +477,7 @@ public final class GalleryJourney {
                 .anyMatch(
                         c ->
                                 c.kind == PaintCommand.Kind.TEXT
-                                        && c.text.originalText.contains(value));
+                                        && (c.text.originalText == null ? c.text.logicalText : c.text.originalText).contains(value));
     }
 
     private static void go(Driver driver, TestGallery.Page page) {
@@ -319,7 +507,13 @@ public final class GalleryJourney {
                                             < (target.clip == null ? viewport.y : target.clip.y)
                             ? 6
                             : -6;
-            driver.scroll(viewport.width / 2, viewport.height / 2, delta);
+            club.heiqi.uilib.ui.scene.node.SceneNode parent = target == null ? null : target.node.parent();
+            while (parent != null && !parent.scrollable()) parent = parent.parent();
+            SceneGeometryView.Entry scroller = parent == null ? null : driver.geometry().get(parent);
+            club.heiqi.uilib.ui.scene.layout.LayoutBox hit = scroller == null ? viewport
+                    : scroller.clip == null ? scroller.box : scroller.box.intersect(scroller.clip);
+            // 沿目标自己的滚动祖先边缘递交滚轮，避开中央嵌套滚动区域。
+            driver.scroll(hit.x + 1, hit.y + hit.height / 2, delta);
             driver.frame();
         }
         SceneGeometryView.Entry entry =
