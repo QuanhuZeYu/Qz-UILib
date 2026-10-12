@@ -14,6 +14,7 @@
 | 图像来源、尺寸、加载状态与物品图标 | [图像规格](<2026-10-07-uilib-image-spec.md>) |
 | 字体整形、光栅及渲染 | [字体规格](<2026-10-07-uilib-font-renderer-spec.md>) |
 | 独立配置声明、状态与持久化 | [无平台配置规格](<2026-10-11-uilib-config-spec.md>) |
+| 配置页面视觉与编辑流程（设计稿） | [配置页面设计](<2026-10-12-uilib-settings-page-design.md>) |
 | 独立桌面窗口与应用宿主 | [桌面宿主规格](<2026-10-11-uilib-desktop-spec.md>) |
 | MC宿主有序合批 | [渲染优化规格](<2026-10-07-mc-host-render-optimization-spec.md>) |
 
