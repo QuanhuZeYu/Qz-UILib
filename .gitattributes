@@ -44,11 +44,11 @@
 *[aA][uU][tT][oO][gG][eE][nN][eE][rR][aA][tT][eE][dD]* binary
 
 # Preserve the upstream license byte-for-byte, including its intentional trailing spaces.
-src/main/resources/assets/qz_uilib/fonts/math/stix-two/OFL.txt -text -whitespace
+src/core/resources/assets/qz_uilib/fonts/math/OFL.txt -text -whitespace
 
 # 数学正文资源与官方 SHA 清单保持原字节；许可原有空格不可重写。
-src/main/resources/assets/qz_uilib/fonts/math-text/** -text
-src/main/resources/assets/qz_uilib/fonts/math-text/**/OFL.txt -whitespace
+src/core/resources/assets/qz_uilib/fonts/math-text/** -text
+src/core/resources/assets/qz_uilib/fonts/math-text/**/OFL.txt -whitespace
 
 # TSV 尾部 Tab 表示最后一个空字段，保留列数与固定原始事实。
 src/test/resources/math/reference/coverage-corpus.tsv whitespace=-blank-at-eol

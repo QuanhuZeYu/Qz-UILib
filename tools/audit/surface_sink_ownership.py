@@ -26,7 +26,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from repo_paths import MAIN_JAVA  # noqa: E402
+from repo_paths import PRODUCTION_JAVA_ROOTS, REPO_ROOT  # noqa: E402
 
 SINKS = ('setBackgroundColor', 'setBorderColor')
 CALL_RE = re.compile(r'([A-Za-z_$][A-Za-z0-9_$.]*)\s*\.\s*(setBackgroundColor|setBorderColor)\s*\(')
@@ -37,10 +37,11 @@ LIGHT_SLOT_TOKENS = ('caret', 'thumb', 'dot', 'scrim', 'bar', 'Bar', 'indicator'
 
 
 def java_files():
-    for dirpath, _dirnames, filenames in os.walk(str(MAIN_JAVA)):
-        for name in sorted(filenames):
-            if name.endswith('.java'):
-                yield Path(dirpath) / name
+    for root in PRODUCTION_JAVA_ROOTS:
+        for dirpath, _dirnames, filenames in os.walk(str(root)):
+            for name in sorted(filenames):
+                if name.endswith('.java'):
+                    yield Path(dirpath) / name
 
 
 def binder_nodes(text):
@@ -71,7 +72,7 @@ def scan():
     bound_by_file = {}
     for path in java_files():
         text = io.open(str(path), encoding='utf-8', errors='replace').read()
-        relative = path.relative_to(MAIN_JAVA).as_posix()
+        relative = path.relative_to(REPO_ROOT).as_posix()
         bound_by_file[relative] = binder_nodes(text)
         lines = text.splitlines()
         for index, line in enumerate(lines):
@@ -122,7 +123,7 @@ def main():
     counts = {}
     for entry in registry:
         counts[entry['category']] = counts.get(entry['category'], 0) + 1
-    print('== surface sink 扫描（src/main，诊断用，无清单） ==')
+    print('== surface sink 扫描（正式职责源码根，诊断用，无清单） ==')
     print('条目=%d | 写入行=%d' % (len(registry), sum(len(e['lines']) for e in registry)))
     for category in sorted(counts, key=lambda c: -counts[c]):
         print('  %-18s %d' % (category, counts[category]))

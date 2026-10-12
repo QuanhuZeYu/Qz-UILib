@@ -61,7 +61,7 @@ val manualTestJar by tasks.registering(ReobfuscatedJar::class) {
 
 
 // ============================================================================
-// 内部开发工具（main 域 club.heiqi.uilib.internal.devtools）从正式产物排除；
+// 内部开发工具（club.heiqi.uilib.internal.devtools）从正式产物排除；
 // 人工验收包在本脚本前段单独装配，不复制生产核心。
 // 测试应用与发行隔离要求见 specs/2026-10-07-uilib-testing-spec.md。
 // ============================================================================
@@ -82,6 +82,15 @@ tasks.withType<org.gradle.jvm.tasks.Jar>().configureEach {
 
 // 2) 门禁：逐个打开产物断言不含该包。排除是意图，门禁才是保证；
 //    校验集合按 AbstractArchiveTask 全量枚举 + 显式依赖本仓产物任务，构建链新增打包任务不会静默漏检。
+// 配套源码覆盖各生产职责；MC已包含带标记的LWJGL3原文件，避免加入同名桌面变体。
+val companionSources = listOf("core", "fontAdapter", "glRenderer", "lwjgl2", "desktop").map { sourceSets.getByName(it) }
+tasks.named<Jar>("sourcesJar") {
+    companionSources.forEach { from(it.allSource) }
+    exclude("assets/qz_uilib/runtime/font/**")
+}
+tasks.named<org.gradle.jvm.tasks.Jar>("apiJar") {
+    companionSources.forEach { from(it.allJava, it.output.classesDirs) }
+}
 val guardedArchiveTasks = listOf("jar", "shadowJar", "sourcesJar", "apiJar", "reobfJar", "coreJar", "fontAdapterJar")
 val verifyDevToolsNotPackaged by tasks.registering {
     group = "verification"
@@ -134,7 +143,7 @@ tasks.named<Jar>("coreJar") {
                 val resource = "assets/qz_uilib/fonts/math/$name"
                 val entry = zip.getEntry(resource) ?: error("数学字体发行资源缺失：$resource")
                 val bytes = zip.getInputStream(entry).use { it.readBytes() }
-                check(bytes.contentEquals(file("src/main/resources/$resource").readBytes())) { "数学字体发行资源被改写：$resource" }
+                check(bytes.contentEquals(file("src/core/resources/$resource").readBytes())) { "数学字体发行资源被改写：$resource" }
             }
         }
     }

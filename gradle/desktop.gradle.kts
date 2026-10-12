@@ -12,33 +12,15 @@ val yamlRuntime = configurations.getByName("yamlRuntime")
 val javaToolchains = extensions.getByType<JavaToolchainService>()
 val desktopMain = "club.heiqi.uilib.host.desktop.DesktopApplication"
 
-// 同一生产实现供两个宿主编译；桌面没有 MC 类转换器，只移除它专用的逐类标记。
-// 不保留另一份 GL 实现，也不把 MC 的 compileClasspath 引入桌面。
-val desktopHostJava = layout.buildDirectory.dir("generated/desktop-host-java")
-val prepareDesktopHostSources by tasks.registering(Sync::class) {
-    from("src/main/java") {
-        include("club/heiqi/uilib/host/client/gl/**",
-            "club/heiqi/uilib/host/client/font/ClientFontServices.java",
-            "club/heiqi/uilib/host/client/font/FramebufferCoordinates.java",
-            "club/heiqi/uilib/host/client/font/FramebufferSceneRenderer.java",
-            "club/heiqi/uilib/host/client/font/context/**",
-            "club/heiqi/uilib/ui/render/batch/**",
-            "club/heiqi/uilib/host/client/image/ClientImageServices.java",
-            "club/heiqi/uilib/host/client/image/JavaImageLoader.java")
-        filter { line: String -> if (line.trim() == "@me.eigenraven.lwjgl3ify.api.Lwjgl3Aware") "" else line }
-    }
-    into(desktopHostJava)
-    filteringCharset = "UTF-8"
-}
+// 只装配窗口与输入；共享呈现和具体绑定直接使用独立编译输出。
+val glRendererSources = sourceSets.getByName("glRenderer")
+val lwjgl3Sources = sourceSets.getByName("lwjgl3")
 val desktopSources = sourceSets.create("desktop") {
-    java.srcDir("src/desktop/java")
-    java.srcDir(desktopHostJava)
-    resources.srcDir("src/desktop/resources")
-    compileClasspath = coreSources.output + fontAdapterSources.output + fontBindings + fontUnicodeRuntime + yamlRuntime
-    runtimeClasspath = output + coreSources.output + fontAdapterSources.output + fontNativeRuntime + fontUnicodeRuntime + yamlRuntime
+    compileClasspath = glRendererSources.output + lwjgl3Sources.output + coreSources.output + fontAdapterSources.output + fontBindings + fontUnicodeRuntime + yamlRuntime
+    runtimeClasspath = output + glRendererSources.output + lwjgl3Sources.output + coreSources.output + fontAdapterSources.output + fontNativeRuntime + fontUnicodeRuntime + yamlRuntime
 }
 tasks.named<JavaCompile>(desktopSources.compileJavaTaskName) {
-    dependsOn(prepareDesktopHostSources, tasks.named(coreSources.classesTaskName), tasks.named(fontAdapterSources.classesTaskName))
+    dependsOn(tasks.named(coreSources.classesTaskName), tasks.named(fontAdapterSources.classesTaskName))
     sourceCompatibility = "1.8"
     targetCompatibility = "1.8"
     options.release.set(8)
@@ -52,7 +34,7 @@ val desktopJar by tasks.registering(ShadowJar::class) {
     group = "build"
     description = "生成当前平台 Java8 独立桌面宿主及 GLFW/OpenGL bindings/native"
     archiveClassifier.set("desktop")
-    from(desktopSources.output)
+    from(desktopSources.output, glRendererSources.output, lwjgl3Sources.output)
     configurations.set(listOf(fontNativeRuntime))
     minimizeJar.set(false)
     enableAutoRelocation.set(false)
@@ -115,8 +97,7 @@ val desktopDist by tasks.registering(Zip::class) {
 }
 // 自动点击、像素验收与关闭检查属于独立测试应用，正式发行不携带测试代码。
 val desktopTestSources = sourceSets.create("desktopTest") {
-    java.srcDir("src/desktopTest/java")
-    compileClasspath = sourceSets.getByName("gallery").output + desktopSources.output + coreSources.output + fontAdapterSources.output + fontBindings + fontUnicodeRuntime + yamlRuntime
+    compileClasspath = sourceSets.getByName("gallery").output + desktopSources.output + glRendererSources.output + lwjgl3Sources.output + coreSources.output + fontAdapterSources.output + fontBindings + fontUnicodeRuntime + yamlRuntime
     runtimeClasspath = output + desktopArtifacts
 }
 tasks.named<JavaCompile>(desktopTestSources.compileJavaTaskName) {

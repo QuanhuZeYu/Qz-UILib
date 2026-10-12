@@ -12,8 +12,6 @@ configurations.named("runtimeClasspath") { extendsFrom(yamlRuntime) }
 // 不理解按Java包include/exclude分配归属；共享根会使core依赖指向无源码模块。
 // 正式核心只持有无平台逻辑与内容资源；宿主源码通过输出依赖调用同一份定义。
 val coreSources = sourceSets.create("core") {
-    resources.srcDir("src/main/resources")
-    resources.include("assets/qz_uilib/unicode/**", "assets/qz_uilib/fonts/**", "assets/qz_uilib/math/**")
     compileClasspath = fontUnicodeRuntime + yamlRuntime
     runtimeClasspath = output + compileClasspath
 }
@@ -33,12 +31,10 @@ listOf(coreSources, fontAdapterSources).forEach { sources ->
     }
 }
 sourceSets.getByName("main") {
-    resources.exclude("assets/qz_uilib/unicode/**", "assets/qz_uilib/fonts/**", "assets/qz_uilib/math/**", "assets/qz_uilib/runtime/font/**")
+    // GTNH/RFG沿用main编译任务；实际源码根明确归Minecraft宿主。
+    java.setSrcDirs(listOf("src/minecraft/java"))
+    resources.setSrcDirs(listOf("src/minecraft/resources"))
     compileClasspath += coreSources.output + fontAdapterSources.output + fontUnicodeRuntime + yamlRuntime
-    runtimeClasspath += coreSources.output + fontAdapterSources.output + fontUnicodeRuntime + yamlRuntime
-}
-sourceSets.getByName("lwjgl2") {
-    compileClasspath += coreSources.output + fontAdapterSources.output + yamlRuntime
     runtimeClasspath += coreSources.output + fontAdapterSources.output + fontUnicodeRuntime + yamlRuntime
 }
 sourceSets.getByName("test") {
@@ -54,6 +50,15 @@ listOf("compileJava", "compileTestJava").forEach { name ->
 }
 tasks.withType<Test>().configureEach {
     classpath += coreSources.output + fontAdapterSources.output + fontUnicodeRuntime + yamlRuntime
+}
+
+// RFG开发启动只装配dev-preshadow宿主jar，不读取main.runtimeClasspath。
+// 共享GL与绑定已在该jar中；独立核心和字体适配补原始输出，现代ICU优先于MC旧库。
+listOf("runClient", "runServer").forEach { name ->
+    tasks.named<JavaExec>(name) {
+        dependsOn(tasks.named(coreSources.classesTaskName), tasks.named(fontAdapterSources.classesTaskName))
+        classpath = fontUnicodeRuntime + yamlRuntime + coreSources.output + fontAdapterSources.output + classpath
+    }
 }
 
 // ICU 与 YAML 沿用私有 shadow 包名；完整资源保留，不以最小化误删字典/反射入口。

@@ -18,7 +18,8 @@ import java.util.jar.JarFile;
 public final class CoreArtifactScenario extends TestApplication {
     private boolean desktopMode;
     private static final String[] CORE = {
-        "club/heiqi/uilib/ui/scene/", "club/heiqi/uilib/ui/reactive/", "club/heiqi/uilib/ui/config/"
+        "club/heiqi/uilib/ui/scene/", "club/heiqi/uilib/ui/reactive/", "club/heiqi/uilib/ui/config/",
+        "club/heiqi/uilib/ui/render/batch/"
     };
     private static final String ADAPTER = "club/heiqi/uilib/host/font/";
     private static final String ICU = "club/heiqi/uilib/shadow/com/ibm/icu/";
@@ -112,6 +113,8 @@ public final class CoreArtifactScenario extends TestApplication {
         try (JarFile jar = new JarFile(file)) {
             Enumeration<JarEntry> entries = jar.entries();
             require(jar.getJarEntry("assets/qz_uilib/math/catalog/functions.tsv") != null, "Core数学事实资源缺失：桌面共享页面无法初始化");
+            require(jar.getJarEntry("assets/qz_uilib/licenses/ICU-76.1-LICENSE.txt") != null,
+                    "独立核心携带ICU时必须同时携带随仓许可，不能依赖MC资源包");
             boolean config = false, unicode = false, yaml = false;
             while (entries.hasMoreElements()) {
                 JarEntry entry = entries.nextElement();
@@ -163,6 +166,10 @@ public final class CoreArtifactScenario extends TestApplication {
     private void verifyDesktop(File file) throws Exception {
         try (JarFile jar = new JarFile(file)) {
             require(jar.getJarEntry("club/heiqi/uilib/host/desktop/DesktopApplication.class") != null, "桌面入口缺失");
+            require(jar.getJarEntry("club/heiqi/uilib/host/client/gl/GlFontIrisProducer.class") == null
+                    && jar.getJarEntry("club/heiqi/uilib/host/client/gl/GlFontProgramLayout.class") == null
+                    && jar.getJarEntry("club/heiqi/uilib/host/client/font/context/AngelicaMatrixStateProvider.class") == null,
+                    "桌面组合不应包含具体MC shader兼容实现");
             require(jar.getJarEntry("org/lwjgl/glfw/GLFW.class") != null
                     && jar.getJarEntry("org/lwjgl/opengl/GL.class") != null, "桌面窗口/GL绑定缺失");
             Enumeration<JarEntry> entries = jar.entries();

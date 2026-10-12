@@ -91,7 +91,7 @@ public final class FontPlanSamplingScenario extends TestApplication {
         String[] args = arguments();
         String font =
                 args.length == 0
-                        ? "src/main/resources/assets/qz_uilib/fonts/unifont/unifont-16.0.04.otf"
+                        ? "src/core/resources/assets/qz_uilib/fonts/unifont/unifont-16.0.04.otf"
                         : args[0];
         FontSource source =
                 new FontSource(

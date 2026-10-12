@@ -1,25 +1,28 @@
 # -*- coding: utf-8 -*-
 """Legacy producer 三层零点核验（审查者A L1/L2/L3 口径，输出直接嵌入审计包，禁手抄）。
 L1 调用点；L2 全引用（import/方法引用/字符串反射）；L3 语义生产点（selectable-background
-属性 setBackgroundColor/setBorderColor 在 src/main 的全部出现及归属分类）。"""
+属性 setBackgroundColor/setBorderColor 在 正式职责源码根 的全部出现及归属分类）。"""
 import io
 import os
 import re
 import sys
 
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-ROOT = r"D:\Code\MC\Qz-UILib\src\main\java"
+from repo_paths import PRODUCTION_JAVA_ROOTS, REPO_ROOT
+
+ROOT = str(REPO_ROOT)
 
 TARGETS = ["bindSelectableBackground", "bindStandardBorder", "dangerBackground",
            "selectedBackground", "standardBackground", "inputBackground",
            "listItemBackground", "applyPanelChrome", "applyOuterShell", "asFormTheme"]
 
 def walk():
-    for dp, _dn, fn in os.walk(ROOT):
-        for f in fn:
-            if f.endswith(".java"):
-                p = os.path.join(dp, f)
-                yield p, io.open(p, encoding="utf-8").read()
+    for root in PRODUCTION_JAVA_ROOTS:
+        for dp, _dn, fn in os.walk(root):
+            for f in fn:
+                if f.endswith(".java"):
+                    p = os.path.join(dp, f)
+                    yield p, io.open(p, encoding="utf-8").read()
 
 files = list(walk())
 print("== L2 全引用核验（含 L1 调用；模式：标识符独立词，任何出现位置，排除定义体自身） ==")
@@ -31,7 +34,7 @@ for t in TARGETS:
                 rel = os.path.relpath(p, ROOT)
                 kind = "DEF" if (re.search(r"(public|private|static).*\b" + t + r"\s*\(", line)
                                  or re.search(r"\b" + t + r"\s*\(", line) and "enum" in line) else ""
-                # 定义体 = 方法声明行；测试 infra 不在 src/main
+                # 定义体 = 方法声明行；测试 infra 不在 正式职责源码根
                 code = line.strip()
                 is_comment = code.startswith("*") or code.startswith("//") or code.startswith("/*")
                 is_def = bool(re.search(r"\b" + t + r"\s*\(", line)) and bool(
@@ -45,7 +48,7 @@ for t in TARGETS:
     for h in refs:
         print("   REF:", h[0] + ":" + str(h[1]), h[3])
 
-print("\n== L3 语义生产点：src/main 全部 setBackgroundColor 出现分类 ==")
+print("\n== L3 语义生产点：正式职责源码根 全部 setBackgroundColor 出现分类 ==")
 sink_files = {}
 for p, src in files:
     for i, line in enumerate(src.splitlines(), 1):

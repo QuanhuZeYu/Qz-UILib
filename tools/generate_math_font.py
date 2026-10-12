@@ -214,7 +214,7 @@ def outputs(directory):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--resource-dir", type=Path, default=Path(__file__).resolve().parents[1]
-                        / "src/main/resources/assets/qz_uilib/fonts/math/stix-two")
+                        / "src/core/resources/assets/qz_uilib/fonts/math")
     parser.add_argument("--check", action="store_true")
     args = parser.parse_args()
     for name, content in outputs(args.resource_dir).items():

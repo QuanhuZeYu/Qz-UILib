@@ -44,7 +44,7 @@
 
 输入法组字期间 Enter 仅确认输入法，不同时提交字段/表单；组字结束后的后续 Enter 才按字段声明执行。单行可以确认，多行默认换行，提交用明确快捷键或按钮。宿主提供真实组字状态及事件信息，不凭普通字符猜测。
 
-**当前宿主边界：** [原生组字桥](<../src/main/java/club/heiqi/uilib/ui/host/minecraft/SceneNativeTextInput.java>)依赖 lwjgl3ify 与 SDL3；普通 LWJGL2 没有真实 preedit 接缝，不能把已提交字符输入等同于本节的组字/候选确认隔离。此能力缺口保留为目标，未从现有宿主行为撤销合同。
+**当前宿主边界：** [原生组字桥](<../src/minecraft/java/club/heiqi/uilib/ui/host/minecraft/SceneNativeTextInput.java>)依赖 lwjgl3ify 与 SDL3；普通 LWJGL2 没有真实 preedit 接缝，不能把已提交字符输入等同于本节的组字/候选确认隔离。此能力缺口保留为目标，未从现有宿主行为撤销合同。
 
 单行/多行默认 Tab 切换焦点，需要制表符的编辑器明确开启模式；输入法消费优先，同一事件不再切焦点。ESC 默认不取消整个草稿；组字取消或内部菜单可消费，否则交给外层策略。业务需要 ESC 取消编辑时明确声明。
 

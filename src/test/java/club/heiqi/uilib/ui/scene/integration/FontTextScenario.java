@@ -338,7 +338,7 @@ public final class FontTextScenario extends TestApplication {
                         7,
                         Paths.get(
                                 root,
-                                "src/main/resources/assets/qz_uilib/fonts/unifont/unifont-16.0.04.otf"),
+                                "src/core/resources/assets/qz_uilib/fonts/unifont/unifont-16.0.04.otf"),
                         0,
                         false,
                         Collections.<String>emptySet());

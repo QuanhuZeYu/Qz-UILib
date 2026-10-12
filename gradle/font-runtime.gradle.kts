@@ -80,18 +80,4 @@ val packageFontBindings by tasks.registering {
 tasks.named<Jar>("sourcesJar") {
     dependsOn(packageFontBindings)
     exclude("assets/qz_uilib/runtime/font/**")
-    from("src/lwjgl2/java")
 }
-val lwjgl2Sources = sourceSets.create("lwjgl2") {
-    java.srcDir("src/lwjgl2/java")
-    compileClasspath = sourceSets.getByName("main").output + lwjgl2Bindings
-    runtimeClasspath = output + compileClasspath
-}
-tasks.named<JavaCompile>(lwjgl2Sources.compileJavaTaskName) {
-    dependsOn(tasks.named("compileJava"))
-    sourceCompatibility = "1.8"
-    targetCompatibility = "1.8"
-    options.compilerArgs.add("-proc:none")
-}
-tasks.named<Jar>("jar") { from(lwjgl2Sources.output) }
-tasks.named<Jar>("shadowJar") { from(lwjgl2Sources.output) }

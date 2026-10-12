@@ -352,7 +352,7 @@ public final class GlyphRasterStyleScenario extends TestApplication {
     protected void runTests() throws Exception {
         String[] args = arguments();
         File fonts =
-                TestResources.argumentPath(args, 0, "src/main/resources/assets/qz_uilib/fonts")
+                TestResources.argumentPath(args, 0, "src/core/resources/assets/qz_uilib/fonts")
                         .toFile();
         File output =
                 TestResources.outputDirectory(args, 1, "build/font-raster-style-probe/output")

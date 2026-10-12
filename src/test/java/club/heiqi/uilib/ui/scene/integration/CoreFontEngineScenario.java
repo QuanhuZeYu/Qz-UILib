@@ -156,7 +156,7 @@ public final class CoreFontEngineScenario extends TestApplication {
                                     "contract-probe",
                                     1,
                                     java.nio.file.Paths.get(
-                                            "src/main/resources/assets/qz_uilib/fonts/unifont/unifont-16.0.04.otf"),
+                                            "src/core/resources/assets/qz_uilib/fonts/unifont/unifont-16.0.04.otf"),
                                     0,
                                     false,
                                     Collections.<String>emptySet());

@@ -219,8 +219,8 @@ public final class GlQuadRenderer implements AutoCloseable {
         }
     }
 
-    /** ordinary world producer，caller有效MVP保持透视w/深度；Iris active pass不能走该ownshader。 */
-    private GlFontIrisProducer irisProducer;
+    /** 由宿主装配，跨短 pass 复用；只在 backend 所属有效 GL 上下文内创建和释放。 */
+    private GlVertexProducer programProducer;
 
     private int fontEbo;
 
@@ -262,8 +262,12 @@ public final class GlQuadRenderer implements AutoCloseable {
                 if (scope.iris == null)
                     throw new IllegalStateException("Iris prepare/render activepass不一致");
                 scope.selectTextureUnit();
-                if (irisProducer == null) irisProducer = new GlFontIrisProducer(gl, capacity);
-                irisProducer.configure(scope.iris);
+                if (programProducer == null)
+                    programProducer =
+                            Objects.requireNonNull(
+                                    programProvider.createVertexProducer(gl, capacity),
+                                    "vertex producer");
+                programProducer.configure(scope.iris);
                 world.applyIris();
                 // Pass.use拥有FBO/blend/alpha overrides；不能再用普通world.apply盖掉pack定义。
                 return scope;
@@ -344,7 +348,7 @@ public final class GlQuadRenderer implements AutoCloseable {
                 throw new IllegalArgumentException("提交段超过 backend 容量");
             if (batch.quads().isEmpty()) return;
             if (iris != null) {
-                bytes += irisProducer.consume(batch, iris, world.context, resources);
+                bytes += programProducer.consume(batch, iris, world.context, resources);
                 uploads++;
                 draws += batch.draws().size();
                 return;
@@ -491,9 +495,9 @@ public final class GlQuadRenderer implements AutoCloseable {
     }
 
     private void release() {
-        if (irisProducer != null) {
-            irisProducer.close();
-            irisProducer = null;
+        if (programProducer != null) {
+            programProducer.close();
+            programProducer = null;
         }
         if (fontEbo != 0) {
             gl.glDeleteBuffers(fontEbo);

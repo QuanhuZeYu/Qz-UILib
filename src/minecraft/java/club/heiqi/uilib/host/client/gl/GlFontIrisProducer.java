@@ -11,14 +11,14 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
 /** 有界自有vertex/index producer；program与uniform仍由active Iris Pass.use/宿主preDraw拥有。 */
-final class GlFontIrisProducer implements AutoCloseable {
+public final class GlFontIrisProducer implements GlVertexProducer {
     private final GlApi gl;
     private int vao, vbo, ebo;
     private final int capacity;
     private ByteBuffer staging;
     private boolean initialized;
 
-    GlFontIrisProducer(GlApi gl, int capacity) {
+    public GlFontIrisProducer(GlApi gl, int capacity) {
         this.gl = gl;
         if (capacity <= 0 || capacity > Integer.MAX_VALUE / (4 * GlFontProgramLayout.STRIDE))
             throw new IllegalArgumentException("Iris staging容量超界");
@@ -36,7 +36,8 @@ final class GlFontIrisProducer implements AutoCloseable {
         }
     }
 
-    void configure(GlProgramScope scope) {
+    @Override
+    public void configure(GlProgramScope scope) {
         GlFontProgramLayout layout = new GlFontProgramLayout(scope.attributes(), scope.programId());
         for (GlProgramAttribute a : scope.attributes())
             if ("mc_Entity".equals(a.name) || "at_midBlock".equals(a.name))
@@ -61,7 +62,8 @@ final class GlFontIrisProducer implements AutoCloseable {
         }
     }
 
-    long consume(
+    @Override
+    public long consume(
             OrderedQuadBatch batch,
             GlProgramScope scope,
             FontRenderContext context,

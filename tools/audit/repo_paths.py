@@ -7,7 +7,11 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 TOOLS_AUDIT = REPO_ROOT / 'tools' / 'audit'
 DOCS_DIR = REPO_ROOT / 'docs' / '开发者文档'
-MAIN_JAVA = REPO_ROOT / 'src' / 'main' / 'java'
+# 与正式职责源码根对齐，不将测试/生成变体重复计入生产扫描。
+PRODUCTION_JAVA_ROOTS = tuple(
+    REPO_ROOT / 'src' / role / 'java'
+    for role in ('core', 'fontAdapter', 'glRenderer', 'lwjgl2', 'lwjgl3', 'minecraft', 'desktop')
+)
 TEST_RESOURCES = REPO_ROOT / 'src' / 'test' / 'resources'
 
 AUDIT_PACKAGE = DOCS_DIR / '审计包-全库默认液态玻璃样式.md'

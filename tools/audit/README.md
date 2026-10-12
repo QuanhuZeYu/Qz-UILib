@@ -10,7 +10,7 @@
 | --- | --- | --- |
 | `auditA_v25_full.py` | WCAG 对比度/合成色数值直出（附录 A 的唯一来源） | 改主题色、写可访问性结论时 |
 | `check_numeric_traceability.py` | 核验文档里的数值是否都能在脚本输出中定位（默认**仅报告**，`--strict` 才阻断） | 改完审计/验收文档数值后 |
-| `surface_sink_ownership.py` | 扫描 `src/main` 的 `setBackgroundColor` / `setBorderColor` 写入者并给启发式判类 | 想确认「谁在写表面属性」时 |
+| `surface_sink_ownership.py` | 扫描正式职责源码根 的 `setBackgroundColor` / `setBorderColor` 写入者并给启发式判类 | 想确认「谁在写表面属性」时 |
 | `audit_zero_proof.py` | legacy 兼容入口的零点核验（L1 调用 / L2 全引用 / L3 语义归属） | 确认兼容入口没被生产调用 |
 | `repo_paths.py` / `__init__.py` | 路径推导（脚本可从任意工作树运行） | — |
 

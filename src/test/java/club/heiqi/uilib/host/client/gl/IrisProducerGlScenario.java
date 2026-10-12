@@ -127,7 +127,12 @@ public final class IrisProducerGlScenario {
                             glBindTexture(GL_TEXTURE_2D, texture);
                         }
                     };
-            try (GlFontIrisProducer producer = new GlFontIrisProducer(new Lwjgl3GlApi(), 16);
+            // 从MC正式装配工厂取得中性提交端口，像素验收同时覆盖分包后的实现接线。
+            final GlApi api = new Lwjgl3GlApi();
+            final GlProgramProvider provider =
+                    new club.heiqi.uilib.host.client.font.compat.IrisProgramProvider(
+                            IrisProducerGlScenario.class.getClassLoader(), api);
+            try (GlVertexProducer producer = provider.createVertexProducer(api, 16);
                     GlGlyphAtlas.Frame frame =
                             atlas.beginFrame(
                                     java.util.Collections.emptyList(),
