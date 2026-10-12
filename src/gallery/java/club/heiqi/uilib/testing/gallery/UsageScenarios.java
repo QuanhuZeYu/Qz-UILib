@@ -4,7 +4,9 @@ import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.control.DocumentResources;
 import club.heiqi.uilib.ui.scene.control.SceneDocument;
+import club.heiqi.uilib.ui.scene.control.SceneImage;
 import club.heiqi.uilib.ui.scene.control.SceneLabel;
+import club.heiqi.uilib.ui.scene.control.SceneMath;
 import club.heiqi.uilib.ui.scene.control.SceneTheme;
 import club.heiqi.uilib.ui.scene.host.ScenePageContext;
 import club.heiqi.uilib.ui.scene.image.ImageOptions;
@@ -15,6 +17,9 @@ import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
 import club.heiqi.uilib.ui.scene.text.DocumentContent;
 import club.heiqi.uilib.ui.scene.text.TextContent;
 import club.heiqi.uilib.ui.scene.text.TextStyle;
+import club.heiqi.uilib.ui.scene.text.math.MathContent;
+import club.heiqi.uilib.ui.scene.text.math.MathEmbedMetrics;
+import club.heiqi.uilib.ui.scene.text.math.MathStyle;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -32,6 +37,13 @@ final class UsageScenarios {
                 context.domain().signal("en_US".equals(environment.initialLanguage()));
         Signal<Boolean> narrow = context.domain().signal(false);
         Signal<Integer> em = context.domain().signal(16), value = context.domain().signal(1);
+        Signal<Integer> articleSelection = context.domain().signal(0);
+        Signal<Boolean> alternateIllustration = context.domain().signal(false);
+        Signal<ImageSource> illustration =
+                context.domain().signal(ImageSource.resource("qz_uilib_test:textures/sample.png"));
+        ReadableSignal<int[][]> reportRows =
+                context.domain()
+                        .computed(context.scope(), () -> GallerySamples.reportRows(value.get()));
         Signal<String> link = context.domain().signal("链接尚未激活");
         ReadableSignal<SceneTheme> theme =
                 context.domain()
@@ -59,9 +71,7 @@ final class UsageScenarios {
         images.put(
                 "illustration",
                 new DocumentResources.ImageReference(
-                        context.domain()
-                                .signal(ImageSource.resource("qz_uilib_test:textures/sample.png")),
-                        context.domain().signal(ImageOptions.defaults())));
+                        illustration, context.domain().signal(ImageOptions.defaults())));
         DocumentResources resources =
                 new DocumentResources(
                         environment.images(),
@@ -95,6 +105,44 @@ final class UsageScenarios {
                         theme,
                         () -> narrow.set(!narrow.get())));
         body.add(actions);
+        if (page == TestGallery.Page.ARTICLE) {
+            SceneNode documents =
+                    new SceneNode()
+                            .size(Size.fill(1), Size.natural())
+                            .axis(SceneNode.Axis.ROW)
+                            .gap(8);
+            String[] names = {"工坊指南", "排产核对", "交接备忘"};
+            for (int index = 0; index < names.length; index++) {
+                final int selected = index;
+                documents.add(
+                        GalleryStyle.button(
+                                context,
+                                () -> names[selected],
+                                theme,
+                                () -> articleSelection.set(selected)));
+            }
+            body.add(documents);
+            body.add(
+                    GalleryStyle.button(
+                            context,
+                            () -> "切换插图",
+                            theme,
+                            () -> {
+                                alternateIllustration.set(!alternateIllustration.get());
+                                illustration.set(
+                                        alternateIllustration.get()
+                                                ? environment.embed(true)
+                                                : ImageSource.resource(
+                                                        "qz_uilib_test:textures/sample.png"));
+                            }));
+            body.add(
+                    GalleryStyle.label(
+                            context,
+                            () -> alternateIllustration.get() ? "当前插图：交接标记" : "当前插图：工坊示意图",
+                            theme,
+                            13,
+                            true));
+        }
         if (page == TestGallery.Page.DETAILS) {
             body.add(
                     GalleryStyle.button(
@@ -132,15 +180,7 @@ final class UsageScenarios {
                             () -> value.set(value.get() == 1 ? 7 : 1)));
             body.add(
                     SceneLabel.create(
-                            context,
-                            () ->
-                                    "生产汇总：投入 "
-                                            + value.get() * 12
-                                            + "；完成 "
-                                            + value.get() * 9
-                                            + "；待处理 "
-                                            + value.get() * 3,
-                            theme));
+                            context, () -> GallerySamples.reportSummary(reportRows.get()), theme));
         }
         if (page == TestGallery.Page.MESSAGES) {
             body.add(
@@ -183,17 +223,8 @@ final class UsageScenarios {
                                         document(
                                                 context,
                                                 () ->
-                                                        english.get()
-                                                                ? "Operator: café / العربية /"
-                                                                      + " हिन्दी. Completed"
-                                                                      + " <latex>2+2=4</latex>. <a"
-                                                                      + " href=\"activity\">Activity"
-                                                                      + " details</a>"
-                                                                : "操作员：小明 / café / العربية /"
-                                                                      + " हिन्दी。完成"
-                                                                      + " <latex>2+2=4</latex>"
-                                                                      + " 批次。<a"
-                                                                      + " href=\"activity\">查看活动记录</a>",
+                                                        GallerySamples.message(
+                                                                english.get(), id.get()),
                                                 theme,
                                                 resources,
                                                 link);
@@ -214,15 +245,64 @@ final class UsageScenarios {
                                                     : Size.fill(1),
                                             Size.natural())));
             reader.add(
-                    page == TestGallery.Page.ARTICLE
-                            ? markdown(
-                                    context, () -> article(english.get()), theme, resources, link)
-                            : document(
-                                    context,
-                                    () -> content(page, english.get(), value.get()),
-                                    theme,
-                                    resources,
-                                    link));
+                    markdown(
+                            context,
+                            () ->
+                                    page == TestGallery.Page.ARTICLE
+                                            ? GallerySamples.article(
+                                                    articleSelection.get(), english.get())
+                                            : page == TestGallery.Page.DETAILS
+                                                    ? GallerySamples.recipe(
+                                                            english.get(), value.get())
+                                                    : GallerySamples.report(
+                                                            english.get(),
+                                                            value.get(),
+                                                            reportRows.get()),
+                            theme,
+                            resources,
+                            link));
+            if (page == TestGallery.Page.DETAILS) {
+                SceneNode formulaCard = GalleryStyle.card(theme);
+                formulaCard.add(
+                        GalleryStyle.label(
+                                context,
+                                () -> english.get() ? "Material and packing check" : "材料与托盘核对",
+                                theme,
+                                18,
+                                false));
+                formulaCard.add(
+                        GalleryStyle.label(
+                                context,
+                                () ->
+                                        english.get()
+                                                ? "The material icon shares the selected batch with the packing formula."
+                                                : "材料图标与托盘计算共用所选批次；悬停图标核对宿主提供的材料事实。",
+                                theme,
+                                13,
+                                true));
+                // 共同文档的数学段落没有嵌入槽；专属配方卡片直接复用正式 SceneMath 的图像槽。
+                SceneNode material =
+                        SceneImage.themed(
+                                environment.images(),
+                                item,
+                                () -> ImageOptions.defaults().quantity(true).tooltip(true),
+                                theme);
+                Map<String, SceneMath.Embed> slots = new LinkedHashMap<>();
+                slots.put(
+                        "material",
+                        new SceneMath.Embed(material, new MathEmbedMetrics(1.6f, 1.6f, 1.3f)));
+                ReadableSignal<MathContent> formula =
+                        context.domain()
+                                .computed(
+                                        context.scope(),
+                                        () ->
+                                                MathContent.parse(
+                                                        GallerySamples.materialFormula(
+                                                                value.get())));
+                formulaCard.add(
+                        SceneMath.create(context, formula, theme, MathStyle.DISPLAY, slots));
+                reader.add(GalleryStyle.frame(formulaCard, theme));
+            }
             body.add(reader);
         }
         body.add(GalleryStyle.label(context, link, theme, 13, true));
@@ -268,49 +348,10 @@ final class UsageScenarios {
                 .size(Size.fill(1), Size.natural());
     }
 
-    private static String article(boolean english) {
-        return (english
-                        ? "---\nCategory: Workshop\nStatus: Ready\n---\n\n# Workshop guide\n\n"
-                              + "A production batch combines **materials**, calculations and"
-                              + " operator instructions. "
-                        : "---\n分类: 工坊\n状态: 已确认\n---\n\n# 工坊使用说明\n\n一份生产任务同时包含**材料**、计算和操作指引。")
-                + "![工坊示意图](illustration)\n\n"
-                + (english ? "For two inputs per batch: " : "每批需要两份材料，批次数与总需求的关系为：")
-                + "[$N=2b$](checklist)\n\n"
-                + (english
-                        ? "> Keep the instructions and material count together.\n\n"
-                              + "3. Check the inputs\n"
-                              + "4. Confirm the batch\n"
-                              + "   - Review the checklist\n\n"
-                        : "> 操作指引与材料数量保持在同一文档中。\n\n3. 核对材料\n4. 确认批次\n   - 复查任务清单\n\n")
-                + "---\n\n$$\nN=2b\n$$\n\n"
-                + "```text\ncount = batches * 2; // $literal$ **code** <plain>\n```\n\n"
-                + (english
-                        ? "| Material | Quantity | Status |\n"
-                              + "| :--- | ---: | :---: |\n"
-                              + "| [Input](checklist) | $2b$ | **Ready** |\n"
-                              + "| Water | 12 | Confirmed |\n\n"
-                        : "| 材料 | 数量 | 状态 |\n"
-                              + "| :--- | ---: | :---: |\n"
-                              + "| [输入材料](checklist) | $2b$ | **就绪** |\n"
-                              + "| 水 | 12 | 已确认 |\n\n")
-                + (english
-                        ? "<p>HTML notes: <strong>keep the count</strong> and <a"
-                              + " href=\"checklist\">read the instructions</a>.<br>Code stays"
-                              + " literal: <code>$x$ **text**</code>.</p>\n\n"
-                        : "<p>HTML 备注：<strong>保留数量</strong>，并<a"
-                              + " href=\"checklist\">阅读操作说明</a>。<br>代码保留字面：<code>$x$"
-                              + " **文字**</code>。</p>\n\n")
-                + (english
-                        ? "Read the [checklist](checklist) before starting. Contact"
-                              + " help@example.test."
-                        : "开始前阅读[任务清单](checklist)。联系 help@example.test。");
-    }
-
     private static String steps(TestGallery.Page page) {
         switch (page) {
             case ARTICLE:
-                return "操作：切换语言、字号与阅读宽度，查看文章元数据、表格和 HTML 备注，再点击文中链接。预期：同一文章重排，表格列对齐与链接位置一致，超宽内容仅在表格内滚动。";
+                return "操作：选择工坊指南、排产核对或交接备忘，切换插图、语言、字号与阅读宽度，再点击文中链接。预期：阅读设置保留，插图更新，超长指令和不可拆公式只在各自区域横滚。";
             case DETAILS:
                 return "操作：切换制作批次。预期：材料数量、产出、公式与图标同步更新；切页回来仍保留批次。";
             case MESSAGES:
@@ -319,83 +360,6 @@ final class UsageScenarios {
                 return "操作：切换今日与本周。预期：汇总数字、计算公式与文字说明同步变化。";
             default:
                 throw new IllegalArgumentException("不是内容场景：" + page);
-        }
-    }
-
-    private static String content(TestGallery.Page page, boolean english, int value) {
-        switch (page) {
-            case ARTICLE:
-                return (english
-                                ? "Workshop guide\n\n"
-                                      + "A production batch combines materials, calculations and"
-                                      + " operator instructions. "
-                                : "工坊使用说明\n\n一份生产任务同时包含材料、计算和操作指引。")
-                        + "<img src=\"illustration\" width=\"96\" height=\"96\" alt=\"工坊示意图\"/>\n\n"
-                        + (english ? "For two inputs per batch: " : "每批需要两份材料，批次数与总需求的关系为：")
-                        + "<a href=\"checklist\"><latex>N=2b</latex></a>\n\n"
-                        + (english
-                                ? "Read the checklist before starting. Keep the same document open"
-                                      + " when changing language or reading width. "
-                                : "开始前阅读清单；改变语言与阅读宽度时，内容仍处于同一阅读场景。")
-                        + "<a href=\"checklist\">"
-                        + (english ? "Open checklist" : "查看操作清单")
-                        + "</a>\n\n"
-                        + (english
-                                ? "Operator notes: café, العربية, हिन्दी, 👩‍💻.\n\n"
-                                      + "Inspect material quantities, then confirm the task. The"
-                                      + " task description and formula stay together as the"
-                                      + " viewport changes."
-                                : "操作员备注：中文、café、العربية、हिन्दी、👩‍💻。\n\n"
-                                      + "核对材料数量，然后确认任务。窗口变化时，说明和公式在同一内容流中自然换行。");
-            case DETAILS:
-                return (english ? "Recipe: precision component" : "配方：精密组件")
-                        + "\n\n<img src=\"material\" width=\"48\" height=\"48\" alt=\"材料图像\"/> "
-                        + (english ? "Material consumption" : "材料消耗")
-                        + " <latex>2 \\times "
-                        + value
-                        + "="
-                        + value * 2
-                        + "</latex>\n\n"
-                        + (english ? "Output" : "组件产出")
-                        + " <latex>4 \\times "
-                        + value
-                        + "="
-                        + value * 4
-                        + "</latex>\n\n"
-                        + (english
-                                ? "Use the batch selector above to plan production. "
-                                : "通过上方批次选择规划生产；材料与产出共享同一批次权威值。")
-                        + "<a href=\"recipe\">"
-                        + (english ? "Recipe instructions" : "查看配方说明")
-                        + "</a>";
-            case REPORT:
-                return (english ? "Production report" : "生产报告")
-                        + "\n\n"
-                        + (value == 1
-                                ? (english ? "Period: today" : "统计周期：今日")
-                                : (english ? "Period: this week" : "统计周期：本周"))
-                        + "\n\n<latex>"
-                        + value * 12
-                        + "="
-                        + value * 9
-                        + "+"
-                        + value * 3
-                        + "</latex>\n\n"
-                        + (english ? "Completion rate: " : "完成率：")
-                        + "<latex>\\frac{"
-                        + value * 9
-                        + "}{"
-                        + value * 12
-                        + "}=75\\%</latex>\n\n"
-                        + (english
-                                ? "Pending tasks remain in the selected period. "
-                                : "待处理任务计入所选周期；数字和公式随周期一起更新。")
-                        + "<img src=\"illustration\" width=\"64\" height=\"64\" alt=\"报告标识\"/> <a"
-                        + " href=\"report\">"
-                        + (english ? "Report details" : "查看报告详情")
-                        + "</a>";
-            default:
-                throw new IllegalArgumentException("不是文档场景：" + page);
         }
     }
 }

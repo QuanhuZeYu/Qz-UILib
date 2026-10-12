@@ -1,59 +1,106 @@
 package club.heiqi.uilib.testing.gallery;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.function.Consumer;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
-import java.util.List;
-import java.util.Objects;
+import club.heiqi.uilib.ui.reactive.Signal;
+import club.heiqi.uilib.ui.scene.control.SceneControl;
+import club.heiqi.uilib.ui.scene.control.SceneTheme;
 import club.heiqi.uilib.ui.scene.host.ScenePage;
 import club.heiqi.uilib.ui.scene.host.ScenePageContext;
-import club.heiqi.uilib.ui.reactive.Signal;
-import club.heiqi.uilib.ui.scene.node.SceneNode;
-import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
-import club.heiqi.uilib.ui.scene.control.SceneButton;
-import club.heiqi.uilib.ui.scene.control.SceneLabel;
-import club.heiqi.uilib.ui.scene.control.SceneTheme;
-import club.heiqi.uilib.ui.scene.control.SceneControl;
-import club.heiqi.uilib.ui.scene.layout.Size;
-import club.heiqi.uilib.ui.scene.layout.MeasuredSize;
-import club.heiqi.uilib.ui.scene.layout.Constraints;
-import club.heiqi.uilib.ui.scene.layout.SceneChildMeasurer;
 import club.heiqi.uilib.ui.scene.layout.ChildPlacements;
+import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
+import club.heiqi.uilib.ui.scene.layout.MeasuredSize;
+import club.heiqi.uilib.ui.scene.layout.SceneChildMeasurer;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometryView;
+import club.heiqi.uilib.ui.scene.layout.Size;
+import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.PaintPlanBuilder;
+import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
 import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.function.Consumer;
 
 /** 三宿主共用的场景工作台；页面树按本次运行保留，旧专项页面不再装配。 */
 public final class TestGallery implements ScenePage {
     public enum Page {
         HOME("场景概览", "从一次真实任务开始"),
-        ARTICLE("知识库", "阅读含公式与插图的工坊指南"),
-        DETAILS("生产计划", "按批次核对材料需求和产出"),
+        ARTICLE("知识库", "在指南、排产清单与交接记录之间切换阅读"),
+        DETAILS("生产计划", "联动核对材料、产出、配方与计算过程"),
         SETTINGS("项目设置", "编辑项目资料并保存有效设置"),
         MESSAGES("活动中心", "浏览消息与任务详情"),
-        REPORT("数据报告", "查看生产周期与完成情况");
+        REPORT("数据报告", "切换周期，核对分组明细与完成率");
         public final String title, purpose;
-        Page(String title, String purpose) { this.title = title; this.purpose = purpose; }
+
+        Page(String title, String purpose) {
+            this.title = title;
+            this.purpose = purpose;
+        }
+
+        String activities() {
+            switch (this) {
+                case ARTICLE:
+                    return "文档切换 · 元数据与嵌套列表 · 表格与长代码 · 图片更新";
+                case DETAILS:
+                    return "批次规划 · 材料图像 · 分式与伸缩公式 · 操作清单";
+                case SETTINGS:
+                    return "草稿编辑 · 多行备注 · 校验反馈 · 保存与恢复";
+                case MESSAGES:
+                    return "新增记录 · 展开详情 · 多语言段落 · 切页保留";
+                case REPORT:
+                    return "今日与本周 · 分组明细 · 汇总关系 · 完成率";
+                default:
+                    return "";
+            }
+        }
     }
+
     private final GalleryEnvironment environment;
     private final Page initial;
-    public TestGallery(GalleryEnvironment environment) { this(environment, Page.HOME); }
-    public TestGallery(GalleryEnvironment environment, Page initial) { this.environment = environment; this.initial = initial; }
-    @Override public void build(ScenePageContext context) {
+
+    public TestGallery(GalleryEnvironment environment) {
+        this(environment, Page.HOME);
+    }
+
+    public TestGallery(GalleryEnvironment environment, Page initial) {
+        this.environment = environment;
+        this.initial = initial;
+    }
+
+    @Override
+    public void build(ScenePageContext context) {
         Signal<Page> selected = context.domain().signal(initial);
         Signal<Boolean> dark = context.domain().signal(false);
-        ReadableSignal<SceneTheme> theme = context.domain().computed(context.scope(), () -> GalleryStyle.theme(dark.get()));
+        ReadableSignal<SceneTheme> theme =
+                context.domain().computed(context.scope(), () -> GalleryStyle.theme(dark.get()));
         Consumer<Page> navigate = selected::set;
         SceneNode shell = new SceneNode().size(Size.fill(1), Size.fill(1)).padding(24).gap(20);
-        shell.bind(NodeBinding.value(dark, (node, value) -> node.background(value ? GalleryStyle.DARK_BACKGROUND : GalleryStyle.LIGHT_BACKGROUND)));
+        shell.bind(
+                NodeBinding.value(
+                        dark,
+                        (node, value) ->
+                                node.background(
+                                        value
+                                                ? GalleryStyle.DARK_BACKGROUND
+                                                : GalleryStyle.LIGHT_BACKGROUND)));
         SceneNode header = new SceneNode().size(Size.fill(1), Size.natural()).gap(6);
         header.add(GalleryStyle.label(context, () -> "QZ / 场景工作台", theme, 24, false));
-        header.add(GalleryStyle.label(context, () -> "一次声明 · 自动化 / Desktop / Minecraft", theme, 13, true));
-        SceneNode actions = new SceneNode().size(Size.fill(1), Size.natural()).axis(SceneNode.Axis.ROW).gap(8);
-        actions.add(GalleryStyle.button(context, () -> "场景概览", theme, () -> navigate.accept(Page.HOME)).clickFocus(false));
-        actions.add(GalleryStyle.button(context, () -> dark.get() ? "浅色模式" : "深色模式", theme, () -> dark.set(!dark.get())));
+        header.add(
+                GalleryStyle.label(
+                        context, () -> "一次声明 · 自动化 / Desktop / Minecraft", theme, 13, true));
+        SceneNode actions =
+                new SceneNode().size(Size.fill(1), Size.natural()).axis(SceneNode.Axis.ROW).gap(8);
+        actions.add(
+                GalleryStyle.button(context, () -> "场景概览", theme, () -> navigate.accept(Page.HOME))
+                        .clickFocus(false));
+        actions.add(
+                GalleryStyle.button(
+                        context,
+                        () -> dark.get() ? "浅色模式" : "深色模式",
+                        theme,
+                        () -> dark.set(!dark.get())));
         header.add(actions);
         shell.add(header);
         SceneNode deck = new SceneNode().size(Size.fill(1), Size.fill(1)).control(new Layers());
@@ -64,8 +111,14 @@ public final class TestGallery implements ScenePage {
                 page = new SceneNode().size(Size.fill(1), Size.fill(1)).scrollable(true);
                 page.add(GalleryStyle.frame(ProjectSettings.create(context, theme), theme));
             } else page = UsageScenarios.create(context, environment, id, theme);
-            SceneNode layer = new SceneNode().size(Size.fill(1), Size.fill(1)).control(new Layers());
-            layer.bind(NodeBinding.children(() -> selected.get() == id ? Collections.singletonList(page) : Collections.emptyList()));
+            SceneNode layer =
+                    new SceneNode().size(Size.fill(1), Size.fill(1)).control(new Layers());
+            layer.bind(
+                    NodeBinding.children(
+                            () ->
+                                    selected.get() == id
+                                            ? Collections.singletonList(page)
+                                            : Collections.emptyList()));
             // 页面逻辑树在失活期间保留；广场结束再释放编辑状态和全部派生。
             context.own(page::destroy);
             deck.add(layer);
@@ -74,52 +127,101 @@ public final class TestGallery implements ScenePage {
         context.own(shell::destroy);
         context.mount(shell);
     }
-    private static SceneNode directory(ScenePageContext context, ReadableSignal<SceneTheme> theme, Consumer<Page> navigate) {
+
+    private static SceneNode directory(
+            ScenePageContext context, ReadableSignal<SceneTheme> theme, Consumer<Page> navigate) {
         SceneNode root = new SceneNode().size(Size.fill(1), Size.fill(1)).gap(16).scrollable(true);
         root.add(GalleryStyle.label(context, () -> "探索场景", theme, 28, false));
-        root.add(GalleryStyle.label(context, () -> "把文字、公式、图片与交互放回实际工作流。选择一个场景开始。", theme, 15, true));
+        root.add(
+                GalleryStyle.label(
+                        context, () -> "把文字、公式、图片与交互放回实际工作流。选择一个场景开始。", theme, 15, true));
         SceneNode grid = GalleryStyle.grid();
-        for (Page id : Page.values()) if (id != Page.HOME) {
-            SceneNode card = GalleryStyle.card(theme);
-            card.add(GalleryStyle.label(context, () -> id.title, theme, 20, false));
-            card.add(GalleryStyle.label(context, () -> id.purpose, theme, 15, true));
-            card.add(GalleryStyle.button(context, () -> "打开" + id.title, theme, () -> navigate.accept(id)).clickFocus(false));
-            grid.add(GalleryStyle.frame(card, theme));
-        }
+        for (Page id : Page.values())
+            if (id != Page.HOME) {
+                SceneNode card = GalleryStyle.card(theme);
+                card.add(GalleryStyle.label(context, () -> id.title, theme, 20, false));
+                card.add(GalleryStyle.label(context, () -> id.purpose, theme, 15, true));
+                card.add(GalleryStyle.label(context, id::activities, theme, 13, true));
+                card.add(
+                        GalleryStyle.button(
+                                        context,
+                                        () -> "打开" + id.title,
+                                        theme,
+                                        () -> navigate.accept(id))
+                                .clickFocus(false));
+                grid.add(GalleryStyle.frame(card, theme));
+            }
         root.add(grid);
         return root;
     }
+
     /** 多根页面复用正式控件扩展端口，模态仍按原根顺序叠放；几何与输入由scene唯一引擎维护。 */
     private static final class Layers implements SceneControl {
-        @Override public MeasuredSize measure(SceneNode node, Constraints limits, SceneTextMeasurer text) { return new MeasuredSize(0, 0); }
-        @Override public MeasuredSize measure(SceneNode node, Constraints limits, SceneTextMeasurer text, SceneChildMeasurer children) {
+        @Override
+        public MeasuredSize measure(SceneNode node, Constraints limits, SceneTextMeasurer text) {
+            return new MeasuredSize(0, 0);
+        }
+
+        @Override
+        public MeasuredSize measure(
+                SceneNode node,
+                Constraints limits,
+                SceneTextMeasurer text,
+                SceneChildMeasurer children) {
             int width = 0, height = 0;
-            for (SceneNode child : node.children()) if (child.visible()) {
-                MeasuredSize size = children.measureChild(child, limits);
-                width = Math.max(width, size.width); height = Math.max(height, size.height);
-            }
+            for (SceneNode child : node.children())
+                if (child.visible()) {
+                    MeasuredSize size = children.measureChild(child, limits);
+                    width = Math.max(width, size.width);
+                    height = Math.max(height, size.height);
+                }
             return new MeasuredSize(width, height);
         }
+
         private ChildPlacements prepared;
+
         // 正式引擎在arrange前调用presentText并提供本次最终约束，结果仅供紧邻排列消费。
-        @Override public club.heiqi.uilib.ui.scene.text.TextLayout presentText(SceneNode node,
-                club.heiqi.uilib.ui.scene.text.TextLayout full, int width, int height, SceneTextMeasurer text, SceneChildMeasurer children) {
+        @Override
+        public club.heiqi.uilib.ui.scene.text.TextLayout presentText(
+                SceneNode node,
+                club.heiqi.uilib.ui.scene.text.TextLayout full,
+                int width,
+                int height,
+                SceneTextMeasurer text,
+                SceneChildMeasurer children) {
             List<ChildPlacements.Entry> placed = new ArrayList<>();
-            for (SceneNode child : node.children()) if (child.visible()) {
-                MeasuredSize measured = children.measureChild(child, new Constraints(width, height));
-                placed.add(new ChildPlacements.Entry(child, new LayoutBox(0, 0,
-                        resolve(child.width(), width, measured.width), resolve(child.height(), height, measured.height))));
-            }
+            for (SceneNode child : node.children())
+                if (child.visible()) {
+                    MeasuredSize measured =
+                            children.measureChild(child, new Constraints(width, height));
+                    placed.add(
+                            new ChildPlacements.Entry(
+                                    child,
+                                    new LayoutBox(
+                                            0,
+                                            0,
+                                            resolve(child.width(), width, measured.width),
+                                            resolve(child.height(), height, measured.height))));
+                }
             prepared = new ChildPlacements(placed);
             return full;
         }
+
         private static int resolve(Size size, int available, int natural) {
-            return size.constrain(size.mode == Size.Mode.FIXED ? size.value : size.mode == Size.Mode.FILL ? available : natural);
+            return size.constrain(
+                    size.mode == Size.Mode.FIXED
+                            ? size.value
+                            : size.mode == Size.Mode.FILL ? available : natural);
         }
-        @Override public ChildPlacements arrange(SceneNode node, LayoutBox allocated) {
-            ChildPlacements result = prepared; prepared = null;
+
+        @Override
+        public ChildPlacements arrange(SceneNode node, LayoutBox allocated) {
+            ChildPlacements result = prepared;
+            prepared = null;
             return result;
         }
-        @Override public void paint(SceneNode node, SceneGeometryView geometry, PaintPlanBuilder paint) {}
+
+        @Override
+        public void paint(SceneNode node, SceneGeometryView geometry, PaintPlanBuilder paint) {}
     }
 }
