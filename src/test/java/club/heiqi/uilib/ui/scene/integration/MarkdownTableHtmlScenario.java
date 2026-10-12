@@ -37,6 +37,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -55,6 +56,9 @@ public final class MarkdownTableHtmlScenario extends TestApplication {
     @Override
     protected void runTests() throws Exception {
         List<Throwable> failures = new ArrayList<>();
+        runScenario("固定frontmatter默认表格语义与完整UTF16及BYTE来源", this::frontmatterOracle, failures);
+        runScenario("frontmatter代理对节点别名及错误精确原位置", this::frontmatterSources, failures);
+        runScenario("frontmatter真实字体主题重排与随后正文保持", this::frontmatterScene, failures);
         runScenario("管道列数对齐补空裁剪及成熟块结束边界", this::pipeStructure, failures);
         runScenario("CRLF代理对转义管道代码及typed原子的原文来源", this::pipeSources, failures);
         runScenario("HTML全部内容类别及inline与block成熟Markdown边界", this::htmlSemantics, failures);
@@ -75,6 +79,249 @@ public final class MarkdownTableHtmlScenario extends TestApplication {
             scenario(name, action);
         } catch (AssertionError | RuntimeException failure) {
             failures.add(failure);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private void frontmatterOracle() throws Exception {
+        Map<String, Object> corpus;
+        try (java.io.InputStream stream =
+                getClass().getResourceAsStream("/markdown/reference/frontmatter-corpus.json")) {
+            require(stream != null, "缺少固定frontmatter独立语料");
+            corpus =
+                    (Map<String, Object>)
+                            new org.yaml.snakeyaml.Yaml()
+                                    .load(
+                                            new java.io.InputStreamReader(
+                                                    stream, StandardCharsets.UTF_8));
+        }
+        List<String> failures = new ArrayList<>();
+        for (Map<String, Object> item : (List<Map<String, Object>>) corpus.get("cases")) {
+            String id = (String) item.get("id"), source = (String) item.get("source");
+            // 固定扩展把首行quote内部也误作frontmatter并报YAML错；不以吞容器正文作为验收。
+            if (id.equals("quote_front")) continue;
+            try {
+                org.jsoup.nodes.Document expected =
+                        org.jsoup.Jsoup.parseBodyFragment((String) item.get("html"));
+                org.jsoup.nodes.Element table = expected.selectFirst("table.frontmatter");
+                for (boolean bytes : new boolean[] {false, true}) {
+                    DocumentContent doc = checked(source, bytes);
+                    List<TableContent> tables = new ArrayList<>();
+                    for (DocumentContent.Block block : doc.blocks())
+                        if (block.table != null) tables.add(block.table);
+                    if (table != null) {
+                        require(!tables.isEmpty(), id + " frontmatter未转共同表格");
+                        List<org.jsoup.nodes.Element> rows = table.select("tbody > tr");
+                        equal(rows.size(), tables.get(0).rows().size(), id + " 元数据行数量");
+                        for (int i = 0; i < rows.size(); i++) {
+                            TableContent.Row row = tables.get(0).rows().get(i);
+                            equal(2, row.cells().size(), id + " 行头和值两列");
+                            require(
+                                    row.cells().get(0).header && !row.cells().get(1).header,
+                                    id + " th行头身份");
+                            equal(
+                                    frontmatterHtml(rows.get(i).child(0)),
+                                    frontmatterBlocks(row.cells().get(0).content()),
+                                    id + " key");
+                            equal(
+                                    frontmatterHtml(rows.get(i).child(1)),
+                                    frontmatterBlocks(row.cells().get(1).content()),
+                                    id + " value");
+                        }
+                    } else require(tables.isEmpty(), id + " 无表格参照却产生表格");
+                    if (item.get("yamlError") != null) {
+                        require(!doc.diagnostics().isEmpty(), id + " YAML错误无定位诊断");
+                        String tail = source.substring(source.lastIndexOf("---") + 3).trim();
+                        if (!tail.isEmpty())
+                            require(
+                                    doc.blocks().stream()
+                                            .anyMatch(
+                                                    block ->
+                                                            block.paragraph != null
+                                                                    && block.paragraph
+                                                                            .resolve(BASE)
+                                                                            .text
+                                                                            .input
+                                                                            .text
+                                                                            .equals(tail)),
+                                    id + " YAML错误吞掉后续正文");
+                    } else if (item.get("frontMatter") != null)
+                        for (TextLayout.Diagnostic diagnostic : doc.diagnostics()) {
+                            // CommonMark输入NUL已有INVALID_INPUT合同，frontmatter消费不撤销原文诊断。
+                            require(
+                                    source.indexOf(0) >= 0
+                                            && diagnostic.kind
+                                                    == TextLayout.Diagnostic.Kind.INVALID_INPUT,
+                                    id + " 正常frontmatter产生额外诊断");
+                        }
+                }
+            } catch (AssertionError | RuntimeException error) {
+                failures.add(id + ": " + error);
+            }
+        }
+        require(failures.isEmpty(), "固定frontmatter语义差异:\n" + String.join("\n", failures));
+    }
+
+    private static List<Object> frontmatterHtml(org.jsoup.nodes.Element element) {
+        List<Object> result = new ArrayList<>();
+        for (org.jsoup.nodes.Node child : element.childNodes()) {
+            if (child instanceof org.jsoup.nodes.TextNode) {
+                String text = ((org.jsoup.nodes.TextNode) child).getWholeText();
+                if (!text.isEmpty()) result.add(Arrays.asList("text", text));
+            } else if (child instanceof org.jsoup.nodes.Element) {
+                org.jsoup.nodes.Element nested = (org.jsoup.nodes.Element) child;
+                if (nested.normalName().equals("code"))
+                    result.add(Arrays.asList("code", nested.wholeText()));
+                else result.add(Arrays.asList(nested.normalName(), frontmatterHtml(nested)));
+            }
+        }
+        return result;
+    }
+
+    private static List<Object> frontmatterBlocks(List<DocumentContent.Block> blocks) {
+        List<Object> result = new ArrayList<>();
+        for (DocumentContent.Block block : blocks) {
+            if (block.paragraph != null) {
+                TextContent.Resolved resolved = block.paragraph.resolve(BASE);
+                require(
+                        resolved.links().isEmpty() && block.paragraph.inlineContents().isEmpty(),
+                        "元数据不得解释Markdown链接数学或图片");
+                boolean mono =
+                        !resolved.text.spans().isEmpty()
+                                && resolved.text
+                                        .spans()
+                                        .get(0)
+                                        .style
+                                        .font
+                                        .equals(
+                                                club.heiqi.uilib.ui.scene.text.font
+                                                        .MathTextFontSources.MONO);
+                if (!resolved.text.input.text.isEmpty())
+                    result.add(Arrays.asList(mono ? "code" : "text", resolved.text.input.text));
+            } else if (block.kind == DocumentContent.Block.Kind.LIST)
+                result.add(Arrays.asList("ul", frontmatterBlocks(block.children())));
+            else if (block.kind == DocumentContent.Block.Kind.LIST_ITEM)
+                result.add(Arrays.asList("li", frontmatterBlocks(block.children())));
+        }
+        return result;
+    }
+
+    private void frontmatterSources() {
+        String invalid = "---\r\n😀: [1\r\n---\r\n正文";
+        String control = "---\r\n😀: \"x\u0001y\"\r\n---\r\n正文";
+        for (boolean bytes : new boolean[] {false, true}) {
+            DocumentContent failed = checked(control, bytes);
+            require(!failed.diagnostics().isEmpty(), "成熟YAML字符限制应定位诊断并保留源码");
+            TextLayout.Diagnostic diagnostic = failed.diagnostics().get(0);
+            int bad = control.indexOf(1);
+            equal(
+                    offset(control, bad, bytes),
+                    diagnostic.sourceStart,
+                    "ReaderException代理对后的错误start");
+            equal(offset(control, bad + 1, bytes), diagnostic.sourceEnd, "ReaderException错误end");
+            require(
+                    failed.blocks().stream()
+                            .anyMatch(
+                                    block ->
+                                            block.paragraph != null
+                                                    && block.paragraph
+                                                            .resolve(BASE)
+                                                            .text
+                                                            .input
+                                                            .text
+                                                            .equals("正文")),
+                    "成熟YAML ReaderException吞掉后文");
+            DocumentContent syntax = checked(invalid, bytes);
+            require(!syntax.diagnostics().isEmpty(), "未闭合YAML应诊断");
+            require(
+                    syntax.blocks().stream()
+                            .anyMatch(
+                                    block ->
+                                            block.paragraph != null
+                                                    && block.paragraph
+                                                            .resolve(BASE)
+                                                            .text
+                                                            .input
+                                                            .text
+                                                            .equals("正文")),
+                    "YAML错误吞掉后文");
+        }
+        String source = "---\r\n😀: \"a\\nb\"\r\nseq: &x [1, 2]\r\nalias: *x\r\n---\r\n# 正文";
+        for (boolean bytes : new boolean[] {false, true}) {
+            DocumentContent doc = checked(source, bytes);
+            require(doc.diagnostics().isEmpty(), "合法YAML代理对与alias产生诊断");
+            TableContent table = doc.blocks().get(0).table;
+            TextInput key =
+                    table.rows()
+                            .get(0)
+                            .cells()
+                            .get(0)
+                            .content()
+                            .get(0)
+                            .paragraph
+                            .resolve(BASE)
+                            .text
+                            .input;
+            int keyStart = source.indexOf("😀");
+            exactRange(key, 0, source, keyStart, keyStart + "😀".length(), bytes);
+            TextInput value =
+                    table.rows()
+                            .get(0)
+                            .cells()
+                            .get(1)
+                            .content()
+                            .get(0)
+                            .paragraph
+                            .resolve(BASE)
+                            .text
+                            .input;
+            equal("a\nb", value.text, "块外原文中的YAMLquoted escape解码");
+            int scalarStart = source.indexOf("\"a\\nb\"");
+            exactRange(value, 0, source, scalarStart, scalarStart + "\"a\\nb\"".length(), bytes);
+            TableContent.Cell alias = table.rows().get(2).cells().get(1);
+            int aliasStart = source.indexOf("*x");
+            equal(offset(source, aliasStart, bytes), alias.sourceStart, "alias cell必须定位引用自身");
+            equal(offset(source, aliasStart + 2, bytes), alias.sourceEnd, "alias cell引用范围");
+            DocumentContent.Block list = alias.content().get(0);
+            for (DocumentContent.Block item : list.children()) {
+                TextInput mapped = item.children().get(0).paragraph.resolve(BASE).text.input;
+                exactRange(mapped, 0, source, aliasStart, aliasStart + 2, bytes);
+            }
+            equal(
+                    offset(source, source.indexOf("# 正文"), bytes),
+                    doc.blocks().get(1).sourceStart,
+                    "消费前缀后正文source不可平移");
+        }
+    }
+
+    private void frontmatterScene() throws Exception {
+        String source =
+                "---\ntitle: 工作台\nnotes: 很长的一段元数据，窗口变窄时应自动换行并保持正文位置。\n---\n\n# 正文\n[go](next) $x$";
+        try (Fixture f = new Fixture(source, 800)) {
+            f.page.frame();
+            SceneNode[] table = new SceneNode[1];
+            int[] height = new int[1];
+            f.domain.execute(
+                    () -> {
+                        table[0] = f.root[0].children().get(0);
+                        equal(4, table[0].children().size(), "frontmatter真实cell数量");
+                        grid(f.geometry(), f.root[0], table[0], 2);
+                        height[0] = f.geometry().get(table[0]).box.height;
+                        f.theme[0].set(
+                                SceneTheme.light()
+                                        .withTextStyle(new TextStyle("default", 31, 0xff112233)));
+                    });
+            f.width[0] = 210;
+            f.page.frame();
+            f.domain.execute(
+                    () -> {
+                        require(f.root[0].children().get(0) == table[0], "主题窗口变化重建frontmatter声明");
+                        grid(f.geometry(), f.root[0], table[0], 2);
+                        require(
+                                f.geometry().get(table[0]).box.height > height[0],
+                                "frontmatter窄宽主题未自动更新行高");
+                        require(f.root[0].children().size() > 1, "frontmatter吞掉后文");
+                    });
         }
     }
 
@@ -181,8 +428,8 @@ public final class MarkdownTableHtmlScenario extends TestApplication {
     private void htmlSemantics() {
         String inline =
                 "lead <strong>S</strong><b>B</b><em>E</em><i>I</i><u>U</u><s>X</s><del>D</del><br>line"
-                    + " <code>*literal* $x$</code> <em>*x*</em>"
-                    + " <foo>*kept*</foo><script>*hidden*</script><style>hidden-css</style> tail";
+                        + " <code>*literal* $x$</code> <em>*x*</em>"
+                        + " <foo>*kept*</foo><script>*hidden*</script><style>hidden-css</style> tail";
         for (boolean bytes : new boolean[] {false, true}) {
             DocumentContent doc = checked(inline, bytes);
             TextContent.Resolved r = doc.blocks().get(0).paragraph.resolve(BASE);
@@ -213,12 +460,12 @@ public final class MarkdownTableHtmlScenario extends TestApplication {
         }
         String blocks =
                 "<section><h1>one</h1><h2>two</h2><h3>three</h3><h4>four</h4><h5>five</h5><h6>six</h6><p>*block*<br>line</p><hr><blockquote><p>quote</p><ol"
-                    + " start='7'><li>outer<ul><li>inner</li></ul></li></ol></blockquote><pre><code>"
-                    + "  *literal* $x$ &lt;b&gt;\n"
-                    + "\tend</code></pre><table><thead><tr><th align='left'>H</th><th"
-                    + " align='center'>J</th><th"
-                    + " align='right'>K</th></tr></thead><tbody><tr><td>*cell*</td><td><b>bold</b></td><td>body</td></tr></tbody><tfoot><tr><td>foot</td><td></td><td>end</td></tr></tfoot></table></section>\n\n"
-                    + "tail";
+                        + " start='7'><li>outer<ul><li>inner</li></ul></li></ol></blockquote><pre><code>"
+                        + "  *literal* $x$ &lt;b&gt;\n"
+                        + "\tend</code></pre><table><thead><tr><th align='left'>H</th><th"
+                        + " align='center'>J</th><th"
+                        + " align='right'>K</th></tr></thead><tbody><tr><td>*cell*</td><td><b>bold</b></td><td>body</td></tr></tbody><tfoot><tr><td>foot</td><td></td><td>end</td></tr></tfoot></table></section>\n\n"
+                        + "tail";
         for (boolean bytes : new boolean[] {false, true}) {
             DocumentContent doc = checked(blocks, bytes);
             List<DocumentContent.Block> headings =
@@ -315,10 +562,10 @@ public final class MarkdownTableHtmlScenario extends TestApplication {
         }
         String source =
                 "<p>中😀 A&amp;B &#x1F600; <a href='../next?a=1&amp;b=2' title='go'>link</a><img"
-                    + " src='asset.png?a=1&amp;b=2' alt='A&amp;B' title='pic' width='37'"
-                    + " height='19'><img src='other.png' width='bad' height='-2'"
-                    + " data-ignored='v'><unknown>readable</unknown><script>hidden-js</script><style>hidden-css</style></p>\r\n\r\n"
-                    + "tail";
+                        + " src='asset.png?a=1&amp;b=2' alt='A&amp;B' title='pic' width='37'"
+                        + " height='19'><img src='other.png' width='bad' height='-2'"
+                        + " data-ignored='v'><unknown>readable</unknown><script>hidden-js</script><style>hidden-css</style></p>\r\n\r\n"
+                        + "tail";
         for (boolean bytes : new boolean[] {false, true}) {
             DocumentContent doc = checked(source, bytes);
             TextContent.Resolved r = doc.blocks().get(0).paragraph.resolve(BASE);

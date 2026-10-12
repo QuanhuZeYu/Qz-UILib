@@ -102,7 +102,9 @@ public final class MarkdownAdapter {
     }
 
     public DocumentContent parse() {
-        Map<Integer, Integer> complete = MathSyntax.completePairs(raw, lines);
+        FrontMatter frontMatter = FrontMatter.read(input, lines, diagnostics);
+        String markdown = frontMatter == null ? raw : frontMatter.masked;
+        Map<Integer, Integer> complete = MathSyntax.completePairs(markdown, lines);
         Parser parser =
                 Parser.builder()
                         .includeSourceSpans(IncludeSourceSpans.BLOCKS_AND_INLINES)
@@ -116,8 +118,11 @@ public final class MarkdownAdapter {
                                 context -> tableInlineParser(MathSyntax.inlineParser(context)))
                         .customBlockParserFactory(new MathSyntax.BlockFactory(lines, complete))
                         .build();
-        Node document = parser.parse(raw);
-        return new DocumentContent(blocks(document), input, diagnostics);
+        Node document = parser.parse(markdown);
+        List<DocumentContent.Block> content = new ArrayList<>();
+        if (frontMatter != null) content.addAll(frontMatter.blocks);
+        content.addAll(blocks(document));
+        return new DocumentContent(content, input, diagnostics);
     }
 
     private List<DocumentContent.Block> blocks(Node parent) {

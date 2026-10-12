@@ -270,10 +270,10 @@ final class UsageScenarios {
 
     private static String article(boolean english) {
         return (english
-                        ? "# Workshop guide\n\n"
+                        ? "---\nCategory: Workshop\nStatus: Ready\n---\n\n# Workshop guide\n\n"
                               + "A production batch combines **materials**, calculations and"
                               + " operator instructions. "
-                        : "# 工坊使用说明\n\n一份生产任务同时包含**材料**、计算和操作指引。")
+                        : "---\n分类: 工坊\n状态: 已确认\n---\n\n# 工坊使用说明\n\n一份生产任务同时包含**材料**、计算和操作指引。")
                 + "![工坊示意图](illustration)\n\n"
                 + (english ? "For two inputs per batch: " : "每批需要两份材料，批次数与总需求的关系为：")
                 + "[$N=2b$](checklist)\n\n"
@@ -310,7 +310,7 @@ final class UsageScenarios {
     private static String steps(TestGallery.Page page) {
         switch (page) {
             case ARTICLE:
-                return "操作：切换语言、字号与阅读宽度，查看表格和 HTML 备注，再点击文中链接。预期：同一文章重排，表格列对齐与链接位置一致，超宽内容仅在表格内滚动。";
+                return "操作：切换语言、字号与阅读宽度，查看文章元数据、表格和 HTML 备注，再点击文中链接。预期：同一文章重排，表格列对齐与链接位置一致，超宽内容仅在表格内滚动。";
             case DETAILS:
                 return "操作：切换制作批次。预期：材料数量、产出、公式与图标同步更新；切页回来仍保留批次。";
             case MESSAGES:
