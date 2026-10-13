@@ -7,6 +7,10 @@ public final class SceneEditEvent {
     public enum Command {
         LEFT,
         RIGHT,
+        WORD_LEFT,
+        WORD_RIGHT,
+        WORD_BACKSPACE,
+        WORD_DELETE,
         HOME,
         END,
         BACKSPACE,

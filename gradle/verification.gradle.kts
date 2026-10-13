@@ -326,6 +326,11 @@ val bidiEditingScenario = registerTestApplication("bidiEditingScenario", "真实
     classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + coreContentRuntime
 }
 tasks.named("check") { dependsOn(bidiEditingScenario) }
+val wordEditingScenario = registerTestApplication("wordEditingScenario", "共同词级页面输入历史语言profile及真实字体显露", "club.heiqi.uilib.ui.scene.integration.WordEditingScenario") {
+    dependsOn(tasks.named("testClasses"))
+    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + coreContentRuntime
+}
+tasks.named("check") { dependsOn(wordEditingScenario) }
 val fontTextScenario = registerTestApplication("fontTextScenario", "真实共享Unicode/Bidi/复杂脚本与Emoji17全量候选匹配", "club.heiqi.uilib.ui.scene.integration.FontTextScenario") {
     dependsOn(tasks.named("testClasses"))
     classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + coreContentRuntime

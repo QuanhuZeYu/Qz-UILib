@@ -317,7 +317,7 @@ public final class SceneTextArea {
             if (event.command == null) return false;
             if (before.composing && !locked && event.command != SceneEditEvent.Command.ESCAPE)
                 return true;
-            if (commands.command(before, event, this::resetNavigation)) return true;
+            if (commands.command(before, event, this::resetNavigation, node.textPolicy().language)) return true;
             switch (event.command) {
                 case UP:
                     vertical(before, -1, event.shift);

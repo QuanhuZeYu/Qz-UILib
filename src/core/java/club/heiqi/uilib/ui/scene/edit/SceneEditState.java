@@ -221,6 +221,39 @@ public final class SceneEditState {
         select(extend ? s.anchor : target, target, rules);
     }
 
+    /** 按当次语言和当前字素 profile 移动；已有选区仅沿方向折叠。 */
+    public void moveWord(int direction, boolean extend, String language) {
+        domain.checkWrite();
+        if (direction != -1 && direction != 1)
+            throw new IllegalArgumentException("direction 必须是 -1 或 1");
+        UnicodeGraphemes.Profile rules = profile();
+        Snapshot s = aligned(value.get(), rules);
+        int target = !extend && s.anchor != s.caret
+                ? direction < 0 ? Math.min(s.anchor, s.caret) : Math.max(s.anchor, s.caret)
+                : club.heiqi.uilib.ui.scene.text.unicode.UnicodeWords.target(
+                        s.text, s.caret, direction, language, rules);
+        select(extend ? s.anchor : target, target, rules);
+    }
+
+    /** 一次词删除自成历史步骤；原选区的 anchor/caret 由共同历史完整保留。 */
+    public void deleteWord(int direction, String language) {
+        domain.checkWrite();
+        if (direction != -1 && direction != 1)
+            throw new IllegalArgumentException("direction 必须是 -1 或 1");
+        UnicodeGraphemes.Profile rules = profile();
+        Snapshot s = aligned(value.get(), rules);
+        groupKind = Kind.NONE;
+        int start = Math.min(s.anchor, s.caret), end = Math.max(s.anchor, s.caret);
+        if (start == end) {
+            int target = club.heiqi.uilib.ui.scene.text.unicode.UnicodeWords.target(
+                    s.text, s.caret, direction, language, rules);
+            start = Math.min(start, target);
+            end = Math.max(end, target);
+        }
+        replace(s, start, end, "", Kind.NONE, rules);
+        groupKind = Kind.NONE;
+    }
+
     public void home(boolean extend) {
         domain.checkWrite();
         Snapshot s = value.get();

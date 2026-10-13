@@ -259,7 +259,7 @@ public final class SceneTextField {
             // 真实组字期间方向/删除/空格等候选键归IME；不同时修改已确认草稿或提交字段。
             if (before.composing && !locked && event.command != SceneEditEvent.Command.ESCAPE)
                 return true;
-            if (commands.command(before, event, this::resetBoundary)) return true;
+            if (commands.command(before, event, this::resetBoundary, node.textPolicy().language)) return true;
             switch (event.command) {
                 case LEFT:
                     resetBoundary();

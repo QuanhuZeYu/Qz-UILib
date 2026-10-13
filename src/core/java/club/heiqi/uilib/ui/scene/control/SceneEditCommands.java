@@ -76,9 +76,23 @@ final class SceneEditCommands {
             onSubmit.accept(state.request(true));
     }
 
-    boolean command(Snapshot before, SceneEditEvent event, Runnable beforeMutation) {
+    boolean command(Snapshot before, SceneEditEvent event, Runnable beforeMutation, String language) {
         boolean locked = readOnly.get();
         switch (event.command) {
+            case WORD_LEFT:
+            case WORD_RIGHT:
+                beforeMutation.run();
+                state.moveWord(event.command == SceneEditEvent.Command.WORD_LEFT ? -1 : 1,
+                        event.shift, language);
+                return true;
+            case WORD_BACKSPACE:
+            case WORD_DELETE:
+                if (locked) return true;
+                beforeMutation.run();
+                state.deleteWord(event.command == SceneEditEvent.Command.WORD_BACKSPACE ? -1 : 1,
+                        language);
+                inputChanged(before);
+                return true;
             case COPY:
                 copy(before, event);
                 return true;

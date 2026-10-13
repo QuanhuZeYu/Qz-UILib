@@ -313,6 +313,10 @@ public class MinecraftSceneScreen extends GuiScreen {
             }
             if (leftCtrl || rightCtrl)
                 switch (key) {
+                case Keyboard.KEY_LEFT: command = club.heiqi.uilib.ui.scene.input.SceneEditEvent.Command.WORD_LEFT; break;
+                case Keyboard.KEY_RIGHT: command = club.heiqi.uilib.ui.scene.input.SceneEditEvent.Command.WORD_RIGHT; break;
+                case Keyboard.KEY_BACK: command = club.heiqi.uilib.ui.scene.input.SceneEditEvent.Command.WORD_BACKSPACE; break;
+                case Keyboard.KEY_DELETE: command = club.heiqi.uilib.ui.scene.input.SceneEditEvent.Command.WORD_DELETE; break;
                     case Keyboard.KEY_HOME:
                         command = club.heiqi.uilib.ui.scene.input.SceneEditEvent.Command.DOCUMENT_HOME;
                         break;

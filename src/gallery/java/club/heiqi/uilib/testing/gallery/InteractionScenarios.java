@@ -80,7 +80,7 @@ final class InteractionScenarios {
     private static SceneNode editing(ScenePageContext context, ReadableSignal<SceneTheme> theme) {
         SceneNode page = page();
         title(page, context, theme, TestGallery.Page.EDITING.title, 26);
-        guide(page, context, theme, "把交接文字当作真实草稿编辑。单行 Enter 请求交接；多行 Enter 换行，Ctrl+Enter 请求交接。Tab / Shift+Tab 导航，Shift+方向键或拖动扩展选区，Ctrl+A 全选。Ctrl+C / X / V 使用宿主剪贴板，Ctrl+Z 撤销，Ctrl+Y 或 Ctrl+Shift+Z 重做（以宿主映射为准）。");
+        guide(page, context, theme, "把交接文字当作真实草稿编辑。单行 Enter 请求交接；多行 Enter 换行，Ctrl+Enter 请求交接。Tab / Shift+Tab 导航，Shift+方向键或拖动扩展选区，Ctrl+A 全选。Ctrl+左右按当前语言的词段移动，Ctrl+Shift+左右扩选；Ctrl+Backspace / Delete 删除前 / 后词段，每次词删除独立撤销。Ctrl+C / X / V 使用宿主剪贴板，Ctrl+Z 撤销，Ctrl+Y 或 Ctrl+Shift+Z 重做（以宿主映射为准）。");
         guide(page, context, theme, "在 Unicode 样本中点击、选区、粘贴、左右移动并删除组合重音、旗帜和家庭 emoji：普通移动与删除应保持完整用户字符；双向文字的显示和点击由正式排版决定。单行粘贴去掉 CR/LF，多行保留换行和末尾空行。");
         guide(page, context, theme, "真实 IME：切到中文输入法，先组字再按 Enter。第一次 Enter 只确认候选字；组字结束后下一次 Enter 才按字段规则执行。此页不生成模拟组字；没有真实宿主 IME / 剪贴板时，相关操作只能记为未提供能力，不能据模板插入判为通过。");
 
