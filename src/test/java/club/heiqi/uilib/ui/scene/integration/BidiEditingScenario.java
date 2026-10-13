@@ -45,6 +45,8 @@ public final class BidiEditingScenario extends TestApplication {
         SceneNode field, outer, button;
         Signal<SceneTheme> theme;
         Signal<Boolean> readOnly;
+        Signal<SceneTextArea.TabMode> tabMode;
+        Signal<club.heiqi.uilib.ui.scene.text.TextPolicy> textPolicy;
         Signal<Integer> beforeHeight;
         final List<SceneEditState.Submission> submissions = new ArrayList<>();
         Page(String text, boolean multi) {
@@ -54,11 +56,14 @@ public final class BidiEditingScenario extends TestApplication {
                         base.panel, base.button, base.hover, base.pressed, base.focus,
                         base.disabled, base.disabledText, base.tooltip, base.tooltipText, 0, 0));
                 readOnly = domain.signal(false);
+                tabMode = domain.signal(SceneTextArea.TabMode.NAVIGATE);
+                textPolicy = domain.signal(club.heiqi.uilib.ui.scene.text.TextPolicy.NORMAL);
                 beforeHeight = domain.signal(0);
                 state = new SceneEditState(domain, text, multi ? SceneEditState.Mode.MULTI_LINE : SceneEditState.Mode.SINGLE_LINE);
-                field = (multi ? SceneTextArea.create(ctx, state, theme, readOnly, submissions::add)
+                field = (multi ? SceneTextArea.create(ctx, state, theme, readOnly, submissions::add, SceneTextField.SubmitPolicy.CONFIRM, tabMode)
                         : SceneTextField.create(ctx, state, theme, readOnly, submissions::add))
                         .size(Size.fill(1), Size.fixed(100));
+                if (multi) field.bind(club.heiqi.uilib.ui.scene.runtime.NodeBinding.value(textPolicy, SceneNode::textPolicy));
                 button = SceneButton.create(ctx, () -> "下一项", theme, () -> {});
                 outer = new SceneNode().size(Size.fill(1), Size.fixed(140)).scrollable(true)
                         .initialFocus(field)
@@ -269,7 +274,41 @@ public final class BidiEditingScenario extends TestApplication {
         p.session.close();
     }
 
+    private void tabGeometry() {
+        Page p = new Page("", true);
+        p.domain.execute(() -> p.tabMode.set(SceneTextArea.TabMode.INSERT_TAB));
+        p.session.editOrNavigate(SceneEditEvent.command(SceneEditEvent.Command.TAB, false, null), SceneNavigationEvent.NEXT);
+        p.session.frame();
+        require(p.snapshot().text.equals("\t") && p.snapshot().caret == 1, "正式页面Tab未保留原始U+0009");
+        require(p.cluster(0, 1).advance > 0, "自然制表位应有真实空格advance");
+        p.expectEdge(0, 1, false, "自然制表位caret");
+        p.visibleCaret();
+        int naturalX = p.caret().box.x;
+        p.domain.execute(() -> {
+            SceneTheme b = p.theme.get();
+            p.theme.set(new SceneTheme(b.textStyle.withEm(36), b.panel, b.button, b.hover,
+                    b.pressed, b.focus, b.disabled, b.disabledText, b.tooltip, b.tooltipText, 0, 0));
+        });
+        p.session.frame();
+        require(p.caret().box.x > naturalX, "自然制表位应随字号更新");
+        p.expectEdge(0, 1, false, "字号变化后的自然制表位caret");
+        p.visibleCaret();
+        p.domain.execute(() -> p.textPolicy.set(new club.heiqi.uilib.ui.scene.text.TextPolicy(
+                club.heiqi.uilib.ui.scene.text.TextPolicy.Direction.AUTO,
+                club.heiqi.uilib.ui.scene.text.TextPolicy.Wrap.NONE, "und", 160, 0)));
+        p.host.width = 90;
+        p.session.frame();
+        require(Math.abs(p.cluster(0, 1).advance - 160) < .01f, "动态tabSize未进入真实排版");
+        p.expectEdge(0, 1, false, "窄视口中显式制表位caret");
+        p.visibleCaret();
+        require(p.cluster(0, 1).x < 0, "宽制表位应沿共同几何横向显露caret");
+        require(p.snapshot().text.equals("\t") && p.snapshot().caret == 1 && p.submissions.isEmpty(),
+                "字号与制表位重排不能改草稿、caret或提交");
+        p.session.close();
+    }
+
     @Override protected void runTests() throws Exception {
+        scenario("Tab自然制表位字号及动态tabSize沿真实字体绘制显露", this::tabGeometry);
         scenario("单多行真实字体点击同offset换边拖选复制与Tab", this::boundaries);
         scenario("宽度字号重排和组字投影沿当前簇边定位", this::reflowAndProjection);
         scenario("真实视觉HomeEnd上下目标及RTL段落交界", this::visualNavigation);

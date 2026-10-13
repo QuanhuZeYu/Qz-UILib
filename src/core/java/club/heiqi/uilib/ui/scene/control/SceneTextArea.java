@@ -44,6 +44,12 @@ import club.heiqi.uilib.ui.scene.text.TextPolicy;
 public final class SceneTextArea {
     private SceneTextArea() {}
 
+    /** 多行 Tab 的编辑语义；制表位几何仍由节点 TextPolicy 决定。 */
+    public enum TabMode {
+        NAVIGATE,
+        INSERT_TAB
+    }
+
     public static SceneNode create(
             ScenePageContext context,
             SceneEditState state,
@@ -60,6 +66,18 @@ public final class SceneTextArea {
             ReadableSignal<Boolean> readOnly,
             Consumer<Submission> onSubmit,
             SubmitPolicy policy) {
+        return create(context, state, theme, readOnly, onSubmit, policy, () -> TabMode.NAVIGATE);
+    }
+
+    /** 动态选择 Tab 行为；Shift+Tab 始终交回范围导航，IME 仍优先消费。 */
+    public static SceneNode create(
+            ScenePageContext context,
+            SceneEditState state,
+            ReadableSignal<SceneTheme> theme,
+            ReadableSignal<Boolean> readOnly,
+            Consumer<Submission> onSubmit,
+            SubmitPolicy policy,
+            ReadableSignal<TabMode> tabMode) {
         Objects.requireNonNull(context, "context").domain().checkWrite();
         Objects.requireNonNull(state, "state");
         if (context.domain() != state.domain()) throw new IllegalArgumentException("字段与编辑状态必须同域");
@@ -71,7 +89,8 @@ public final class SceneTextArea {
                         Objects.requireNonNull(theme, "theme"),
                         Objects.requireNonNull(readOnly, "readOnly"),
                         Objects.requireNonNull(onSubmit, "onSubmit"),
-                        Objects.requireNonNull(policy, "policy"));
+                        Objects.requireNonNull(policy, "policy"),
+                        Objects.requireNonNull(tabMode, "tabMode"));
         SceneNode node =
                 new SceneNode()
                         .control(control)
@@ -100,6 +119,7 @@ public final class SceneTextArea {
         private final SceneEditState state;
         private final ReadableSignal<SceneTheme> theme;
         private final ReadableSignal<Boolean> readOnly;
+        private final ReadableSignal<TabMode> tabMode;
         private final SceneEditCommands commands;
         // 只通知呈现归属变化；不保存草稿、选区、会话或焦点权威。
         private final Signal<Boolean> viewChanged;
@@ -118,7 +138,9 @@ public final class SceneTextArea {
                 ReadableSignal<SceneTheme> theme,
                 ReadableSignal<Boolean> readOnly,
                 Consumer<Submission> onSubmit,
-                SubmitPolicy policy) {
+                SubmitPolicy policy,
+                ReadableSignal<TabMode> tabMode) {
+            this.tabMode = tabMode;
             this.state = state;
             this.theme = theme;
             this.readOnly = readOnly;
@@ -357,7 +379,12 @@ public final class SceneTextArea {
                 case ACTIVATE_ONLY:
                     break;
                 case TAB:
-                    return !locked && before.composing;
+                    if (locked || event.shift || tabMode.get() != TabMode.INSERT_TAB) return false;
+                    resetNavigation();
+                    // 原子编辑在前后结束输入组，制表符及随后普通输入各保留自己的撤销步骤。
+                    state.replaceSelection("\t", false);
+                    inputChanged(before);
+                    break;
                 case ESCAPE:
                     if (!before.composing) return false;
                     resetNavigation();

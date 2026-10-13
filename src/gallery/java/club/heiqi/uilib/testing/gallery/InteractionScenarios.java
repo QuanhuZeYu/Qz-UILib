@@ -123,6 +123,13 @@ final class InteractionScenarios {
                 ? "操作：修改文字后按 Enter 或请求交接，继续输入，再分别接受或拒绝旧交接。预期：旧请求如实记录结果，不改新草稿、选区或会话，也不更新当前已接受值。空白交接会被业务拒绝。"
                 : "操作：Enter 换行、上下移动、Home / End 到视觉行首尾，Ctrl+Home / End 到文档首尾；滚轮查看正文。预期：软换行不写入草稿，滚动不修改文字或选区，Ctrl+Enter 接受后完成本次编辑。");
         SceneNode actions = stack();
+        if (editor.state.mode() == SceneEditState.Mode.MULTI_LINE) {
+            guide(card, context, theme, "默认 Tab 导航；开启制表符输入后，在文字前后输入并按 Tab，或选择跨行文字再按 Tab。预期：插入一个制表符并保持焦点，撤销分别恢复后续输入、Tab、先前输入。Shift+Tab 到前一焦点，只读时 Tab 导航，IME 组字优先。切换字号后制表位与光标随排版更新。");
+            actions.add(editorAction(context, theme,
+                    () -> editor.tabMode.get() == SceneTextArea.TabMode.NAVIGATE ? "开启 Tab 制表符输入" : "恢复 Tab 焦点导航",
+                    () -> editor.tabMode.set(editor.tabMode.get() == SceneTextArea.TabMode.NAVIGATE
+                            ? SceneTextArea.TabMode.INSERT_TAB : SceneTextArea.TabMode.NAVIGATE), field));
+        }
         actions.add(editorAction(context, theme, () -> "请求交接", editor::submit, field)
                 .bind(NodeBinding.value(editor::canModify, SceneNode::enabled)));
         actions.add(editorAction(context, theme, () -> "插入 Unicode 模板（替换当前选区）",
@@ -204,6 +211,7 @@ final class InteractionScenarios {
         final SceneEditState state;
         final Signal<String> accepted, notice;
         final Signal<Boolean> readOnly, enabled, conflict;
+        final Signal<SceneTextArea.TabMode> tabMode;
         final Signal<Submission> last;
         final Signal<List<Submission>> requests;
         final boolean deferred;
@@ -213,6 +221,7 @@ final class InteractionScenarios {
             state = new SceneEditState(context.domain(), text, mode);
             accepted = context.domain().signal(text);
             notice = context.domain().signal("");
+            tabMode = context.domain().signal(SceneTextArea.TabMode.NAVIGATE);
             readOnly = context.domain().signal(false);
             enabled = context.domain().signal(true);
             conflict = context.domain().signal(false);
@@ -223,7 +232,7 @@ final class InteractionScenarios {
 
         SceneNode field(ScenePageContext context, ReadableSignal<SceneTheme> theme, SubmitPolicy policy) {
             SceneNode node = state.mode() == SceneEditState.Mode.MULTI_LINE
-                    ? SceneTextArea.create(context, state, theme, readOnly, this::receive, policy)
+                    ? SceneTextArea.create(context, state, theme, readOnly, this::receive, policy, tabMode)
                     : SceneTextField.create(context, state, theme, readOnly, this::receive, policy);
             node.bind(NodeBinding.value(enabled, SceneNode::enabled));
             if (state.mode() == SceneEditState.Mode.MULTI_LINE)

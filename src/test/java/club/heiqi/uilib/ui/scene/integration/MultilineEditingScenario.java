@@ -132,6 +132,7 @@ public final class MultilineEditingScenario extends TestApplication {
         final SceneEditState state;
         final List<Submission> submissions = new ArrayList<>();
         Signal<Boolean> readOnly, enabled;
+        Signal<SceneTextArea.TabMode> tabMode;
         SceneNode area, button, outer;
         final ScenePageSession session;
 
@@ -140,6 +141,10 @@ public final class MultilineEditingScenario extends TestApplication {
         }
 
         Page(String baseline, SceneTextField.SubmitPolicy policy) {
+            this(baseline, policy, false);
+        }
+
+        Page(String baseline, SceneTextField.SubmitPolicy policy, boolean explicitTabMode) {
             state = state(domain, baseline, Mode.MULTI_LINE);
             session =
                     ScenePageSession.open(
@@ -150,14 +155,10 @@ public final class MultilineEditingScenario extends TestApplication {
                                 readOnly = domain.signal(false);
                                 enabled = domain.signal(true);
                                 Signal<SceneTheme> theme = domain.signal(SceneTheme.light());
-                                area =
-                                        SceneTextArea.create(
-                                                        ctx,
-                                                        state,
-                                                        theme,
-                                                        readOnly,
-                                                        submissions::add,
-                                                        policy)
+                                tabMode = domain.signal(SceneTextArea.TabMode.NAVIGATE);
+                                area = (explicitTabMode
+                                        ? SceneTextArea.create(ctx, state, theme, readOnly, submissions::add, policy, tabMode)
+                                        : SceneTextArea.create(ctx, state, theme, readOnly, submissions::add, policy))
                                                 .size(Size.fill(1), Size.fixed(96))
                                                 .bind(
                                                         NodeBinding.value(
@@ -184,6 +185,17 @@ public final class MultilineEditingScenario extends TestApplication {
         void edit(SceneEditEvent event) {
             session.edit(event);
             session.frame();
+        }
+
+        void tab(boolean shift) {
+            session.editOrNavigate(SceneEditEvent.command(Command.TAB, shift, null),
+                    shift ? SceneNavigationEvent.PREVIOUS : SceneNavigationEvent.NEXT);
+            session.frame();
+        }
+
+        void focus(SceneNode expected) {
+            domain.execute(() -> require(session.runtime().focusRouter().focused().get() == expected,
+                    "Tab焦点与预期不符"));
         }
 
         void command(Command command) {
@@ -368,6 +380,7 @@ public final class MultilineEditingScenario extends TestApplication {
         scenario("大编辑区域的单项导航显露当前caret与嵌套祖先", this::navigationCaret);
         scenario("宽单行字段沿横向祖先显露实际caret", this::horizontalCaret);
         scenario("内部滚轮移开caret后正反Tab先显露正文再协调祖先", this::navigationAfterInternalScroll);
+        scenario("默认及动态Tab模式沿正式页面导航和原子历史", this::tabEditing);
         scenario("固定模式所有文本入口与接受历史保留LF", this::modeEntries);
         scenario("正式Area换行原子历史明确提交旧结果及IME候选消费", this::confirmAndIme);
         scenario("跨行剪贴板只读Tab与禁用释放不提交", this::clipboardAndEligibility);
@@ -525,6 +538,116 @@ public final class MultilineEditingScenario extends TestApplication {
         p.command(Command.CONFIRM);
         p.expect("ab\nc中文\n\n");
         require(p.submissions.size() == 2, "组字结束后Enter应换行");
+    }
+
+    private void tabEditing() {
+        Page legacy = new Page("原文");
+        legacy.tab(false);
+        legacy.focus(legacy.button);
+        legacy.tab(true);
+        legacy.focus(legacy.area);
+        legacy.expect("原文");
+        require(!legacy.snapshot().active && legacy.submissions.isEmpty(), "默认导航不应编辑或提交");
+
+        Page p = new Page("", SceneTextField.SubmitPolicy.CONFIRM, true);
+        p.tab(false);
+        p.focus(p.button);
+        p.tab(true);
+        p.domain.execute(() -> p.tabMode.set(SceneTextArea.TabMode.INSERT_TAB));
+        p.edit(SceneEditEvent.text("a"));
+        p.edit(SceneEditEvent.text("b"));
+        p.tab(false);
+        p.focus(p.area);
+        p.expect("ab\t");
+        require(p.snapshot().caret == 3 && p.snapshot().anchor == 3, "Tab后选区应折叠在制表符末尾");
+        p.edit(SceneEditEvent.text("c"));
+        p.edit(SceneEditEvent.text("d"));
+        p.command(Command.UNDO);
+        p.expect("ab\t");
+        p.command(Command.UNDO);
+        p.expect("ab");
+        p.command(Command.UNDO);
+        p.expect("");
+        p.command(Command.REDO);
+        p.command(Command.REDO);
+        p.command(Command.REDO);
+        p.expect("ab\tcd");
+        require(p.submissions.isEmpty(), "确认策略的Tab不能隐含提交");
+        p.domain.execute(() -> p.state.reset("first\nsecond"));
+        p.command(Command.SELECT_ALL);
+        Snapshot selected = p.snapshot();
+        p.tab(false);
+        p.expect("\t");
+        p.command(Command.UNDO);
+        p.expect("first\nsecond");
+        require(p.snapshot().anchor == selected.anchor && p.snapshot().caret == selected.caret,
+                "撤销Tab应恢复跨行选区");
+        p.command(Command.REDO);
+        p.expect("\t");
+        p.tab(true);
+        p.focus(p.button);
+        p.expect("\t");
+        p.session.navigation(SceneNavigationEvent.PREVIOUS);
+        p.session.frame();
+        p.domain.execute(() -> p.tabMode.set(SceneTextArea.TabMode.NAVIGATE));
+        p.tab(false);
+        p.focus(p.button);
+        p.session.navigation(SceneNavigationEvent.PREVIOUS);
+        p.session.frame();
+        p.domain.execute(() -> {
+            p.tabMode.set(SceneTextArea.TabMode.INSERT_TAB);
+            p.readOnly.set(true);
+        });
+        p.tab(false);
+        p.focus(p.button);
+        p.expect("\t");
+        p.session.navigation(SceneNavigationEvent.PREVIOUS);
+        p.session.frame();
+        p.domain.execute(() -> p.readOnly.set(false));
+        p.edit(SceneEditEvent.composition("候选", true));
+        p.tab(false);
+        p.tab(true);
+        p.focus(p.area);
+        require(p.snapshot().composing && p.snapshot().composition.equals("候选"), "IME优先消费两个方向Tab");
+        p.expect("\t");
+        require(p.submissions.isEmpty(), "只读导航及IME不应提交");
+
+        for (boolean reverse : new boolean[] {false, true}) {
+            Page same = new Page("\t", SceneTextField.SubmitPolicy.INPUT, true);
+            same.domain.execute(() -> same.tabMode.set(SceneTextArea.TabMode.INSERT_TAB));
+            if (reverse) {
+                same.command(Command.DOCUMENT_END);
+                same.command(Command.DOCUMENT_HOME, true);
+            } else same.command(Command.SELECT_ALL);
+            Snapshot beforeTab = same.snapshot();
+            same.tab(false);
+            same.focus(same.area);
+            same.expect("\t");
+            require(same.snapshot().anchor == 1 && same.snapshot().caret == 1,
+                    "同文Tab替换须折叠正反选区，不能让后续输入覆盖原Tab");
+            require(same.snapshot().revision == beforeTab.revision && !same.snapshot().active
+                    && same.submissions.isEmpty(), "同文Tab不应制造文本变更或提交");
+            same.edit(SceneEditEvent.text("x"));
+            same.expect("\tx");
+            same.command(Command.UNDO);
+            same.expect("\t");
+            same.command(Command.UNDO);
+            same.expect("\t");
+            require(same.snapshot().anchor == 1 && same.snapshot().caret == 1,
+                    "同文Tab不应另添选区历史步骤");
+        }
+
+        Page input = new Page("", SceneTextField.SubmitPolicy.INPUT, true);
+        input.domain.execute(() -> input.tabMode.set(SceneTextArea.TabMode.INSERT_TAB));
+        input.tab(false);
+        input.focus(input.area);
+        input.expect("\t");
+        require(input.submissions.size() == 1 && input.submissions.get(0).text.equals("\t"), "Tab须沿随输入政策请求接受");
+        input.domain.execute(() -> require(input.state.accept(input.submissions.get(0), "\t"), "随输入接受应有效"));
+        require(input.snapshot().active, "随输入接受不得结束编辑会话");
+        input.command(Command.UNDO);
+        input.expect("");
+        require(input.submissions.size() == 2 && input.submissions.get(1).text.isEmpty(), "撤销沿随输入政策提交新草稿");
     }
 
     private void clipboardAndEligibility() {

@@ -287,7 +287,11 @@ public final class SceneEditState {
         String next = s.text.substring(0, start) + insertion + s.text.substring(end);
         if (next.equals(s.text)) {
             if (kind == Kind.NONE || kind != groupKind) groupKind = Kind.NONE;
-            if (s != value.get()) value.set(s);
+            // 同文替换也完成选区折叠；沿 select 保留组字、错误及会话，不伪造文本修订或历史。
+            int caret = ceiling(rules.boundaries(next), start + insertion.length());
+            if (s != value.get() || s.anchor != caret || s.caret != caret)
+                value.set(new Snapshot(s.text, s.composition, s.error, caret, caret,
+                        s.active, s.composing, s.revision));
             return;
         }
         // 插入组合符或 ZWJ 后，插入尾部可能与后文合簇，光标向右对齐完整新簇。

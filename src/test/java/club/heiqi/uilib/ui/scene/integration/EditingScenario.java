@@ -238,6 +238,7 @@ public final class EditingScenario extends TestApplication {
         scenario("持键文字门与只读组字结束恢复选择导航", this::historyAndReadonlyComposition);
         scenario("未完成草稿及拒绝不改业务值，不因选择开启会话", this::draftAndRejection);
         scenario("旧异步结果记录原请求，重置同文及同代最新请求保持身份隔离", this::requestIdentity);
+        scenario("普通同文替换折叠完整字素选区且不伪造历史或会话", this::sameTextReplacement);
         scenario("完成规范化保留可用历史，随输入接受继续会话", this::normalizationHistory);
         scenario("外部值仅同步非活跃状态，关闭重开复用独立草稿", this::externalAndReopen);
         scenario("代理对组合符ZWJ整簇移动删除，连续输入删除与原子插入历史", this::unicodeAndHistory);
@@ -359,6 +360,28 @@ public final class EditingScenario extends TestApplication {
                                     && latest.status().get().status == Status.ACCEPTED,
                             "重复完成改写结果");
                 });
+    }
+
+    private void sameTextReplacement() {
+        ReactiveDomain d = ReactiveDomain.direct();
+        SceneEditState s = state(d, "Ae\u0301Z");
+        d.execute(() -> {
+            s.select(3, 1);
+            Snapshot before = s.snapshot().get();
+            s.replaceSelection("e\u0301");
+            Snapshot after = s.snapshot().get();
+            require(after.text.equals(before.text) && after.anchor == 3 && after.caret == 3,
+                    "同文替换应折叠到完整字素插入末尾");
+            require(after.revision == before.revision && !after.active, "同文替换不能伪造文本修订或会话");
+            s.replaceSelection("x");
+            require(s.text().get().equals("Ae\u0301xZ"), "同文替换后的普通输入应接续而非覆盖原文");
+            s.undo();
+            require(s.text().get().equals("Ae\u0301Z") && s.snapshot().get().caret == 3,
+                    "撤销普通输入应恢复折叠后的原文");
+            s.undo();
+            require(s.snapshot().get().anchor == 3 && s.snapshot().get().caret == 3,
+                    "同文替换不能另添选区历史步骤");
+        });
     }
 
     private void normalizationHistory() {
