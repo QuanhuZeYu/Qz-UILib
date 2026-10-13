@@ -1,6 +1,7 @@
 package club.heiqi.uilib.ui.scene.control;
 
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
+import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.edit.SceneCompositionTarget;
 import club.heiqi.uilib.ui.scene.edit.SceneEditState;
 import club.heiqi.uilib.ui.scene.edit.SceneEditState.Snapshot;
@@ -110,6 +111,8 @@ public final class SceneTextField {
         private int width = -1;
         private int offset;
         private boolean reveal;
+        private SceneCaretBoundary boundary;
+        private final Signal<Boolean> viewChanged;
 
         private Control(
                 SceneEditState state,
@@ -121,6 +124,7 @@ public final class SceneTextField {
             this.theme = theme;
             this.readOnly = readOnly;
             this.commands = new SceneEditCommands(state, readOnly, onSubmit, policy);
+            viewChanged = state.domain().signal(false);
         }
 
         @Override
@@ -130,7 +134,7 @@ public final class SceneTextField {
 
         @Override
         public List<ReadableSignal<?>> arrangementDependencies(SceneNode node) {
-            return Collections.singletonList(state.snapshot());
+            return java.util.Arrays.asList(state.snapshot(), viewChanged);
         }
 
         @Override
@@ -188,6 +192,10 @@ public final class SceneTextField {
                 SceneTextMeasurer text) {
             Snapshot next = state.snapshot().get();
             boolean changed = source != full;
+            int position = toDisplay(next, next.caret);
+            if (boundary != null && (boundary.position != position
+                    || !SceneCaretBoundary.sameProjection(presentation, next)
+                    || boundary.lineAt(full) < 0)) boundary = null;
             int maximum = Math.max(0, full.width - Math.max(0, innerWidth - 1));
             int nextOffset = Math.min(offset, maximum);
             // 光标/草稿/组字或真实排版区域变化各消费一次显露意图，不在稳定帧追滚动。
@@ -251,23 +259,28 @@ public final class SceneTextField {
             // 真实组字期间方向/删除/空格等候选键归IME；不同时修改已确认草稿或提交字段。
             if (before.composing && !locked && event.command != SceneEditEvent.Command.ESCAPE)
                 return true;
-            if (commands.command(before, event, () -> {})) return true;
+            if (commands.command(before, event, this::resetBoundary)) return true;
             switch (event.command) {
                 case LEFT:
+                    resetBoundary();
                     state.move(-1, event.shift);
                     break;
                 case RIGHT:
+                    resetBoundary();
                     state.move(1, event.shift);
                     break;
                 case DOCUMENT_HOME:
                 case HOME:
+                    resetBoundary();
                     state.home(event.shift);
                     break;
                 case DOCUMENT_END:
                 case END:
+                    resetBoundary();
                     state.end(event.shift);
                     break;
                 case SELECT_ALL:
+                    resetBoundary();
                     state.select(0, before.text.length());
                     break;
                 case SPACE:
@@ -316,13 +329,29 @@ public final class SceneTextField {
             SceneGeometryView.Entry entry = geometry.get(node);
             if (entry == null || entry.text != presented || presentation == null) return;
             LayoutBox inner = inner(entry.box, node.padding());
-            int position = fromDisplay(presentation, nearest(entry.text, event.x - inner.x));
+            SceneCaretBoundary hit = entry.text.lines().isEmpty() ? null
+                    : SceneCaretBoundary.nearest(entry.text.lines().get(0), event.x - inner.x);
+            if (hit == null) return;
+            int position = fromDisplay(presentation, hit.position);
             Snapshot current = state.snapshot().get();
             position = Math.max(0, Math.min(current.text.length(), position));
             // DOWN 起选，MOVE/UP 只沿父 owner 延伸；松开不会重选或再次请求焦点。
             state.select(
                     event.kind == ScenePointerEvent.Kind.DOWN ? position : current.anchor,
                     position);
+            boundary = hit;
+            requestReveal();
+        }
+
+        private void resetBoundary() {
+            boundary = null;
+            requestReveal();
+        }
+
+        private void requestReveal() {
+            reveal = true;
+            // 同UTF-16位置换视觉边也需要刷新，不依赖select是否发布新值。
+            viewChanged.set(!viewChanged.get());
         }
 
         @Override
@@ -433,49 +462,11 @@ public final class SceneTextField {
                 }
         }
 
-        private float edge(TextLayout.Cluster cluster, boolean start) {
-            return start ? cluster.leadingX() : cluster.trailingX();
-        }
-
         private float caretX(TextLayout text, int position) {
-            float bestX = 0;
-            int bestDistance = Integer.MAX_VALUE;
-            // 双向边界可能有两个合法位置：固定选首个源起边界，不伪造视觉 affinity 支持。
-            for (TextLayout.Line line : text.lines())
-                for (TextLayout.Cluster cluster : line.clusters()) {
-                    if (cluster.sourceStart == position) return edge(cluster, true);
-                    int distance = Math.abs(cluster.sourceStart - position);
-                    if (distance < bestDistance) {
-                        bestDistance = distance;
-                        bestX = edge(cluster, true);
-                    }
-                    distance = Math.abs(cluster.sourceEnd - position);
-                    if (distance < bestDistance) {
-                        bestDistance = distance;
-                        bestX = edge(cluster, false);
-                    }
-                }
-            return bestX;
+            return text.lines().isEmpty() ? 0
+                    : SceneCaretBoundary.caretX(text.lines().get(0), position, boundary);
         }
 
-        private int nearest(TextLayout text, float x) {
-            int position = 0;
-            float distance = Float.POSITIVE_INFINITY;
-            for (TextLayout.Line line : text.lines())
-                for (TextLayout.Cluster cluster : line.clusters()) {
-                    float delta = Math.abs(edge(cluster, true) - x);
-                    if (delta < distance) {
-                        distance = delta;
-                        position = cluster.sourceStart;
-                    }
-                    delta = Math.abs(edge(cluster, false) - x);
-                    if (delta < distance) {
-                        distance = delta;
-                        position = cluster.sourceEnd;
-                    }
-                }
-            return position;
-        }
     }
 
 

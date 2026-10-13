@@ -109,6 +109,7 @@ public final class SceneTextArea {
         private Snapshot presentation;
         private int width = -1, height = -1, offsetX, offsetY, paintedX = -1, paintedY = -1;
         private int affinity = -1, affinityPosition = -1;
+        private SceneCaretBoundary boundary;
         private float goalX = Float.NaN;
         private boolean reveal;
 
@@ -186,6 +187,13 @@ public final class SceneTextArea {
                 affinity = -1;
                 goalX = Float.NaN;
             }
+            if (boundary != null && (boundary.position != position
+                    || !SceneCaretBoundary.sameProjection(presentation, next))) boundary = null;
+            if (boundary != null) {
+                int selectedLine = boundary.lineAt(full);
+                if (selectedLine >= 0) affinity = selectedLine;
+                else boundary = null;
+            }
             int lineIndex = editing.lineAt(position, affinity);
             int maximumX = maximumX(full, innerWidth), maximumY = maximumY(full, innerHeight);
             offsetX = clamp(offsetX, maximumX);
@@ -201,7 +209,7 @@ public final class SceneTextArea {
                     || next.composing && presentation.anchor != next.anchor) {
                 if (lineIndex >= 0) {
                     TextLayout.Line line = full.lines().get(lineIndex);
-                    float x = editing.caretX(lineIndex, position);
+                    float x = editing.caretX(lineIndex, position, boundary);
                     if (x < offsetX) offsetX = (int) Math.floor(x);
                     if (x > offsetX + Math.max(0, innerWidth - 1))
                         offsetX = (int) Math.ceil(x - Math.max(0, innerWidth - 1));
@@ -366,7 +374,7 @@ public final class SceneTextArea {
             int position = toDisplay(before, before.caret);
             int line = editing.lineAt(position, affinityPosition == position ? affinity : -1);
             if (line < 0) return;
-            if (Float.isNaN(goalX)) goalX = editing.caretX(line, position);
+            if (Float.isNaN(goalX)) goalX = editing.caretX(line, position, boundary);
             int target = Math.max(0, Math.min(editing.text.lines().size() - 1, line + direction));
             selectVisual(before, target, editing.nearest(target, goalX), extend);
         }
@@ -376,13 +384,15 @@ public final class SceneTextArea {
             if (editing == null) return;
             int position = toDisplay(before, before.caret);
             int line = editing.lineAt(position, affinityPosition == position ? affinity : -1);
-            if (line >= 0) selectVisual(before, line, editing.visualEnd(line, right), extend);
+            if (line >= 0) selectVisual(before, line,
+                    editing.visualEnd(line, right), extend);
         }
 
-        private void selectVisual(Snapshot before, int line, int displayPosition, boolean extend) {
-            int position = fromDisplay(before, displayPosition);
+        private void selectVisual(Snapshot before, int line, SceneCaretBoundary hit, boolean extend) {
+            int position = fromDisplay(before, hit.position);
             state.select(extend ? before.anchor : position, position);
             affinity = line;
+            boundary = hit;
             affinityPosition = toDisplay(state.snapshot().get(), state.snapshot().get().caret);
             requestReveal();
         }
@@ -391,6 +401,7 @@ public final class SceneTextArea {
             goalX = Float.NaN;
             affinity = -1;
             affinityPosition = -1;
+            boundary = null;
         }
 
         private void requestReveal() {
@@ -406,7 +417,7 @@ public final class SceneTextArea {
         @Override
         public void focusChanged(SceneNode node, boolean focused, boolean eligible) {
             if (focused) return;
-            resetNavigation();
+            goalX = Float.NaN;
             commands.blur(eligible);
         }
 
@@ -423,13 +434,14 @@ public final class SceneTextArea {
             int line = editing.lineAtY(event.y - inner.y + offsetY);
             if (line < 0) return;
             resetNavigation();
-            int position =
-                    fromDisplay(presentation, editing.nearest(line, event.x - inner.x + offsetX));
+            SceneCaretBoundary hit = editing.nearest(line, event.x - inner.x + offsetX);
+            int position = fromDisplay(presentation, hit.position);
             Snapshot current = state.snapshot().get();
             state.select(
                     event.kind == ScenePointerEvent.Kind.DOWN ? position : current.anchor,
                     position);
             affinity = line;
+            boundary = hit;
             affinityPosition = toDisplay(state.snapshot().get(), state.snapshot().get().caret);
             requestReveal();
         }
@@ -510,7 +522,7 @@ public final class SceneTextArea {
             LayoutBox inner = inner(entry.box, entry.node.padding());
             TextLayout.Line line = presented.lines().get(index);
             return new LayoutBox(
-                    inner.x + (int) Math.floor(editing.caretX(index, position) - offsetX),
+                    inner.x + (int) Math.floor(editing.caretX(index, position, boundary) - offsetX),
                     inner.y + line.y,
                     1,
                     Math.max(0, (int) Math.ceil(line.lineHeight)));

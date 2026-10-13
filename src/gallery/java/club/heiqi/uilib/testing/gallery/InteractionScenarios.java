@@ -84,6 +84,18 @@ final class InteractionScenarios {
         guide(page, context, theme, "在 Unicode 样本中点击、选区、粘贴、左右移动并删除组合重音、旗帜和家庭 emoji：普通移动与删除应保持完整用户字符；双向文字的显示和点击由正式排版决定。单行粘贴去掉 CR/LF，多行保留换行和末尾空行。");
         guide(page, context, theme, "真实 IME：切到中文输入法，先组字再按 Enter。第一次 Enter 只确认候选字；组字结束后下一次 Enter 才按字段规则执行。此页不生成模拟组字；没有真实宿主 IME / 剪贴板时，相关操作只能记为未提供能力，不能据模板插入判为通过。");
 
+        SceneNode mixed = GalleryStyle.card(theme);
+        title(mixed, context, theme, "方向交界定位", 20);
+        guide(mixed, context, theme, "点击 abc 与 אבג / العربية 的空格交界，再向左拖选 abc 并复制；光标应留在所点边界，复制得到逻辑原文。用 Tab / Shift+Tab 返回字段，改变窗口宽度后再操作。单行 Enter 请求确认，多行 Enter 换行。");
+        SceneEditState mixedSingle = new SceneEditState(context.domain(), "abc אבג def · abc العربية def");
+        SceneEditState mixedMulti = new SceneEditState(context.domain(),
+                "abc אבג def\nאבג abc דהו\nabc العربية def", SceneEditState.Mode.MULTI_LINE);
+        mixed.add(SceneTextField.create(context, mixedSingle, theme, () -> false,
+                request -> mixedSingle.accept(request, request.text)));
+        mixed.add(SceneTextArea.create(context, mixedMulti, theme, () -> false,
+                request -> mixedMulti.accept(request, request.text)).size(Size.fill(1), Size.fixed(110)));
+        page.add(GalleryStyle.frame(mixed, theme));
+
         Editor single = new Editor(context, UNICODE, SceneEditState.Mode.SINGLE_LINE, true);
         page.add(editorCard(context, theme, "延迟交接与外部修改", single, SubmitPolicy.CONFIRM));
         Editor notes = new Editor(context,

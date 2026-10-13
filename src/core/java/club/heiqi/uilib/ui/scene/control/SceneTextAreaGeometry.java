@@ -95,60 +95,28 @@ final class SceneTextAreaGeometry {
     }
 
     float caretX(int index, int position) {
-        TextLayout.Line line = text.lines().get(index);
-        float best = line.x;
-        int distance = Integer.MAX_VALUE;
-        for (TextLayout.Cluster cluster : line.clusters()) {
-            if (cluster.sourceStart == position) return edge(index, cluster, true);
-            int delta = Math.abs(position - cluster.sourceStart);
-            if (delta < distance) {
-                distance = delta;
-                best = edge(index, cluster, true);
-            }
-            delta = Math.abs(position - cluster.sourceEnd);
-            if (delta < distance) {
-                distance = delta;
-                best = edge(index, cluster, false);
-            }
-        }
-        return best;
+        return caretX(index, position, null);
     }
 
-    int nearest(int index, float x) {
-        TextLayout.Line line = text.lines().get(index);
-        int position = line.sourceStart;
-        float distance = Float.POSITIVE_INFINITY;
-        for (TextLayout.Cluster cluster : line.clusters()) {
-            float delta = Math.abs(edge(index, cluster, true) - x);
-            if (delta < distance) {
-                distance = delta;
-                position = cluster.sourceStart;
-            }
-            delta = Math.abs(edge(index, cluster, false) - x);
-            if (delta < distance) {
-                distance = delta;
-                position = cluster.sourceEnd;
-            }
-        }
-        return position;
+    float caretX(int index, int position, SceneCaretBoundary boundary) {
+        return SceneCaretBoundary.caretX(text.lines().get(index), position, boundary);
     }
 
-    int visualEnd(int index, boolean right) {
+    SceneCaretBoundary nearest(int index, float x) {
+        return SceneCaretBoundary.nearest(text.lines().get(index), x);
+    }
+
+    SceneCaretBoundary visualEnd(int index, boolean right) {
         TextLayout.Line line = text.lines().get(index);
-        float edge = right ? Float.NEGATIVE_INFINITY : Float.POSITIVE_INFINITY;
-        int position = line.sourceStart;
+        float x = line.x;
+        boolean first = true;
         for (TextLayout.Cluster cluster : line.clusters()) {
-            float start = edge(index, cluster, true), end = edge(index, cluster, false);
-            if (right ? start > edge : start < edge) {
-                edge = start;
-                position = cluster.sourceStart;
-            }
-            if (right ? end > edge : end < edge) {
-                edge = end;
-                position = cluster.sourceEnd;
-            }
+            float edge = right ? Math.max(cluster.leadingX(), cluster.trailingX())
+                    : Math.min(cluster.leadingX(), cluster.trailingX());
+            if (first || (right ? edge > x : edge < x)) x = edge;
+            first = false;
         }
-        return position;
+        return nearest(index, x);
     }
 
     boolean paragraphRtl(int index) {

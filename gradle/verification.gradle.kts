@@ -321,6 +321,11 @@ val glyphPipelineScenario = registerTestApplication("glyphPipelineScenario", "�
     classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + coreContentRuntime
     args(layout.buildDirectory.dir("font-machine/glyph").get().asFile.absolutePath)
 }
+val bidiEditingScenario = registerTestApplication("bidiEditingScenario", "真实字体单多行指针到caret方向归属与显露回归", "club.heiqi.uilib.ui.scene.integration.BidiEditingScenario") {
+    dependsOn(tasks.named("testClasses"))
+    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + coreContentRuntime
+}
+tasks.named("check") { dependsOn(bidiEditingScenario) }
 val fontTextScenario = registerTestApplication("fontTextScenario", "真实共享Unicode/Bidi/复杂脚本与Emoji17全量候选匹配", "club.heiqi.uilib.ui.scene.integration.FontTextScenario") {
     dependsOn(tasks.named("testClasses"))
     classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + coreContentRuntime
