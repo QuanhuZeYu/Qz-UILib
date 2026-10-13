@@ -164,7 +164,7 @@ public final class TestGallery implements ScenePage {
         root.add(
                 GalleryStyle.label(
                         context, () -> "把文字、公式、图片与交互放回实际工作流。选择一个场景开始。", theme, 15, true));
-        SceneNode grid = GalleryStyle.grid();
+        SceneNode grid = GalleryStyle.grid(context, theme);
         for (Page id : Page.values())
             if (id != Page.HOME) {
                 SceneNode card = GalleryStyle.card(theme);
@@ -207,35 +207,6 @@ public final class TestGallery implements ScenePage {
             return new MeasuredSize(width, height);
         }
 
-        private ChildPlacements prepared;
-
-        // 正式引擎在arrange前调用presentText并提供本次最终约束，结果仅供紧邻排列消费。
-        @Override
-        public club.heiqi.uilib.ui.scene.text.TextLayout presentText(
-                SceneNode node,
-                club.heiqi.uilib.ui.scene.text.TextLayout full,
-                int width,
-                int height,
-                SceneTextMeasurer text,
-                SceneChildMeasurer children) {
-            List<ChildPlacements.Entry> placed = new ArrayList<>();
-            for (SceneNode child : node.children())
-                if (child.visible()) {
-                    MeasuredSize measured =
-                            children.measureChild(child, new Constraints(width, height));
-                    placed.add(
-                            new ChildPlacements.Entry(
-                                    child,
-                                    new LayoutBox(
-                                            0,
-                                            0,
-                                            resolve(child.width(), width, measured.width),
-                                            resolve(child.height(), height, measured.height))));
-                }
-            prepared = new ChildPlacements(placed);
-            return full;
-        }
-
         private static int resolve(Size size, int available, int natural) {
             return size.constrain(
                     size.mode == Size.Mode.FIXED
@@ -244,10 +215,19 @@ public final class TestGallery implements ScenePage {
         }
 
         @Override
-        public ChildPlacements arrange(SceneNode node, LayoutBox allocated) {
-            ChildPlacements result = prepared;
-            prepared = null;
-            return result;
+        public ChildPlacements arrange(SceneNode node, LayoutBox allocated, SceneChildMeasurer children) {
+            int padding = node.padding();
+            int width = Math.max(0, allocated.width - padding * 2);
+            int height = Math.max(0, allocated.height - padding * 2);
+            List<ChildPlacements.Entry> placed = new ArrayList<>();
+            for (SceneNode child : node.children())
+                if (child.visible()) {
+                    MeasuredSize measured = children.measureChild(child, new Constraints(width, height));
+                    placed.add(new ChildPlacements.Entry(child, new LayoutBox(padding, padding,
+                            resolve(child.width(), width, measured.width),
+                            resolve(child.height(), height, measured.height))));
+                }
+            return new ChildPlacements(placed);
         }
 
         @Override

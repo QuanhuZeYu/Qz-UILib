@@ -7,6 +7,7 @@ import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.MeasuredSize;
 import club.heiqi.uilib.ui.scene.layout.ChildPlacements;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
+import club.heiqi.uilib.ui.scene.layout.SceneChildMeasurer;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometryView;
 import club.heiqi.uilib.ui.scene.paint.PaintPlanBuilder;
 import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
@@ -33,7 +34,7 @@ public final class FocusInputScenario extends TestApplication {
         public MeasuredSize measure(SceneNode node, Constraints constraints, SceneTextMeasurer text) {
             return new MeasuredSize(1, 1);
         }
-        public ChildPlacements arrange(SceneNode node, LayoutBox box) {
+        public ChildPlacements arrange(SceneNode node, LayoutBox box, SceneChildMeasurer childMeasurer) {
             return new ChildPlacements(Collections.emptyList());
         }
         public void paint(SceneNode node, SceneGeometryView geometry, PaintPlanBuilder target) {}

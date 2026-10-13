@@ -433,7 +433,7 @@ public final class SceneDocument {
         }
 
         @Override
-        public ChildPlacements arrange(SceneNode node, LayoutBox box) {
+        public ChildPlacements arrange(SceneNode node, LayoutBox box, SceneChildMeasurer childMeasurer) {
             if (node.padding() == 0) return new ChildPlacements(placements);
             List<ChildPlacements.Entry> padded = new ArrayList<>();
             for (ChildPlacements.Entry placement : placements) {

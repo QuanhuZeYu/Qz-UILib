@@ -7,6 +7,7 @@ import club.heiqi.uilib.ui.scene.control.SceneControl;
 import club.heiqi.uilib.ui.scene.layout.ChildPlacements;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
+import club.heiqi.uilib.ui.scene.layout.SceneChildMeasurer;
 import club.heiqi.uilib.ui.scene.layout.MeasuredSize;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometryView;
 import club.heiqi.uilib.ui.scene.paint.PaintPlanBuilder;
@@ -476,7 +477,7 @@ public final class PageSessionScenario extends TestApplication {
                                                                                         SceneNode
                                                                                                 node,
                                                                                         LayoutBox
-                                                                                                allocated) {
+                                                                                                allocated, SceneChildMeasurer childMeasurer) {
                                                                             return new ChildPlacements(
                                                                                     Collections
                                                                                             .singletonList(

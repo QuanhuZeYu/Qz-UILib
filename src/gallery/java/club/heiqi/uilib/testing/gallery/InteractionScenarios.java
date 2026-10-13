@@ -500,7 +500,7 @@ final class InteractionScenarios {
         card.add(editorAction(context, theme, () -> rightEnabled.get() ? "禁用完成列" : "启用完成列",
                 () -> rightEnabled.set(!rightEnabled.get()), moving));
         card.add(GalleryStyle.label(context, () -> "交接卡位于：" + (destination.get() == left ? "待办列" : "完成列"), theme, 13, true));
-        card.add(GalleryStyle.grid().add(GalleryStyle.frame(left, theme)).add(GalleryStyle.frame(right, theme)));
+        card.add(GalleryStyle.grid(context, theme).add(GalleryStyle.frame(left, theme)).add(GalleryStyle.frame(right, theme)));
         return GalleryStyle.frame(card, theme);
     }
 
@@ -580,7 +580,7 @@ final class InteractionScenarios {
             }
             return new MeasuredSize(width, height);
         }
-        @Override public ChildPlacements arrange(SceneNode node, LayoutBox allocated) {
+        @Override public ChildPlacements arrange(SceneNode node, LayoutBox allocated, SceneChildMeasurer childMeasurer) {
             List<ChildPlacements.Entry> placed = new ArrayList<>();
             for (SceneNode child : node.children()) if (child.visible())
                 placed.add(new ChildPlacements.Entry(child, new LayoutBox(0, 0, allocated.width, allocated.height)));

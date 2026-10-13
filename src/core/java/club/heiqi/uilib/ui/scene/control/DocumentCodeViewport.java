@@ -75,7 +75,7 @@ final class DocumentCodeViewport implements SceneControl {
     }
 
     @Override
-    public ChildPlacements arrange(SceneNode node, LayoutBox box) {
+    public ChildPlacements arrange(SceneNode node, LayoutBox box, SceneChildMeasurer childMeasurer) {
         ChildPlacements result = prepared;
         prepared = null;
         return result;

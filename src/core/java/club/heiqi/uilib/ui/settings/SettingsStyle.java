@@ -22,7 +22,6 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintShapes;
 import club.heiqi.uilib.ui.scene.paint.PaintPlanBuilder;
 import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
-import club.heiqi.uilib.ui.scene.text.TextLayout;
 import club.heiqi.uilib.ui.scene.text.TextStyle;
 
 /** 配置工作区的局部视觉词汇；仅测量、排列与PaintPlan装饰，输入仍由标准控件处理。 */
@@ -89,25 +88,32 @@ final class SettingsStyle {
         return new SceneNode().size(Size.fill(1), Size.fixed(1))
                 .bind(club.heiqi.uilib.ui.scene.runtime.NodeBinding.value(p, (n,v) -> n.background(v.border)));
     }
-    private static final class Prepared {
+    private static final class LayoutResult {
         final MeasuredSize size;
         final ChildPlacements children;
-        Prepared(int width, int height, List<ChildPlacements.Entry> children) {
+        LayoutResult(int width, int height, List<ChildPlacements.Entry> children) {
             size = new MeasuredSize(Math.max(0, width), Math.max(0, height));
             this.children = new ChildPlacements(children);
         }
     }
     /** 最终宽度下重新消费正式子测量；不读取宿主尺寸，也不布局后回写节点声明。 */
     private abstract static class Arrangement implements SceneControl {
-        private ChildPlacements prepared;
-        abstract Prepared layout(SceneNode node, Constraints limits, SceneChildMeasurer children);
+        abstract LayoutResult layout(SceneNode node, Constraints limits, SceneChildMeasurer children);
         @Override public MeasuredSize measure(SceneNode n, Constraints c, SceneTextMeasurer t) { return new MeasuredSize(0,0); }
         @Override public MeasuredSize measure(SceneNode n, Constraints c, SceneTextMeasurer t, SceneChildMeasurer m) { return layout(n,c,m).size; }
-        @Override public TextLayout presentText(SceneNode n, TextLayout full, int w, int h, SceneTextMeasurer t, SceneChildMeasurer m) {
-            prepared = layout(n,new Constraints(w,h),m).children;
-            return full;
+        @Override public ChildPlacements arrange(SceneNode n, LayoutBox b, SceneChildMeasurer m) {
+            int padding = n.padding();
+            LayoutResult result = layout(n, new Constraints(
+                    Math.max(0, b.width - padding * 2), Math.max(0, b.height - padding * 2)), m);
+            if (padding == 0) return result.children;
+            List<ChildPlacements.Entry> placed = new ArrayList<>();
+            for (ChildPlacements.Entry entry : result.children.entries()) {
+                LayoutBox box = entry.relativeBox;
+                placed.add(new ChildPlacements.Entry(entry.child, new LayoutBox(
+                        padding + box.x, padding + box.y, box.width, box.height)));
+            }
+            return new ChildPlacements(placed);
         }
-        @Override public ChildPlacements arrange(SceneNode n, LayoutBox b) { ChildPlacements result = prepared; prepared = null; return result; }
         @Override public void paint(SceneNode n, SceneGeometryView g, PaintPlanBuilder p) {}
         static void place(List<ChildPlacements.Entry> e, SceneNode n, int x, int y, int w, int h) {
             e.add(new ChildPlacements.Entry(n,new LayoutBox(x,y,Math.max(0,w),Math.max(0,h))));
@@ -123,12 +129,12 @@ final class SettingsStyle {
             colors=p;this.primary=primary;this.ghost=ghost;this.button=button;this.radius=radius;this.muted=muted;
         }
         @Override public List<ReadableSignal<?>> measureDependencies(SceneNode n) { return Collections.singletonList(colors); }
-        @Override Prepared layout(SceneNode n, Constraints c, SceneChildMeasurer m) {
+        @Override LayoutResult layout(SceneNode n, Constraints c, SceneChildMeasurer m) {
             SceneNode child=n.children().get(0); int w=Math.max(0,c.availableWidth-2), h=Math.max(0,c.availableHeight-2);
             MeasuredSize size=m.measureChild(child,new Constraints(w,h));
             int cw=child.width().mode==Size.Mode.FILL?w:size.width;
             int ch=child.height().mode==Size.Mode.FILL?h:size.height;
-            return new Prepared(size.width+2,size.height+2,Collections.singletonList(new ChildPlacements.Entry(child,new LayoutBox(1,1,cw,ch))));
+            return new LayoutResult(size.width+2,size.height+2,Collections.singletonList(new ChildPlacements.Entry(child,new LayoutBox(1,1,cw,ch))));
         }
         @Override public void paint(SceneNode n, SceneGeometryView g, PaintPlanBuilder paint) {
             SceneGeometryView.Entry entry=g.get(n); Palette p=colors.get();
@@ -165,7 +171,7 @@ final class SettingsStyle {
         final ReadableSignal<Palette> colors;final ReadableSignal<Boolean> checked;final SceneNode button;
         SwitchSurface(ReadableSignal<Palette> colors,ReadableSignal<Boolean> checked,SceneNode button){this.colors=colors;this.checked=checked;this.button=button;}
         @Override public List<ReadableSignal<?>> measureDependencies(SceneNode n){return Arrays.asList(colors,checked);}
-        @Override Prepared layout(SceneNode n,Constraints c,SceneChildMeasurer m){m.measureChild(button,new Constraints(42,26));return new Prepared(44,28,Collections.singletonList(new ChildPlacements.Entry(button,new LayoutBox(1,1,42,26))));}
+        @Override LayoutResult layout(SceneNode n,Constraints c,SceneChildMeasurer m){m.measureChild(button,new Constraints(42,26));return new LayoutResult(44,28,Collections.singletonList(new ChildPlacements.Entry(button,new LayoutBox(1,1,42,26))));}
         @Override public void paint(SceneNode n,SceneGeometryView g,PaintPlanBuilder paint){
             SceneGeometryView.Entry e=g.get(n);Palette p=colors.get();
             boolean focus=button.runtime()!=null&&button.runtime().focusRouter().focused().get()==button;
@@ -174,7 +180,7 @@ final class SettingsStyle {
         }
     }
     static final class Columns extends Arrangement {
-        @Override Prepared layout(SceneNode n,Constraints c,SceneChildMeasurer m) {
+        @Override LayoutResult layout(SceneNode n,Constraints c,SceneChildMeasurer m) {
             int gap=20, width=c.availableWidth, height=0;
             List<ChildPlacements.Entry> e=new ArrayList<>();
             if(n.children().size()==2 && width>=780) {
@@ -186,7 +192,7 @@ final class SettingsStyle {
                 MeasuredSize s=m.measureChild(child,new Constraints(width,c.availableHeight));place(e,child,0,height,width,s.height);height+=s.height+gap;
             }
             if(e.size()>0 && !(n.children().size()==2 && width>=780))height-=gap;
-            return new Prepared(width,height,e);
+            return new LayoutResult(width,height,e);
         }
     }
     /** 本次布局的局部模式；由Workspace选择，子布局明确消费，不以子宽猜测。
@@ -198,7 +204,7 @@ final class SettingsStyle {
     static final class Workspace extends Arrangement {
         final NavigationLayout navigation;
         Workspace(NavigationLayout navigation) { this.navigation=navigation; }
-        @Override Prepared layout(SceneNode n,Constraints c,SceneChildMeasurer m) {
+        @Override LayoutResult layout(SceneNode n,Constraints c,SceneChildMeasurer m) {
             List<ChildPlacements.Entry> e=new ArrayList<>();SceneNode nav=n.children().get(0),body=n.children().get(1);
             navigation.sidebar=c.availableWidth>=NavigationLayout.BREAKPOINT;
             if(navigation.sidebar) {
@@ -210,13 +216,13 @@ final class SettingsStyle {
                 m.measureChild(body,new Constraints(c.availableWidth,Math.max(0,c.availableHeight-nh)));
                 place(e,nav,0,0,c.availableWidth,nh);place(e,body,0,nh,c.availableWidth,Math.max(0,c.availableHeight-nh));
             }
-            return new Prepared(c.availableWidth,c.availableHeight,e);
+            return new LayoutResult(c.availableWidth,c.availableHeight,e);
         }
     }
     static final class Navigation extends Arrangement {
         final NavigationLayout navigation;
         Navigation(NavigationLayout navigation) { this.navigation=navigation; }
-        @Override Prepared layout(SceneNode n,Constraints c,SceneChildMeasurer m) {
+        @Override LayoutResult layout(SceneNode n,Constraints c,SceneChildMeasurer m) {
             List<ChildPlacements.Entry> e=new ArrayList<>();int width=c.availableWidth;
             SceneNode brand=n.children().get(0),buttons=n.children().get(1),info=n.children().get(2);
             if(navigation.sidebar) {
@@ -225,58 +231,58 @@ final class SettingsStyle {
                 MeasuredSize is=m.measureChild(info,new Constraints(Math.max(0,width-32),c.availableHeight));
                 place(e,brand,16,16,width-32,bs.height);place(e,buttons,NavigationLayout.HORIZONTAL_PADDING,bs.height+40,width-NavigationLayout.HORIZONTAL_PADDING*2,ns.height);
                 place(e,info,16,Math.max(bs.height+ns.height+64,c.availableHeight-is.height-18),width-32,is.height);
-                return new Prepared(width,c.availableHeight,e);
+                return new LayoutResult(width,c.availableHeight,e);
             }
             // 窄工作区只展示分类导航；同一分类按钮仍由原逻辑树持有。
             m.measureChild(brand,new Constraints(0,0));m.measureChild(info,new Constraints(0,0));
             MeasuredSize ns=m.measureChild(buttons,new Constraints(Math.max(0,width-NavigationLayout.HORIZONTAL_PADDING*2),c.availableHeight));
             place(e,brand,0,0,0,0);place(e,buttons,NavigationLayout.HORIZONTAL_PADDING,10,width-NavigationLayout.HORIZONTAL_PADDING*2,ns.height);place(e,info,0,0,0,0);
-            return new Prepared(width,ns.height+20,e);
+            return new LayoutResult(width,ns.height+20,e);
         }
     }
     static final class NavigationButtons extends Arrangement {
         final NavigationLayout navigation;
         NavigationButtons(NavigationLayout navigation) { this.navigation=navigation; }
-        @Override Prepared layout(SceneNode n,Constraints c,SceneChildMeasurer m) {
+        @Override LayoutResult layout(SceneNode n,Constraints c,SceneChildMeasurer m) {
             if(!navigation.sidebar)return new WrapRow(8).layout(n,c,m);
             List<ChildPlacements.Entry> e=new ArrayList<>();int y=0;
             for(SceneNode child:n.children())if(child.visible()){
                 MeasuredSize s=m.measureChild(child,c);place(e,child,0,y,c.availableWidth,s.height);y+=s.height+8;
             }
-            return new Prepared(c.availableWidth,Math.max(0,y-8),e);
+            return new LayoutResult(c.availableWidth,Math.max(0,y-8),e);
         }
     }
     static final class WrapRow extends Arrangement {
         final int gap;
         WrapRow(int gap) { this.gap=gap; }
-        @Override Prepared layout(SceneNode n,Constraints c,SceneChildMeasurer m) {
+        @Override LayoutResult layout(SceneNode n,Constraints c,SceneChildMeasurer m) {
             List<ChildPlacements.Entry> e=new ArrayList<>();int x=0,y=0,line=0,maxWidth=0;
             for(SceneNode child:n.children()) if(child.visible()) {
                 MeasuredSize s=m.measureChild(child,new Constraints(c.availableWidth,c.availableHeight));int w=Math.min(c.availableWidth,s.width);
                 if(x>0 && x+w>c.availableWidth){x=0;y+=line+gap;line=0;}
                 place(e,child,x,y,w,s.height);x+=w+gap;maxWidth=Math.max(maxWidth,x-gap);line=Math.max(line,s.height);
             }
-            return new Prepared(maxWidth,y+line,e);
+            return new LayoutResult(maxWidth,y+line,e);
         }
     }
     static final class Footer extends Arrangement {
-        @Override Prepared layout(SceneNode n,Constraints c,SceneChildMeasurer m) {
+        @Override LayoutResult layout(SceneNode n,Constraints c,SceneChildMeasurer m) {
             List<ChildPlacements.Entry> e=new ArrayList<>();SceneNode status=n.children().get(0),buttons=n.children().get(1);
             MeasuredSize bs=m.measureChild(buttons,new Constraints(c.availableWidth,c.availableHeight));
             if(c.availableWidth>=740) {
                 int left=Math.max(0,c.availableWidth-bs.width-24);MeasuredSize ss=m.measureChild(status,new Constraints(left,c.availableHeight));
                 place(e,status,0,0,left,ss.height);place(e,buttons,c.availableWidth-bs.width,0,bs.width,bs.height);
-                return new Prepared(c.availableWidth,Math.max(ss.height,bs.height),e);
+                return new LayoutResult(c.availableWidth,Math.max(ss.height,bs.height),e);
             }
             MeasuredSize ss=m.measureChild(status,c);place(e,status,0,0,c.availableWidth,ss.height);
             place(e,buttons,Math.max(0,c.availableWidth-bs.width),ss.height+10,bs.width,bs.height);
-            return new Prepared(c.availableWidth,ss.height+10+bs.height,e);
+            return new LayoutResult(c.availableWidth,ss.height+10+bs.height,e);
         }
     }
     static final class Layers extends Arrangement {
         final boolean centered;
         Layers(boolean centered) { this.centered=centered; }
-        @Override Prepared layout(SceneNode n,Constraints c,SceneChildMeasurer m) {
+        @Override LayoutResult layout(SceneNode n,Constraints c,SceneChildMeasurer m) {
             List<ChildPlacements.Entry> e=new ArrayList<>();
             for(SceneNode child:n.children()) if(child.visible()) {
                 int maxWidth=centered?Math.max(0,Math.min(480,c.availableWidth-32)):c.availableWidth;
@@ -285,7 +291,7 @@ final class SettingsStyle {
                 int h=child.height().mode==Size.Mode.FILL?c.availableHeight:Math.min(c.availableHeight,s.height);
                 place(e,child,centered?(c.availableWidth-w)/2:0,centered?(c.availableHeight-h)/2:0,w,h);
             }
-            return new Prepared(c.availableWidth,c.availableHeight,e);
+            return new LayoutResult(c.availableWidth,c.availableHeight,e);
         }
     }
 }

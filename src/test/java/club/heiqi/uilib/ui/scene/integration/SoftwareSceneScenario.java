@@ -649,7 +649,7 @@ final class SoftwareSceneScenario extends TestApplication {
                                                         @Override
                                                         public ChildPlacements arrange(
                                                                 SceneNode node,
-                                                                LayoutBox allocated) {
+                                                                LayoutBox allocated, SceneChildMeasurer childMeasurer) {
                                                             return new ChildPlacements(
                                                                     Collections.singletonList(
                                                                             new ChildPlacements
@@ -723,7 +723,7 @@ final class SoftwareSceneScenario extends TestApplication {
             return measured;
         }
 
-        public ChildPlacements arrange(SceneNode node, LayoutBox allocated) {
+        public ChildPlacements arrange(SceneNode node, LayoutBox allocated, SceneChildMeasurer childMeasurer) {
             return new ChildPlacements(Collections.singletonList(
                     new ChildPlacements.Entry(node.children().get(0), new LayoutBox(1, 1, width, height))));
         }

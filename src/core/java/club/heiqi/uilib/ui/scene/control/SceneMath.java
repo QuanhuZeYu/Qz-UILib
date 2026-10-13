@@ -5,6 +5,7 @@ import club.heiqi.uilib.ui.scene.host.ScenePageContext;
 import club.heiqi.uilib.ui.scene.layout.ChildPlacements;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
+import club.heiqi.uilib.ui.scene.layout.SceneChildMeasurer;
 import club.heiqi.uilib.ui.scene.layout.MeasuredSize;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometryView;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
@@ -87,7 +88,7 @@ public final class SceneMath implements SceneControl {
             return new MeasuredSize(0, 0);
         }
 
-        public ChildPlacements arrange(SceneNode node, LayoutBox box) {
+        public ChildPlacements arrange(SceneNode node, LayoutBox box, SceneChildMeasurer childMeasurer) {
             return new ChildPlacements(Collections.emptyList());
         }
 
@@ -290,7 +291,7 @@ public final class SceneMath implements SceneControl {
     }
 
     @Override
-    public ChildPlacements arrange(SceneNode node, LayoutBox box) {
+    public ChildPlacements arrange(SceneNode node, LayoutBox box, SceneChildMeasurer childMeasurer) {
         List<ChildPlacements.Entry> placements = new ArrayList<>();
         // 无 placement 的 slot 仍在逻辑树中，动态 binding 也不能给它输入资格。
         for (Embed slot : slots.values()) passiveAttached(slot.node);

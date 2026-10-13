@@ -30,6 +30,7 @@ import club.heiqi.uilib.ui.scene.image.ImageState;
 import club.heiqi.uilib.ui.scene.layout.ChildPlacements;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
+import club.heiqi.uilib.ui.scene.layout.SceneChildMeasurer;
 import club.heiqi.uilib.ui.scene.layout.MeasuredSize;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometryView;
 import club.heiqi.uilib.ui.scene.layout.Size;
@@ -163,7 +164,7 @@ public final class PaintPrimitiveScenario extends TestApplication {
         }
 
         @Override
-        public ChildPlacements arrange(SceneNode node, LayoutBox box) {
+        public ChildPlacements arrange(SceneNode node, LayoutBox box, SceneChildMeasurer childMeasurer) {
             List<SceneNode> children = new ArrayList<>(node.children());
             if (reverse != null && reverse.get()) Collections.reverse(children);
             List<ChildPlacements.Entry> result = new ArrayList<>();

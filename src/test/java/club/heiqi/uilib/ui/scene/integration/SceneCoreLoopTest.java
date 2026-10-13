@@ -24,6 +24,48 @@ import java.util.concurrent.TimeUnit;
 
 /** 可直启的状态和挂载合同场景；生命周期共享正式页面入口，反例直接观察原runtime。 */
 public final class SceneCoreLoopTest extends TestApplication {
+    /** 成品隔离也调用此真实公共消费；空文字不引入替代字形度量的证据。 */
+    public static void publicGridConsumer() {
+        ReactiveDomain domain = ReactiveDomain.direct();
+        SoftwareSceneScenario.SoftwareHost host = new SoftwareSceneScenario.SoftwareHost();
+        Signal<club.heiqi.uilib.ui.scene.control.SceneGrid.Policy>[] policy = new Signal[1];
+        Signal<Integer>[] clicks = new Signal[1];
+        SceneNode[] grid = {null};
+        try (ScenePageSession page = ScenePageSession.open(domain, host, host, context -> {
+            policy[0] = domain.signal(new club.heiqi.uilib.ui.scene.control.SceneGrid.Policy(40, 10, 10));
+            clicks[0] = domain.signal(0);
+            grid[0] = club.heiqi.uilib.ui.scene.control.SceneGrid.create(context, policy[0]);
+            for (int i = 0; i < 3; i++) grid[0].add(new SceneNode()
+                    .size(club.heiqi.uilib.ui.scene.layout.Size.fill(1), club.heiqi.uilib.ui.scene.layout.Size.fixed(20))
+                    .onClick(() -> clicks[0].set(clicks[0].get() + 1)));
+            context.mountOwned(grid[0]);
+        })) {
+            page.frame();
+            domain.execute(() -> {
+                club.heiqi.uilib.ui.scene.layout.SceneGeometryView geometry = page.pipeline().current().geometry;
+                require(geometry.get(grid[0].children().get(0)).box.width == 45
+                        && geometry.get(grid[0].children().get(1)).box.x == 55
+                        && geometry.get(grid[0].children().get(2)).box.y == 30,
+                        "正式core公共网格没有按当前空间排列");
+            });
+            page.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.down(0, 1, 1));
+            page.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.up(0, 1, 1));
+            page.frame();
+            domain.execute(() -> {
+                require(clicks[0].get() == 1, "正式core公共网格未沿页面输入发布业务结果");
+                policy[0].set(new club.heiqi.uilib.ui.scene.control.SceneGrid.Policy(100, 10, 10));
+            });
+            page.frame();
+            domain.execute(() -> require(page.pipeline().current().geometry
+                    .get(grid[0].children().get(1)).box.y == 30, "外部策略更新未自动重排"));
+        }
+        domain.execute(() -> {
+            policy[0].set(new club.heiqi.uilib.ui.scene.control.SceneGrid.Policy(60, 0, 0));
+            require(policy[0].get().minimumColumnWidth == 60, "关闭网格误释放外部策略");
+        });
+        System.out.println("CORE_GRID publicFactory=true frame=true input=true externalPolicyAlive=true");
+    }
+
     private void rejectPureCommand(Runnable command) {
         try {
             command.run();
@@ -401,6 +443,7 @@ public final class SceneCoreLoopTest extends TestApplication {
                 parent.dispose();
             }
         }));
+        scenario("公共网格正式页面布局输入与策略归属", SceneCoreLoopTest::publicGridConsumer);
         scenario("软件scene完整生产链路", () -> new SoftwareSceneScenario().run());
         System.out.println("无平台业务状态/派生/作用域/副作用及节点生命周期场景通过");
     }

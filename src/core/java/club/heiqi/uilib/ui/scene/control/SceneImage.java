@@ -15,6 +15,7 @@ import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.MeasuredSize;
 import club.heiqi.uilib.ui.scene.layout.Size;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
+import club.heiqi.uilib.ui.scene.layout.SceneChildMeasurer;
 import club.heiqi.uilib.ui.scene.layout.ChildPlacements;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometryView;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
@@ -210,7 +211,7 @@ public final class SceneImage implements SceneControl {
     }
 
     @Override
-    public ChildPlacements arrange(SceneNode node, LayoutBox box) {
+    public ChildPlacements arrange(SceneNode node, LayoutBox box, SceneChildMeasurer childMeasurer) {
         return placeholder == null || !placeholder.visible()
                 ? new ChildPlacements(Collections.emptyList())
                 : new ChildPlacements(

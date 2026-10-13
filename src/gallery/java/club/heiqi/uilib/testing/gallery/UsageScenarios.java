@@ -186,7 +186,10 @@ final class UsageScenarios {
                     GalleryStyle.button(
                             context, () -> "接收新消息", theme, () -> value.set(value.get() + 1)));
             body.add(SceneLabel.create(context, () -> "消息总数：" + value.get(), theme));
-            SceneNode list = new SceneNode().size(Size.fill(1), Size.natural()).gap(8);
+            // 普通页面只声明策略与真实内容；repeat 保持消息身份，空间和字号变化由公共网格重排。
+            SceneNode list = GalleryStyle.grid(context, theme);
+            list.bind(NodeBinding.value(narrow, (node, compact) -> node.size(
+                    compact ? Size.fill(1).bounds(0, 560) : Size.fill(1), Size.natural())));
             list.bind(
                     NodeBinding.repeat(
                             () -> {
@@ -361,7 +364,7 @@ final class UsageScenarios {
             case DETAILS:
                 return "操作：切换制作批次。预期：材料数量、产出、公式与图标同步更新；切页回来仍保留批次。";
             case MESSAGES:
-                return "操作：接收新消息、展开第一条详情并切换语言。预期：新增记录可见，展开状态保留。列表显示最近12条。";
+                return "操作：接收新消息、展开第一条详情，切换语言、字号与阅读宽度。预期：消息卡片按可用空间自动换列，真实正文决定行高，重排和切页保留展开状态。显示最近12条。";
             case REPORT:
                 return "操作：切换今日与本周。预期：汇总数字、计算公式与文字说明同步变化。";
             default:

@@ -19,6 +19,8 @@ public final class SceneLayoutEngine {
     private final Map<SceneNode, Map<Long, int[]>> measuredCache = new IdentityHashMap<>();
     private final Map<SceneNode, Map<Integer, TextLayout>> textCache = new IdentityHashMap<>();
     private final Map<SceneNode, BatchTextMeasurer> batchText = new IdentityHashMap<>();
+    // 子测量入口仅在当批保持身份，文字缓存的代际和生命周期独立。
+    private final Map<SceneNode, SceneChildMeasurer> batchChildren = new IdentityHashMap<>();
     private final Set<BatchTextMeasurer> activeText =
             Collections.newSetFromMap(new IdentityHashMap<BatchTextMeasurer, Boolean>());
     private boolean metricsKnown;
@@ -27,23 +29,21 @@ public final class SceneLayoutEngine {
 
     private BatchTextMeasurer textFor(SceneNode node) {
         BatchTextMeasurer batch =
-                batchText.computeIfAbsent(
-                        node,
-                        key ->
-                                new BatchTextMeasurer(
-                                        text,
-                                        (child, constraints) -> {
-                                            if (child.parent() != key)
-                                                throw new IllegalArgumentException("只能测量直属子内容");
-                                            int[] size =
-                                                    measure(
-                                                            child,
-                                                            constraints.availableWidth,
-                                                            constraints.availableHeight);
-                                            return new MeasuredSize(size[0], size[1]);
-                                        }));
+                batchText.computeIfAbsent(node, key -> new BatchTextMeasurer(text));
         if (activeText.add(batch)) batch.beginRequests();
         return batch;
+    }
+
+    private SceneChildMeasurer childrenFor(SceneNode parent) {
+        return batchChildren.computeIfAbsent(
+                parent,
+                key -> (child, constraints) -> {
+                    if (child.parent() != key)
+                        throw new IllegalArgumentException("只能测量直属子内容");
+                    int[] size = measure(
+                            child, constraints.availableWidth, constraints.availableHeight);
+                    return new MeasuredSize(size[0], size[1]);
+                });
     }
 
     public SceneLayoutEngine(SceneTextMeasurer text) {
@@ -106,6 +106,7 @@ public final class SceneLayoutEngine {
     private void endTextRequests() {
         for (BatchTextMeasurer batch : activeText) batch.endRequests();
         activeText.clear();
+        batchChildren.clear();
     }
 
     private int cross(Size size, int desired, int available) {
@@ -130,7 +131,7 @@ public final class SceneLayoutEngine {
                                                         node.textPolicy())
                                         : node.control()
                                                 .layoutText(
-                                                        node, textFor(node), width, textFor(node)));
+                                                        node, textFor(node), width, childrenFor(node)));
     }
 
     private int[] measure(SceneNode node, int availableWidth, int availableHeight) {
@@ -168,7 +169,7 @@ public final class SceneLayoutEngine {
                                     node,
                                     new Constraints(contentWidth, contentHeight),
                                     textFor(node),
-                                    textFor(node));
+                                    childrenFor(node));
             return new int[] {
                 node.width()
                         .constrain(
@@ -296,13 +297,13 @@ public final class SceneLayoutEngine {
                                     innerWidth,
                                     innerHeight,
                                     textFor(node),
-                                    textFor(node));
+                                    childrenFor(node));
         int entryIndex = entries.size();
         entries.add(new SceneGeometryView.Entry(node, box, clip, lines));
         if (node.control() != null) {
             java.util.Set<SceneNode> placed =
                     java.util.Collections.newSetFromMap(new IdentityHashMap<SceneNode, Boolean>());
-            List<ChildPlacements.Entry> placements = node.control().arrange(node, box).entries();
+            List<ChildPlacements.Entry> placements = node.control().arrange(node, box, childrenFor(node)).entries();
             boolean row = node.axis() == SceneNode.Axis.ROW;
             long extent = 0;
             // 先核验整批作者结果，再递归排列；拒绝非法尺寸，不改写作者的格子或位置。

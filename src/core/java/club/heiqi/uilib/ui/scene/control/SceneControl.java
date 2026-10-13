@@ -55,6 +55,7 @@ public interface SceneControl {
     /** 唯一 router 已确认同目标、同挂载后由 runtime 分发。 */
     default void activatePointer(SceneNode node, Object target) {}
 
+    /** constraints 是框架已扣除 node.padding 的正文约束，返回正文自然尺寸。 */
     MeasuredSize measure(SceneNode node, Constraints constraints, SceneTextMeasurer text);
 
     /** 布局引擎为组合控件提供子测量能力；既有纯文字控件沿原入口执行。 */
@@ -66,7 +67,12 @@ public interface SceneControl {
         return measure(node, constraints, text);
     }
 
-    ChildPlacements arrange(SceneNode node, LayoutBox allocated);
+    /**
+     * allocated 是本次分配的外层盒，包含 node.padding；子盒位置相对此盒原点。
+     * children 只测量直属逻辑子项，复用本批布局事实，不能保留到后续批次。
+     * 普通容器在这里按实际正文空间测量、排列，不借文字呈现准备结果。
+     */
+    ChildPlacements arrange(SceneNode node, LayoutBox allocated, SceneChildMeasurer children);
 
     /** 内容受实际文字区域限制后的不可变定位；不回写文本或几何。 */
     default club.heiqi.uilib.ui.scene.text.TextLayout presentText(
@@ -78,7 +84,7 @@ public interface SceneControl {
         return full;
     }
 
-    /** 缓存命中也消费传入的本次文字事实，子项排列不能沿用其它宽度的残留。 */
+    /** 真实文字/文档/数学内容投影使用同批子测量；普通容器的排列由 arrange 承担。 */
     default club.heiqi.uilib.ui.scene.text.TextLayout presentText(
             SceneNode node,
             club.heiqi.uilib.ui.scene.text.TextLayout full,

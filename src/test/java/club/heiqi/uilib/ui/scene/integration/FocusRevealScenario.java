@@ -5,6 +5,7 @@ import club.heiqi.uilib.ui.scene.layout.MeasuredSize;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.ChildPlacements;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
+import club.heiqi.uilib.ui.scene.layout.SceneChildMeasurer;
 import club.heiqi.uilib.ui.scene.paint.PaintPlanBuilder;
 
 import java.util.Collections;
@@ -92,7 +93,7 @@ public final class FocusRevealScenario extends TestApplication {
                                 return new MeasuredSize(0, 0);
                             }
                             public ChildPlacements arrange(
-                                    SceneNode node, LayoutBox allocated) {
+                                    SceneNode node, LayoutBox allocated, SceneChildMeasurer childMeasurer) {
                                 return new ChildPlacements(Collections.emptyList());
                             }
                             public LayoutBox navigationRegion(
