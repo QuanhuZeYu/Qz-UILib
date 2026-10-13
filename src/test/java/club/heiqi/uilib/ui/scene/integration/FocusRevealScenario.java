@@ -1,9 +1,18 @@
 package club.heiqi.uilib.ui.scene.integration;
 
+import club.heiqi.uilib.ui.scene.control.SceneControl;
+import club.heiqi.uilib.ui.scene.layout.MeasuredSize;
+import club.heiqi.uilib.ui.scene.layout.Constraints;
+import club.heiqi.uilib.ui.scene.layout.ChildPlacements;
+import club.heiqi.uilib.ui.scene.layout.LayoutBox;
+import club.heiqi.uilib.ui.scene.paint.PaintPlanBuilder;
+
 import java.util.Collections;
+import java.util.List;
 import club.heiqi.uilib.testing.TestApplication;
 import club.heiqi.uilib.ui.reactive.ReactiveDomain;
 import club.heiqi.uilib.ui.reactive.Signal;
+import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.scene.control.SceneButton;
 import club.heiqi.uilib.ui.scene.control.SceneTheme;
 import club.heiqi.uilib.ui.scene.host.SceneHost;
@@ -56,12 +65,67 @@ public final class FocusRevealScenario extends TestApplication {
 
     @Override
     protected void runTests() throws Exception {
+        scenario("自定义内部导航区域仅用于过大轴且随当前事实更新", this::customRegion);
         scenario("纵向最小显露、循环返回和导航后命中", this::vertical);
         scenario("嵌套横纵滚动逐层显露", this::nested);
         scenario("初始请求和普通更新不追焦点，大目标单项导航稳定", this::intentBoundaries);
         scenario("来源变更后失效导航目标不滚后台或新挂载", this::invalidatedIntent);
         scenario("非滚动祖先裁剪限制导航显露区域", this::ancestorClip);
         scenario("正交外层裁剪保留内层导航轴的可见限制", this::orthogonalClip);
+    }
+
+    private void customRegion() {
+        for (int height : new int[] {40, 240}) {
+            ReactiveDomain domain = ReactiveDomain.direct();
+            Host host = new Host();
+            SceneNode[] nodes = new SceneNode[2];
+            Signal<Integer>[] localY = new Signal[1];
+            ScenePageSession page = ScenePageSession.open(domain, host, host, ctx -> {
+                localY[0] = domain.signal(height == 40 ? 0 : 220);
+                nodes[1] = new SceneNode().size(Size.fixed(120), Size.fixed(height)).focusable(true)
+                        .control(new SceneControl() {
+                            public List<ReadableSignal<?>> arrangementDependencies(SceneNode node) {
+                                return Collections.singletonList(localY[0]);
+                            }
+                            public MeasuredSize measure(
+                                    SceneNode node, Constraints limits, SceneTextMeasurer text) {
+                                return new MeasuredSize(0, 0);
+                            }
+                            public ChildPlacements arrange(
+                                    SceneNode node, LayoutBox allocated) {
+                                return new ChildPlacements(Collections.emptyList());
+                            }
+                            public LayoutBox navigationRegion(
+                                    SceneNode node, SceneGeometryView geometry) {
+                                LayoutBox box = geometry.get(node).box;
+                                return new LayoutBox(box.x, box.y + localY[0].get(), 1, 10);
+                            }
+                            public void paint(SceneNode node, SceneGeometryView geometry,
+                                    PaintPlanBuilder paint) {}
+                        });
+                nodes[0] = new SceneNode().size(Size.fixed(120), Size.fixed(60)).scrollable(true)
+                        .initialFocus(nodes[1]).add(new SceneNode().size(Size.fixed(120), Size.fixed(30)))
+                        .add(nodes[1]);
+                ctx.mount(nodes[0]);
+            });
+            onClose(page::close);
+            page.frame();
+            page.navigation(SceneNavigationEvent.NEXT);
+            page.frame();
+            domain.execute(() -> {
+                require(entry(page, nodes[0]).scrollOffset == (height == 40 ? 10 : 200),
+                        "小控件应显露整盒，大控件应接入内部位置");
+                localY[0].set(0);
+            });
+            page.frame();
+            domain.execute(() -> require(entry(page, nodes[0]).scrollOffset == (height == 40 ? 10 : 200),
+                    "普通变化不应重复显露"));
+            page.navigation(SceneNavigationEvent.PREVIOUS);
+            page.frame();
+            domain.execute(() -> require(entry(page, nodes[0]).scrollOffset == (height == 40 ? 10 : 30),
+                    "单项导航未重新读取当前内部位置"));
+            page.close();
+        }
     }
 
     private void orthogonalClip() {

@@ -12,6 +12,7 @@ import club.heiqi.uilib.ui.scene.text.TextLayout;
 import club.heiqi.uilib.ui.scene.text.TextStyleOverride;
 import club.heiqi.uilib.ui.scene.text.TextStyleOverrideSpan;
 import club.heiqi.uilib.ui.scene.text.math.MathContent;
+import club.heiqi.uilib.ui.scene.text.math.MathMacros;
 import club.heiqi.uilib.ui.scene.text.math.MathStyle;
 
 import org.commonmark.ext.gfm.strikethrough.Strikethrough;
@@ -121,11 +122,22 @@ public final class MarkdownAdapter {
         Node document = parser.parse(markdown);
         List<DocumentContent.Block> content = new ArrayList<>();
         if (frontMatter != null) content.addAll(frontMatter.blocks);
-        content.addAll(blocks(document));
+        content.addAll(blocks(document, new DocumentMathContext()));
         return new DocumentContent(content, input, diagnostics);
     }
 
-    private List<DocumentContent.Block> blocks(Node parent) {
+    /** 每次 parse 独立串联不可变宏快照；只在源码顺序走到公式时推进，不预扫描定义。 */
+    private static final class DocumentMathContext {
+        private MathMacros macros = MathMacros.empty();
+
+        MathContent parse(String source) {
+            MathContent content = MathContent.parse(source, macros);
+            macros = content.nextMacros;
+            return content;
+        }
+    }
+
+    private List<DocumentContent.Block> blocks(Node parent, DocumentMathContext math) {
         List<DocumentContent.Block> out = new ArrayList<>();
         for (Node n = parent.getFirstChild(); n != null; n = n.getNext()) {
             if (n instanceof LinkReferenceDefinition) continue;
@@ -137,32 +149,32 @@ public final class MarkdownAdapter {
             }
             int ss = sourceStart(s), se = sourceEnd(e);
             if (n instanceof Paragraph) {
-                out.add(DocumentContent.Block.paragraph(paragraph(n), ss, se));
+                out.add(DocumentContent.Block.paragraph(paragraph(n, math), ss, se));
             } else if (n instanceof Heading) {
                 out.add(
                         DocumentContent.Block.heading(
-                                paragraph(n), ((Heading) n).getLevel(), ss, se));
+                                paragraph(n, math), ((Heading) n).getLevel(), ss, se));
             } else if (n instanceof BlockQuote)
-                out.add(DocumentContent.Block.quote(blocks(n), ss, se));
+                out.add(DocumentContent.Block.quote(blocks(n, math), ss, se));
             else if (n instanceof ListBlock) {
                 boolean ordered = n instanceof OrderedList;
                 out.add(
                         DocumentContent.Block.list(
-                                blocks(n),
+                                blocks(n, math),
                                 ordered,
                                 ordered ? ((OrderedList) n).getStartNumber() : 1,
                                 ((ListBlock) n).isTight(),
                                 ss,
                                 se));
             } else if (n instanceof ListItem)
-                out.add(DocumentContent.Block.listItem(blocks(n), ss, se));
+                out.add(DocumentContent.Block.listItem(blocks(n, math), ss, se));
             else if (n instanceof ThematicBreak) out.add(DocumentContent.Block.rule(ss, se));
             else if (n instanceof MathSyntax.MathBlock) {
                 MathSyntax.MathBlock b = (MathSyntax.MathBlock) n;
                 if (b.closed)
                     out.add(
                             DocumentContent.Block.formula(
-                                    MathContent.parse(b.source), MathStyle.DISPLAY, ss, se));
+                                    math.parse(b.source), MathStyle.DISPLAY, ss, se));
                 else out.add(DocumentContent.Block.paragraph(literal(n), ss, se));
             } else if (n instanceof FencedCodeBlock) {
                 FencedCodeBlock code = (FencedCodeBlock) n;
@@ -170,7 +182,7 @@ public final class MarkdownAdapter {
                 if (info.trim().equalsIgnoreCase("math"))
                     out.add(
                             DocumentContent.Block.formula(
-                                    MathContent.parse(code.getLiteral()),
+                                    math.parse(code.getLiteral()),
                                     MathStyle.DISPLAY,
                                     ss,
                                     se));
@@ -180,7 +192,7 @@ public final class MarkdownAdapter {
                         DocumentContent.Block.code(
                                 code(n, ((IndentedCodeBlock) n).getLiteral()), "", ss, se));
             } else if (n instanceof TableBlock) {
-                out.add(DocumentContent.Block.table(table(n), ss, se));
+                out.add(DocumentContent.Block.table(table(n, math), ss, se));
             } else if (n instanceof HtmlBlock) {
                 out.addAll(htmlBlocks(n));
             } else {
@@ -191,7 +203,7 @@ public final class MarkdownAdapter {
         return out;
     }
 
-    private TableContent table(Node table) {
+    private TableContent table(Node table, DocumentMathContext math) {
         List<TableContent.Row> rows = new ArrayList<>();
         for (Node group = table.getFirstChild(); group != null; group = group.getNext()) {
             for (Node row = group.getFirstChild(); row != null; row = row.getNext()) {
@@ -209,7 +221,9 @@ public final class MarkdownAdapter {
                             new TableContent.Cell(
                                     Collections.singletonList(
                                             DocumentContent.Block.paragraph(
-                                                    paragraph(c), sourceStart(s), sourceEnd(e))),
+                                                    paragraph(c, math),
+                                                    sourceStart(s),
+                                                    sourceEnd(e))),
                                     alignment,
                                     c.isHeader(),
                                     sourceStart(s),
@@ -298,10 +312,10 @@ public final class MarkdownAdapter {
                         message));
     }
 
-    private TextContent paragraph(Node n) {
+    private TextContent paragraph(Node n, DocumentMathContext math) {
         ParagraphBuilder b = new ParagraphBuilder();
         InlineHtmlSession session = new InlineHtmlSession(n, b);
-        inline(n, session, MarkdownStyleIntent.INHERIT, null);
+        inline(n, session, MarkdownStyleIntent.INHERIT, null, math);
         session.finishHtml(end(n));
         return b.finish();
     }
@@ -322,7 +336,8 @@ public final class MarkdownAdapter {
             Node parent,
             InlineHtmlSession session,
             MarkdownStyleIntent style,
-            TextContent.Link link) {
+            TextContent.Link link,
+            DocumentMathContext math) {
         ParagraphBuilder b = session.output;
         for (Node n = parent.getFirstChild(); n != null; n = n.getNext()) {
             if (n instanceof HtmlInline) {
@@ -330,7 +345,7 @@ public final class MarkdownAdapter {
                 continue;
             }
             if (session.htmlSuppressed() || session.capture != null) {
-                inline(n, session, style, link);
+                inline(n, session, style, link, math);
                 continue;
             }
             if (n instanceof Text)
@@ -390,7 +405,7 @@ public final class MarkdownAdapter {
                                 offset,
                                 sourceStart(s),
                                 sourceEnd(e),
-                                MathContent.parse(inlineMathSource((MathSyntax.MathInline) n)),
+                                math.parse(inlineMathSource((MathSyntax.MathInline) n)),
                                 ((MathSyntax.MathInline) n).display
                                         ? MathStyle.DISPLAY
                                         : MathStyle.TEXT));
@@ -400,11 +415,12 @@ public final class MarkdownAdapter {
                         session,
                         style.underline(),
                         new TextContent.Link(
-                                ((Link) n).getDestination(), title(((Link) n).getTitle())));
-            } else if (n instanceof Emphasis) inline(n, session, style.italic(), link);
-            else if (n instanceof StrongEmphasis) inline(n, session, style.bold(), link);
-            else if (n instanceof Strikethrough) inline(n, session, style.strike(), link);
-            else inline(n, session, style, link);
+                                ((Link) n).getDestination(), title(((Link) n).getTitle())),
+                        math);
+            } else if (n instanceof Emphasis) inline(n, session, style.italic(), link, math);
+            else if (n instanceof StrongEmphasis) inline(n, session, style.bold(), link, math);
+            else if (n instanceof Strikethrough) inline(n, session, style.strike(), link, math);
+            else inline(n, session, style, link, math);
         }
     }
 

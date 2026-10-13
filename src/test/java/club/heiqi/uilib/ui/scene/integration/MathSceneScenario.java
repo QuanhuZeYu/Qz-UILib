@@ -68,6 +68,7 @@ public final class MathSceneScenario extends TestApplication {
         // 旧实现可能在小盒收敛循环挂起；独立探针模式只测三个固定字号，父代理先取证再跑回归。
         if (java.util.Arrays.asList(arguments()).contains("--quantity-decoration-probe")) return;
         scenario("真实公式同代glyph浮点投影与分式脚本图像", this::geometry);
+        scenario("数学em内容盒明确分配不自动求解节点Size", this::explicitEmbedBox);
         scenario("伸缩定界符二项式和大根式动态Item同代投影", this::stretchStructures);
         scenario("数量32真实墨迹随公式盒缩放及提示独立字号", this::quantity);
         scenario("三像素小盒带装饰数量完整保留与有界缩小", this::quantityDecoration);
@@ -526,6 +527,16 @@ public final class MathSceneScenario extends TestApplication {
                 TextStyle textStyle,
                 String quantity,
                 String... ids) {
+            this(formula, mathStyle, textStyle, quantity, ImageOptions.defaults(), ids);
+        }
+
+        Fixture(
+                String formula,
+                MathStyle mathStyle,
+                TextStyle textStyle,
+                String quantity,
+                ImageOptions embedOptions,
+                String... ids) {
             page =
                     ScenePageSession.open(
                             domain,
@@ -542,7 +553,7 @@ public final class MathSceneScenario extends TestApplication {
                                                     counted,
                                                     source,
                                                     domain.signal(
-                                                            ImageOptions.defaults()
+                                                            embedOptions
                                                                     .quantity(!quantity.isEmpty())
                                                                     .tooltip(true)),
                                                     theme);
@@ -686,6 +697,37 @@ public final class MathSceneScenario extends TestApplication {
                             placement(f, "ore");
                         });
             }
+        }
+    }
+
+    private void explicitEmbedBox() throws Exception {
+        // text spec 1.4.1：em 内联盒明确分配，节点声明不参与自然尺寸/min/max 求解。
+        try (Fixture f = new Fixture(tex("x^{@embed{ore}}"), MathStyle.TEXT,
+                SceneTheme.dark().textStyle.withEm(EM), "",
+                ImageOptions.defaults().size(Size.fixed(120).bounds(80, 120), Size.fixed(120).bounds(80, 120)),
+                "ore")) {
+            f.ready();
+            f.domain.execute(() -> {
+                healthy(f.layout());
+                placement(f, "ore");
+                // 尺寸必须来自正式options绑定；直接node.size会被挂载时的绑定重写。
+                SceneNode image = f.nodes.get("ore");
+                for (Size size : new Size[] {image.width(), image.height()})
+                    require(size.mode == Size.Mode.FIXED && size.value == 120
+                                    && size.min == 80 && size.max == 120,
+                            "挂载后的图像声明没有保留硬尺寸反例");
+                LayoutBox before = f.geometry().get(image).box;
+                require(before.width < 80 && before.height < 80,
+                        "反例未触及与节点Size冲突的数学脚本em盒");
+            });
+            f.domain.execute(() -> f.theme.set(SceneTheme.light().withTextStyle(new TextStyle("default", 38, -1))));
+            f.frame();
+            f.domain.execute(() -> {
+                healthy(f.layout());
+                placement(f, "ore");
+                require(f.geometry().get(f.nodes.get("ore")).box.width < 80,
+                        "动态主题后数学em盒被节点min替代");
+            });
         }
     }
 

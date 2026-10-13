@@ -1,5 +1,7 @@
 package club.heiqi.uilib.ui.scene.integration;
 
+import club.heiqi.uilib.ui.scene.paint.PaintCommand;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -49,7 +51,9 @@ public final class MultilineEditingScenario extends TestApplication {
             return 0;
         }
 
-        public void replay(PaintPlan plan) {}
+        PaintPlan lastPlan;
+
+        public void replay(PaintPlan plan) { lastPlan = plan; }
 
         public TextLayout layout(String text, TextStyle style, int width) {
             return layout(text, style, width, TextPolicy.NORMAL);
@@ -230,7 +234,140 @@ public final class MultilineEditingScenario extends TestApplication {
         return s[0];
     }
 
+    private void navigationCaret() {
+        for (boolean nested : new boolean[] {false, true}) {
+            ReactiveDomain domain = ReactiveDomain.direct();
+            PlainHost host = new PlainHost();
+            SceneNode[] nodes = new SceneNode[3];
+            SceneEditState[] state = new SceneEditState[1];
+            SceneTheme base = SceneTheme.light();
+            SceneTheme theme = new SceneTheme(base.textStyle, base.panel, base.button, base.hover,
+                    base.pressed, base.focus, base.disabled, base.disabledText,
+                    base.tooltip, base.tooltipText, 0, 0);
+            ScenePageSession page = ScenePageSession.open(domain, host, host, ctx -> {
+                state[0] = new SceneEditState(domain, "a\na\na\na\na\na\na\na\na\na", Mode.MULTI_LINE);
+                nodes[2] = SceneTextArea.create(ctx, state[0], () -> theme, () -> true, ignored -> {})
+                        .size(Size.fixed(200), Size.fixed(240));
+                nodes[0] = new SceneNode().size(Size.fixed(200), Size.fixed(100))
+                        .scrollable(true).initialFocus(nodes[2]);
+                nodes[1] = nested
+                        ? new SceneNode().size(Size.fixed(200), Size.fixed(160)).scrollable(true)
+                        : nodes[0];
+                if (nested) nodes[0].add(nodes[1]);
+                nodes[1].add(nodes[2]);
+                ctx.mount(nodes[0]);
+            });
+            onClose(page::close);
+            page.frame();
+            domain.execute(() -> require(page.pipeline().current().geometry.get(nodes[0]).scrollOffset == 0,
+                    "初始焦点不能显露编辑位置"));
+            page.navigation(SceneNavigationEvent.NEXT);
+            page.frame();
+            domain.execute(() -> {
+                SceneGeometryView geometry = page.pipeline().current().geometry;
+                require(geometry.get(nodes[0]).scrollOffset == (nested ? 60 : 100),
+                        "祖先没有最小显露末行caret");
+                if (nested) require(geometry.get(nodes[1]).scrollOffset == 40, "内层没先显露末行caret");
+                require(caretVisible(host.lastPlan, theme.focus), "真实caret仍被祖先clip裁掉");
+                state[0].select(0, 0);
+            });
+            page.frame();
+            domain.execute(() -> require(page.pipeline().current().geometry.get(nodes[0]).scrollOffset == (nested ? 60 : 100),
+                    "普通状态变化擅自追随内部位置"));
+            page.navigation(SceneNavigationEvent.PREVIOUS);
+            page.frame();
+            domain.execute(() -> {
+                require(page.pipeline().current().geometry.get(nodes[0]).scrollOffset == 0,
+                        "反向单项导航未消费新的首行caret");
+                require(caretVisible(host.lastPlan, theme.focus), "新位置caret没有可见绘制命令");
+            });
+            page.close();
+        }
+    }
+
+    private void navigationAfterInternalScroll() {
+        ReactiveDomain domain = ReactiveDomain.direct();
+        PlainHost host = new PlainHost();
+        SceneNode[] nodes = new SceneNode[2];
+        SceneTheme base = SceneTheme.light();
+        SceneTheme theme = new SceneTheme(base.textStyle, base.panel, base.button, base.hover,
+                base.pressed, base.focus, base.disabled, base.disabledText,
+                base.tooltip, base.tooltipText, 0, 0);
+        ScenePageSession page = ScenePageSession.open(domain, host, host, ctx -> {
+            SceneEditState state = new SceneEditState(domain, String.join("\n", Collections.nCopies(20, "a")), Mode.MULTI_LINE);
+            nodes[1] = SceneTextArea.create(ctx, state, () -> theme, () -> true, ignored -> {})
+                    .size(Size.fixed(200), Size.fixed(240));
+            nodes[0] = new SceneNode().size(Size.fixed(200), Size.fixed(100))
+                    .scrollable(true).initialFocus(nodes[1]).add(nodes[1]);
+            ctx.mount(nodes[0]);
+        });
+        onClose(page::close);
+        page.frame();
+        for (SceneNavigationEvent navigation : new SceneNavigationEvent[] {SceneNavigationEvent.NEXT, SceneNavigationEvent.PREVIOUS}) {
+            page.pointer(ScenePointerEvent.scroll(2, 2, 8));
+            page.frame();
+            domain.execute(() -> {
+                require(page.pipeline().current().geometry.get(nodes[1]).text.lines().get(19).y == 380,
+                        "内部滚轮应能移开caret而不改编辑位置");
+                require(!caretVisible(host.lastPlan, theme.focus), "反例没有实际移开caret");
+            });
+            page.navigation(navigation);
+            page.frame();
+            domain.execute(() -> {
+                SceneGeometryView geometry = page.pipeline().current().geometry;
+                require(geometry.get(nodes[1]).text.lines().get(19).y == 220,
+                        "Tab没有让内部正文视口先显露caret");
+                require(geometry.get(nodes[0]).scrollOffset == 140, "外层未沿新几何最小显露");
+                require(caretVisible(host.lastPlan, theme.focus), "内部与祖先协调后caret仍不可见");
+            });
+        }
+        page.close();
+    }
+
+    private void horizontalCaret() {
+        ReactiveDomain domain = ReactiveDomain.direct();
+        PlainHost host = new PlainHost();
+        SceneNode[] nodes = new SceneNode[2];
+        SceneTheme base = SceneTheme.light();
+        SceneTheme theme = new SceneTheme(base.textStyle, base.panel, base.button, base.hover,
+                base.pressed, base.focus, base.disabled, base.disabledText,
+                base.tooltip, base.tooltipText, 0, 0);
+        ScenePageSession page = ScenePageSession.open(domain, host, host, ctx -> {
+            SceneEditState state = new SceneEditState(domain, "abcdefghijklmnopqrstuvw", Mode.SINGLE_LINE);
+            nodes[1] = SceneTextField.create(ctx, state, () -> theme, () -> false, ignored -> {})
+                    .size(Size.fixed(240), Size.fixed(20));
+            nodes[0] = new SceneNode().size(Size.fixed(100), Size.fixed(40))
+                    .axis(SceneNode.Axis.ROW).scrollable(true).initialFocus(nodes[1]).add(nodes[1]);
+            ctx.mount(nodes[0]);
+        });
+        onClose(page::close);
+        page.frame();
+        page.navigation(SceneNavigationEvent.NEXT);
+        page.frame();
+        domain.execute(() -> {
+            require(page.pipeline().current().geometry.get(nodes[0]).scrollOffset == 108,
+                    "横向祖先没有最小显露宽字段末尾caret");
+            require(caretVisible(host.lastPlan, theme.focus), "宽字段真实caret仍被祖先clip裁掉");
+        });
+        page.close();
+    }
+
+    private static boolean caretVisible(PaintPlan plan, int color) {
+        // 标准字段在边框/选区/文字之后绘制caret；高20的单行边框也可能宽1，不能取首项。
+        PaintCommand caret = null;
+        for (PaintCommand command : plan.commands())
+            if (command.kind == PaintCommand.Kind.RECT
+                    && command.color == color && command.box.width == 1 && command.box.height == 20)
+                caret = command;
+        return caret != null && (caret.clip == null
+                || caret.box.intersect(caret.clip).width == caret.box.width
+                        && caret.box.intersect(caret.clip).height == caret.box.height);
+    }
+
     protected void runTests() throws Exception {
+        scenario("大编辑区域的单项导航显露当前caret与嵌套祖先", this::navigationCaret);
+        scenario("宽单行字段沿横向祖先显露实际caret", this::horizontalCaret);
+        scenario("内部滚轮移开caret后正反Tab先显露正文再协调祖先", this::navigationAfterInternalScroll);
         scenario("固定模式所有文本入口与接受历史保留LF", this::modeEntries);
         scenario("正式Area换行原子历史明确提交旧结果及IME候选消费", this::confirmAndIme);
         scenario("跨行剪贴板只读Tab与禁用释放不提交", this::clipboardAndEligibility);

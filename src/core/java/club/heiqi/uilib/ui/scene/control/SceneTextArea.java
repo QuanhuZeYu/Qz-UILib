@@ -477,25 +477,43 @@ public final class SceneTextArea {
                             colors.focus,
                             true);
                 }
-                int position = toDisplay(value, value.caret),
-                        index = editing.lineAt(position, affinity);
-                if (index >= 0) {
-                    TextLayout.Line line = presented.lines().get(index);
-                    target.add(
-                            PaintCommand.rect(
-                                    new LayoutBox(
-                                            inner.x
-                                                    + (int)
-                                                            Math.floor(
-                                                                    editing.caretX(index, position)
-                                                                            - offsetX),
-                                            inner.y + line.y,
-                                            1,
-                                            Math.max(0, (int) Math.ceil(line.lineHeight))),
-                                    clip,
-                                    colors.focus));
-                }
+                LayoutBox caret = caretBox(entry);
+                if (caret != null) target.add(PaintCommand.rect(caret, clip, colors.focus));
             }
+        }
+
+        @Override
+        public boolean prepareNavigation(SceneNode node, SceneGeometryView geometry) {
+            SceneGeometryView.Entry entry = geometry.get(node);
+            LayoutBox caret = caretBox(entry);
+            if (caret == null) return false;
+            LayoutBox visible = caret.intersect(inner(entry.box, node.padding()));
+            if (visible.width == caret.width && visible.height == caret.height) return false;
+            reveal = true;
+            return true;
+        }
+
+        @Override
+        public LayoutBox navigationRegion(SceneNode node, SceneGeometryView geometry) {
+            SceneGeometryView.Entry entry = geometry.get(node);
+            LayoutBox caret = caretBox(entry);
+            return caret == null ? null : caret.intersect(inner(entry.box, node.padding()));
+        }
+
+        /** 同一行、视觉亲和性、组字和内部滚动事实供绘制与Tab显露共同消费。 */
+        private LayoutBox caretBox(SceneGeometryView.Entry entry) {
+            if (entry == null || presentation == null || entry.text != presented || editing == null)
+                return null;
+            int position = toDisplay(presentation, presentation.caret);
+            int index = editing.lineAt(position, affinity);
+            if (index < 0) return null;
+            LayoutBox inner = inner(entry.box, entry.node.padding());
+            TextLayout.Line line = presented.lines().get(index);
+            return new LayoutBox(
+                    inner.x + (int) Math.floor(editing.caretX(index, position) - offsetX),
+                    inner.y + line.y,
+                    1,
+                    Math.max(0, (int) Math.ceil(line.lineHeight)));
         }
 
         private void range(

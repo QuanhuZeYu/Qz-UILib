@@ -309,6 +309,13 @@ public final class ClientFontServices implements SceneTextMeasurer, AutoCloseabl
         return fonts;
     }
 
+    /** 共同文字/公式消费同一字体代际解析出的字号和基线，不能继承默认identity。 */
+    @Override
+    public TextStyle resolveStyle(TextStyle style) {
+        check();
+        return fonts.resolveStyle(style);
+    }
+
     @Override
     public club.heiqi.uilib.ui.scene.text.math.MathFont mathFont(TextStyle style) {
         check();

@@ -738,13 +738,22 @@ public final class SceneRuntime implements AutoCloseable {
         command();
         MountHandle target = focusRouter.takeReveal();
         if (target == null) return geometry;
+        // 内部视口先消费同一次Tab意图；随后只读事实才能用于逐层祖先显露。
+        if (target.node().control() != null
+                && target.node().control().prepareNavigation(target.node(), geometry)) {
+            invalidateArrangement();
+            geometry = Objects.requireNonNull(relayout.get(), "geometry");
+        }
         for (SceneNode ancestor = target.node().parent();
                 ancestor != null;
                 ancestor = ancestor.parent()) {
             if (!focusRouter.owns(target)) break;
             if (!ancestor.scrollable()) continue;
             SceneGeometryView.Entry entry = geometry.get(ancestor);
-            LayoutBox region = SceneGeometry.revealRegion(target.node(), ancestor, geometry);
+            SceneGeometry current = geometry;
+            SceneNode container = ancestor;
+            LayoutBox region = domain.readOnly(
+                    () -> SceneGeometry.revealRegion(target.node(), container, current));
             if (entry == null || region == null || region.width == 0 || region.height == 0)
                 continue;
             LayoutBox window = SceneGeometry.revealWindow(ancestor, geometry);

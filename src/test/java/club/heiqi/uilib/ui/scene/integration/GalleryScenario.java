@@ -3,6 +3,11 @@ import club.heiqi.uilib.testing.TestApplication;
 import club.heiqi.uilib.testing.gallery.TestGallery;
 import club.heiqi.uilib.testing.gallery.GalleryJourney;
 import club.heiqi.uilib.ui.reactive.ReactiveDomain;
+import club.heiqi.uilib.ui.reactive.ReadableSignal;
+import club.heiqi.uilib.ui.reactive.Signal;
+import club.heiqi.uilib.ui.scene.control.SceneTheme;
+import club.heiqi.uilib.ui.scene.layout.Size;
+import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.host.SceneHost;
 import club.heiqi.uilib.ui.scene.host.ScenePageSession;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometryView;
@@ -27,6 +32,7 @@ public final class GalleryScenario extends TestApplication {
         public void replay(PaintPlan plan) { paint = plan; }
     }
     protected void runTests() throws Exception {
+        scenario("广场Frame/Grid遵守子固定尺寸与硬边界", this::boundedLayouts);
         ClassLoader loader = getClass().getClassLoader();
         FontTextService fonts = own(new FontTextService(FontTextService.defaultSources(loader, 1), IsolatedFontEngine.shared()));
         SharedImageService images = own(new SharedImageService(new JavaImageLoader(id -> {
@@ -57,6 +63,38 @@ public final class GalleryScenario extends TestApplication {
                 }
             });
         }
+    }
+    private void boundedLayouts() throws Exception {
+        // 仅取得现有包内声明工厂；实际 Frame/Grid、子测量和最终布局均用生产实现。
+        Class<?> style = Class.forName("club.heiqi.uilib.testing.gallery.GalleryStyle");
+        java.lang.reflect.Method frame = style.getDeclaredMethod("frame", SceneNode.class,
+                ReadableSignal.class);
+        java.lang.reflect.Method grid = style.getDeclaredMethod("grid");
+        frame.setAccessible(true);
+        grid.setAccessible(true);
+        ReactiveDomain domain = ReactiveDomain.direct();
+        Signal<SceneTheme>[] theme =
+                new Signal[1];
+        domain.execute(() -> theme[0] = domain.signal(SceneTheme.light()));
+        Size fixed = Size.fixed(120).bounds(80, 120);
+        boundedLayout(domain, (SceneNode) frame.invoke(null, new SceneNode().size(fixed, Size.fixed(20)), theme[0]), 42, 120);
+        boundedLayout(domain, (SceneNode) frame.invoke(null, new SceneNode().size(fixed, Size.fixed(20)), theme[0]), 202, 120);
+        boundedLayout(domain, ((SceneNode) grid.invoke(null)).add(new SceneNode().size(fixed, Size.fixed(20))), 40, 120);
+        boundedLayout(domain, ((SceneNode) grid.invoke(null)).add(new SceneNode().size(fixed, Size.fixed(20))), 200, 120);
+        boundedLayout(domain, (SceneNode) frame.invoke(null, new SceneNode().size(Size.natural().bounds(80, 120), Size.fixed(20)), theme[0]), 202, 80);
+        boundedLayout(domain, ((SceneNode) grid.invoke(null)).add(new SceneNode().size(Size.fill(1).bounds(80, 120), Size.fixed(20))), 40, 80);
+        boundedLayout(domain, ((SceneNode) grid.invoke(null)).add(new SceneNode().size(Size.fill(1).bounds(80, 120), Size.fixed(20))), 200, 120);
+    }
+
+    private static void boundedLayout(ReactiveDomain domain, SceneNode parent, int parentWidth, int expectedWidth) {
+        parent.size(Size.fixed(parentWidth), Size.natural());
+        domain.execute(() -> {
+            SceneGeometryView geometry = new SceneLayoutEngine(new SoftwareSceneScenario.SoftwareHost())
+                    .layout(java.util.Collections.singletonList(parent), 300, 300);
+            SceneNode child = parent.children().get(0);
+            require(geometry.get(child).box.width == expectedWidth && geometry.get(child).box.height == 20,
+                    "真实广场容器覆盖了子尺寸或边界");
+        });
     }
     public static void main(String[] args) throws Exception { new GalleryScenario().run(); }
 }

@@ -10,10 +10,26 @@ public final class ChildPlacements {
     public static final class Entry {
         public final SceneNode child;
         public final LayoutBox relativeBox;
+        public final boolean contentBox;
 
+        /** 普通布局分配，框架在发布前核验子节点的 fixed/min/max。 */
         public Entry(SceneNode child, LayoutBox relativeBox) {
+            this(child, relativeBox, false);
+        }
+
+        private Entry(SceneNode child, LayoutBox relativeBox, boolean contentBox) {
             this.child = child;
             this.relativeBox = relativeBox;
+            this.contentBox = contentBox;
+        }
+
+        /**
+         * 内容协议明确给定的盒，例如文本规格 1.4.1 的数学 em 嵌入。
+         * 该协议负责尺寸分配，不自动求解子节点的 Size；仍使用同树几何、裁剪和输入。
+         * 普通容器应使用构造器并尊重子节点尺寸，不能以内容盒掩盖非法排列。
+         */
+        public static Entry contentBox(SceneNode child, LayoutBox relativeBox) {
+            return new Entry(child, relativeBox, true);
         }
     }
 

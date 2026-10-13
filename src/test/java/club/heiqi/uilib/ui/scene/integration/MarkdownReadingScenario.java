@@ -19,12 +19,16 @@ import club.heiqi.uilib.ui.scene.runtime.MountHandle;
 import club.heiqi.uilib.ui.scene.text.DocumentContent;
 import club.heiqi.uilib.ui.scene.text.InlineContent;
 import club.heiqi.uilib.ui.scene.text.MarkdownDocument;
+import club.heiqi.uilib.ui.scene.text.TableContent;
 import club.heiqi.uilib.ui.scene.text.TextContent;
 import club.heiqi.uilib.ui.scene.text.TextInput;
 import club.heiqi.uilib.ui.scene.text.TextLayout;
 import club.heiqi.uilib.ui.scene.text.TextStyle;
 import club.heiqi.uilib.ui.scene.text.font.FontTextService;
 import club.heiqi.uilib.ui.scene.text.font.MathTextFontSources;
+import club.heiqi.uilib.ui.scene.text.markdown.MarkdownAdapter;
+import club.heiqi.uilib.ui.scene.text.math.MathContent;
+import club.heiqi.uilib.ui.scene.text.math.MathLexer;
 
 import org.yaml.snakeyaml.Yaml;
 
@@ -73,6 +77,7 @@ public final class MarkdownReadingScenario extends TestApplication {
         runScenario("多码点实体CRLF代理对的UTF16及BYTE原位置", this::sourceExamples, failures);
         runScenario("HTML表格正式内容保源定位及未闭合公式正文边界", this::boundaries, failures);
         runScenario("合法quote列表容器公式空行Tab精确来源不吞外部正文", this::containerMath, failures);
+        runScenario("文档宏依源码顺序跨公式延续且代码转义新文档隔离", this::documentMacros, failures);
         runScenario("真实字体scene主题宽度变化保持链接身份并取消旧声明", this::scene, failures);
         runScenario("CODE独立滚动capture动态范围释放与嵌套列表正文", this::blockScene, failures);
         if (!failures.isEmpty()) {
@@ -510,6 +515,82 @@ public final class MarkdownReadingScenario extends TestApplication {
                 }
             }
             compareSources(a.children(), z.children(), source);
+        }
+    }
+
+    private void documentMacros() {
+        // macro-probe.log 的真实回归：引擎显式上下文有效，Markdown 曾为每个公式重置。
+        String definition = "\\gdef\\qzmacro{x}";
+        String[] pairs = {
+            "$" + definition + "$ $\\qzmacro$",
+            "$" + definition + "$\n\n$$\n\\qzmacro\n$$",
+            "$$\n" + definition + "\n$$\n\n$\\qzmacro$",
+            "${\\gdef\\qzmacro{x}}$\n\n~~~MaTh\n\\qzmacro\n~~~",
+            "~~~math\n" + definition + "\n~~~\n\n$\\qzmacro$"
+        };
+        for (String source : pairs) {
+            List<MathContent> math = formulas(MarkdownDocument.parse(source));
+            equal(2, math.size(), "跨入口反例必须命中定义与复用两公式: " + source);
+            require(math.get(0).diagnostics.isEmpty(), "宏定义失败: " + source);
+            expanded(math.get(1), "x");
+            equal("\\qzmacro", math.get(1).source.trim(), "复用公式原文被宏展开覆盖");
+        }
+        String ordered =
+                "$\\def\\qzmacro{x}$\n\n"
+                        + "> $\\qzmacro$ $\\gdef\\qzmacro{y}$\n>\n"
+                        + "> - $\\qzmacro$\n>   - $\\gdef\\qzmacro{z}$\n\n"
+                        + "| $\\qzmacro$ | $\\gdef\\qzmacro{w}$ |\n| --- | --- |\n"
+                        + "| $\\qzmacro$ | $\\qzmacro$ |\n\n$\\qzmacro$";
+        List<MathContent> math = formulas(MarkdownDocument.parse(ordered));
+        List<String> expected = Arrays.asList("", "x", "", "y", "", "z", "", "w", "w", "w");
+        equal(expected.size(), math.size(), "引用嵌套列表表头正文及后文公式数");
+        for (int i = 0; i < math.size(); i++) expanded(math.get(i), expected.get(i));
+
+        String inert =
+                "`$" + definition + "$`\n\n~~~text\n$" + definition + "$\n~~~\n\n"
+                        + "    $" + definition + "$\n\n\\$" + definition + "\\$\n\n"
+                        + "<code>$" + definition + "$</code>\n\n$\\qzmacro$";
+        math = formulas(MarkdownDocument.parse(inert));
+        equal(1, math.size(), "代码或转义定界符错误执行了宏");
+        require(!math.get(0).diagnostics.isEmpty(), "代码或转义中的定义污染了后文");
+
+        String forward = "$\\qzmacro$ $" + definition + "$ $\\qzmacro$";
+        MarkdownAdapter adapter = new MarkdownAdapter(TextInput.string(forward));
+        for (int attempt = 0; attempt < 2; attempt++) {
+            math = formulas(adapter.parse());
+            equal(3, math.size(), "顺序反例未命中三公式");
+            require(!math.get(0).diagnostics.isEmpty(), "后文定义逆向影响前文或重复parse未重置");
+            require(!math.get(0).nextMacros.contains("\\qzmacro"), "早期不可变宏上下文被后文改写");
+            expanded(math.get(2), "x");
+        }
+        math = formulas(MarkdownDocument.parse("$\\qzmacro$"));
+        require(!math.get(0).diagnostics.isEmpty(), "新文档继承了旧文档宏");
+        require(!MathContent.parse("\\qzmacro").diagnostics.isEmpty(), "单公式默认上下文受文档污染");
+    }
+
+    private static void expanded(MathContent math, String expected) {
+        require(math.diagnostics.isEmpty(), "公式解析失败: " + math.source);
+        StringBuilder actual = new StringBuilder();
+        for (MathLexer.Token token : math.expandedTokens) actual.append(token.text);
+        equal(expected, actual.toString().trim(), "宏复用未按源码顺序展开: " + math.source);
+    }
+
+    private static List<MathContent> formulas(DocumentContent document) {
+        List<MathContent> out = new ArrayList<>();
+        collectFormulas(document.blocks(), out);
+        return out;
+    }
+
+    private static void collectFormulas(List<DocumentContent.Block> blocks, List<MathContent> out) {
+        for (DocumentContent.Block block : blocks) {
+            if (block.math != null) out.add(block.math);
+            if (block.paragraph != null)
+                for (InlineContent inline : block.paragraph.inlineContents())
+                    if (inline.kind == InlineContent.Kind.MATH) out.add(inline.math);
+            collectFormulas(block.children(), out);
+            if (block.table != null)
+                for (TableContent.Row row : block.table.rows())
+                    for (TableContent.Cell cell : row.cells()) collectFormulas(cell.content(), out);
         }
     }
 

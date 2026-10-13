@@ -51,6 +51,11 @@ public final class MinecraftSceneHost implements SceneHost, SceneTextMeasurer, A
     }
 
     @Override
+    public TextStyle resolveStyle(TextStyle style) {
+        return fonts.resolveStyle(style);
+    }
+
+    @Override
     public club.heiqi.uilib.ui.scene.text.math.MathFont mathFont(TextStyle style) {
         return fonts.mathFont(style);
     }

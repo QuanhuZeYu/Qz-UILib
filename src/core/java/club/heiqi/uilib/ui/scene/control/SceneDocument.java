@@ -362,6 +362,8 @@ public final class SceneDocument {
                         continue;
                     InlineBox box = measured.box;
                     float x = cluster.x, y = line.baseline + cluster.style.baselineShift - box.baseline;
+                    // 位置来自同代簇；整数像素位置不能把正式子测量尺寸再扩成包络，
+                    // 否则居中/基线的半像素会破坏图像fixed/min/max声明。
                     int left = (int) Math.floor(x), top = (int) Math.floor(y);
                     arranged.add(
                             new ChildPlacements.Entry(
@@ -369,8 +371,8 @@ public final class SceneDocument {
                                     new LayoutBox(
                                             left,
                                             top,
-                                            (int) Math.ceil(x + box.width) - left,
-                                            (int) Math.ceil(y + box.height) - top)));
+                                            (int) box.width,
+                                            (int) box.height)));
                 }
             return arranged;
         }

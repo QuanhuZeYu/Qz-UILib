@@ -1,5 +1,7 @@
 package club.heiqi.uilib.ui.scene.integration;
 
+import club.heiqi.uilib.ui.scene.text.TextScript;
+
 import club.heiqi.uilib.testing.TestApplication;
 import club.heiqi.uilib.testing.GlfwTestEnvironment;
 import club.heiqi.uilib.testing.GlfwTestEnvironment.Profile;
@@ -228,6 +230,19 @@ public final class ClientFontServicesScenario extends TestApplication {
         TextLayout warm = owner.fonts().layout("中文 e\u0301 👩🏽‍💻", style, W);
         if (owner.hasGlResources() || owner.rasterizer().stats().started)
             throw new AssertionError("measure启动GL/worker");
+        // facade必须保留字体相关意图解析；公式直接消费这个入口，不会再由layout补解析。
+        for (TextScript intent :
+                new TextScript[] {
+                    TextScript.NONE.appendEm(9),
+                    TextScript.NONE.appendScript(true)
+                }) {
+            TextStyle requested = style.withScript(intent);
+            TextStyle expected = owner.fonts().resolveStyle(requested);
+            TextStyle actual = owner.resolveStyle(requested);
+            require(expected.logicalEm < requested.logicalEm && expected.script.steps().isEmpty(),
+                    "真实字体对照应解析字号/上标意图");
+            require(actual.equals(expected), "共享facade丢失实际字号、基线或字体代际事实");
+        }
         old = GlyphKey.of(warm.lines().get(0).glyphs().get(0));
         TextLayout normal = owner.layout("中文 中文 中文", style, 40, TextPolicy.NORMAL);
         TextLayout single = owner.layout("中文 中文 中文", style, 40, TextPolicy.SINGLE_LINE);

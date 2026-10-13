@@ -23,6 +23,8 @@ import club.heiqi.uilib.ui.scene.control.SceneControl;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometryView;
 import club.heiqi.uilib.ui.scene.layout.Size;
+import club.heiqi.uilib.ui.scene.layout.SceneChildMeasurer;
+import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.PaintCommand;
 import club.heiqi.uilib.ui.scene.paint.PaintPlan;
@@ -156,6 +158,7 @@ final class SoftwareSceneScenario extends TestApplication {
         scenario("不可变绘制载荷", SoftwareSceneScenario::immutablePayload);
         scenario("评审边界回归", () -> reviewedBoundaries(domain));
         scenario("自定义控件共同几何", () -> customControl(domain));
+        scenario("自定义排列两轴尺寸诊断与合法溢出", this::customPlacementSizes);
     }
 
     private void dynamicPanel() throws Exception {
@@ -695,6 +698,93 @@ final class SoftwareSceneScenario extends TestApplication {
                                     == current.geometry.get(control[0]).box,
                             "扩展绘制消费共同几何");
                 });
+    }
+
+    /** 重现审计中的 Frame 分配，仍由生产引擎测量与发布；此控件只返回待核验的作者结果。 */
+    private static final class PlacementProbe implements SceneControl {
+        final int width, height;
+        int measuredWidth, measuredHeight;
+
+        PlacementProbe(int width, int height) {
+            this.width = width;
+            this.height = height;
+        }
+
+        public MeasuredSize measure(SceneNode node, Constraints limits, SceneTextMeasurer text) {
+            return new MeasuredSize(0, 0);
+        }
+
+        public MeasuredSize measure(
+                SceneNode node, Constraints limits, SceneTextMeasurer text,
+                SceneChildMeasurer children) {
+            MeasuredSize measured = children.measureChild(node.children().get(0), limits);
+            measuredWidth = measured.width;
+            measuredHeight = measured.height;
+            return measured;
+        }
+
+        public ChildPlacements arrange(SceneNode node, LayoutBox allocated) {
+            return new ChildPlacements(Collections.singletonList(
+                    new ChildPlacements.Entry(node.children().get(0), new LayoutBox(1, 1, width, height))));
+        }
+
+        public void paint(SceneNode node, SceneGeometryView geometry, PaintPlanBuilder target) {}
+    }
+
+    private void customPlacementSizes() {
+        SoftwareHost host = new SoftwareHost();
+        // 审计的两轴40/200突破；另测无bounds的固定值、自然min与fill max，避免镜像参数乘积。
+        Size fixed = Size.fixed(120).bounds(80, 120);
+        invalidPlacement(host, fixed, true, 40);
+        invalidPlacement(host, fixed, true, 200);
+        invalidPlacement(host, fixed, false, 40);
+        invalidPlacement(host, fixed, false, 200);
+        invalidPlacement(host, Size.fixed(120), true, 100);
+        invalidPlacement(host, Size.natural().bounds(80, 120), true, 40);
+        invalidPlacement(host, Size.fill(1).bounds(80, 120), false, 200);
+        ReactiveDomain domain = ReactiveDomain.direct();
+        int[] clicks = {0};
+        SceneNode child = new SceneNode().size(Size.fixed(200).bounds(80, 120), Size.fixed(20))
+                .onClick(() -> clicks[0]++);
+        SceneNode parent = new SceneNode().size(Size.fixed(42), Size.fixed(22))
+                .control(new PlacementProbe(120, 20)).add(child);
+        try (ScenePageSession page = ScenePageSession.open(domain, host, host, ctx -> ctx.mount(parent))) {
+            page.frame();
+            domain.execute(() -> require(page.pipeline().current().geometry.get(child).box.width == 120,
+                    "固定值先经自身边界限制，合法溢出不得压缩"));
+            page.pointer(ScenePointerEvent.down(0, 70, 10));
+            page.pointer(ScenePointerEvent.up(0, 70, 10));
+            page.frame();
+            require(clicks[0] == 1, "父盒外的合法溢出仍沿共同几何命中");
+        }
+        SceneNode ordinaryChild = new SceneNode().size(Size.fixed(120).bounds(80, 120), Size.fixed(20));
+        SceneNode ordinary = new SceneNode().size(Size.fixed(42), Size.fixed(22)).add(ordinaryChild);
+        require(new SceneLayoutEngine(host)
+                        .layout(Collections.singletonList(ordinary), 300, 300).get(ordinaryChild).box.width == 120,
+                "普通布局对照保持固定120");
+    }
+
+    private static void invalidPlacement(SoftwareHost host, Size declared, boolean horizontal, int actual) {
+        SceneNode child = new SceneNode().size(
+                horizontal ? declared : Size.fixed(20), horizontal ? Size.fixed(20) : declared);
+        PlacementProbe rule = new PlacementProbe(horizontal ? actual : 20, horizontal ? 20 : actual);
+        SceneNode parent = new SceneNode().size(Size.fixed(42), Size.fixed(42)).control(rule).add(child);
+        try {
+            new SceneLayoutEngine(host).layout(Collections.singletonList(parent), 300, 300);
+            throw new AssertionError("非法普通分配被发布或静默钳位：" + actual);
+        } catch (IllegalArgumentException expected) {
+            String message = expected.getMessage();
+            require(message.contains("parent=" + parent.id())
+                            && message.contains("control=" + rule.getClass().getName())
+                            && message.contains("child=" + child.id())
+                            && message.contains("axis=" + (horizontal ? "width" : "height"))
+                            && message.contains("actual=" + actual)
+                            && message.contains("declared=" + declared.mode),
+                    "诊断缺少定位或声明事实：" + message);
+        }
+        if (declared.mode == Size.Mode.FIXED)
+            require((horizontal ? rule.measuredWidth : rule.measuredHeight) == 120,
+                    "正式测量应保留固定尺寸120");
     }
 
     private static void immutablePayload() {

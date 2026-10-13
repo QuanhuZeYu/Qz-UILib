@@ -305,13 +305,21 @@ public final class SceneLayoutEngine {
             List<ChildPlacements.Entry> placements = node.control().arrange(node, box).entries();
             boolean row = node.axis() == SceneNode.Axis.ROW;
             long extent = 0;
-            for (ChildPlacements.Entry child : placements)
+            // 先核验整批作者结果，再递归排列；拒绝非法尺寸，不改写作者的格子或位置。
+            for (ChildPlacements.Entry child : placements) {
+                if (child.child.parent() != node || !placed.add(child.child))
+                    throw new IllegalArgumentException("控件排列包含非逻辑子节点或重复节点");
+                if (!child.contentBox) {
+                    validatePlacement(node, child.child, "width", child.relativeBox.width, child.child.width());
+                    validatePlacement(node, child.child, "height", child.relativeBox.height, child.child.height());
+                }
                 extent =
                         Math.max(
                                 extent,
                                 row
                                         ? (long) child.relativeBox.x + child.relativeBox.width
                                         : (long) child.relativeBox.y + child.relativeBox.height);
+            }
             int maximum =
                     node.scrollable()
                             ? (int)
@@ -325,8 +333,6 @@ public final class SceneLayoutEngine {
                     entryIndex,
                     new SceneGeometryView.Entry(node, box, clip, lines, scroll, maximum));
             for (ChildPlacements.Entry child : placements) {
-                if (child.child.parent() != node || !placed.add(child.child))
-                    throw new IllegalArgumentException("控件排列包含非逻辑子节点或重复节点");
                 LayoutBox relative = child.relativeBox;
                 arrange(
                         child.child,
@@ -383,6 +389,21 @@ public final class SceneLayoutEngine {
             arrange(child, new LayoutBox(x, y, childWidth, childHeight), clip, entries);
             cursor += allocated[i] + node.gap();
         }
+    }
+
+    private static void validatePlacement(
+            SceneNode parent, SceneNode child, String axis, int actual, Size declared) {
+        // natural 的内容求解由控件负责，这里只守住已声明的硬边界与固定尺寸。
+        if (actual < declared.min
+                || actual > declared.max
+                || declared.mode == Size.Mode.FIXED && actual != declared.constrain(declared.value))
+            throw new IllegalArgumentException(
+                    "控件排列尺寸非法: parent=" + parent.id()
+                            + " control=" + parent.control().getClass().getName()
+                            + " child=" + child.id()
+                            + " axis=" + axis + " actual=" + actual
+                            + " declared=" + declared.mode + "(value=" + declared.value
+                            + ", min=" + declared.min + ", max=" + declared.max + ")");
     }
 
     /** 有界水位分配：固定占用保留，触及边界的填充退出，余数沿子序分配。 */

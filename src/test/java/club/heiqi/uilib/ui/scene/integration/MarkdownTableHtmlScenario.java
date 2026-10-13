@@ -19,6 +19,7 @@ import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.layout.Size;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.PaintPlan;
+import club.heiqi.uilib.ui.scene.paint.PaintCommand;
 import club.heiqi.uilib.ui.scene.runtime.MountHandle;
 import club.heiqi.uilib.ui.scene.text.DocumentContent;
 import club.heiqi.uilib.ui.scene.text.FontStyle;
@@ -67,6 +68,7 @@ public final class MarkdownTableHtmlScenario extends TestApplication {
         runScenario("真实字体表格列行主题动态重排与全投影对齐", this::tableScene, failures);
         runScenario("超宽公式独立横滚裁剪链接capture尾事件与释放", this::overflowScene, failures);
         runScenario("共享图像worker完成自动更新表格cell行高并释放", this::imageScene, failures);
+        runScenario("居中表格半像素位置保留固定图像测量尺寸", this::centeredFixedImage, failures);
         if (!failures.isEmpty()) {
             AssertionError error = new AssertionError("Markdown表格HTML场景失败=" + failures.size());
             for (Throwable failure : failures) error.addSuppressed(failure);
@@ -801,6 +803,52 @@ public final class MarkdownTableHtmlScenario extends TestApplication {
         }
     }
 
+    private void centeredFixedImage() throws Exception {
+        try (SharedImageService images = new SharedImageService(
+                source -> () -> ImageServiceScenario.pixels(16, 16), SharedImageService.Budget.defaults())) {
+            DocumentResources resources = new DocumentResources(images, () -> "", Collections.emptyMap(), null);
+            try (Fixture f = new Fixture("| <img src=\"resource:test:ore\" width=\"16\" height=\"16\"/> |\n| :---: |", 17, resources)) {
+                f.domain.execute(() -> {
+                    SceneTheme theme = SceneTheme.dark().withTextStyle(BASE);
+                    f.theme[0].set(new SceneTheme(theme.textStyle, theme.panel, theme.button, theme.hover,
+                            theme.pressed, theme.focus, theme.disabled, theme.disabledText,
+                            theme.tooltip, theme.tooltipText, 0, 0));
+                });
+                f.page.frame();
+                // 首帧挂载声明，后续drain派发worker并发布完成；IMAGE观测必须消费ready资源。
+                long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
+                while (images.retainedBytes() == 0 && System.nanoTime() < deadline) {
+                    f.page.frame();
+                    Thread.yield();
+                }
+                require(images.retainedBytes() > 0, "固定图像未完成正式资源发布");
+                f.page.frame();
+                f.domain.execute(() -> {
+                    SceneGeometryView geometry = f.geometry();
+                    SceneNode table = f.root[0].children().get(0);
+                    SceneNode paragraph = textNode(table.children().get(0), geometry);
+                    SceneNode image = paragraph.children().get(0);
+                    equal(17, geometry.get(paragraph).box.width, "反例段落可用宽度");
+                    require(image.width().mode == Size.Mode.FIXED && image.width().value == 16
+                                    && image.height().mode == Size.Mode.FIXED && image.height().value == 16,
+                            "正式图像绑定没有保留硬尺寸");
+                    TextLayout.Cluster cluster = geometry.get(paragraph).text.lines().get(0).clusters().get(0);
+                    require(Math.abs(cluster.x - 0.5f) < 0.001f, "反例未触达半像素居中位置");
+                    equal(16, geometry.get(image).box.width, "居中位置不应放大图像固定宽度");
+                    equal(16, geometry.get(image).box.height, "基线小数不应放大图像固定高度");
+                    PaintCommand command = null;
+                    for (PaintCommand item : f.paint.commands())
+                        if (item.kind == PaintCommand.Kind.IMAGE) command = item;
+                    LayoutBox box = geometry.get(image).box;
+                    require(command != null, "完成发布的固定图像没有IMAGE命令");
+                    require(command.box.x == box.x && command.box.y == box.y
+                                    && command.box.width == box.width && command.box.height == box.height,
+                            "图像绘制没有消费同树固定几何");
+                });
+            }
+        }
+    }
+
     private void imageScene() throws Exception {
         CountDownLatch started = new CountDownLatch(1), release = new CountDownLatch(1);
         ImageContent pixels = ImageServiceScenario.pixels(280, 140);
@@ -973,6 +1021,7 @@ public final class MarkdownTableHtmlScenario extends TestApplication {
         final Signal<DocumentContent>[] content;
         final Signal<SceneTheme>[] theme;
         final ScenePageSession page;
+        PaintPlan paint;
 
         @SuppressWarnings("unchecked")
         Fixture(String source, int width) throws Exception {
@@ -1003,7 +1052,7 @@ public final class MarkdownTableHtmlScenario extends TestApplication {
                                 ((SharedImageService) resources.images).drain();
                         }
 
-                        public void replay(PaintPlan plan) {}
+                        public void replay(PaintPlan plan) { paint = plan; }
                     };
             page =
                     ScenePageSession.open(

@@ -139,6 +139,23 @@ public interface SceneControl {
         return false;
     }
 
+    /**
+     * 主动Tab导航在查询几何前请求控件内部必要显露；只调整内部呈现，不请求编辑提交。
+     * 返回true时框架使排列失效并重排，再查询navigationRegion；缺省不改变内部视口。
+     */
+    default boolean prepareNavigation(SceneNode node, SceneGeometryView geometry) {
+        return false;
+    }
+
+    /**
+     * Tab显露的内部焦点/编辑区域，使用当前Entry对应的scene坐标；缺省null沿节点整盒。
+     * 仅在节点大于祖先视口的轴优先使用，查询不能重排、写状态或自行滚动祖先。
+     * 区域应表达已由控件内部视口协调的当前事实，不预先套祖先clip。
+     */
+    default LayoutBox navigationRegion(SceneNode node, SceneGeometryView geometry) {
+        return null;
+    }
+
     /** 当前只读/可编辑事实由控件声明，宿主据此启停真实文本输入。 */
     default boolean acceptsTextInput(SceneNode node) {
         return false;

@@ -50,6 +50,21 @@ public final class SceneGeometry implements SceneGeometryView {
         SceneGeometryView.Entry entry = geometry.get(target);
         if (entry == null) return null;
         LayoutBox region = entry.box;
+        LayoutBox window = revealWindow(ancestor, geometry);
+        // 能放下的轴仍显露整盒；过大的编辑目标优先使用本次内部位置。
+        if (target.control() != null
+                && (region.width > window.width || region.height > window.height)) {
+            LayoutBox focus = target.control().navigationRegion(target, geometry);
+            if (focus != null) {
+                boolean oversizedX = region.width > window.width;
+                boolean oversizedY = region.height > window.height;
+                region = new LayoutBox(
+                        oversizedX ? focus.x : region.x,
+                        oversizedY ? focus.y : region.y,
+                        oversizedX ? focus.width : region.width,
+                        oversizedY ? focus.height : region.height);
+            }
+        }
         // 下层裁剪随当前祖先的内容一起移动，外层只能显露其中尚可见的部分。
         for (SceneNode node = target.parent(); node != ancestor; node = node.parent()) {
             if (node == null) return null;

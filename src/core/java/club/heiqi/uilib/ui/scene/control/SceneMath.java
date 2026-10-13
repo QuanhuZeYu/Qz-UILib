@@ -304,7 +304,7 @@ public final class SceneMath implements SceneControl {
                 index++;
                 SceneNode child = slots.get(embed.id).node;
                 placements.add(
-                        new ChildPlacements.Entry(
+                        ChildPlacements.Entry.contentBox(
                                 child,
                                 bounds(
                                         node.padding() + embed.x - presentationBounds.x,

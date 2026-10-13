@@ -109,6 +109,7 @@ public final class SceneTextField {
         private Snapshot presentation;
         private int width = -1;
         private int offset;
+        private boolean reveal;
 
         private Control(
                 SceneEditState state,
@@ -190,7 +191,8 @@ public final class SceneTextField {
             int maximum = Math.max(0, full.width - Math.max(0, innerWidth - 1));
             int nextOffset = Math.min(offset, maximum);
             // 光标/草稿/组字或真实排版区域变化各消费一次显露意图，不在稳定帧追滚动。
-            if (changed
+            if (reveal
+                    || changed
                     || width != innerWidth
                     || presentation == null
                     || presentation.caret != next.caret
@@ -210,6 +212,7 @@ public final class SceneTextField {
             width = innerWidth;
             offset = nextOffset;
             presentation = next;
+            reveal = false;
             return presented;
         }
 
@@ -367,27 +370,38 @@ public final class SceneTextField {
                             colors.focus,
                             true);
                 }
-                TextLayout.Line line =
-                        entry.text.lines().isEmpty() ? null : entry.text.lines().get(0);
-                int top = line == null ? 0 : line.y;
-                int height = line == null ? inner.height : (int) Math.ceil(line.lineHeight);
-                target.add(
-                        PaintCommand.rect(
-                                new LayoutBox(
-                                        inner.x
-                                                + (int)
-                                                        Math.floor(
-                                                                caretX(
-                                                                        entry.text,
-                                                                        toDisplay(
-                                                                                value,
-                                                                                value.caret))),
-                                        inner.y + top,
-                                        1,
-                                        Math.max(0, height)),
-                                clip,
-                                colors.focus));
+                target.add(PaintCommand.rect(caretBox(entry), clip, colors.focus));
             }
+        }
+
+        @Override
+        public boolean prepareNavigation(SceneNode node, SceneGeometryView geometry) {
+            SceneGeometryView.Entry entry = geometry.get(node);
+            LayoutBox caret = caretBox(entry);
+            if (caret == null) return false;
+            LayoutBox visible = caret.intersect(inner(entry.box, node.padding()));
+            if (visible.width == caret.width && visible.height == caret.height) return false;
+            reveal = true;
+            return true;
+        }
+
+        @Override
+        public LayoutBox navigationRegion(SceneNode node, SceneGeometryView geometry) {
+            SceneGeometryView.Entry entry = geometry.get(node);
+            LayoutBox caret = caretBox(entry);
+            return caret == null ? null : caret.intersect(inner(entry.box, node.padding()));
+        }
+
+        /** 绘制与导航只消费同一个当前呈现事实，保留组字位置和内部水平偏移。 */
+        private LayoutBox caretBox(SceneGeometryView.Entry entry) {
+            if (entry == null || presentation == null || entry.text != presented) return null;
+            LayoutBox inner = inner(entry.box, entry.node.padding());
+            TextLayout.Line line = entry.text.lines().isEmpty() ? null : entry.text.lines().get(0);
+            return new LayoutBox(
+                    inner.x + (int) Math.floor(caretX(entry.text, toDisplay(presentation, presentation.caret))),
+                    inner.y + (line == null ? 0 : line.y),
+                    1,
+                    Math.max(0, line == null ? inner.height : (int) Math.ceil(line.lineHeight)));
         }
 
         private void range(

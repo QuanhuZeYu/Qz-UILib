@@ -60,7 +60,7 @@ final class GalleryStyle {
                 for (int column = 0; column < columns && offset + column < node.children().size(); column++) {
                     SceneNode child = node.children().get(offset + column);
                     MeasuredSize size = children.measureChild(child, new Constraints(width, limits.availableHeight));
-                    placed.add(new ChildPlacements.Entry(child, new LayoutBox(column * (width + gap), y, width, size.height)));
+                    placed.add(new ChildPlacements.Entry(child, new LayoutBox(column * (width + gap), y, child.width().mode == Size.Mode.FILL ? child.width().constrain(width) : size.width, size.height)));
                     height = Math.max(height, size.height);
                 }
                 y += height + gap;
@@ -88,7 +88,7 @@ final class GalleryStyle {
             SceneNode content = node.children().get(0);
             int available = Math.max(0, width - 2);
             MeasuredSize measured = children.measureChild(content, new Constraints(available, Math.max(0, height - 2)));
-            prepared = new ChildPlacements(Collections.singletonList(new ChildPlacements.Entry(content, new LayoutBox(1, 1, available, measured.height))));
+            prepared = new ChildPlacements(Collections.singletonList(new ChildPlacements.Entry(content, new LayoutBox(1, 1, content.width().mode == Size.Mode.FILL ? content.width().constrain(available) : measured.width, measured.height))));
             return full;
         }
         @Override public ChildPlacements arrange(SceneNode node, LayoutBox allocated) { ChildPlacements result = prepared; prepared = null; return result; }
