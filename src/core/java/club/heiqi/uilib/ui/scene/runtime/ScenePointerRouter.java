@@ -155,7 +155,15 @@ public final class ScenePointerRouter implements AutoCloseable {
     private void blurOutsideFocus(SceneGeometryView geometry) {
         if (!geometry.viewport().contains(x, y)) return;
         SceneNode modal = runtime.activeModal();
-        if (modal != null && !inside(geometry.get(modal))) return;
+        if (modal != null && !inside(geometry.get(modal))) {
+            boolean owned = false;
+            for (SceneGeometryView.Entry entry : geometry.ordered())
+                if (geometry.layerBoundary(entry.node) != null && runtime.interactive(entry.node) && inside(entry)) {
+                    owned = true;
+                    break;
+                }
+            if (!owned) return;
+        }
         SceneNode focused = runtime.focusRouter().focused().get();
         if (focused != null && !inside(geometry.get(focused))) runtime.focusRouter().clear();
     }

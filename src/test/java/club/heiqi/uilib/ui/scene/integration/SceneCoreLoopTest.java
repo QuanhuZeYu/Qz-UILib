@@ -66,6 +66,43 @@ public final class SceneCoreLoopTest extends TestApplication {
         System.out.println("CORE_GRID publicFactory=true frame=true input=true externalPolicyAlive=true");
     }
 
+    /** null-parent 成品消费者也实际调用所属层工厂；空文案只验结构与输入，不冒称字体证据。 */
+    public static void publicLayerConsumer() {
+        ReactiveDomain domain = ReactiveDomain.direct();
+        SoftwareSceneScenario.SoftwareHost host = new SoftwareSceneScenario.SoftwareHost();
+        Signal<club.heiqi.uilib.ui.scene.control.SceneLayer.Policy>[] policy = new Signal[1];
+        Signal<Integer>[] value = new Signal[1]; SceneNode[] layer = new SceneNode[1], button = new SceneNode[1];
+        try (ScenePageSession page = ScenePageSession.open(domain, host, host, context -> {
+            policy[0] = domain.signal(new club.heiqi.uilib.ui.scene.control.SceneLayer.Policy(5,
+                    club.heiqi.uilib.ui.scene.control.SceneLayer.Participation.INTERACTIVE));
+            value[0] = domain.signal(0);
+            button[0] = club.heiqi.uilib.ui.scene.control.SceneButton.create(context, domain.signal(""),
+                    domain.signal(club.heiqi.uilib.ui.scene.control.SceneTheme.light()), () -> value[0].set(value[0].get() + 1))
+                    .size(club.heiqi.uilib.ui.scene.layout.Size.fixed(60), club.heiqi.uilib.ui.scene.layout.Size.fixed(20));
+            layer[0] = club.heiqi.uilib.ui.scene.control.SceneLayer.create(context, policy[0]).add(button[0]);
+            SceneNode source = new SceneNode().size(club.heiqi.uilib.ui.scene.layout.Size.fixed(60),
+                    club.heiqi.uilib.ui.scene.layout.Size.fixed(20)).add(layer[0]);
+            context.mountOwned(new SceneNode().size(club.heiqi.uilib.ui.scene.layout.Size.fixed(80),
+                    club.heiqi.uilib.ui.scene.layout.Size.fixed(20)).clip(true).add(source));
+        })) {
+            page.frame();
+            page.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.down(0, 10, 30));
+            page.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.up(0, 10, 30)); page.frame();
+            domain.execute(() -> { require(value[0].get() == 1, "成品Layer没有在来源clip外更新业务值");
+                policy[0].set(new club.heiqi.uilib.ui.scene.control.SceneLayer.Policy(8,
+                        club.heiqi.uilib.ui.scene.control.SceneLayer.Participation.PASSIVE)); }); page.frame();
+            page.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.down(0, 10, 35));
+            page.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.up(0, 10, 35)); page.frame();
+            domain.execute(() -> require(value[0].get() == 1, "成品policy动态变化未终止Layer输入"));
+        }
+        domain.execute(() -> {
+            policy[0].set(new club.heiqi.uilib.ui.scene.control.SceneLayer.Policy(9,
+                    club.heiqi.uilib.ui.scene.control.SceneLayer.Participation.INTERACTIVE));
+            require(policy[0].get().gap == 9, "Layer关闭释放了外部policy");
+        });
+        System.out.println("CORE_LAYER publicFactory=true frame=true pointerBusiness=1 policyDynamic=true externalPolicyAlive=true");
+    }
+
     private void rejectPureCommand(Runnable command) {
         try {
             command.run();

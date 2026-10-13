@@ -27,7 +27,12 @@ public final class SceneFocusRouter {
     private MountHandle owner, pendingReveal;
     // 仅记录已发出的控件通知，不参与焦点资格或路由决定；owner是唯一权威。
     private MountHandle notifiedOwner;
-    private final java.util.ArrayDeque<SceneNode> pendingFocusLosses = new java.util.ArrayDeque<>();
+    private static final class FocusLoss {
+        final SceneNode node;
+        final boolean eligible;
+        FocusLoss(SceneNode node, boolean eligible) { this.node = node; this.eligible = eligible; }
+    }
+    private final java.util.ArrayDeque<FocusLoss> pendingFocusLosses = new java.util.ArrayDeque<>();
     private boolean closed, rangesDirty = true;
 
     SceneFocusRouter(SceneRuntime runtime) {
@@ -84,7 +89,7 @@ public final class SceneFocusRouter {
     // 仅本次命令遍历声明树；从唯一当前范围开始，跳过失活子树，不缓存导航表或用几何排序。
     private void collect(SceneNode node, List<SceneNode> candidates) {
         if (!runtime.locallyInteractive(node)) return;
-        if (node.focusable()) candidates.add(node);
+        if (node.focusable() && runtime.interactive(node)) candidates.add(node);
         for (SceneNode child : node.children()) collect(child, candidates);
     }
 
@@ -120,8 +125,9 @@ public final class SceneFocusRouter {
         SceneNode before = owner == null ? null : owner.node();
         SceneNode after = target == null ? null : target.node();
         if (before != after) {
+            // 记录失焦当刻的原因；终止preedit的Signal可能使下一批布局失效，不能把失活改判为正常BLUR。
+            if (before != null) pendingFocusLosses.add(new FocusLoss(before, runtime.interactive(before)));
             runtime.invalidateComposition(before);
-            if (before != null) pendingFocusLosses.add(before);
         }
         owner = target;
         value.set(after);
@@ -134,12 +140,13 @@ public final class SceneFocusRouter {
         // 先推进通知游标再调用扩展，嵌套转移不会覆盖已经发布的新通知。
         while (true) {
             // 实际离开按发生顺序保存，Signal订阅中离开再返回也不能吞掉BLUR提交。
-            SceneNode lost = pendingFocusLosses.poll();
-            if (lost != null) {
+            FocusLoss loss = pendingFocusLosses.poll();
+            if (loss != null) {
+                SceneNode lost = loss.node;
                 if (notifiedOwner != null && notifiedOwner.node() == lost) notifiedOwner = null;
                 if (lost.control() != null)
                     runtime.dispatchControlFocus(lost, false,
-                            !closed && runtime.alive() && runtime.interactive(lost));
+                            loss.eligible && !closed && runtime.alive() && runtime.interactive(lost));
                 continue;
             }
             SceneNode current = owner == null ? null : owner.node();
@@ -201,7 +208,7 @@ public final class SceneFocusRouter {
             if (range.saved != null
                     && (!local(range.saved) || !contains(range, range.saved.node())))
                 range.saved = null;
-        if (rangesDirty) {
+        if (rangesDirty && runtime.scopeFactsReady()) {
             rangesDirty = false;
             syncRanges();
         }
@@ -212,7 +219,7 @@ public final class SceneFocusRouter {
     private boolean alive(Range range) {
         return range.modal.active()
                 && range.modal.node().modal()
-                && runtime.visibleInTree(range.modal.node());
+                && runtime.locallyInteractive(range.modal.node());
     }
 
     private int index(SceneNode modal) {
@@ -240,7 +247,7 @@ public final class SceneFocusRouter {
                     previous.saved = owner;
                 List<SceneNode> chain = new ArrayList<>();
                 for (SceneNode node = active; node != null; node = node.parent())
-                    if (node.modal() && index(node) < 0) chain.add(0, node);
+                    if (node.modal() && runtime.locallyInteractive(node) && index(node) < 0) chain.add(0, node);
                 for (SceneNode node : chain) ranges.add(new Range(runtime.captureMount(node)));
                 entering = true;
             }

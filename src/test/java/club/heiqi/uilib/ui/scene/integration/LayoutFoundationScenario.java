@@ -83,7 +83,7 @@ public final class LayoutFoundationScenario extends TestApplication {
                                     SceneChildMeasurer children) {
             measureWidths.add(body.availableWidth);
             // 引擎已扣 node.padding；此处只扣扩展自身的边框。
-            MeasuredSize size = children.measureChild(node.children().get(0), new Constraints(
+            MeasuredSize size = children.measureChild(children.flowChildren().get(0), new Constraints(
                     Math.max(0, body.availableWidth - BORDER * 2),
                     Math.max(0, body.availableHeight - BORDER * 2)));
             return new MeasuredSize(size.width + BORDER * 2, size.height + BORDER * 2);
@@ -92,7 +92,7 @@ public final class LayoutFoundationScenario extends TestApplication {
         public ChildPlacements arrange(SceneNode node, LayoutBox allocated, SceneChildMeasurer children) {
             int inset = node.padding() + BORDER;
             int width = Math.max(0, allocated.width - inset * 2);
-            SceneNode child = node.children().get(0);
+            SceneNode child = children.flowChildren().get(0);
             MeasuredSize size = children.measureChild(child, new Constraints(
                     width, Math.max(0, allocated.height - inset * 2)));
             int childWidth = child.width().mode == Size.Mode.FILL

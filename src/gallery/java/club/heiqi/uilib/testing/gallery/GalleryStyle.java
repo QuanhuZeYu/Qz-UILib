@@ -60,11 +60,11 @@ final class GalleryStyle {
         @Override public List<ReadableSignal<?>> measureDependencies(SceneNode node) { return Collections.singletonList(theme); }
         @Override public MeasuredSize measure(SceneNode node, Constraints limits, SceneTextMeasurer text) { return new MeasuredSize(0, 0); }
         @Override public MeasuredSize measure(SceneNode node, Constraints limits, SceneTextMeasurer text, SceneChildMeasurer children) {
-            MeasuredSize size = children.measureChild(node.children().get(0), new Constraints(Math.max(0, limits.availableWidth - 2), Math.max(0, limits.availableHeight - 2)));
+            MeasuredSize size = children.measureChild(children.flowChildren().get(0), new Constraints(Math.max(0, limits.availableWidth - 2), Math.max(0, limits.availableHeight - 2)));
             return new MeasuredSize(size.width + 2, size.height + 2);
         }
         @Override public ChildPlacements arrange(SceneNode node, LayoutBox allocated, SceneChildMeasurer children) {
-            SceneNode content = node.children().get(0);
+            SceneNode content = children.flowChildren().get(0);
             int inset = node.padding() + 1;
             int available = Math.max(0, allocated.width - inset * 2);
             MeasuredSize measured = children.measureChild(content,

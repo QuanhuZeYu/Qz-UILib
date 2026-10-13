@@ -67,6 +67,16 @@ public final class SceneHitTester {
         for (int i = entries.size() - 1; i >= 0; i--) {
             SceneGeometryView.Entry entry = entries.get(i);
             if (entry.clip != null && !entry.clip.contains(x, y)) continue;
+            if (entry.box.contains(x, y) && runtime.interactive(entry.node)
+                    && geometry.layerBoundary(entry.node) != null) {
+                SceneNode boundary = geometry.layerBoundary(entry.node);
+                for (SceneNode node = entry.node; node != null; node = node.parent()) {
+                    if (node.scrollable() || node.scrollAction() != null
+                            || node.control() != null && node.control().scrollableContent()) return node;
+                    if (node == boundary) break;
+                }
+                return null; // 已命中所属层，其内部无目标也不能滚来源或后台。
+            }
             if (entry.box.contains(x, y)
                     && runtime.interactive(entry.node)
                     && (scroll

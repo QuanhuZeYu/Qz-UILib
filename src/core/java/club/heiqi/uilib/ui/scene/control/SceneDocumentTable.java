@@ -146,6 +146,7 @@ final class SceneDocumentTable implements SceneControl {
     }
 
     private GridRequest intrinsic(SceneNode node, SceneChildMeasurer children) {
+        club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine.rejectContentLayers(node, node, "document table");
         TableContent table = source.get().table;
         int gap = node.gap();
         if (request != null

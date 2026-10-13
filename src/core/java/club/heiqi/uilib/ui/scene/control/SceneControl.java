@@ -16,6 +16,8 @@ import java.util.List;
 
 /** 自定义控件声明内容与区域；测量/排列/绘制不能写业务状态或回写布局。 */
 public interface SceneControl {
+    /** null 表示普通流；所属层策略不得返回 null。 */
+    default SceneLayer.Policy layerPolicy(SceneNode node) { return null; }
     /** 声明测量使用的响应来源；框架在挂载期订阅，变更重新测量。 */
     default List<ReadableSignal<?>> measureDependencies(SceneNode node) {
         return Collections.emptyList();

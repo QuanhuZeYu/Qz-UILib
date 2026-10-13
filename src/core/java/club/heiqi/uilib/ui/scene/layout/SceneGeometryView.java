@@ -42,7 +42,31 @@ public interface SceneGeometryView {
         return new LayoutBox(0, 0, width, height);
     }
 
+    /** 同批呈现子树片段；每组独立闭合 paintAfterChildren 栈。 */
+    final class Group {
+        public final SceneNode root, layer, scope;
+        public final club.heiqi.uilib.ui.scene.control.SceneLayer.Policy policy;
+        public final List<Entry> entries;
+        public Group(SceneNode root, SceneNode layer, SceneNode scope,
+                club.heiqi.uilib.ui.scene.control.SceneLayer.Policy policy, List<Entry> entries) {
+            this.root = root; this.layer = layer; this.scope = scope; this.policy = policy;
+            this.entries = java.util.Collections.unmodifiableList(new java.util.ArrayList<>(entries));
+        }
+    }
+    default List<Group> groups() {
+        return java.util.Collections.singletonList(new Group(null, null, null, null, ordered()));
+    }
+    /** 空值表示普通呈现路径；结果与 ordered 同代。 */
+    default SceneNode layerBoundary(SceneNode node) { return null; }
+    default SceneNode logicalScope(SceneNode node) { return null; }
+    default club.heiqi.uilib.ui.scene.control.SceneLayer.Policy layerPolicy(SceneNode node) { return null; }
+    default boolean layerSourceAvailable(SceneNode layer) { return false; }
+    default SceneNode activeModal() { return null; }
+
     Entry get(SceneNode node);
 
     List<Entry> ordered();
+
+    /** 同批原排列顺序，仅用于完整内容捕获；条目与 get 同一，输入/主绘制层序仍消费 ordered/groups。 */
+    default List<Entry> sourceOrdered() { return ordered(); }
 }

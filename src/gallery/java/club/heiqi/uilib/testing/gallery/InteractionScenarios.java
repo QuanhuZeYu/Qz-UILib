@@ -8,6 +8,7 @@ import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.control.SceneButton;
 import club.heiqi.uilib.ui.scene.control.SceneControl;
+import club.heiqi.uilib.ui.scene.control.SceneLayer;
 import club.heiqi.uilib.ui.scene.control.SceneTextArea;
 import club.heiqi.uilib.ui.scene.control.SceneTextField;
 import club.heiqi.uilib.ui.scene.control.SceneTextField.SubmitPolicy;
@@ -326,6 +327,7 @@ final class InteractionScenarios {
     private static SceneNode structure(ScenePageContext context, ReadableSignal<SceneTheme> theme) {
         SceneNode content = page();
         guide(content, context, theme, "操作都沿同一 scene：重排后继续编辑原订单，再用 Tab 按新逻辑顺序导航；隐藏、禁用或切换对象后，旧交互不得落到占据原位置的对象。滚轮和裁剪使用正式视口，小窗口操作按钮纵向排列。");
+        content.add(ownedLayer(context, theme));
         Orders orders = new Orders(context);
         SceneNode listCard = GalleryStyle.card(theme);
         title(listCard, context, theme, "订单队列", 20);
@@ -385,6 +387,29 @@ final class InteractionScenarios {
         help.add(GalleryStyle.label(context, tipFeedback, theme, 13, true));
         content.add(GalleryStyle.frame(help, theme));
         return scopes(context, theme, content, enabled);
+    }
+
+    private static SceneNode ownedLayer(ScenePageContext context, ReadableSignal<SceneTheme> theme) {
+        Signal<Boolean> open = context.domain().signal(false);
+        Signal<String> applied = context.domain().signal("尚未应用所属草稿");
+        SceneEditState draft = new SceneEditState(context.domain(), "所属层独立草稿");
+        SceneNode layer = SceneLayer.create(context, () -> new SceneLayer.Policy(6, SceneLayer.Participation.INTERACTIVE))
+                .size(Size.fixed(340), Size.natural()).padding(8).gap(8)
+                .bind(NodeBinding.value(open, SceneNode::visible))
+                .bind(NodeBinding.value(theme, (node, value) -> node.background(value.panel)));
+        layer.add(SceneTextField.create(context, draft, theme, () -> false, request -> {}));
+        layer.add(action(context, theme, () -> "应用所属层草稿", () -> applied.set("所属层已应用：" + draft.text().get())));
+        layer.add(action(context, theme, () -> "收起所属层", () -> open.set(false)));
+        SceneNode opener = action(context, theme, () -> "打开来源所属层", () -> open.set(true));
+        SceneNode source = stack().bind(NodeBinding.ownedChildren(() -> Arrays.asList(opener, layer)));
+        SceneNode panel = new SceneNode().size(Size.fill(1), Size.natural()).clip(true).scrollable(true)
+                .bind(NodeBinding.value(theme, (node, value) -> node.size(Size.fill(1), Size.fixed(value.textStyle.size * 5))))
+                .add(source).add(GalleryStyle.label(context, () -> "来源面板正文，可滚动查看；所属层在面板外继续编辑和应用。", theme, 13, false));
+        SceneNode card = GalleryStyle.card(theme);
+        title(card, context, theme, "来源面板与所属交互层", 20);
+        guide(card, context, theme, "打开后编辑独立草稿，在面板外点击应用。所属层不抢焦点，Tab仍按声明顺序；来源完全离开裁剪区域会结束交互，重新显示不续接旧按压。");
+        card.add(panel).add(GalleryStyle.label(context, applied, theme, 13, false));
+        return GalleryStyle.frame(card, theme);
     }
 
     private static SceneNode orderRow(ScenePageContext context, ReadableSignal<SceneTheme> theme,
@@ -573,7 +598,7 @@ final class InteractionScenarios {
         @Override public MeasuredSize measure(SceneNode node, Constraints limits, SceneTextMeasurer text,
                 SceneChildMeasurer children) {
             int width = 0, height = 0;
-            for (SceneNode child : node.children()) if (child.visible()) {
+            for (SceneNode child : children.flowChildren()) {
                 MeasuredSize size = children.measureChild(child, limits);
                 width = Math.max(width, size.width);
                 height = Math.max(height, size.height);
@@ -582,7 +607,7 @@ final class InteractionScenarios {
         }
         @Override public ChildPlacements arrange(SceneNode node, LayoutBox allocated, SceneChildMeasurer childMeasurer) {
             List<ChildPlacements.Entry> placed = new ArrayList<>();
-            for (SceneNode child : node.children()) if (child.visible())
+            for (SceneNode child : childMeasurer.flowChildren())
                 placed.add(new ChildPlacements.Entry(child, new LayoutBox(0, 0, allocated.width, allocated.height)));
             return new ChildPlacements(placed);
         }

@@ -207,6 +207,20 @@ public final class GalleryJourney {
         require(contains(driver, "已接受值：多行替换结果"), "Ctrl+Enter没有完成多行交接");
         driver.evidence("gallery-editing");
         go(driver, TestGallery.Page.STRUCTURE);
+        click(driver, "打开来源所属层");
+        click(driver, "所属层独立草稿");
+        driver.replaceText("正式广场所属草稿"); driver.frame();
+        click(driver, "应用所属层草稿");
+        require(driver.geometry().ordered().stream().anyMatch(e -> {
+            if (!e.node.text().equals("应用所属层草稿")) return false;
+            club.heiqi.uilib.ui.scene.node.SceneNode layer = driver.geometry().layerBoundary(e.node);
+            if (layer == null) return false;
+            SceneGeometryView.Entry panel = driver.geometry().get(layer.parent().parent());
+            return panel != null && e.box.y + e.box.height / 2 >= panel.box.y + panel.box.height;
+        }), "广场操作未来自面板外实际所属Layer");
+        click(driver, "收起所属层");
+        require(contains(driver, "所属层已应用：正式广场所属草稿"), "广场Layer未发布当前业务值");
+        driver.evidence("gallery-owned-layer");
         click(driver, "展开甲订单");
         click(driver, "甲订单备注：" + unicode);
         driver.replaceText("甲订单重排草稿"); driver.frame();
@@ -549,8 +563,19 @@ public final class GalleryJourney {
                             ? 6
                             : -6;
             club.heiqi.uilib.ui.scene.node.SceneNode parent = target == null ? null : target.node.parent();
-            while (parent != null && !parent.scrollable()) parent = parent.parent();
-            SceneGeometryView.Entry scroller = parent == null ? null : driver.geometry().get(parent);
+            SceneGeometryView.Entry scroller = null;
+            while (parent != null) {
+                SceneGeometryView.Entry candidate = driver.geometry().get(parent);
+                if (parent.scrollable() && candidate != null && visible(candidate)
+                        && (delta > 0 ? candidate.scrollOffset > 0 : candidate.scrollOffset < candidate.scrollMaximum)) {
+                    scroller = candidate;
+                    break;
+                }
+                // 内层到达端点时仍可能被外层clip挡住；旅程改向尚可移动的祖先递交真实wheel。
+                // 沿现有滚动事实选择输入位置，不修改业务布局、offset或窗口来迁就验收。
+                if (target != null && parent == driver.geometry().layerBoundary(target.node)) break;
+                parent = parent.parent();
+            }
             club.heiqi.uilib.ui.scene.layout.LayoutBox hit = scroller == null ? viewport
                     : scroller.clip == null ? scroller.box : scroller.box.intersect(scroller.clip);
             // 沿目标自己的滚动祖先边缘递交滚轮，避开中央嵌套滚动区域。

@@ -198,7 +198,7 @@ public final class TestGallery implements ScenePage {
                 SceneTextMeasurer text,
                 SceneChildMeasurer children) {
             int width = 0, height = 0;
-            for (SceneNode child : node.children())
+            for (SceneNode child : children.flowChildren())
                 if (child.visible()) {
                     MeasuredSize size = children.measureChild(child, limits);
                     width = Math.max(width, size.width);
@@ -220,7 +220,7 @@ public final class TestGallery implements ScenePage {
             int width = Math.max(0, allocated.width - padding * 2);
             int height = Math.max(0, allocated.height - padding * 2);
             List<ChildPlacements.Entry> placed = new ArrayList<>();
-            for (SceneNode child : node.children())
+            for (SceneNode child : children.flowChildren())
                 if (child.visible()) {
                     MeasuredSize measured = children.measureChild(child, new Constraints(width, height));
                     placed.add(new ChildPlacements.Entry(child, new LayoutBox(padding, padding,

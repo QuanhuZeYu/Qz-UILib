@@ -19,6 +19,9 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.Collections;
+import java.util.IdentityHashMap;
+import java.util.Set;
 
 /** 事件顺序、脏声明、几何准备与最终绘制由框架协调；状态无需帧提交。 */
 public final class SceneFramePipeline implements AutoCloseable {
@@ -310,10 +313,15 @@ public final class SceneFramePipeline implements AutoCloseable {
 
     /** 捕获占位仍沿同一控件paint遍历。被捕获子树不再进入主绘制，主输入geometry不变。 */
     private PaintPlan paintGeometry(SceneGeometryView geometry, long metricsRevision) {
-        PaintLayers layers = paintEntries(geometry.ordered(), geometry, metricsRevision);
-        PaintPlanBuilder result = new PaintPlanBuilder();
-        append(result, layers.content);
-        append(result, layers.overlay);
+        PaintPlanBuilder result = new PaintPlanBuilder(), overlay = new PaintPlanBuilder();
+        // 捕获标记覆盖整页当批所有组，避免备用 modal 后代在后续组无条件再绘制。
+        Set<SceneNode> captured = Collections.newSetFromMap(new IdentityHashMap<SceneNode, Boolean>());
+        for (SceneGeometryView.Group group : geometry.groups()) {
+            PaintLayers layers = paintEntries(group.entries, geometry, metricsRevision, captured);
+            append(result, layers.content);
+            append(overlay, layers.overlay);
+        }
+        append(result, overlay.build());
         return result.build();
     }
 
@@ -332,14 +340,17 @@ public final class SceneFramePipeline implements AutoCloseable {
     }
 
     private PaintLayers paintEntries(
-            List<SceneGeometryView.Entry> ordered,
-            SceneGeometryView geometry,
-            long metricsRevision) {
+            List<SceneGeometryView.Entry> ordered, SceneGeometryView geometry, long metricsRevision) {
+        // 备用捕获独立消费自己的子树，不能继承外层已经标记的 captured 根。
+        return paintEntries(ordered, geometry, metricsRevision,
+                Collections.newSetFromMap(new IdentityHashMap<SceneNode, Boolean>()));
+    }
+
+    private PaintLayers paintEntries(
+            List<SceneGeometryView.Entry> ordered, SceneGeometryView geometry, long metricsRevision,
+            Set<SceneNode> captured) {
         PaintPlanBuilder paint = new PaintPlanBuilder(), overlay = new PaintPlanBuilder();
         java.util.Map<SceneNode, PaintPlan> childOverlays = new java.util.IdentityHashMap<>();
-        java.util.Set<SceneNode> captured =
-                java.util.Collections.newSetFromMap(
-                        new java.util.IdentityHashMap<SceneNode, Boolean>());
         ArrayDeque<SceneNode> open = new ArrayDeque<>();
         for (SceneGeometryView.Entry entry : ordered) {
             if (insideCaptured(entry.node, captured)) continue;
@@ -354,9 +365,11 @@ public final class SceneFramePipeline implements AutoCloseable {
                 if (child != null) {
                     if (child.parent() != entry.node)
                         throw new IllegalArgumentException("占位必须是控件直属逻辑子树");
+                    SceneLayoutEngine.rejectContentLayers(entry.node, child, "image fallback");
                     captured.add(child);
                     SceneGeometryView context = geometry;
-                    List<SceneGeometryView.Entry> source = ordered;
+                    // 可见备用子树可能横跨 modal 组；按本批原排列顺序完整闭合内容栈。
+                    List<SceneGeometryView.Entry> source = geometry.sourceOrdered();
                     if (geometry.get(child) == null) {
                         SceneGeometry local =
                                 layout.captureSubtree(
@@ -374,6 +387,11 @@ public final class SceneFramePipeline implements AutoCloseable {
                                     @Override
                                     public List<Entry> ordered() {
                                         return geometry.ordered();
+                                    }
+
+                                    @Override
+                                    public List<Entry> sourceOrdered() {
+                                        return local.sourceOrdered();
                                     }
 
                                     @Override
@@ -475,12 +493,29 @@ public final class SceneFramePipeline implements AutoCloseable {
                         || width != w
                         || height != h
                         || metrics != nextMetrics;
-        SceneGeometry prepared =
-                geometryDirty ? layoutGeometry(w, h, nextMetrics) : presentation.geometry;
-        // 单项目标导航不一定改变paint revision，仍须消费一次显露意图。
-        // 此时声明/Effect已结算；换owner或旧mount的意图不会挪动先前目标。
-        final SceneGeometry geometry =
-                runtime.revealNavigation(prepared, () -> layoutGeometry(w, h, nextMetrics));
+        SceneGeometry prepared = geometryDirty ? null : presentation.geometry;
+        long[] arrangedRevision = {runtime.geometryRevision()};
+        do {
+            if (geometryDirty) {
+                prepared = layoutGeometry(w, h, nextMetrics);
+                arrangedRevision[0] = runtime.geometryRevision();
+            }
+            runtime.prepareInputGeometry(prepared);
+            // 范围投影沿原绑定结算；只有其真实布局依赖变化才继续求下一批事实。
+            runtime.preparePresentation();
+            geometryDirty = arrangedRevision[0] != runtime.geometryRevision();
+            if (geometryDirty) continue;
+            // 单项导航也消费一次意图；其滚动或范围投影仍在同一声明结算循环中闭合。
+            prepared = runtime.revealNavigation(prepared, () -> {
+                SceneGeometry updated = layoutGeometry(w, h, nextMetrics);
+                arrangedRevision[0] = runtime.geometryRevision();
+                runtime.prepareInputGeometry(updated);
+                return updated;
+            });
+            runtime.preparePresentation();
+            geometryDirty = arrangedRevision[0] != runtime.geometryRevision();
+        } while (geometryDirty);
+        final SceneGeometry geometry = prepared;
         if (presentation == null
                 || revision != runtime.revision()
                 || geometry != presentation.geometry

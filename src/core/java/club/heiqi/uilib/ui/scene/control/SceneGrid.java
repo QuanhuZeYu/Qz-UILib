@@ -74,7 +74,7 @@ public final class SceneGrid {
         private MeasuredSize layout(SceneNode node, int availableWidth, SceneChildMeasurer children,
                                     List<ChildPlacements.Entry> placed, int padding) {
             List<SceneNode> visible = new ArrayList<>();
-            for (SceneNode child : node.children()) if (child.visible()) visible.add(child);
+            for (SceneNode child : children.flowChildren()) if (child.visible()) visible.add(child);
             if (visible.isEmpty()) return new MeasuredSize(0, 0);
             Policy current = Objects.requireNonNull(policy.get(), "policy value");
             int columns = Math.min(visible.size(), Math.max(1,

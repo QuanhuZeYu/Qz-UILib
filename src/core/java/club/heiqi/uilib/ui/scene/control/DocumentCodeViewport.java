@@ -22,11 +22,12 @@ final class DocumentCodeViewport implements SceneControl {
             Constraints constraints,
             SceneTextMeasurer text,
             SceneChildMeasurer children) {
-        if (node.children().isEmpty()) return new MeasuredSize(0, 0);
+        club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine.rejectContentLayers(node, node, "document code");
+        if (children.flowChildren().isEmpty()) return new MeasuredSize(0, 0);
         // 无限内容宽度只用于代码块自然度量，视口本身仍遵守父宽约束。
         MeasuredSize content =
                 children.measureChild(
-                        node.children().get(0),
+                        children.flowChildren().get(0),
                         new Constraints(Integer.MAX_VALUE, constraints.availableHeight));
         // 控件返回内容尺寸，框架统一加自身padding。
         return new MeasuredSize(constraints.availableWidth, content.height);
@@ -42,12 +43,12 @@ final class DocumentCodeViewport implements SceneControl {
             int availableHeight,
             SceneTextMeasurer text,
             SceneChildMeasurer children) {
-        if (node.children().isEmpty()) {
+        if (children.flowChildren().isEmpty()) {
             prepared = new ChildPlacements(Collections.emptyList());
             return full;
         }
         LayoutBox box = new LayoutBox(0, 0, availableWidth, availableHeight);
-        SceneNode content = node.children().get(0);
+        SceneNode content = children.flowChildren().get(0);
         // presentText收到的是框架已扣除padding的内容宽度。
         int width = box.width;
         MeasuredSize measured =

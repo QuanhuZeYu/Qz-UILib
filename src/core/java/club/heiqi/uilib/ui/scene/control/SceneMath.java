@@ -292,6 +292,7 @@ public final class SceneMath implements SceneControl {
 
     @Override
     public ChildPlacements arrange(SceneNode node, LayoutBox box, SceneChildMeasurer childMeasurer) {
+        club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine.rejectContentLayers(node, node, "math content");
         List<ChildPlacements.Entry> placements = new ArrayList<>();
         // 无 placement 的 slot 仍在逻辑树中，动态 binding 也不能给它输入资格。
         for (Embed slot : slots.values()) passiveAttached(slot.node);

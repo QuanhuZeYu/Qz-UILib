@@ -211,6 +211,11 @@ val layoutFoundationScenario = registerTestApplication("layoutFoundationScenario
     classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("gallery").output + sourceSets.getByName("test").output + fontNativeRuntime + coreContentRuntime
 }
 tasks.named("check") { dependsOn(layoutFoundationScenario) }
+val layerInputScenario = registerTestApplication("layerInputScenario", "所属层正式页面真实字体共同空间验收", "club.heiqi.uilib.ui.scene.integration.LayerInputScenario") {
+    dependsOn(tasks.named("testClasses"))
+    classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + coreContentRuntime
+}
+tasks.named("check") { dependsOn(layerInputScenario) }
 val nativeFontVisualScenario = registerTestApplication("nativeFontVisualScenario", "回放生产字体定位和FT光栅生成多语言PNG", "club.heiqi.uilib.ui.scene.integration.NativeFontVisualScenario") {
     dependsOn(tasks.named("testClasses"))
     classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + coreContentRuntime

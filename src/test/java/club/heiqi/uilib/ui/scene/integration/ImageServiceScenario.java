@@ -45,6 +45,100 @@ public final class ImageServiceScenario extends TestApplication {
     private final CountDownLatch lateStarted = new CountDownLatch(1),
             lateRelease = new CountDownLatch(1);
 
+    /** 普通容器扩展的真实绘制调用计数，捕获沿生产管线而非测试回放。 */
+    private static final class CaptureProbe implements club.heiqi.uilib.ui.scene.control.SceneControl {
+        final String name;
+        final int color;
+        final java.util.List<String> calls;
+        int prepared, painted, after, overlays;
+        CaptureProbe(String name, int color, java.util.List<String> calls) { this.name = name; this.color = color; this.calls = calls; }
+        void reset() { prepared = painted = after = overlays = 0; }
+        public club.heiqi.uilib.ui.scene.layout.MeasuredSize measure(SceneNode n, club.heiqi.uilib.ui.scene.layout.Constraints c,
+                club.heiqi.uilib.ui.scene.text.SceneTextMeasurer t) { return new club.heiqi.uilib.ui.scene.layout.MeasuredSize(0, 0); }
+        public club.heiqi.uilib.ui.scene.layout.MeasuredSize measure(SceneNode n, club.heiqi.uilib.ui.scene.layout.Constraints c,
+                club.heiqi.uilib.ui.scene.text.SceneTextMeasurer t, club.heiqi.uilib.ui.scene.layout.SceneChildMeasurer children) {
+            return club.heiqi.uilib.ui.scene.layout.SceneFlowLayout.measure(n, c, children);
+        }
+        public club.heiqi.uilib.ui.scene.layout.ChildPlacements arrange(SceneNode n, LayoutBox b,
+                club.heiqi.uilib.ui.scene.layout.SceneChildMeasurer children) {
+            return club.heiqi.uilib.ui.scene.layout.SceneFlowLayout.arrange(n, b, children);
+        }
+        public void preparePaint(SceneNode n, club.heiqi.uilib.ui.scene.layout.SceneGeometryView g,
+                club.heiqi.uilib.ui.scene.text.SceneTextMeasurer t, long revision) { prepared++; }
+        public void paint(SceneNode n, club.heiqi.uilib.ui.scene.layout.SceneGeometryView g,
+                club.heiqi.uilib.ui.scene.paint.PaintPlanBuilder p) {
+            painted++; calls.add(name + ":paint"); p.add(PaintCommand.rect(g.get(n).box, g.get(n).clip, color));
+        }
+        public void paintAfterChildren(SceneNode n, club.heiqi.uilib.ui.scene.layout.SceneGeometryView g,
+                club.heiqi.uilib.ui.scene.paint.PaintPlanBuilder p) {
+            after++; calls.add(name + ":after"); p.add(PaintCommand.rect(g.get(n).box, g.get(n).clip, color + 1));
+        }
+        public void paintOverlay(SceneNode n, club.heiqi.uilib.ui.scene.layout.SceneGeometryView g,
+                club.heiqi.uilib.ui.scene.paint.PaintPlanBuilder p, club.heiqi.uilib.ui.scene.text.SceneTextMeasurer t) {
+            overlays++; p.add(PaintCommand.rect(g.get(n).box, g.get(n).clip, color + 2));
+        }
+    }
+    private void crossModalCapture() throws Exception {
+        for (boolean modalRoot : new boolean[] {true, false}) {
+            SharedImageService s = service();
+            SoftwareSceneScenario.SoftwareHost host = new SoftwareSceneScenario.SoftwareHost();
+            java.util.List<String> calls = new java.util.ArrayList<>();
+            CaptureProbe parent = new CaptureProbe("P", 0xff123400, calls), child = new CaptureProbe("C", 0xff567800, calls);
+            CaptureProbe ancestor = new CaptureProbe("A", 0xff246800, calls), sibling = new CaptureProbe("D", 0xff135700, calls);
+            SceneNode[] image = new SceneNode[1], placeholder = new SceneNode[1], content = new SceneNode[1];
+            try (ScenePageSession page = ScenePageSession.open(domain, host, host, ctx -> {
+                content[0] = new SceneNode().size(Size.fixed(20), Size.fixed(10)).modal(!modalRoot).control(child);
+                placeholder[0] = new SceneNode().size(Size.fill(1), Size.fill(1)).modal(modalRoot).control(parent);
+                if (modalRoot) placeholder[0].add(content[0]);
+                else placeholder[0].add(new SceneNode().size(Size.fill(1), Size.fixed(10)).control(ancestor).add(content[0]))
+                        .add(new SceneNode().size(Size.fixed(20), Size.fixed(10)).control(sibling));
+                image[0] = SceneImage.create(s, domain.signal(ImageSource.bitmap(pixels(16, 16))),
+                        domain.signal(ImageOptions.defaults().size(Size.fixed(40), Size.fixed(30))), placeholder[0]);
+                ctx.mount(image[0]);
+            })) {
+                for (int i = 0; i < 40; i++) { s.drain(); page.frame();
+                    if (host.last.commands().stream().anyMatch(c -> c.kind == PaintCommand.Kind.IMAGE)) break;
+                    Thread.sleep(5);
+                }
+                long[] identity = new long[1];
+                domain.execute(() -> identity[0] = SceneImage.state(image[0]).get().content.identity);
+                parent.reset(); child.reset(); ancestor.reset(); sibling.reset(); calls.clear();
+                s.presentation(identity[0], true, null); page.frame();
+                domain.execute(() -> require(page.pipeline().current().geometry.get(placeholder[0]) != null
+                        && page.pipeline().current().geometry.get(content[0]) != null, "上传占位主geometry未触达"));
+                PaintCommand command = host.last.commands().stream().filter(c -> c.kind == PaintCommand.Kind.IMAGE).findFirst().get();
+                require(command.pendingPaint != null && command.failedPaint == command.pendingPaint
+                        && command.pendingPaint.commands().stream().filter(c -> c.color == parent.color).count() == 1
+                        && command.pendingPaint.commands().stream().filter(c -> c.color == child.color).count() == 1,
+                        "跨modal组备用计划未捕获完整P/C子树");
+                require(host.last.commands().stream().noneMatch(c -> c.kind == PaintCommand.Kind.RECT
+                        && (c.color == parent.color || c.color == child.color || c.color == parent.color + 1
+                        || c.color == child.color + 1 || c.color == parent.color + 2 || c.color == child.color + 2)),
+                        "备用内容或after/overlay越过IMAGE条件无条件泄漏");
+                require(parent.prepared == 1 && parent.painted == 1 && parent.after == 1 && parent.overlays == 1
+                        && child.prepared == 1 && child.painted == 1 && child.after == 1 && child.overlays == 1,
+                        "跨组捕获preparePaint/paint/afterChildren/overlay未恰次消费");
+                require(calls.equals(modalRoot
+                        ? java.util.Arrays.asList("P:paint", "C:paint", "C:after", "P:after")
+                        : java.util.Arrays.asList("P:paint", "A:paint", "C:paint", "C:after", "A:after", "D:paint", "D:after", "P:after")),
+                        "备用子树afterChildren在跨modal组之前闭合: " + calls);
+                if (!modalRoot) for (CaptureProbe probe : new CaptureProbe[] {ancestor, sibling}) {
+                    require(probe.prepared == 1 && probe.painted == 1 && probe.after == 1 && probe.overlays == 1, "深层备用容器调用未恰次");
+                    require(command.pendingPaint.commands().stream().filter(c -> c.color == probe.color).count() == 1
+                            && command.pendingPaint.commands().stream().filter(c -> c.color == probe.color + 1).count() == 1
+                            && host.last.commands().stream().noneMatch(c -> c.color == probe.color || c.color == probe.color + 1 || c.color == probe.color + 2),
+                            "深层备用容器或普通兄弟未保持IMAGE条件所属");
+                }
+                PaintCommand overlay = host.last.commands().stream().filter(c -> c.kind == PaintCommand.Kind.IMAGE_BRANCH_OVERLAY).findFirst().get();
+                require(overlay.branchSource == command && overlay.pendingPaint == overlay.failedPaint
+                        && overlay.readyOverlay == null
+                        && overlay.pendingPaint.commands().stream().filter(c -> c.color == parent.color + 2).count() == 1
+                        && overlay.pendingPaint.commands().stream().filter(c -> c.color == child.color + 2).count() == 1,
+                        "备用overlay未沿同一IMAGE pending/failed选择");
+                System.out.println("IMAGE MODAL CAPTURE rootModal=" + modalRoot + " calls=" + calls + " main=" + host.last.commands().size());
+            }
+        }
+    }
     static ImageContent pixels(int w, int h) {
         return new ImageContent(w, h, new byte[w * h * 4]);
     }
@@ -558,6 +652,7 @@ public final class ImageServiceScenario extends TestApplication {
                             "同代迟到loading覆盖ready");
                     block.set(false);
                 });
+        scenario("上传图像跨modal组完整捕获且生命周期和overlay只消费一次", this::crossModalCapture);
         scenario(
                 "GPU未就绪自定义占位同代捕获只绘一次且保留输入身份",
                 () -> {

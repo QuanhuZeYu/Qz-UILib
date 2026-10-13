@@ -130,7 +130,7 @@ final class SettingsStyle {
         }
         @Override public List<ReadableSignal<?>> measureDependencies(SceneNode n) { return Collections.singletonList(colors); }
         @Override LayoutResult layout(SceneNode n, Constraints c, SceneChildMeasurer m) {
-            SceneNode child=n.children().get(0); int w=Math.max(0,c.availableWidth-2), h=Math.max(0,c.availableHeight-2);
+            SceneNode child=m.flowChildren().get(0); int w=Math.max(0,c.availableWidth-2), h=Math.max(0,c.availableHeight-2);
             MeasuredSize size=m.measureChild(child,new Constraints(w,h));
             int cw=child.width().mode==Size.Mode.FILL?w:size.width;
             int ch=child.height().mode==Size.Mode.FILL?h:size.height;
@@ -183,15 +183,15 @@ final class SettingsStyle {
         @Override LayoutResult layout(SceneNode n,Constraints c,SceneChildMeasurer m) {
             int gap=20, width=c.availableWidth, height=0;
             List<ChildPlacements.Entry> e=new ArrayList<>();
-            if(n.children().size()==2 && width>=780) {
+            if(m.flowChildren().size()==2 && width>=780) {
                 int right=Math.min(340,Math.max(280,width/3)); int left=Math.max(0,width-gap-right);
-                MeasuredSize a=m.measureChild(n.children().get(0),new Constraints(left,c.availableHeight));
-                MeasuredSize b=m.measureChild(n.children().get(1),new Constraints(right,c.availableHeight));
-                place(e,n.children().get(0),0,0,left,a.height);place(e,n.children().get(1),left+gap,0,right,b.height);height=Math.max(a.height,b.height);
-            } else for(SceneNode child:n.children()) if(child.visible()) {
+                MeasuredSize a=m.measureChild(m.flowChildren().get(0),new Constraints(left,c.availableHeight));
+                MeasuredSize b=m.measureChild(m.flowChildren().get(1),new Constraints(right,c.availableHeight));
+                place(e,m.flowChildren().get(0),0,0,left,a.height);place(e,m.flowChildren().get(1),left+gap,0,right,b.height);height=Math.max(a.height,b.height);
+            } else for(SceneNode child:m.flowChildren()) if(child.visible()) {
                 MeasuredSize s=m.measureChild(child,new Constraints(width,c.availableHeight));place(e,child,0,height,width,s.height);height+=s.height+gap;
             }
-            if(e.size()>0 && !(n.children().size()==2 && width>=780))height-=gap;
+            if(e.size()>0 && !(m.flowChildren().size()==2 && width>=780))height-=gap;
             return new LayoutResult(width,height,e);
         }
     }
@@ -205,7 +205,7 @@ final class SettingsStyle {
         final NavigationLayout navigation;
         Workspace(NavigationLayout navigation) { this.navigation=navigation; }
         @Override LayoutResult layout(SceneNode n,Constraints c,SceneChildMeasurer m) {
-            List<ChildPlacements.Entry> e=new ArrayList<>();SceneNode nav=n.children().get(0),body=n.children().get(1);
+            List<ChildPlacements.Entry> e=new ArrayList<>();SceneNode nav=m.flowChildren().get(0),body=m.flowChildren().get(1);
             navigation.sidebar=c.availableWidth>=NavigationLayout.BREAKPOINT;
             if(navigation.sidebar) {
                 int sidebar=NavigationLayout.SIDEBAR_WIDTH,bodyWidth=Math.max(0,c.availableWidth-sidebar);
@@ -224,7 +224,7 @@ final class SettingsStyle {
         Navigation(NavigationLayout navigation) { this.navigation=navigation; }
         @Override LayoutResult layout(SceneNode n,Constraints c,SceneChildMeasurer m) {
             List<ChildPlacements.Entry> e=new ArrayList<>();int width=c.availableWidth;
-            SceneNode brand=n.children().get(0),buttons=n.children().get(1),info=n.children().get(2);
+            SceneNode brand=m.flowChildren().get(0),buttons=m.flowChildren().get(1),info=m.flowChildren().get(2);
             if(navigation.sidebar) {
                 MeasuredSize bs=m.measureChild(brand,new Constraints(Math.max(0,width-32),c.availableHeight));
                 MeasuredSize ns=m.measureChild(buttons,new Constraints(Math.max(0,width-NavigationLayout.HORIZONTAL_PADDING*2),c.availableHeight));
@@ -246,7 +246,7 @@ final class SettingsStyle {
         @Override LayoutResult layout(SceneNode n,Constraints c,SceneChildMeasurer m) {
             if(!navigation.sidebar)return new WrapRow(8).layout(n,c,m);
             List<ChildPlacements.Entry> e=new ArrayList<>();int y=0;
-            for(SceneNode child:n.children())if(child.visible()){
+            for(SceneNode child:m.flowChildren())if(child.visible()){
                 MeasuredSize s=m.measureChild(child,c);place(e,child,0,y,c.availableWidth,s.height);y+=s.height+8;
             }
             return new LayoutResult(c.availableWidth,Math.max(0,y-8),e);
@@ -257,7 +257,7 @@ final class SettingsStyle {
         WrapRow(int gap) { this.gap=gap; }
         @Override LayoutResult layout(SceneNode n,Constraints c,SceneChildMeasurer m) {
             List<ChildPlacements.Entry> e=new ArrayList<>();int x=0,y=0,line=0,maxWidth=0;
-            for(SceneNode child:n.children()) if(child.visible()) {
+            for(SceneNode child:m.flowChildren()) if(child.visible()) {
                 MeasuredSize s=m.measureChild(child,new Constraints(c.availableWidth,c.availableHeight));int w=Math.min(c.availableWidth,s.width);
                 if(x>0 && x+w>c.availableWidth){x=0;y+=line+gap;line=0;}
                 place(e,child,x,y,w,s.height);x+=w+gap;maxWidth=Math.max(maxWidth,x-gap);line=Math.max(line,s.height);
@@ -267,7 +267,7 @@ final class SettingsStyle {
     }
     static final class Footer extends Arrangement {
         @Override LayoutResult layout(SceneNode n,Constraints c,SceneChildMeasurer m) {
-            List<ChildPlacements.Entry> e=new ArrayList<>();SceneNode status=n.children().get(0),buttons=n.children().get(1);
+            List<ChildPlacements.Entry> e=new ArrayList<>();SceneNode status=m.flowChildren().get(0),buttons=m.flowChildren().get(1);
             MeasuredSize bs=m.measureChild(buttons,new Constraints(c.availableWidth,c.availableHeight));
             if(c.availableWidth>=740) {
                 int left=Math.max(0,c.availableWidth-bs.width-24);MeasuredSize ss=m.measureChild(status,new Constraints(left,c.availableHeight));
@@ -284,7 +284,7 @@ final class SettingsStyle {
         Layers(boolean centered) { this.centered=centered; }
         @Override LayoutResult layout(SceneNode n,Constraints c,SceneChildMeasurer m) {
             List<ChildPlacements.Entry> e=new ArrayList<>();
-            for(SceneNode child:n.children()) if(child.visible()) {
+            for(SceneNode child:m.flowChildren()) if(child.visible()) {
                 int maxWidth=centered?Math.max(0,Math.min(480,c.availableWidth-32)):c.availableWidth;
                 MeasuredSize s=m.measureChild(child,new Constraints(maxWidth,c.availableHeight));
                 int w=child.width().mode==Size.Mode.FILL?maxWidth:Math.min(maxWidth,s.width);

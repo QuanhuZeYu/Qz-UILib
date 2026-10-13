@@ -717,7 +717,7 @@ final class SoftwareSceneScenario extends TestApplication {
         public MeasuredSize measure(
                 SceneNode node, Constraints limits, SceneTextMeasurer text,
                 SceneChildMeasurer children) {
-            MeasuredSize measured = children.measureChild(node.children().get(0), limits);
+            MeasuredSize measured = children.measureChild(children.flowChildren().get(0), limits);
             measuredWidth = measured.width;
             measuredHeight = measured.height;
             return measured;
@@ -725,7 +725,7 @@ final class SoftwareSceneScenario extends TestApplication {
 
         public ChildPlacements arrange(SceneNode node, LayoutBox allocated, SceneChildMeasurer childMeasurer) {
             return new ChildPlacements(Collections.singletonList(
-                    new ChildPlacements.Entry(node.children().get(0), new LayoutBox(1, 1, width, height))));
+                    new ChildPlacements.Entry(childMeasurer.flowChildren().get(0), new LayoutBox(1, 1, width, height))));
         }
 
         public void paint(SceneNode node, SceneGeometryView geometry, PaintPlanBuilder target) {}

@@ -34,16 +34,25 @@ public final class SceneLayoutEngine {
         return batch;
     }
 
+    private static club.heiqi.uilib.ui.scene.control.SceneLayer.Policy layerPolicy(SceneNode node) {
+        return node.control() == null ? null : node.control().layerPolicy(node);
+    }
     private SceneChildMeasurer childrenFor(SceneNode parent) {
-        return batchChildren.computeIfAbsent(
-                parent,
-                key -> (child, constraints) -> {
-                    if (child.parent() != key)
-                        throw new IllegalArgumentException("只能测量直属子内容");
-                    int[] size = measure(
-                            child, constraints.availableWidth, constraints.availableHeight);
-                    return new MeasuredSize(size[0], size[1]);
-                });
+        return batchChildren.computeIfAbsent(parent, key -> new SceneChildMeasurer() {
+            private final List<SceneNode> flow = flowFor(key);
+            public List<SceneNode> flowChildren() { return flow; }
+            public MeasuredSize measureChild(SceneNode child, Constraints constraints) {
+                if (child.parent() != key) throw new IllegalArgumentException("只能测量直属子内容: parent=" + key.id() + " child=" + child.id());
+                if (layerPolicy(child) != null) throw new IllegalArgumentException("普通流不能测量所属层: parent=" + key.id() + " child=" + child.id());
+                int[] size = measure(child, constraints.availableWidth, constraints.availableHeight);
+                return new MeasuredSize(size[0], size[1]);
+            }
+        });
+    }
+    private static List<SceneNode> flowFor(SceneNode parent) {
+        List<SceneNode> flow = new ArrayList<>();
+        for (SceneNode child : parent.children()) if (child.visible() && layerPolicy(child) == null) flow.add(child);
+        return java.util.Collections.unmodifiableList(flow);
     }
 
     public SceneLayoutEngine(SceneTextMeasurer text) {
@@ -90,17 +99,61 @@ public final class SceneLayoutEngine {
             textCache.clear();
             List<SceneGeometryView.Entry> entries = new ArrayList<>();
             for (SceneNode root : roots) {
+                if (layerPolicy(root) != null) throw new IllegalArgumentException("所属层不能作为无来源根: node=" + root.id());
                 int[] desired = measure(root, width, height);
                 int w = cross(root.width(), desired[0], width),
                         h = cross(root.height(), desired[1], height);
                 arrange(root, new LayoutBox(0, 0, w, h), null, entries);
             }
+            LayoutBox viewport = new LayoutBox(0, 0, width, height);
+            Map<SceneNode, SceneGeometryView.Entry> index = new IdentityHashMap<>();
+            for (SceneGeometryView.Entry entry : entries) index.put(entry.node, entry);
+            Map<SceneNode, Boolean> sources = new IdentityHashMap<>();
+            for (SceneNode root : roots) projectLayers(root, viewport, entries, index, sources);
             // 本次不再测量的节点不能由缓存保活；保留同树隐藏节点的声明身份。
             batchText.keySet().retainAll(measuredCache.keySet());
-            return new SceneGeometry(entries, new LayoutBox(0, 0, width, height));
+            return ScenePresentationOrder.publish(roots, entries, viewport, sources);
         } finally {
             endTextRequests();
         }
+    }
+
+    /** 来源盒已含普通滚动；所属层只锚定一次，clip 从页面视口开始。 */
+    private void projectLayers(SceneNode node, LayoutBox viewport, List<SceneGeometryView.Entry> entries,
+            Map<SceneNode, SceneGeometryView.Entry> index, Map<SceneNode, Boolean> sources) {
+        for (SceneNode child : node.children()) {
+            club.heiqi.uilib.ui.scene.control.SceneLayer.Policy policy = layerPolicy(child);
+            if (policy != null) {
+                SceneGeometryView.Entry source = index.get(node);
+                boolean available = source != null && sourceVisible(node, source, viewport);
+                sources.put(child, available);
+                if (!available || !child.visible()) continue;
+                int[] desired = measure(child, viewport.width, viewport.height);
+                int w = cross(child.width(), desired[0], viewport.width), h = cross(child.height(), desired[1], viewport.height);
+                int x = anchored(source.box.x, w, viewport.x, viewport.width);
+                int y = anchored((long) source.box.y + source.box.height + policy.gap, h, viewport.y, viewport.height);
+                int begin = entries.size();
+                arrange(child, new LayoutBox(x, y, w, h), viewport, entries);
+                for (int i = begin; i < entries.size(); i++) index.put(entries.get(i).node, entries.get(i));
+            }
+            if (index.containsKey(child)) projectLayers(child, viewport, entries, index, sources);
+        }
+    }
+    private static boolean sourceVisible(SceneNode node, SceneGeometryView.Entry entry, LayoutBox viewport) {
+        for (SceneNode cursor = node; cursor != null; cursor = cursor.parent())
+            if (!cursor.visible() || !cursor.enabled() || cursor.destroyed()) return false;
+        LayoutBox visible = entry.box.intersect(viewport);
+        if (entry.clip != null) visible = visible.intersect(entry.clip);
+        return visible.width > 0 && visible.height > 0;
+    }
+    private static int anchored(long preferred, int size, int start, int available) {
+        return size > available ? start : (int) Math.max(start, Math.min((long) start + available - size, preferred));
+    }
+    /** 仅内容投影/捕获的边界拒绝层声明，保留边界与声明位置。 */
+    public static void rejectContentLayers(SceneNode boundary, SceneNode content, String kind) {
+        if (layerPolicy(content) != null)
+            throw new IllegalArgumentException("内容分支不支持所属层: boundary=" + boundary.id() + " kind=" + kind + " layer=" + content.id());
+        for (SceneNode child : content.children()) rejectContentLayers(boundary, child, kind);
     }
 
     private void endTextRequests() {
@@ -110,10 +163,7 @@ public final class SceneLayoutEngine {
     }
 
     private int cross(Size size, int desired, int available) {
-        return size.constrain(
-                size.mode == Size.Mode.FIXED
-                        ? size.value
-                        : size.mode == Size.Mode.FILL ? Math.max(0, available) : desired);
+        return SceneFlowLayout.cross(size, desired, available);
     }
 
     private TextLayout textLayout(SceneNode node, int width) {
@@ -184,59 +234,8 @@ public final class SceneLayoutEngine {
             };
         }
         TextLayout lines = textLayout(node, contentWidth);
-        int w = lines.width, h = lines.height;
-        List<SceneNode> children = new ArrayList<>();
-        List<int[]> measured = new ArrayList<>();
-        for (SceneNode child : node.children())
-            if (child.visible()) {
-                children.add(child);
-                measured.add(
-                        measure(
-                                child,
-                                contentWidth,
-                                node.axis() == SceneNode.Axis.ROW
-                                        ? contentHeight
-                                        : Integer.MAX_VALUE));
-            }
-        int gaps = Math.max(0, children.size() - 1) * node.gap();
-        boolean row = node.axis() == SceneNode.Axis.ROW;
-        int[] allocated =
-                row
-                        ? allocate(children, measured, Math.max(0, contentWidth - gaps), true)
-                        : contentHeight != Integer.MAX_VALUE
-                                ? allocate(
-                                        children,
-                                        measured,
-                                        Math.max(0, contentHeight - gaps),
-                                        false)
-                                : null;
-        int sum = 0, maximum = 0;
-        for (int i = 0; i < children.size(); i++) {
-            SceneNode child = children.get(i);
-            // 自然高度以最终受限/分配宽度求解，并向父自然高度传播，不能绘制后读回修补。
-            int allocatedHeight =
-                    row ? contentHeight : allocated == null ? Integer.MAX_VALUE : allocated[i];
-            int[] heightAware = measure(child, contentWidth, allocatedHeight);
-            int cw = row ? allocated[i] : cross(child.width(), heightAware[0], contentWidth);
-            int[] actual = measure(child, cw, allocatedHeight);
-            int ch =
-                    !row && allocated != null
-                            ? allocated[i]
-                            : child.height()
-                                    .constrain(
-                                            child.height().mode == Size.Mode.FIXED
-                                                    ? child.height().value
-                                                    : actual[1]);
-            sum += row ? cw : ch;
-            maximum = Math.max(maximum, row ? ch : cw);
-        }
-        if (row) {
-            w = Math.max(w, sum + gaps);
-            h = Math.max(h, maximum);
-        } else {
-            w = Math.max(w, maximum);
-            h = Math.max(h, sum + gaps);
-        }
+        MeasuredSize flow = SceneFlowLayout.measure(node, new Constraints(contentWidth, contentHeight), childrenFor(node));
+        int w = Math.max(lines.width, flow.width), h = Math.max(lines.height, flow.height);
         return new int[] {
             node.width()
                     .constrain(
@@ -254,6 +253,7 @@ public final class SceneLayoutEngine {
     /** 在既定父区域捕获已挂载占位子树，沿生产排列，不发布输入几何或改live节点。 仅根的框架hidden被忽略；后代显隐/滚动/裁剪仍走同一规则。静态帧复用呈现计划。 */
     public SceneGeometry captureSubtree(
             SceneNode root, LayoutBox allocated, LayoutBox ancestorClip, LayoutBox viewport) {
+        rejectContentLayers(root, root, "paint capture");
         // 晚期备用捕获仅结算实际访问的节点，不能清掉其它主树节点的测量请求。
         activeText.clear();
         try {
@@ -300,95 +300,34 @@ public final class SceneLayoutEngine {
                                     childrenFor(node));
         int entryIndex = entries.size();
         entries.add(new SceneGeometryView.Entry(node, box, clip, lines));
-        if (node.control() != null) {
-            java.util.Set<SceneNode> placed =
-                    java.util.Collections.newSetFromMap(new IdentityHashMap<SceneNode, Boolean>());
-            List<ChildPlacements.Entry> placements = node.control().arrange(node, box, childrenFor(node)).entries();
-            boolean row = node.axis() == SceneNode.Axis.ROW;
-            long extent = 0;
-            // 先核验整批作者结果，再递归排列；拒绝非法尺寸，不改写作者的格子或位置。
-            for (ChildPlacements.Entry child : placements) {
-                if (child.child.parent() != node || !placed.add(child.child))
-                    throw new IllegalArgumentException("控件排列包含非逻辑子节点或重复节点");
-                if (!child.contentBox) {
-                    validatePlacement(node, child.child, "width", child.relativeBox.width, child.child.width());
-                    validatePlacement(node, child.child, "height", child.relativeBox.height, child.child.height());
-                }
-                extent =
-                        Math.max(
-                                extent,
-                                row
-                                        ? (long) child.relativeBox.x + child.relativeBox.width
-                                        : (long) child.relativeBox.y + child.relativeBox.height);
-            }
-            int maximum =
-                    node.scrollable()
-                            ? (int)
-                                    Math.min(
-                                            Integer.MAX_VALUE,
-                                            Math.max(0L, extent - (row ? box.width : box.height)))
-                            : 0;
-            int desired = scrollOffsets.applyAsInt(node);
-            int scroll = node.scrollable() ? Math.min(desired, maximum) : 0;
-            entries.set(
-                    entryIndex,
-                    new SceneGeometryView.Entry(node, box, clip, lines, scroll, maximum));
-            for (ChildPlacements.Entry child : placements) {
-                LayoutBox relative = child.relativeBox;
-                arrange(
-                        child.child,
-                        new LayoutBox(
-                                box.x + relative.x - (row ? scroll : 0),
-                                box.y + relative.y - (row ? 0 : scroll),
-                                relative.width,
-                                relative.height),
-                        clip,
-                        entries);
-            }
-            return;
-        }
-        List<SceneNode> children = new ArrayList<>();
-        List<int[]> measured = new ArrayList<>();
-        for (SceneNode child : node.children())
-            if (child.visible()) {
-                children.add(child);
-                measured.add(
-                        measure(
-                                child,
-                                innerWidth,
-                                node.axis() == SceneNode.Axis.ROW
-                                        ? innerHeight
-                                        : Integer.MAX_VALUE));
-            }
+        java.util.Set<SceneNode> placed = java.util.Collections.newSetFromMap(new IdentityHashMap<SceneNode, Boolean>());
+        boolean builtin = node.control() == null;
+        boolean flow = builtin || layerPolicy(node) != null;
+        List<ChildPlacements.Entry> placements = (builtin ? SceneFlowLayout.arrange(node, box, childrenFor(node))
+                : node.control().arrange(node, box, childrenFor(node))).entries();
         boolean row = node.axis() == SceneNode.Axis.ROW;
-        int available =
-                (row ? innerWidth : innerHeight) - Math.max(0, children.size() - 1) * node.gap();
-        int[] allocated = allocate(children, measured, Math.max(0, available), row);
-        long content = Math.max(0L, children.size() - 1L) * node.gap();
-        for (int size : allocated) content += size;
-        int maximum =
-                node.scrollable()
-                        ? (int)
-                                Math.min(
-                                        Integer.MAX_VALUE,
-                                        Math.max(0L, content - (row ? innerWidth : innerHeight)))
-                        : 0;
-        int desired = scrollOffsets.applyAsInt(node);
-        int scroll = node.scrollable() ? Math.min(desired, maximum) : 0;
-        entries.set(
-                entryIndex, new SceneGeometryView.Entry(node, box, clip, lines, scroll, maximum));
-        int cursor = -scroll;
-        for (int i = 0; i < children.size(); i++) {
-            SceneNode child = children.get(i);
-            int allocatedHeight = row ? innerHeight : allocated[i];
-            int[] heightAware = measure(child, innerWidth, allocatedHeight);
-            int childWidth = row ? allocated[i] : cross(child.width(), heightAware[0], innerWidth);
-            int[] actual = measure(child, childWidth, allocatedHeight);
-            int childHeight = row ? cross(child.height(), actual[1], innerHeight) : allocated[i];
-            int x = box.x + node.padding() + (row ? cursor : 0);
-            int y = box.y + node.padding() + (row ? 0 : cursor);
-            arrange(child, new LayoutBox(x, y, childWidth, childHeight), clip, entries);
-            cursor += allocated[i] + node.gap();
+        long extent = 0;
+        for (ChildPlacements.Entry child : placements) {
+            if (child.child.parent() != node || !placed.add(child.child))
+                throw new IllegalArgumentException("控件排列包含非逻辑子节点或重复节点: parent=" + node.id() + " child=" + child.child.id());
+            if (layerPolicy(child.child) != null)
+                throw new IllegalArgumentException("普通排列不能包含所属层: parent=" + node.id() + " control="
+                        + (node.control() == null ? "flow" : node.control().getClass().getName()) + " child=" + child.child.id());
+            if (!child.contentBox) {
+                validatePlacement(node, child.child, "width", child.relativeBox.width, child.child.width());
+                validatePlacement(node, child.child, "height", child.relativeBox.height, child.child.height());
+            }
+            extent = Math.max(extent, row ? (long) child.relativeBox.x + child.relativeBox.width
+                    : (long) child.relativeBox.y + child.relativeBox.height);
+        }
+        int maximum = node.scrollable() ? (int) Math.min(Integer.MAX_VALUE,
+                Math.max(0L, extent + (flow && !placements.isEmpty() ? node.padding() : 0) - (row ? box.width : box.height))) : 0;
+        int scroll = node.scrollable() ? Math.min(scrollOffsets.applyAsInt(node), maximum) : 0;
+        entries.set(entryIndex, new SceneGeometryView.Entry(node, box, clip, lines, scroll, maximum));
+        for (ChildPlacements.Entry child : placements) {
+            LayoutBox relative = child.relativeBox;
+            arrange(child.child, new LayoutBox(box.x + relative.x - (row ? scroll : 0),
+                    box.y + relative.y - (row ? 0 : scroll), relative.width, relative.height), clip, entries);
         }
     }
 
@@ -400,84 +339,11 @@ public final class SceneLayoutEngine {
                 || declared.mode == Size.Mode.FIXED && actual != declared.constrain(declared.value))
             throw new IllegalArgumentException(
                     "控件排列尺寸非法: parent=" + parent.id()
-                            + " control=" + parent.control().getClass().getName()
+                            + " control=" + (parent.control() == null ? "flow" : parent.control().getClass().getName())
                             + " child=" + child.id()
                             + " axis=" + axis + " actual=" + actual
                             + " declared=" + declared.mode + "(value=" + declared.value
                             + ", min=" + declared.min + ", max=" + declared.max + ")");
     }
 
-    /** 有界水位分配：固定占用保留，触及边界的填充退出，余数沿子序分配。 */
-    private int[] allocate(
-            List<SceneNode> nodes, List<int[]> measured, int available, boolean row) {
-        int[] result = new int[nodes.size()];
-        List<Integer> active = new ArrayList<>();
-        int remaining = available;
-        for (int i = 0; i < nodes.size(); i++) {
-            Size size = row ? nodes.get(i).width() : nodes.get(i).height();
-            if (size.mode == Size.Mode.FILL) active.add(i);
-            else {
-                result[i] =
-                        size.constrain(
-                                size.mode == Size.Mode.FIXED
-                                        ? size.value
-                                        : measured.get(i)[row ? 0 : 1]);
-                remaining -= result[i];
-            }
-        }
-        if (!active.isEmpty()) {
-            long minimum = 0, maximum = 0;
-            double upper = 0;
-            for (int i : active) {
-                Size size = row ? nodes.get(i).width() : nodes.get(i).height();
-                minimum += size.min;
-                maximum += size.max;
-                upper = Math.max(upper, (double) size.max / size.value);
-            }
-            long target = Math.max(minimum, Math.min(maximum, Math.max(0, remaining)));
-            double lower = 0;
-            // 求所有上下界的共同水位；临时触及 min 的项仍可接回 max 释放的空间。
-            for (int step = 0; step < 80; step++) {
-                double water = (lower + upper) / 2, total = 0;
-                for (int i : active) {
-                    Size size = row ? nodes.get(i).width() : nodes.get(i).height();
-                    total += Math.max(size.min, Math.min(size.max, water * size.value));
-                }
-                if (total < target) lower = water;
-                else upper = water;
-            }
-            long fixed = 0, freeWeights = 0;
-            List<Integer> free = new ArrayList<>();
-            for (int i : active) {
-                Size size = row ? nodes.get(i).width() : nodes.get(i).height();
-                double share = upper * size.value;
-                if (share <= size.min) {
-                    result[i] = size.min;
-                    fixed += result[i];
-                } else if (share >= size.max) {
-                    result[i] = size.max;
-                    fixed += result[i];
-                } else {
-                    free.add(i);
-                    freeWeights += size.value;
-                }
-            }
-            // 水位只用于识别约束区间；自由项用整数有理分配，避免浮点整数边界错分余数。
-            for (int i : free) {
-                Size size = row ? nodes.get(i).width() : nodes.get(i).height();
-                result[i] = size.constrain((int) ((target - fixed) * size.value / freeWeights));
-            }
-            long distributed = 0;
-            for (int i : active) distributed += result[i];
-            long rest = target - distributed;
-            for (int i : active) {
-                Size size = row ? nodes.get(i).width() : nodes.get(i).height();
-                if (rest > 0 && result[i] < size.max) {
-                    result[i]++;
-                    rest--;
-                }
-            }
-        }
-        return result;
-    }
 }

@@ -10,20 +10,60 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
 /** 已发布的几何条目不会被下次求解修改。 */
 public final class SceneGeometry implements SceneGeometryView {
     private final List<Entry> entries;
+    private final List<Entry> sourceEntries;
     private final Map<SceneNode, Entry> index;
     private final LayoutBox viewport;
+    private final List<Group> groups;
+    private final Map<SceneNode, Group> presentation;
+    private final Map<SceneNode, Boolean> sources;
+    private final SceneNode modal;
 
     public SceneGeometry(List<Entry> entries) {
         this(entries, null);
     }
 
     public SceneGeometry(List<Entry> entries, LayoutBox viewport) {
-        this.viewport = viewport;
-        this.entries = Collections.unmodifiableList(new ArrayList<>(entries));
-        Map<SceneNode, Entry> map = new IdentityHashMap<>();
-        for (Entry entry : entries) map.put(entry.node, entry);
-        index = Collections.unmodifiableMap(map);
+        this(Collections.singletonList(new Group(null, null, null, null, entries)), viewport,
+                Collections.emptyMap(), null, entries);
     }
+
+    SceneGeometry(List<Group> groups, LayoutBox viewport, Map<SceneNode, Boolean> sources, SceneNode modal,
+            List<Entry> sourceOrdered) {
+        this.viewport = viewport;
+        this.groups = Collections.unmodifiableList(new ArrayList<>(groups));
+        this.sources = Collections.unmodifiableMap(new IdentityHashMap<>(sources));
+        this.modal = modal;
+        List<Entry> ordered = new ArrayList<>();
+        Map<SceneNode, Entry> map = new IdentityHashMap<>();
+        Map<SceneNode, Group> relation = new IdentityHashMap<>();
+        for (Group group : groups) for (Entry entry : group.entries) {
+            if (map.put(entry.node, entry) != null)
+                throw new IllegalArgumentException("同批几何节点重复: node=" + entry.node.id());
+            relation.put(entry.node, group);
+            ordered.add(entry);
+        }
+        this.entries = Collections.unmodifiableList(ordered);
+        // 只保留已发布的同一 Entry 引用；不重新量排，也不把已过滤所属层带回捕获。
+        List<Entry> source = new ArrayList<>();
+        for (Entry entry : sourceOrdered) if (map.get(entry.node) == entry) source.add(entry);
+        this.sourceEntries = Collections.unmodifiableList(source);
+        index = Collections.unmodifiableMap(map);
+        presentation = Collections.unmodifiableMap(relation);
+    }
+
+    @Override public List<Group> groups() { return groups; }
+    @Override public List<Entry> sourceOrdered() { return sourceEntries; }
+    @Override public SceneNode layerBoundary(SceneNode node) {
+        Group group = presentation.get(node); return group == null ? null : group.layer;
+    }
+    @Override public SceneNode logicalScope(SceneNode node) {
+        Group group = presentation.get(node); return group == null ? null : group.scope;
+    }
+    @Override public club.heiqi.uilib.ui.scene.control.SceneLayer.Policy layerPolicy(SceneNode node) {
+        Group group = presentation.get(node); return group == null ? null : group.policy;
+    }
+    @Override public boolean layerSourceAvailable(SceneNode layer) { return Boolean.TRUE.equals(sources.get(layer)); }
+    @Override public SceneNode activeModal() { return modal; }
 
     @Override
     public LayoutBox viewport() {

@@ -315,6 +315,7 @@ public final class SceneDocument {
 
         private TextLayout layoutParagraph(
                 SceneNode node, SceneTextMeasurer text, int width, SceneChildMeasurer children) {
+            club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine.rejectContentLayers(node, node, "document paragraph");
             resolveContent();
             ParagraphRequest current =
                     new ParagraphRequest(

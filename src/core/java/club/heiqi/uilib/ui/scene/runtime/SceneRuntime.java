@@ -4,6 +4,7 @@ import club.heiqi.uilib.ui.reactive.Observation;
 import club.heiqi.uilib.ui.reactive.Owner;
 import club.heiqi.uilib.ui.reactive.ReactiveDomain;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
+import club.heiqi.uilib.ui.scene.control.SceneLayer;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometryView;
@@ -49,6 +50,11 @@ public final class SceneRuntime implements AutoCloseable {
     private boolean routing;
     private boolean disposed;
     private long revision, geometryRevision, measureRevision;
+    // 只引用布局发布的唯一几何；声明结算与来源事实未齐时不推进范围转换。
+    private SceneGeometryView inputGeometry;
+    private boolean inputGeometryReady;
+    private long layerPresenceRevision = -1, layerValidationRevision = -1;
+    private boolean layersDeclared;
     private club.heiqi.uilib.ui.scene.input.SceneCompositionSource compositionSource;
     private MountHandle compositionMount;
     private club.heiqi.uilib.ui.scene.edit.SceneEditState compositionState;
@@ -137,6 +143,7 @@ public final class SceneRuntime implements AutoCloseable {
         domain.checkAccess();
         revision++;
         geometryRevision++;
+        inputGeometryReady = false;
         // attach/move/detach及可见/启用/模态声明生效时取消失活owner，不等下一帧。
         pointerRouter.revalidate();
         focusRouter.revalidate();
@@ -286,8 +293,12 @@ public final class SceneRuntime implements AutoCloseable {
                             for (BindingActivation active : mount.bindings) active.refresh();
                     }
                 }
+                if (layerValidationRevision != geometryRevision) {
+                    if (hasLayers()) for (SceneNode root : roots) validateLayerPolicies(root, null);
+                    layerValidationRevision = geometryRevision;
+                }
                 // 进入选择依赖已结算声明；选择的响应投影再结算绑定，首次回放即可显示。
-                focusRouter.prepareScopes();
+                if (scopeFactsReady()) focusRouter.prepareScopes();
             } while (!dirtyBindings.isEmpty());
         } finally {
             mutation = false;
@@ -490,9 +501,59 @@ public final class SceneRuntime implements AutoCloseable {
         if (failure instanceof Error) throw (Error) failure;
     }
 
+    private SceneLayer.Policy layerPolicy(SceneNode node) {
+        return node.control() == null ? null : node.control().layerPolicy(node);
+    }
+
+    private void validateLayerPolicies(SceneNode node, SceneNode passive) {
+        SceneLayer.Policy policy = layerPolicy(node);
+        if (policy != null && policy.participation == SceneLayer.Participation.PASSIVE) passive = node;
+        if (passive != null && node.modal())
+            throw new IllegalArgumentException("PASSIVE 所属层不能嵌套 modal: layer=" + passive.id() + " node=" + node.id());
+        // 合法性属于声明，隐藏或来源无 Entry 不能规避诊断。
+        for (SceneNode child : node.children()) validateLayerPolicies(child, passive);
+    }
+
+    private boolean hasLayers(SceneNode node) {
+        if (layerPolicy(node) != null) return true;
+        for (SceneNode child : node.children()) if (hasLayers(child)) return true;
+        return false;
+    }
+
+    private boolean hasLayers() {
+        // 只缓存声明是否包含层；实际输入资格仍逐目标消费唯一几何与逻辑祖先。
+        if (layerPresenceRevision != geometryRevision) {
+            layersDeclared = false;
+            for (SceneNode root : roots) if (hasLayers(root)) { layersDeclared = true; break; }
+            layerPresenceRevision = geometryRevision;
+        }
+        return layersDeclared;
+    }
+
+    boolean scopeFactsReady() {
+        return !hasLayers() || inputGeometryReady;
+    }
+
+    /** 同批来源事实齐备后由唯一路由器选择范围；无层直接 runtime 消费仍按逻辑合同。 */
+    public void prepareInputGeometry(SceneGeometryView geometry) {
+        command();
+        boolean changed = inputGeometry != geometry || !inputGeometryReady;
+        inputGeometry = Objects.requireNonNull(geometry, "geometry");
+        inputGeometryReady = true;
+        if (changed) focusRouter.rangeChanged();
+        focusRouter.prepareScopes();
+        pointerRouter.prepare(geometry);
+    }
+
     public boolean interactive(SceneNode node) {
         checkAlive();
         if (!locallyInteractive(node)) return false;
+        for (SceneNode cursor = node; cursor != null; cursor = cursor.parent()) {
+            if (layerPolicy(cursor) != null) {
+                if (inputGeometry == null || inputGeometryReady && inputGeometry.get(node) == null) return false;
+                break;
+            }
+        }
         SceneNode modal = activeModal();
         if (modal != null) {
             for (SceneNode cursor = node; cursor != null; cursor = cursor.parent())
@@ -507,7 +568,12 @@ public final class SceneRuntime implements AutoCloseable {
         domain.checkAccess();
         if (!mounts.containsKey(node)) return false;
         for (SceneNode cursor = node; cursor != null; cursor = cursor.parent())
-            if (!cursor.enabled() || !cursor.visible()) return false;
+            if (!cursor.enabled() || !cursor.visible() || cursor.destroyed()) return false;
+            else {
+                SceneLayer.Policy policy = layerPolicy(cursor);
+                if (policy != null && (policy.participation == SceneLayer.Participation.PASSIVE
+                        || inputGeometryReady && !inputGeometry.layerSourceAvailable(cursor))) return false;
+            }
         return true;
     }
 
@@ -520,6 +586,7 @@ public final class SceneRuntime implements AutoCloseable {
     }
 
     SceneNode activeModal() {
+        if (hasLayers()) return inputGeometry == null ? null : inputGeometry.activeModal();
         for (int i = roots.size() - 1; i >= 0; i--) {
             SceneNode found = findModal(roots.get(i));
             if (found != null) return found;
@@ -529,7 +596,7 @@ public final class SceneRuntime implements AutoCloseable {
 
     private SceneNode findModal(SceneNode node) {
         // 挂载阶段声明树可以含尚未取得token的子节点，它们不能成为有效输入范围。
-        if (!mounts.containsKey(node) || !node.visible()) return null;
+        if (!mounts.containsKey(node) || !node.visible() || !node.enabled()) return null;
         for (int i = node.children().size() - 1; i >= 0; i--) {
             SceneNode found = findModal(node.children().get(i));
             if (found != null) return found;
@@ -744,10 +811,12 @@ public final class SceneRuntime implements AutoCloseable {
             invalidateArrangement();
             geometry = Objects.requireNonNull(relayout.get(), "geometry");
         }
-        for (SceneNode ancestor = target.node().parent();
+        SceneNode boundary = geometry.layerBoundary(target.node());
+        for (SceneNode ancestor = target.node() == boundary ? null : target.node().parent();
                 ancestor != null;
-                ancestor = ancestor.parent()) {
+                ancestor = ancestor == boundary ? null : ancestor.parent()) {
             if (!focusRouter.owns(target)) break;
+            if (ancestor == boundary && !ancestor.scrollable()) break;
             if (!ancestor.scrollable()) continue;
             SceneGeometryView.Entry entry = geometry.get(ancestor);
             SceneGeometry current = geometry;
@@ -780,6 +849,7 @@ public final class SceneRuntime implements AutoCloseable {
             // 内层移动改变目标及裁剪后的可见部分；必须用重排后的同代几何求外层，
             // 最后一次也重排，确保paint和下一事件hit均消费实际偏移后的区域。
             geometry = Objects.requireNonNull(relayout.get(), "geometry");
+            if (ancestor == boundary) break;
         }
         return geometry;
     }
@@ -876,6 +946,8 @@ public final class SceneRuntime implements AutoCloseable {
             if (failure == null) failure = e;
             else if (e != failure) failure.addSuppressed(e);
         } finally {
+            inputGeometry = null;
+            inputGeometryReady = false;
             disposed = true;
         }
         if (failure instanceof Error) throw (Error) failure;
