@@ -220,6 +220,11 @@ val nativeFontScenario = registerTestApplication("nativeFontScenario", "Java8独
     classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + coreContentRuntime
     args(file("src/core/resources/assets/qz_uilib/fonts/noto").absolutePath)
 }
+val mailboxScenario = registerTestApplication("mailboxScenario", "真实收件箱查询阅读与动态交互", "club.heiqi.uilib.ui.scene.integration.MailboxScenario") {
+    dependsOn(tasks.named("testClasses"), tasks.named(sourceSets.getByName("gallery").classesTaskName))
+    classpath = coreSources.output + fontAdapterSources.output + sourceSets.getByName("gallery").output + sourceSets.getByName("testSupport").output + sourceSets.getByName("test").output + fontNativeRuntime + coreContentRuntime
+}
+tasks.named("check") { dependsOn(mailboxScenario) }
 val layoutFoundationScenario = registerTestApplication("layoutFoundationScenario", "正式页面非文字容器及公共网格真实内容绘制输入验收", "club.heiqi.uilib.ui.scene.integration.LayoutFoundationScenario") {
     dependsOn(tasks.named("testClasses"), tasks.named(sourceSets.getByName("gallery").classesTaskName))
     classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("gallery").output + sourceSets.getByName("test").output + fontNativeRuntime + coreContentRuntime

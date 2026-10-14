@@ -309,9 +309,9 @@ public final class SceneFramePipeline implements AutoCloseable {
     }
 
     private ScenePresentation prepare() {
-        runtime.preparePresentation();
         int w = host.width(), h = host.height();
-        if (w < 0 || h < 0) throw new IllegalArgumentException("宿主尺寸不能为负");
+        runtime.prepareViewport(w, h);
+        runtime.preparePresentation();
         long nextMetrics = host.metricsRevision();
         boolean geometryDirty =
                 presentation == null

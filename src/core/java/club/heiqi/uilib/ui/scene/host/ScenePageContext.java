@@ -50,6 +50,10 @@ public final class ScenePageContext {
         return localization;
     }
 
+    /** 页面响应式适配使用宿主根可用空间；普通子项仍由正式布局分配。 */
+    public ReadableSignal<Integer> viewportWidth() { return runtime.viewportWidth(); }
+    public ReadableSignal<Integer> viewportHeight() { return runtime.viewportHeight(); }
+
     public ReactiveDomain domain() {
         return domain;
     }

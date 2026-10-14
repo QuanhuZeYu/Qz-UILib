@@ -87,6 +87,7 @@ public final class GalleryJourney {
                 go(driver, id);
                 require(text(driver, id.title), "页面未切换：" + id);
             }
+        mailbox(driver);
         go(driver, TestGallery.Page.ARTICLE);
         if (text(driver, "中文")) click(driver, "中文");
         click(driver, "English");
@@ -116,6 +117,25 @@ public final class GalleryJourney {
         aggregateReading(driver);
         featureCoverage(driver);
         go(driver, TestGallery.Page.ARTICLE);
+    }
+
+    private static void mailbox(Driver driver) {
+        go(driver, TestGallery.Page.MAILBOX);
+        driver.evidence("mailbox-inbox");
+        SceneGeometryView.Entry field = driver.geometry().ordered().stream()
+                .filter(e -> e.node.control() != null && e.node.control().acceptsTextInput(e.node))
+                .findFirst().orElseThrow(() -> new AssertionError("收件箱没有正式搜索字段"));
+        driver.click(field.box.x + 10, field.box.y + field.box.height / 2);
+        driver.replaceText("Café"); driver.frame();
+        SceneGeometryView.Entry message = driver.geometry().ordered().stream()
+                .filter(e -> e.text != null && e.node.focusable() && e.text.logicalText.contains("本周工坊精选"))
+                .findFirst().orElseThrow(() -> new AssertionError("搜索没有当前消息"));
+        click(driver, message.text.originalText);
+        require(contains(driver, "这封邮件记录"), "收件箱阅读未显示正文");
+        driver.evidence("mailbox-reading");
+        click(driver, "返回列表");
+        require(contains(driver, "本周工坊精选"), "阅读返回没有保留查询");
+        click(driver, "清空搜索");
     }
 
     private static void featureCoverage(Driver driver) {

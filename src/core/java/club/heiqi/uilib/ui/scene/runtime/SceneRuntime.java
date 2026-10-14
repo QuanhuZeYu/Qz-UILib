@@ -45,6 +45,7 @@ public final class SceneRuntime implements AutoCloseable {
     private final ScenePointerRouter pointerRouter;
     private final SceneFocusRouter focusRouter;
     private final ReactiveDomain domain;
+    private final club.heiqi.uilib.ui.reactive.Signal<Integer> viewportWidth, viewportHeight;
     private final Owner owner;
     private final Map<SceneNode, Mount> mounts = new IdentityHashMap<>();
     private final List<SceneNode> roots = new ArrayList<>();
@@ -69,9 +70,24 @@ public final class SceneRuntime implements AutoCloseable {
     public SceneRuntime(ReactiveDomain domain) {
         this.domain = domain;
         domain.checkAccess();
+        viewportWidth = domain.signal(0);
+        viewportHeight = domain.signal(0);
         owner = domain.owner();
         pointerRouter = new ScenePointerRouter(this);
         focusRouter = new SceneFocusRouter(this);
+    }
+
+    /** 宿主根可用空间的响应事实，不表示任意子节点的最终分配盒。 */
+    public club.heiqi.uilib.ui.reactive.ReadableSignal<Integer> viewportWidth() { return viewportWidth; }
+    public club.heiqi.uilib.ui.reactive.ReadableSignal<Integer> viewportHeight() { return viewportHeight; }
+
+    /** 仅由宿主帧管线发布；声明结算前更新，不从只读布局回写。 */
+    public void prepareViewport(int width, int height) {
+        checkAlive();
+        domain.checkWrite();
+        if (width < 0 || height < 0) throw new IllegalArgumentException("宿主尺寸不能为负");
+        viewportWidth.set(width);
+        viewportHeight.set(height);
     }
 
     public ReactiveDomain domain() {

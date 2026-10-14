@@ -32,6 +32,7 @@ public final class TestGallery implements ScenePage {
         DETAILS("生产计划", "联动核对材料、产出、配方与计算过程"),
         SETTINGS("项目设置", "编辑项目资料并保存有效设置"),
         MESSAGES("活动中心", "浏览消息与任务详情"),
+        MAILBOX("收件箱", "查找、阅读和整理团队邮件"),
         REPORT("数据报告", "切换周期，核对分组明细与完成率"),
         TEXT("文本与排版", "对比内容模式、完整样式、来源与换行"),
         MEDIA("图像与公式", "切换来源、适配和公式，查看失败与恢复"),
@@ -65,6 +66,8 @@ public final class TestGallery implements ScenePage {
                     return "草稿编辑 · 多行备注 · 校验反馈 · 保存与恢复";
                 case MESSAGES:
                     return "新增记录 · 展开详情 · 多语言段落 · 切页保留";
+                case MAILBOX:
+                    return "搜索与分类 · 阅读窗 · 星标与归档 · 宽窄适配";
                 case REPORT:
                     return "今日与本周 · 分组明细 · 汇总关系 · 完成率";
                 default:
@@ -139,6 +142,7 @@ public final class TestGallery implements ScenePage {
             else if (id == Page.EDITING || id == Page.STRUCTURE)
                 page = InteractionScenarios.create(context, id, theme);
             else if (id == Page.RESOURCES) page = ResourceScenarios.create(context, theme);
+            else if (id == Page.MAILBOX) page = club.heiqi.uilib.testing.gallery.mail.MailboxPage.create(context, theme);
             else page = UsageScenarios.create(context, environment, id, theme);
             SceneNode layer =
                     new SceneNode().size(Size.fill(1), Size.fill(1)).control(new Layers());
