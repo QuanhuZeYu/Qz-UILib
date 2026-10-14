@@ -28,6 +28,7 @@ public final class GalleryJourney {
         club.heiqi.uilib.ui.scene.node.SceneNode focused();
 
         default void evidence(String name) {}
+        default boolean resize(int width,int height) { return false; }
     }
 
     public static void run(Driver driver) {
@@ -146,6 +147,20 @@ public final class GalleryJourney {
         click(driver,"所有邮件");
         require(contains(driver,"周五的设计评审"),"所有邮件没有归档对象");
         driver.evidence("mailbox-all-mail");
+        if(driver.resize(720,850)) {
+            driver.frame();driver.evidence("mailbox-narrow");
+            SceneGeometryView.Entry current=driver.geometry().ordered().stream()
+                .filter(e->e.text!=null&&e.node.focusable()&&e.text.logicalText.contains("周五的设计评审"))
+                .findFirst().orElseThrow(()->new AssertionError("窄窗口消息不可达"));
+            club.heiqi.uilib.ui.scene.layout.LayoutBox hit=current.clip==null?current.box:current.box.intersect(current.clip);
+            driver.click(hit.x+hit.width/2,hit.y+hit.height/2);driver.frame();
+            require(contains(driver,"这封邮件记录"),"窄窗口不能进入阅读");driver.evidence("mailbox-narrow-reading");
+            click(driver,"返回列表");
+            if(text(driver,"预览深色"))click(driver,"预览深色");
+            driver.evidence("mailbox-dark");
+            if(text(driver,"预览浅色"))click(driver,"预览浅色");
+            driver.resize(1400,1100);driver.frame();
+        }
     }
 
     private static void namedAction(Driver driver,String name) {

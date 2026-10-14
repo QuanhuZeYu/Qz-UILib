@@ -154,6 +154,14 @@ val desktopGallery = desktopApplication("desktopGallery", "打开与MC和自动�
     mainClass.set("club.heiqi.uilib.host.desktop.DesktopGallery")
 }
 }
+val desktopMailboxPerformance = desktopApplication("desktopMailboxPerformance", "完整收件箱真实桌面计时", true).apply { configure {
+    mainClass.set("club.heiqi.uilib.host.desktop.DesktopMailboxPerformance")
+    systemProperty("uilib.version", project.version.toString())
+    systemProperty("mailbox.paged", providers.gradleProperty("mailboxPaged").getOrElse("true"))
+    args(file(providers.gradleProperty("performanceOutput").getOrElse(layout.buildDirectory.dir("reports/mailbox-desktop").get().asFile.absolutePath)).absolutePath,
+        providers.gradleProperty("performanceScale").getOrElse("200"), providers.gradleProperty("performanceWarmup").getOrElse("30"),
+        providers.gradleProperty("performanceFrames").getOrElse("120"))
+} }
 val desktopGalleryVerify = desktopApplication("desktopGalleryVerify", "真实桌面运行共享广场旅程与图像像素重载释放", true).apply { configure {
     mainClass.set("club.heiqi.uilib.host.desktop.DesktopGallery")
     args("--verify", layout.buildDirectory.dir("reports/gallery-desktop").get().asFile.absolutePath)

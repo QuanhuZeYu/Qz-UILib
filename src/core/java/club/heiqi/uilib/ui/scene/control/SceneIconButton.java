@@ -10,7 +10,7 @@ import java.util.Objects;
 
 /** 向量图标及完整名称；不依赖宿主图标字体或缺字占位。 */
 public final class SceneIconButton {
-    public enum Symbol { STAR, ARCHIVE, MAIL, ARROW_LEFT, MORE }
+    public enum Symbol { STAR, ARCHIVE, MAIL }
     private SceneIconButton() {}
     public static SceneNode create(ScenePageContext page, Symbol symbol, ReadableSignal<String> name,
                                    ReadableSignal<SceneTheme> theme, Runnable action) {
@@ -26,12 +26,6 @@ public final class SceneIconButton {
                 float[] px={.5f,.61f,.95f,.68f,.78f,.5f,.22f,.32f,.05f,.39f};
                 float[] py={.02f,.34f,.36f,.57f,.93f,.73f,.93f,.57f,.36f,.34f};
                 for(int i=0;i<px.length;i++) { int j=(i+1)%px.length;target.add(PaintCommand.line(x+w*px[i],y+h*py[i],x+w*px[j],y+h*py[j],1.5f,clip,color)); }
-            } else if(shape == Symbol.MORE) {
-                for(int i=0;i<3;i++) target.add(PaintCommand.rect(new LayoutBox((int)(x+w*.45f),(int)(y+h*(.15f+i*.3f)),2,2),clip,color));
-            } else if(shape == Symbol.ARROW_LEFT) {
-                target.add(PaintCommand.line(x+w*.85f,y+h*.5f,x+w*.15f,y+h*.5f,1.5f,clip,color));
-                target.add(PaintCommand.line(x+w*.15f,y+h*.5f,x+w*.45f,y+h*.2f,1.5f,clip,color));
-                target.add(PaintCommand.line(x+w*.15f,y+h*.5f,x+w*.45f,y+h*.8f,1.5f,clip,color));
             } else {
                 LayoutBox outline=new LayoutBox((int)x,(int)(y+h*.15f),(int)w,Math.max(0,(int)(h*.7f)));
                 SceneControlPaint.border(target,outline,clip,color);

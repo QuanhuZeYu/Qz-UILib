@@ -24,6 +24,10 @@ public final class MailboxPage {
     }
     /** 外部模型由调用方拥有，可用于同一业务的不同视图；页面不关闭它。 */
     public static SceneNode create(ScenePageContext p, ReadableSignal<SceneTheme> base, MailboxModel model) {
+        return create(p,base,model,true);
+    }
+    /** 行为对照消费者可选择完整结果；普通案例使用显式分页浏览。 */
+    public static SceneNode create(ScenePageContext p, ReadableSignal<SceneTheme> base, MailboxModel model, boolean paged) {
         Owner scope = p.domain().owner();
         Signal<Float> fontScale = p.domain().signal(1f);
         ReadableSignal<SceneTheme> theme = p.domain().computed(scope,
@@ -79,7 +83,7 @@ public final class MailboxPage {
         SceneNode bulk = new SceneNode().axis(SceneNode.Axis.ROW).size(Size.fill(1),Size.natural()).gap(8);
         bulk.add(SceneCheckBox.create(p, () -> model.checked.get().isEmpty() ? SceneCheckBox.State.UNCHECKED
                 : model.checked.get().size() == model.results.get().size() ? SceneCheckBox.State.CHECKED : SceneCheckBox.State.MIXED,
-                () -> "全选当前结果", () -> MailStyle.buttonTheme(theme.get(),false), model::setAllChecked,false)
+                () -> "全选全部筛选结果：" + model.results.get().size() + " 封", () -> MailStyle.buttonTheme(theme.get(),false), model::setAllChecked,false)
                 .bind(NodeBinding.value(() -> !model.results.get().isEmpty(),SceneNode::enabled)));
         bulk.add(MailStyle.label(p, () -> model.checked.get().isEmpty() ? "选择邮件以批量整理" : "已选择 " + model.checked.get().size() + " 封",theme,.85f,true)
                 .size(Size.fill(1),Size.natural()));
@@ -95,8 +99,24 @@ public final class MailboxPage {
                 .bind(NodeBinding.value(() -> !model.checked.get().isEmpty(),SceneNode::enabled)));
         listPane.add(bulk);
         listPane.add(bulkActions);
-        SceneNode list = new SceneNode().size(Size.fill(1), Size.fill(1)).scrollable(true).clip(true).gap(1);
-        list.bind(NodeBinding.repeat(model.results, item -> item.id, value -> MessageRow.create(p, value, model, theme)));
+        SceneNode paging = new SceneNode().axis(SceneNode.Axis.ROW).size(Size.fill(1),Size.natural()).gap(8);
+        paging.add(MailStyle.label(p,() -> {
+            int total=model.results.get().size(),from=total==0?0:model.pageIndex.get()*model.pageSize.get()+1;
+            int to=Math.min(total,from+model.pageSize.get()-1);return from+"–"+to+" / "+total;
+        },theme,.85f,true).size(Size.fill(1),Size.natural()));
+        paging.add(MailStyle.button(p,() -> "上一页",theme,() -> model.movePage(-1))
+            .bind(NodeBinding.value(() -> model.pageIndex.get()>0,SceneNode::enabled)));
+        paging.add(MailStyle.button(p,() -> "下一页",theme,() -> model.movePage(1))
+            .bind(NodeBinding.value(() -> (model.pageIndex.get()+1)*model.pageSize.get()<model.results.get().size(),SceneNode::enabled)));
+        paging.add(MailStyle.button(p,() -> "每页 "+model.pageSize.get(),theme,() -> model.setPageSize(model.pageSize.get()==25?50:25)));
+        listPane.add(paging);
+        SceneNode list = new SceneNode().size(Size.fill(1), Size.fill(1));
+        list.bind(NodeBinding.repeat(() -> Collections.singletonList(paged?model.pageIndex.get()+":"+model.pageSize.get():"ordinary"),
+                key -> key, ignored -> {
+                    SceneNode viewport=new SceneNode().size(Size.fill(1),Size.fill(1)).scrollable(true).clip(true).gap(1);
+                    viewport.bind(NodeBinding.repeat(paged?model.pageItems:model.results,item->item.id,value->MessageRow.create(p,value,model,theme)));
+                    return viewport;
+                }));
         listPane.add(list);
         SceneNode empty = MailStyle.label(p, () -> "没有匹配的邮件，试试其他关键词。", theme, 1f, true);
         empty.bind(NodeBinding.value(() -> model.results.get().isEmpty(), SceneNode::visible)); listPane.add(empty);

@@ -79,7 +79,11 @@ public final class CoreArtifactScenario extends TestApplication {
                                     "club.heiqi.uilib.ui.config.ConfigSession",
                                     "club.heiqi.uilib.ui.reactive.Signal",
                                     "club.heiqi.uilib.ui.scene.host.ScenePageSession",
-                                    "club.heiqi.uilib.ui.scene.control.SceneGrid",
+                                    "club.heiqi.uilib.ui.scene.control.SceneCheckBox",
+                                     "club.heiqi.uilib.ui.scene.control.SceneCheckBox$State",
+                                     "club.heiqi.uilib.ui.scene.control.SceneIconButton",
+                                     "club.heiqi.uilib.ui.scene.control.SceneIconButton$Symbol",
+                                     "club.heiqi.uilib.ui.scene.control.SceneGrid",
                                     "club.heiqi.uilib.ui.scene.control.SceneGrid$Policy",
                                      "club.heiqi.uilib.ui.scene.control.SceneLayer",
                                      "club.heiqi.uilib.ui.scene.control.SceneLayer$Policy",
@@ -196,6 +200,8 @@ public final class CoreArtifactScenario extends TestApplication {
                         // 隔离生产来源实际调用公共策略、工厂、frame 与输入，不借开发classpath。
                         loader.loadClass("club.heiqi.uilib.ui.scene.integration.SceneCoreLoopTest")
                                 .getMethod("publicGridConsumer").invoke(null);
+                         loader.loadClass("club.heiqi.uilib.ui.scene.integration.SceneCoreLoopTest")
+                                 .getMethod("publicSymbolConsumer").invoke(null);
                          loader.loadClass("club.heiqi.uilib.ui.scene.integration.SceneCoreLoopTest")
                                  .getMethod("publicLayerConsumer").invoke(null);
                         // 字素路径实际使用重定位后的 ICU；配置/布局消费者不依赖原始 ICU 名称。

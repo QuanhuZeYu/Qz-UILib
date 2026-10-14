@@ -47,9 +47,14 @@ public final class MailboxModel implements AutoCloseable {
     public final Signal<Set<String>> checked;
     public final ReadableSignal<List<Item>> results;
     public final ReadableSignal<Message> opened;
+    public final Signal<Integer> pageSize;
+    private final Signal<Integer> requestedPage;
+    public final ReadableSignal<Integer> pageIndex;
+    public final ReadableSignal<List<Item>> pageItems;
     public MailboxModel(ReactiveDomain domain, List<Message> initial) {
         this.domain = domain; domain.checkWrite(); owner = domain.owner();
         source = domain.signal(Collections.emptyList()); query = domain.signal("");
+        pageSize = domain.signal(25); requestedPage = domain.signal(0);
         openedId = domain.signal(null); reading = domain.signal(false); feedback = domain.signal("");
         folder = domain.signal(Folder.INBOX); checked = domain.signal(Collections.emptySet());
         for (Message message : initial) {
@@ -67,6 +72,14 @@ public final class MailboxModel implements AutoCloseable {
             }
             return Collections.unmodifiableList(list);
         });
+        pageIndex = domain.computed(owner, () -> {
+            int size=pageSize.get();if(size<=0)throw new IllegalArgumentException("每页数量必须为正");
+            return Math.max(0,Math.min(requestedPage.get(),Math.max(0,(results.get().size()-1)/size)));
+        });
+        pageItems = domain.computed(owner, () -> {
+            List<Item> all=results.get();int start=pageIndex.get()*pageSize.get();
+            return Collections.unmodifiableList(new ArrayList<>(all.subList(start,Math.min(all.size(),start+pageSize.get()))));
+        });
         opened = domain.computed(owner, () -> {
             source.get(); Item item = byId.get(openedId.get()); return item == null ? null : item.value.get();
         });
@@ -77,10 +90,10 @@ public final class MailboxModel implements AutoCloseable {
         if (value == null) throw new IllegalArgumentException("消息不存在: " + id); return value;
     }
     public void setQuery(String value) {
-        if (!query.get().equals(value)) { query.set(Objects.requireNonNull(value)); checked.set(Collections.emptySet()); }
+        if (!query.get().equals(value)) { query.set(Objects.requireNonNull(value)); checked.set(Collections.emptySet()); requestedPage.set(0); }
     }
     public void setFolder(Folder value) {
-        if (folder.get() != value) { folder.set(Objects.requireNonNull(value)); checked.set(Collections.emptySet()); }
+        if (folder.get() != value) { folder.set(Objects.requireNonNull(value)); checked.set(Collections.emptySet()); requestedPage.set(0); }
         reading.set(false);
     }
     public void open(String id) {
@@ -125,6 +138,13 @@ public final class MailboxModel implements AutoCloseable {
     }
     public void update(Message message) { require(message.id).value.set(message); retainVisibleSelection(); }
     public void remove(String id) { require(id); byId.remove(id); publish(); retainVisibleSelection(); }
+    public void movePage(int delta) {
+        domain.checkWrite();requestedPage.set(Math.max(0,pageIndex.get()+delta));
+    }
+    public void setPageSize(int value) {
+        domain.checkWrite();if(value<=0)throw new IllegalArgumentException("每页数量必须为正");
+        pageSize.set(value);requestedPage.set(0);
+    }
     public void reverse() {
         domain.checkWrite(); List<Item> next = new ArrayList<>(source.get()); Collections.reverse(next);
         byId.clear(); for (Item item : next) byId.put(item.id,item); publish();

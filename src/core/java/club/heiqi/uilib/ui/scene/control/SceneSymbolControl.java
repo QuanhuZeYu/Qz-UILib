@@ -36,11 +36,18 @@ abstract class SceneSymbolControl implements SceneControl {
         SceneNode node = new SceneNode().control(control).size(Size.natural(),Size.natural())
                 .focusable(true).clickFocus(true).onClick(action);
         node.bind(NodeBinding.value(() -> Objects.requireNonNull(name.get(), "控件名称"), SceneNode::text));
-        node.bind(NodeBinding.value(control.theme, (n,t) -> n.style(t.textStyle).padding(Math.max(4,t.padding / 2))));
+        node.bind(NodeBinding.value(control.theme, (n,t) -> {
+            n.style(t.textStyle);
+            int padding=Math.max(4,t.padding/2);
+            if(n.padding()!=padding)n.padding(padding);
+            // 只读名称的间距也是尺寸依赖；颜色变化不能借重复padding写入失效度量。
+            int gap=control.showLabel?t.gap:0;
+            if(n.gap()!=gap)n.gap(gap);
+        }));
         return node;
     }
     private int symbolSize(SceneNode node) { return Math.max(1,(int)Math.ceil(node.style().logicalEm * 1.15f)); }
-    private int labelOffset(SceneNode node) { return symbolSize(node) + theme.get().gap; }
+    private int labelOffset(SceneNode node) { return symbolSize(node) + node.gap(); }
     @Override public TextLayout layoutText(SceneNode node, SceneTextMeasurer text, int width) {
         return text.layout(showLabel ? node.text() : "",node.style(),Math.max(0,width - (showLabel ? labelOffset(node) : 0)),node.textPolicy());
     }

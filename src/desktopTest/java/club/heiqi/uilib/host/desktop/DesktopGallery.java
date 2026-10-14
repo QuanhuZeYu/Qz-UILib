@@ -41,6 +41,7 @@ public final class DesktopGallery {
             DesktopTestInput input = new DesktopTestInput(window);
             GalleryJourney.run(
                     new GalleryJourney.Driver() {
+                        public boolean resize(int width,int height) { glfwSetWindowSize(window.handle(),width,height);return true; }
                         public void frame() {
                             window.frame();
                         }
@@ -90,7 +91,7 @@ public final class DesktopGallery {
                             value.codePoints().forEach(c -> input.character.invoke(window.handle(), c));
                         }
                         public void evidence(String name) {
-                            try { settle(window); screenshot(window, output.resolve(name + ".png"), 0xfffafafa); }
+                            try { settle(window); screenshot(window, output.resolve(name + ".png"), name.equals("mailbox-dark") ? 0xff09090b : 0xfffafafa); }
                             catch (Exception failure) { throw new IllegalStateException("广场实窗取证失败：" + name, failure); }
                         }
                         public void replaceText(String value) {

@@ -220,6 +220,16 @@ val nativeFontScenario = registerTestApplication("nativeFontScenario", "Java8独
     classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + coreContentRuntime
     args(file("src/core/resources/assets/qz_uilib/fonts/noto").absolutePath)
 }
+val mailboxPerformanceScenario = registerTestApplication("mailboxPerformanceScenario", "完整收件箱长列表核心计时", "club.heiqi.uilib.ui.scene.integration.MailboxPerformanceScenario") {
+    dependsOn(tasks.named("testClasses"), tasks.named(sourceSets.getByName("gallery").classesTaskName))
+    classpath = coreSources.output + fontAdapterSources.output + sourceSets.getByName("gallery").output + sourceSets.getByName("testSupport").output + sourceSets.getByName("test").output + fontNativeRuntime + coreContentRuntime
+    systemProperty("uilib.version", project.version.toString())
+    systemProperty("mailbox.paged", providers.gradleProperty("mailboxPaged").getOrElse("true"))
+    systemProperty("performance.scale", providers.gradleProperty("performanceScale").getOrElse("200"))
+    systemProperty("performance.warmup", providers.gradleProperty("performanceWarmup").getOrElse("30"))
+    systemProperty("performance.frames", providers.gradleProperty("performanceFrames").getOrElse("120"))
+    systemProperty("performance.output", providers.gradleProperty("performanceOutput").getOrElse(layout.buildDirectory.dir("reports/mailbox-core").get().asFile.absolutePath))
+}
 val mailboxScenario = registerTestApplication("mailboxScenario", "真实收件箱查询阅读与动态交互", "club.heiqi.uilib.ui.scene.integration.MailboxScenario") {
     dependsOn(tasks.named("testClasses"), tasks.named(sourceSets.getByName("gallery").classesTaskName))
     classpath = coreSources.output + fontAdapterSources.output + sourceSets.getByName("gallery").output + sourceSets.getByName("testSupport").output + sourceSets.getByName("test").output + fontNativeRuntime + coreContentRuntime
