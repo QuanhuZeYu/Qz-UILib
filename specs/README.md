@@ -14,6 +14,7 @@
 | 动态节点结构与交互身份 | [动态结构规格](<uilib-dynamic-structure-spec.md>) |
 | 测试应用、场景与报告 | [测试应用规格](<2026-10-07-uilib-testing-spec.md>) |
 | 专用性能压测、采样口径与基线 | [性能压测广场规格](<2026-10-14-uilib-performance-testing-spec.md>) |
+| 局部失效传播与增量文字测量（本次设计稿） | [增量更新规格](<2026-10-14-uilib-incremental-update-spec.md>) |
 | 文本、Markdown、富文本与数学内容 | [文本规格](<2026-10-07-uilib-text-content-spec.md>) |
 | 图像来源、尺寸、加载状态与物品图标 | [图像规格](<2026-10-07-uilib-image-spec.md>) |
 | 字体整形、光栅及渲染 | [字体规格](<2026-10-07-uilib-font-renderer-spec.md>) |
