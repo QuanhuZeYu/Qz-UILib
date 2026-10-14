@@ -19,17 +19,37 @@ public final class ScenePointerRouter implements AutoCloseable {
     private Object ownerTarget;
     private int x, y;
     private boolean closed, positionKnown;
+    private final HoverProjection hover = new HoverProjection(), passive = new HoverProjection();
+    private SceneGeometryView preparedGeometry;
+
+    /** 多个控件在同一呈现中读取同一指针投影；不能为每个文字重新扫描整页和模态树。
+     * 几何身份、声明/交互代际和坐标共同失效，仍由正式HitTester裁决。只保留各一种当前查询。 */
+    private final class HoverProjection {
+        private SceneGeometryView geometry;
+        private long revision;
+        private int px, py;
+        private SceneNode node;
+        SceneNode get(SceneGeometryView next, boolean passiveQuery) {
+            long nextRevision = runtime.revision();
+            if (geometry != next || revision != nextRevision || px != x || py != y) {
+                node = passiveQuery ? hits.passive(runtime, next, x, y) : hits.hit(runtime, next, x, y);
+                geometry = next; revision = nextRevision; px = x; py = y;
+            }
+            return node;
+        }
+        void clear() { geometry = null; node = null; }
+    }
 
     /** 悬停只是已有指针位置在当前范围的投影，不建立另一个输入owner。 */
     public SceneNode hovered(SceneGeometryView geometry) {
         runtime.domain().checkAccess();
-        return closed || !positionKnown ? null : hits.hit(runtime, geometry, x, y);
+        return closed || !positionKnown ? null : hover.get(geometry, false);
     }
 
     /** 与 click 命中分开；仅投影当前指针、范围及同代 geometry。 */
     public SceneNode passiveHovered(SceneGeometryView geometry) {
         runtime.domain().checkAccess();
-        return closed || !positionKnown ? null : hits.passive(runtime, geometry, x, y);
+        return closed || !positionKnown ? null : passive.get(geometry, true);
     }
 
     public boolean pressed(SceneNode node) {
@@ -52,6 +72,7 @@ public final class ScenePointerRouter implements AutoCloseable {
     /** 即使本帧没有事件，也检查来源更新后的owner资格；失活后本段不再恢复。 */
     public void prepare(SceneGeometryView geometry) {
         checkAccess();
+        if (preparedGeometry != geometry) { hover.clear(); passive.clear(); preparedGeometry = geometry; }
         revalidate();
         if (owner != null && geometry.get(owner.node()) == null) setOwner(null);
     }
@@ -72,7 +93,7 @@ public final class ScenePointerRouter implements AutoCloseable {
         prepare(geometry);
         // 交互投影更新只使paint失效，保持当前几何。
         if (event.kind == ScenePointerEvent.Kind.CANCEL) {
-            positionKnown = false;
+            positionKnown = false; hover.clear(); passive.clear();
             runtime.invalidatePaint();
         } else if (event.kind != ScenePointerEvent.Kind.ALL_BUTTONS_RELEASED) {
             boolean changed = !positionKnown || x != event.x || y != event.y;
@@ -210,6 +231,7 @@ public final class ScenePointerRouter implements AutoCloseable {
         runtime.domain().checkAccess();
         setOwner(null);
         buttons.clear();
+        hover.clear(); passive.clear(); preparedGeometry = null;
         closed = true;
     }
 }

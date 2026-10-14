@@ -376,6 +376,24 @@ val galleryScenario = registerTestApplication("galleryScenario", "同一测试�
     classpath = coreContentRuntime + sourceSets.getByName("test").runtimeClasspath
 }
 tasks.named("check") { dependsOn(galleryScenario) }
+val performanceSamplesScenario = registerTestApplication("performanceSamplesScenario", "性能采样独立数值口径回归", "club.heiqi.uilib.ui.scene.integration.PerformanceSamplesScenario") {
+    dependsOn("testClasses")
+    classpath = coreContentRuntime + sourceSets.getByName("test").runtimeClasspath
+}
+val performanceGalleryScenario = registerTestApplication("performanceGalleryScenario", "真实字体正式输入的有限性能基线，不启动MC", "club.heiqi.uilib.ui.scene.integration.PerformanceGalleryScenario") {
+    dependsOn("testClasses")
+    classpath = coreContentRuntime + sourceSets.getByName("test").runtimeClasspath
+    systemProperty("uilib.version", project.version.toString())
+    systemProperty("performance.scale", providers.gradleProperty("performanceScale").getOrElse("50"))
+    systemProperty("performance.warmup", providers.gradleProperty("performanceWarmup").getOrElse("30"))
+    systemProperty("performance.frames", providers.gradleProperty("performanceFrames").getOrElse("120"))
+    systemProperty("performance.output", providers.gradleProperty("performanceOutput").getOrElse(layout.buildDirectory.dir("reports/performance-core").get().asFile.absolutePath))
+}
+val hoverProjectionScenario = registerTestApplication("hoverProjectionScenario", "同代悬停复用与声明/移动失效回归", "club.heiqi.uilib.ui.scene.integration.HoverProjectionScenario") {
+    dependsOn("testClasses")
+    classpath = coreContentRuntime + sourceSets.getByName("test").runtimeClasspath
+}
+tasks.named("check") { dependsOn(performanceSamplesScenario, hoverProjectionScenario) }
 
 val coreAssetResourceScenario = registerTestApplication("coreAssetResourceScenario", "MC资源链的独立Core资产、Emoji及用户覆盖重载回归", "club.heiqi.uilib.host.client.font.CoreAssetResourceScenario") {
     dependsOn(tasks.named("testClasses"))

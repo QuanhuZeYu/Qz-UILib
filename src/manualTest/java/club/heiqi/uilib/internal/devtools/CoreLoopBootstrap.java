@@ -11,13 +11,15 @@ import net.minecraftforge.client.ClientCommandHandler;
 
 /** 仅开发 classpath 中注册；场景不进入发布包。 */
 public final class CoreLoopBootstrap {
-    private static boolean installed, pendingOpen;
+    private static boolean installed, pendingOpen, pendingPerformance;
 
     @SubscribeEvent
     public void tick(TickEvent.ClientTickEvent event) {
         if (event.phase != TickEvent.Phase.END || !pendingOpen) return;
         pendingOpen = false;
-        Minecraft.getMinecraft().displayGuiScreen(new CoreLoopScreen(club.heiqi.uilib.testing.gallery.TestGallery.Page.HOME));
+        Minecraft.getMinecraft().displayGuiScreen(pendingPerformance ? new PerformanceScreen()
+                : new CoreLoopScreen(club.heiqi.uilib.testing.gallery.TestGallery.Page.HOME));
+        pendingPerformance = false;
     }
 
     private CoreLoopBootstrap() {}
@@ -47,8 +49,17 @@ public final class CoreLoopBootstrap {
                     public void processCommand(
                             ICommandSender sender,
                             String[] args) { // GuiChat 在命令返回后会关闭当前界面，必须等聊天输入收尾后再打开。
+                        pendingPerformance = false;
                         pendingOpen = true;
                     }
                 });
+        ClientCommandHandler.instance.registerCommand(new CommandBase() {
+            @Override public String getCommandName() { return "qzperf"; }
+            @Override public String getCommandUsage(ICommandSender sender) { return "/qzperf"; }
+            @Override public int getRequiredPermissionLevel() { return 0; }
+            @Override public void processCommand(ICommandSender sender, String[] args) {
+                pendingPerformance = true; pendingOpen = true;
+            }
+        });
     }
 }

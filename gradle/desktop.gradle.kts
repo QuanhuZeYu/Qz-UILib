@@ -166,5 +166,16 @@ val desktopSettingsVerify = desktopApplication("desktopSettingsVerify", "真实�
     mustRunAfter(desktopGalleryVerify)
 }
 }
+listOf("desktopPerformance", "desktopPerformanceBenchmark").forEach { taskName ->
+    desktopApplication(taskName, "独立性能压测广场与有限真实Desktop基线", true).configure {
+        mainClass.set("club.heiqi.uilib.host.desktop.DesktopPerformance")
+        systemProperty("uilib.version", project.version.toString())
+        args(if (taskName == "desktopPerformanceBenchmark") "--benchmark" else "--manual",
+            providers.gradleProperty("performanceOutput").getOrElse(layout.buildDirectory.dir("reports/performance-desktop").get().asFile.absolutePath),
+            providers.gradleProperty("performanceScale").getOrElse("200"),
+            providers.gradleProperty("performanceWarmup").getOrElse("30"),
+            providers.gradleProperty("performanceFrames").getOrElse("120"))
+    }
+}
 tasks.named("check") { dependsOn(desktopVerify, desktopGalleryVerify, desktopSettingsVerify) }
 tasks.named("assemble") { dependsOn(desktopJar, desktopDist) }
