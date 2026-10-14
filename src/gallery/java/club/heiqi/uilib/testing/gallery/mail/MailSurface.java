@@ -21,12 +21,16 @@ import java.util.Arrays;
 import java.util.List;
 
 /** 案例的复合表面沿正式流布局，ROW 内仅补明确的垂直居中；text 是完整动作名称，子内容负责绘制。 */
-final class MailSurface implements SceneControl {
+class MailSurface implements SceneControl {
     private final ReadableSignal<SceneTheme> theme;
     private final ReadableSignal<Integer> color;
     private final float radius;
+    private final boolean feedback;
     MailSurface(ReadableSignal<SceneTheme> theme, ReadableSignal<Integer> color, float radius) {
-        this.theme = theme; this.color = color; this.radius = radius;
+        this(theme,color,radius,true);
+    }
+    MailSurface(ReadableSignal<SceneTheme> theme, ReadableSignal<Integer> color, float radius, boolean feedback) {
+        this.theme = theme; this.color = color; this.radius = radius; this.feedback=feedback;
     }
     @Override public TextLayout layoutText(SceneNode n, SceneTextMeasurer text, int width) {
         return text.layout("", n.style(), width);
@@ -52,7 +56,7 @@ final class MailSurface implements SceneControl {
     @Override public void paint(SceneNode n, SceneGeometryView g, PaintPlanBuilder target) {
         SceneGeometryView.Entry e = g.get(n); if (e == null) return;
         SceneTheme t = theme.get(); int background = color.get();
-        if (n.clickAction() != null && n.runtime().interactive(n)) {
+        if (feedback && n.clickAction() != null && n.runtime().interactive(n)) {
             if (n.runtime().pointerRouter().pressed(n)) background = t.pressed;
             else if (n.runtime().pointerRouter().hovered(g) == n) background = t.hover;
         }

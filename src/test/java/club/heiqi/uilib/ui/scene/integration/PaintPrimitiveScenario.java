@@ -334,8 +334,9 @@ public final class PaintPrimitiveScenario extends TestApplication {
                                             .signal(
                                                     ImageOptions.defaults()
                                                             .size(
-                                                                    Size.fixed(100),
-                                                                    Size.fixed(100)));
+                                                                    // MarkerControl 的正式分配是 96；测试输入也必须尊重 fixed 合同。
+                                                                    Size.fixed(96),
+                                                                    Size.fixed(96)));
                             control[0] = new MarkerControl(70, 94, null);
                             control[1] = new MarkerControl(80, 95, null);
                             fallback[0] = new SceneNode().control(control[0]);
@@ -588,6 +589,41 @@ public final class PaintPrimitiveScenario extends TestApplication {
         require(ImageIO.write(image, "png", new File(output, name)), "PNG写入失败");
     }
 
+    private void roundedCoverage() throws Exception {
+        PaintPlanBuilder target=new PaintPlanBuilder();
+        LayoutBox[] boxes={new LayoutBox(12,14,90,64),new LayoutBox(72,40,100,72),new LayoutBox(190,14,36,28)};
+        LayoutBox[] clips={null,new LayoutBox(84,48,72,48),null};
+        int[] radius={12,16,0},colors={0x80ff6040,0x900060ff,0xff00aa00};
+        for(int i=0;i<boxes.length;i++)club.heiqi.uilib.ui.scene.paint.ScenePaintShapes.rounded(target,boxes[i],clips[i],colors[i],radius[i]);
+        int[] actual=render(target.build()),expected=new int[W*H*4];int partial=0,maxDifference=0;
+        // 独立 RoundRectangle2D + 更密的面积采样作为几何参考，不消费被测 RECT 条带。
+        for(int y=0;y<H;y++)for(int x=0;x<W;x++) {
+            double[] pixel=new double[4];
+            for(int shape=0;shape<boxes.length;shape++) {
+                LayoutBox b=boxes[shape],clip=clips[shape];
+                if(x<b.x||y<b.y||x>=b.x+b.width||y>=b.y+b.height
+                        ||clip!=null&&(x<clip.x||y<clip.y||x>=clip.x+clip.width||y>=clip.y+clip.height))continue;
+                java.awt.geom.RoundRectangle2D rectangle=new java.awt.geom.RoundRectangle2D.Double(b.x,b.y,b.width,b.height,radius[shape]*2,radius[shape]*2);
+                int count=0,density=32;
+                for(int sy=0;sy<density;sy++)for(int sx=0;sx<density;sx++)
+                    if(rectangle.contains(x+(sx+.5)/density,y+(sy+.5)/density))count++;
+                double alpha=(colors[shape]>>>24)/255d*count/(density*density);
+                for(int channel=0;channel<3;channel++)pixel[channel]=((colors[shape]>>>(16-channel*8))&255)*alpha+pixel[channel]*(1-alpha);
+                pixel[3]=255*alpha+pixel[3]*(1-alpha);
+                if(count>0&&count<density*density)partial++;
+            }
+            for(int channel=0;channel<4;channel++) {
+                int at=(y*W+x)*4+channel;expected[at]=(int)Math.round(pixel[channel]);
+                maxDifference=Math.max(maxDifference,Math.abs(expected[at]-actual[at]));
+            }
+        }
+        save("rounded-coverage-gl.png",actual);save("rounded-coverage-reference.png",expected);
+        require(partial>0&&maxDifference<=12,"圆角coverage/透明混合偏离独立面积参考: partial="+partial+" max="+maxDifference);
+        require(actual[(70*W+160)*4+3]==0,"圆角图形越过正式clip");
+        require(Math.abs(actual[(40*W+40)*4+3]-128)<=1,"圆角内部半透明被重复叠加");
+        System.out.println("ROUNDED_COVERAGE partialPixels="+partial+" maxChannelDifference="+maxDifference+" independentSamples=32x32");
+    }
+
     private void gpuLines() throws Exception {
         PaintPlanBuilder target = new PaintPlanBuilder();
         target.add(
@@ -668,6 +704,9 @@ public final class PaintPrimitiveScenario extends TestApplication {
         scenario("封闭line及四角几何", this::geometryContract);
         scenario("当前唯一树局部post和全页tooltip顺序", this::sceneOrder);
         scenario("真实SceneImage嵌套captured fallback分支与overlay投影", this::capturedFallback);
-        if (!orderOnly) scenario("正式GLhost斜线线宽半透明clip与软件栅格", this::gpuLines);
+        if (!orderOnly) {
+            scenario("正式GLhost斜线线宽半透明clip与软件栅格", this::gpuLines);
+            scenario("圆角coverage真实像素与独立面积参考",this::roundedCoverage);
+        }
     }
 }

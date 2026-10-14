@@ -6,7 +6,7 @@ import club.heiqi.uilib.ui.scene.text.TextStyle;
 
 /** 邮箱视觉角色由明确的模式派生，不从文字颜色猜测主题。 */
 final class MailPalette {
-    final int canvas, surface, read, unread, selected, hover, pressed, outline, mutedText, text, accent;
+    final int canvas, surface, read, unread, selected, selectedHover, selectedPressed, hover, pressed, outline, mutedText, text, accent;
     final SceneTheme theme;
 
     private MailPalette(SceneTheme base, boolean dark) {
@@ -15,6 +15,8 @@ final class MailPalette {
         read = dark ? 0xff202327 : 0xfff2f6fc;
         unread = surface;
         selected = dark ? 0xff30435e : 0xffc2dbff;
+        selectedHover = dark ? 0xff3a5272 : 0xffb7d1f7;
+        selectedPressed = dark ? 0xff425d80 : 0xffa8c7fa;
         hover = dark ? 0xff30343b : 0xffe9eef6;
         pressed = dark ? 0xff3e4a5d : 0xffd3e3fd;
         outline = dark ? 0xff45484e : 0xffdce1e8;

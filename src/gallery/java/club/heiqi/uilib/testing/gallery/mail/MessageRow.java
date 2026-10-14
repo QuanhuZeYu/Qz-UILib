@@ -37,14 +37,15 @@ final class MessageRow {
         SceneNode check = SceneCheckBox.create(p, () -> checked.get() ? SceneCheckBox.State.CHECKED : SceneCheckBox.State.UNCHECKED,
                 () -> "选择邮件：" + item.get().value.get().subject, () -> MailStyle.buttonTheme(theme.get(),false),
                 ignored -> model.toggleChecked(item.get().id), false);
-        SceneNode star = SceneIconButton.create(p, SceneIconButton.Symbol.STAR,
+        SceneNode star = SceneIconButton.create(p, () -> item.get().value.get().starred
+                        ? SceneIconButton.Symbol.STAR_FILLED : SceneIconButton.Symbol.STAR,
                 () -> (item.get().value.get().starred ? "取消星标：" : "添加星标：") + item.get().value.get().subject,
                 () -> theme.get().withTextStyle(theme.get().textStyle.withColor(item.get().value.get().starred
                         ? 0xfff4b400 : palette.get().mutedText)), () -> model.toggleStar(item.get().id));
         for (SceneNode action : new SceneNode[]{check,star}) action.bind(NodeBinding.value(theme,
                 (n,t) -> n.size(Size.fixed(MailStyle.px(t,32)),Size.fixed(MailStyle.px(t,32)))));
         row.add(check).add(star);
-        SceneNode body = MailStyle.surface(theme, () -> 0x00000000, 0).axis(SceneNode.Axis.ROW)
+        SceneNode body = MailStyle.surface(theme, () -> 0x00000000, 0, false).axis(SceneNode.Axis.ROW)
                 .size(Size.fill(1),Size.natural()).focusable(true).clickFocus(true).onClick(() -> model.open(item.get().id));
         body.bind(NodeBinding.value(() -> item.get().value.get().sender + "\n" + item.get().value.get().subject, SceneNode::text));
         body.bind(NodeBinding.value(theme, (n,t) -> n.gap(MailStyle.px(t,16))
@@ -61,11 +62,14 @@ final class MessageRow {
                 () -> contentTheme.get().withTextStyle(contentTheme.get().textStyle.withEm(theme.get().textStyle.logicalEm * .8f)));
         time.bind(NodeBinding.value(theme,(n,t) -> n.size(Size.natural().bounds(MailStyle.px(t,64),Integer.MAX_VALUE),Size.natural())));
         row.add(time);
-        SceneNode read = SceneIconButton.create(p, SceneIconButton.Symbol.MAIL,
+        SceneNode read = SceneIconButton.create(p, () -> item.get().value.get().read
+                        ? SceneIconButton.Symbol.MAIL_OPEN : SceneIconButton.Symbol.MAIL,
                 () -> "标为" + (item.get().value.get().read ? "未读：" : "已读：") + item.get().value.get().subject,
                 () -> MailStyle.buttonTheme(theme.get(),false), () -> model.setRead(item.get().id,!item.get().value.get().read));
         read.bind(NodeBinding.value(theme,(n,t) -> n.size(Size.fixed(MailStyle.px(t,32)),Size.fixed(MailStyle.px(t,32)))));
         row.add(read);
+        row.control(new MailRowSurface(theme,palette,checked,() -> item.get().value.get().read,
+                () -> item.get().id.equals(model.openedId.get())));
         return row;
     }
 

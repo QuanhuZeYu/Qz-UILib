@@ -84,8 +84,7 @@ final class DesktopTestInput {
     void click(SceneGeometryView.Entry entry) { enqueue(entry); window.frame(); }
 
     private SceneGeometryView.Entry button(String text, boolean visible) {
-        return geometry(window).ordered().stream().filter(entry -> entry.text != null
-                && text.equals(entry.text.originalText) && entry.node.clickAction() != null
+        return geometry(window).ordered().stream().filter(entry -> text.equals(entry.node.text()) && entry.node.clickAction() != null
                 && entry.node.enabled() && (!visible || hit(entry).width > 0 && hit(entry).height > 0))
                 .findFirst().orElse(null);
     }

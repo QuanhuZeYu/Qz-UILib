@@ -46,6 +46,11 @@ abstract class SceneSymbolControl implements SceneControl {
         }));
         return node;
     }
+    static SceneNode graphic(ScenePageContext page, SceneSymbolControl control) {
+        Objects.requireNonNull(page).domain().checkWrite();
+        return new SceneNode().control(control).size(Size.natural(),Size.natural())
+                .bind(NodeBinding.value(control.theme,(n,t) -> n.style(t.textStyle)));
+    }
     private int symbolSize(SceneNode node) { return Math.max(1,(int)Math.ceil(node.style().logicalEm * 1.15f)); }
     private int labelOffset(SceneNode node) { return symbolSize(node) + node.gap(); }
     @Override public TextLayout layoutText(SceneNode node, SceneTextMeasurer text, int width) {
@@ -66,11 +71,12 @@ abstract class SceneSymbolControl implements SceneControl {
         for (SceneNode n = node; n != null; n = n.parent()) enabled &= n.enabled();
         boolean hover = enabled && node.runtime().pointerRouter().hovered(geometry) == node;
         boolean pressed = enabled && node.runtime().pointerRouter().pressed(node);
-        target.add(PaintCommand.rect(e.box,e.clip,!enabled ? style.disabled : pressed ? style.pressed : hover ? style.hover : style.button));
+        if(node.clickAction()!=null) club.heiqi.uilib.ui.scene.paint.ScenePaintShapes.rounded(target,e.box,e.clip,
+                !enabled?style.disabled:pressed?style.pressed:hover?style.hover:style.button,Math.min(e.box.width,e.box.height)/2);
         if (enabled && node.runtime().focusRouter().focused().get() == node) SceneControlPaint.border(target,e.box,e.clip,style.focus);
         LayoutBox inner = SceneControlPaint.inner(e.box,node.padding());
         int side = Math.min(symbolSize(node),Math.min(inner.width,inner.height));
-        LayoutBox mark = new LayoutBox(inner.x,inner.y + (inner.height-side)/2,side,side);
+        LayoutBox mark = new LayoutBox(inner.x+(showLabel?0:(inner.width-side)/2),inner.y + (inner.height-side)/2,side,side);
         symbol(mark,target,e.clip,enabled ? style.textStyle.color : style.disabledText);
         if (showLabel) {
             LayoutBox label = new LayoutBox(inner.x+labelOffset(node),inner.y,Math.max(0,inner.width-labelOffset(node)),inner.height);

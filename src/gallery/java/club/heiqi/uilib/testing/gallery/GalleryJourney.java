@@ -29,6 +29,7 @@ public final class GalleryJourney {
 
         default void evidence(String name) {}
         default boolean resize(int width,int height) { return false; }
+        default boolean pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.Kind kind,int x,int y) { return false; }
     }
 
     public static void run(Driver driver) {
@@ -124,6 +125,18 @@ public final class GalleryJourney {
         go(driver, TestGallery.Page.MAILBOX);
         driver.resize(1400,900); driver.frame();
         driver.evidence("mailbox-inbox");
+        SceneGeometryView.Entry rowSubject=driver.geometry().ordered().stream()
+                .filter(e -> e.text!=null&&e.text.logicalText.equals("周五的设计评审：收件箱与阅读体验")).findFirst().get();
+        int stateX=rowSubject.box.x+16,stateY=rowSubject.box.y+rowSubject.box.height/2;
+        if(driver.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.Kind.MOVE,stateX,stateY)) {
+            driver.frame();driver.evidence("mailbox-hover");
+            driver.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.Kind.DOWN,stateX,stateY);
+            driver.frame();driver.evidence("mailbox-pressed");
+            driver.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.Kind.MOVE,180,40);
+            driver.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.Kind.UP,180,40);
+            driver.frame();driver.evidence("mailbox-focus");
+            require(!contains(driver,"这封邮件记录"),"取消主体按压仍打开邮件");
+        }
         SceneGeometryView.Entry field = driver.geometry().ordered().stream()
                 .filter(e -> e.node.control() != null && e.node.control().acceptsTextInput(e.node))
                 .findFirst().orElseThrow(() -> new AssertionError("收件箱没有正式搜索字段"));
@@ -157,9 +170,9 @@ public final class GalleryJourney {
             driver.click(hit.x+hit.width/2,hit.y+hit.height/2);driver.frame();
             require(contains(driver,"这封邮件记录"),"窄窗口不能进入阅读");driver.evidence("mailbox-narrow-reading");
             click(driver,"返回列表");
-            if(text(driver,"预览深色"))click(driver,"预览深色");
-            driver.evidence("mailbox-dark");
-            if(text(driver,"预览浅色"))click(driver,"预览浅色");
+            if(action(driver,"预览深色"))click(driver,"预览深色");
+            require(driver.geometry().ordered().stream().anyMatch(e -> "预览浅色".equals(e.node.text())),"邮箱主题图标点击未发布深色预览"); driver.evidence("mailbox-dark");
+            if(action(driver,"预览浅色"))click(driver,"预览浅色");
             driver.resize(1400,1100);driver.frame();
         }
     }
@@ -584,6 +597,10 @@ public final class GalleryJourney {
         click(driver, "打开" + page.title);
     }
 
+    private static boolean action(Driver driver,String value) {
+        return driver.geometry().ordered().stream().anyMatch(e -> e.node.clickAction()!=null
+                &&value.equals(e.node.text())&&visible(e));
+    }
     private static boolean text(Driver driver, String value) {
         return driver.paint().commands().stream()
                 .anyMatch(
@@ -604,7 +621,8 @@ public final class GalleryJourney {
         for (int attempt = 0; attempt < 20; attempt++) {
             SceneGeometryView.Entry target =
                     driver.geometry().ordered().stream()
-                            .filter(e -> e.text != null && value.equals(e.text.originalText))
+                            .filter(e -> e.node.clickAction()!=null && value.equals(e.node.text())
+                                    || e.text != null && value.equals(e.text.originalText))
                             .findFirst()
                             .orElse(null);
             if (target != null && visible(target)) break;
@@ -640,8 +658,8 @@ public final class GalleryJourney {
                 driver.geometry().ordered().stream()
                         .filter(
                                 e ->
-                                        e.text != null
-                                                && value.equals(e.text.originalText)
+                                        (e.node.clickAction()!=null && value.equals(e.node.text())
+                                                || e.text != null && value.equals(e.text.originalText))
                                                 && (e.clip == null
                                                                         ? e.box
                                                                         : e.box.intersect(e.clip))

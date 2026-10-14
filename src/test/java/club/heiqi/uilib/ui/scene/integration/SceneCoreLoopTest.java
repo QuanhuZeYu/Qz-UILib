@@ -108,15 +108,17 @@ public final class SceneCoreLoopTest extends TestApplication {
         ReactiveDomain domain=ReactiveDomain.direct();
         SoftwareSceneScenario.SoftwareHost host=new SoftwareSceneScenario.SoftwareHost();host.width=300;host.height=120;
         Signal<club.heiqi.uilib.ui.scene.control.SceneCheckBox.State>[] state=new Signal[1];
-        Signal<Integer>[] clicks=new Signal[1];SceneNode[] box=new SceneNode[1],icon=new SceneNode[1];
+        Signal<Integer>[] clicks=new Signal[1];SceneNode[] box=new SceneNode[1],icon=new SceneNode[1],graphic=new SceneNode[1];
+        Signal<club.heiqi.uilib.ui.scene.control.SceneIconButton.Symbol>[] shape=new Signal[1];
         try(ScenePageSession page=ScenePageSession.open(domain,host,host,context->{
             require(context.viewportWidth().get()==300,"成品初始空间事实缺失");
             state[0]=domain.signal(club.heiqi.uilib.ui.scene.control.SceneCheckBox.State.MIXED);clicks[0]=domain.signal(0);
             box[0]=club.heiqi.uilib.ui.scene.control.SceneCheckBox.create(context,state[0],()->"选择",context.theme(),
                 value->state[0].set(value?club.heiqi.uilib.ui.scene.control.SceneCheckBox.State.CHECKED:club.heiqi.uilib.ui.scene.control.SceneCheckBox.State.UNCHECKED));
-            icon[0]=club.heiqi.uilib.ui.scene.control.SceneIconButton.create(context,
-                club.heiqi.uilib.ui.scene.control.SceneIconButton.Symbol.STAR,()->"星标",context.theme(),()->clicks[0].set(clicks[0].get()+1));
-            context.mountOwned(new SceneNode().add(box[0]).add(icon[0]));
+            shape[0]=domain.signal(club.heiqi.uilib.ui.scene.control.SceneIconButton.Symbol.STAR);
+            icon[0]=club.heiqi.uilib.ui.scene.control.SceneIconButton.create(context,shape[0],()->"星标",context.theme(),()->clicks[0].set(clicks[0].get()+1));
+            graphic[0]=club.heiqi.uilib.ui.scene.control.SceneIconButton.graphic(context,shape[0],context.theme());
+            context.mountOwned(new SceneNode().add(box[0]).add(icon[0]).add(graphic[0]));
         })){
             page.frame();int[] point=new int[2];
             for(SceneNode node:new SceneNode[]{box[0],icon[0]}){
@@ -127,11 +129,17 @@ public final class SceneCoreLoopTest extends TestApplication {
             }
             domain.execute(()->require(state[0].get()==club.heiqi.uilib.ui.scene.control.SceneCheckBox.State.CHECKED&&clicks[0].get()==1,
                 "正式成品图标/复选未执行业务"));
+            domain.execute(()->{
+                require(!graphic[0].focusable()&&graphic[0].clickAction()==null,"装饰图标建立了第二输入目标");
+                shape[0].set(club.heiqi.uilib.ui.scene.control.SceneIconButton.Symbol.STAR_FILLED);
+            });
+            page.frame();
+            domain.execute(()->require(page.runtime().focusRouter().focused().get()==icon[0],"标记变化丢失原动作焦点"));
             host.width=240;page.frame();
         }
         domain.execute(()->{state[0].set(club.heiqi.uilib.ui.scene.control.SceneCheckBox.State.UNCHECKED);
             require(clicks[0].get()==1,"关闭控件误销毁外部来源");});
-        System.out.println("CORE_SYMBOL publicFactory=true frame=true input=true externalStateAlive=true");
+        System.out.println("CORE_SYMBOL publicFactory=true frame=true input=true dynamicSymbol=true graphicPassive=true externalStateAlive=true");
     }
 
     private void rejectPureCommand(Runnable command) {

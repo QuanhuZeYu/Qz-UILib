@@ -2,6 +2,7 @@ package club.heiqi.uilib.testing.gallery.mail;
 
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.scene.control.SceneTheme;
+import club.heiqi.uilib.ui.scene.control.SceneIconButton;
 import club.heiqi.uilib.ui.scene.control.ThemeMode;
 import club.heiqi.uilib.ui.scene.host.ScenePageContext;
 import club.heiqi.uilib.ui.scene.layout.Size;
@@ -21,12 +22,13 @@ final class MailChrome {
         SceneNode brand = MailStyle.surface(theme, () -> 0x00000000,0).axis(SceneNode.Axis.ROW);
         brand.bind(NodeBinding.value(theme,(n,t) -> n.padding(MailStyle.px(t,12)).gap(MailStyle.px(t,12))
                 .size(Size.fixed(MailStyle.px(t,228)),Size.natural())));
-        if (onBack != null) brand.add(MailStyle.button(p, () -> "场景概览", theme, onBack));
+        if (onBack != null) brand.add(SceneIconButton.create(p,SceneIconButton.Symbol.CHEVRON_LEFT,() -> "场景概览",theme,onBack));
         brand.add(MailStyle.label(p, () -> "QZ Mail",theme,1.4f,false));
         header.add(brand).add(search);
         header.add(new SceneNode().size(Size.fill(1),Size.natural()));
         header.add(MailStyle.button(p,fontName,theme,onFont));
-        if (onTheme != null) header.add(MailStyle.button(p, () -> mode.get().isDark() ? "预览浅色" : "预览深色", theme,onTheme));
+        if (onTheme != null) header.add(SceneIconButton.create(p,SceneIconButton.Symbol.THEME,
+                () -> mode.get().isDark()?"预览浅色":"预览深色",theme,onTheme));
         header.add(new SceneNode().size(Size.fixed(4),Size.natural()));
         return header;
     }
@@ -42,6 +44,8 @@ final class MailChrome {
                 .text("接收示例邮件").focusable(true).clickFocus(true).onClick(receive);
         receiveButton.bind(NodeBinding.value(theme,(n,t) -> n.padding(MailStyle.px(t,16))
                 .size(Size.natural(),Size.natural().bounds(MailStyle.px(t,56),Integer.MAX_VALUE))));
+        receiveButton.axis(SceneNode.Axis.ROW).gap(12)
+                .add(SceneIconButton.graphic(p,() -> SceneIconButton.Symbol.MAIL_OPEN,theme));
         receiveButton.add(MailStyle.single(p,() -> "接收示例邮件",theme));
         receiveButton.bind(NodeBinding.value(wide,SceneNode::visible));nav.add(receiveButton);
         SceneNode separation=new SceneNode().size(Size.natural(),Size.fixed(8));
@@ -54,6 +58,8 @@ final class MailChrome {
                 SceneTheme t=theme.get();n.padding(MailStyle.px(t,8)).gap(MailStyle.px(t,8))
                         .size(wide.get()?Size.fill(1):Size.fill(1),Size.natural());
             }));
+            entry.add(SceneIconButton.graphic(p,() -> folder==MailboxModel.Folder.INBOX?SceneIconButton.Symbol.INBOX
+                    :folder==MailboxModel.Folder.STARRED?SceneIconButton.Symbol.STAR:SceneIconButton.Symbol.ALL_MAIL,theme));
             entry.add(MailStyle.single(p,() -> label,theme).size(Size.fill(1),Size.natural()));
             entry.add(MailStyle.label(p,() -> Integer.toString(model.count(folder)),theme,.8f,true)
                     .size(Size.natural(),Size.natural()));

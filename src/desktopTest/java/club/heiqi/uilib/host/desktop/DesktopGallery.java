@@ -83,6 +83,12 @@ public final class DesktopGallery {
                             input.key.invoke(window.handle(), code, 0, GLFW_PRESS, mods);
                             input.key.invoke(window.handle(), code, 0, GLFW_RELEASE, mods);
                         }
+                        public boolean pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.Kind kind,int x,int y) {
+                            input.point(x,y);
+                            if(kind==club.heiqi.uilib.ui.scene.input.ScenePointerEvent.Kind.DOWN) input.mouse.invoke(window.handle(),GLFW_MOUSE_BUTTON_LEFT,GLFW_PRESS,0);
+                            if(kind==club.heiqi.uilib.ui.scene.input.ScenePointerEvent.Kind.UP) input.mouse.invoke(window.handle(),GLFW_MOUSE_BUTTON_LEFT,GLFW_RELEASE,0);
+                            return true;
+                        }
                         public void escape() {
                             input.key.invoke(window.handle(), GLFW_KEY_ESCAPE, 0, GLFW_PRESS, 0);
                             input.key.invoke(window.handle(), GLFW_KEY_ESCAPE, 0, GLFW_RELEASE, 0);
@@ -95,8 +101,8 @@ public final class DesktopGallery {
                                 settle(window);
                                 int background=name.startsWith("mailbox-")
                                         ? name.equals("mailbox-dark")?0xff111315:0xfff6f8fc : 0xfffafafa;
-                                screenshot(window,output.resolve(name+".png"),background);
                                 if(name.startsWith("mailbox-")) saveGeometry(window,output.resolve(name+".geometry.json"));
+                                screenshot(window,output.resolve(name+".png"),background);
                             }
                             catch (Exception failure) { throw new IllegalStateException("广场实窗取证失败：" + name, failure); }
                         }
@@ -282,9 +288,12 @@ public final class DesktopGallery {
             window.fonts.endPresentation();
         }
         BufferedImage output = DesktopTestReadback.readBack(window);
-        if (glGetError() != GL_NO_ERROR
-                || output.getRGB(window.width() - 4, window.height() - 4) != background)
-            throw new AssertionError("共享广场背景未覆盖视口");
+        int error=glGetError(),actualBackground=output.getRGB(window.width()-4,window.height()-4);
+        if(error!=GL_NO_ERROR||actualBackground!=background) {
+            ImageIO.write(output,"png",target.resolveSibling(target.getFileName()+"-failed.png").toFile());
+            throw new AssertionError("页面背景与预期不符: "+target.getFileName()+" expected="+Integer.toHexString(background)
+                    +" actual="+Integer.toHexString(actualBackground)+" glError="+error);
+        }
         PaintCommand title =
                 window.lastPlan.commands().stream()
                         .filter(

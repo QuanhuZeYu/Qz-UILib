@@ -15,7 +15,10 @@ final class MailStyle {
     private MailStyle() {}
     static int px(SceneTheme theme, float value) { return Math.round(theme.textStyle.logicalEm * value / 15f); }
     static SceneNode surface(ReadableSignal<SceneTheme> theme, ReadableSignal<Integer> color, float radius) {
-        return new SceneNode().control(new MailSurface(theme,color,radius))
+        return surface(theme,color,radius,true);
+    }
+    static SceneNode surface(ReadableSignal<SceneTheme> theme, ReadableSignal<Integer> color, float radius, boolean feedback) {
+        return new SceneNode().control(new MailSurface(theme,color,radius,feedback))
                 .bind(NodeBinding.value(theme,(n,t)->n.style(t.textStyle)));
     }
     static SceneNode single(ScenePageContext p, ReadableSignal<String> text, ReadableSignal<SceneTheme> theme) {

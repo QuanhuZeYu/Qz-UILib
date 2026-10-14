@@ -4,7 +4,6 @@ import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.scene.host.ScenePageContext;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
-import club.heiqi.uilib.ui.scene.paint.PaintCommand;
 import club.heiqi.uilib.ui.scene.paint.PaintPlanBuilder;
 import java.util.Collections;
 import java.util.List;
@@ -30,14 +29,10 @@ public final class SceneCheckBox {
         Control(ReadableSignal<SceneTheme> theme, boolean showLabel, ReadableSignal<State> state) { super(theme,showLabel); this.state=state; }
         @Override public List<ReadableSignal<?>> paintDependencies(SceneNode node) { return java.util.Arrays.asList(theme,state); }
         @Override void symbol(LayoutBox box, PaintPlanBuilder target, LayoutBox clip, int color) {
-            SceneControlPaint.border(target,box,clip,color);
+            SceneIconGlyph.paint(SceneIconButton.Symbol.CHECK_BOX,box,target,clip,color);
             State s=Objects.requireNonNull(state.get(),"复选状态");
-            float x=box.x,y=box.y,w=box.width,h=box.height;
-            if (s == State.MIXED) target.add(PaintCommand.line(x+w*.22f,y+h*.5f,x+w*.78f,y+h*.5f,2f,clip,color));
-            else if (s == State.CHECKED) {
-                target.add(PaintCommand.line(x+w*.2f,y+h*.5f,x+w*.42f,y+h*.72f,2f,clip,color));
-                target.add(PaintCommand.line(x+w*.42f,y+h*.72f,x+w*.8f,y+h*.25f,2f,clip,color));
-            }
+            if(s==State.MIXED)SceneIconGlyph.paint(SceneIconButton.Symbol.MINUS,box,target,clip,color);
+            else if(s==State.CHECKED)SceneIconGlyph.paint(SceneIconButton.Symbol.CHECK,box,target,clip,color);
         }
     }
 }

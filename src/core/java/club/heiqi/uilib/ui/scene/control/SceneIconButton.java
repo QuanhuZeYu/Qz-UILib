@@ -4,36 +4,35 @@ import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.scene.host.ScenePageContext;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
-import club.heiqi.uilib.ui.scene.paint.PaintCommand;
 import club.heiqi.uilib.ui.scene.paint.PaintPlanBuilder;
+import java.util.Arrays;
+import java.util.List;
 import java.util.Objects;
 
-/** 向量图标及完整名称；不依赖宿主图标字体或缺字占位。 */
+/** 标准图形及完整名称；实际大小 coverage 共用普通 PaintPlan，不依赖宿主图标字体。 */
 public final class SceneIconButton {
-    public enum Symbol { STAR, ARCHIVE, MAIL }
+    public enum Symbol { STAR, STAR_FILLED, ARCHIVE, MAIL, MAIL_OPEN, SEARCH, CLOSE,
+        CHEVRON_LEFT, CHEVRON_RIGHT, INBOX, ALL_MAIL, THEME, SORT, CHECK, MINUS, CHECK_BOX }
     private SceneIconButton() {}
     public static SceneNode create(ScenePageContext page, Symbol symbol, ReadableSignal<String> name,
-                                   ReadableSignal<SceneTheme> theme, Runnable action) {
-        Objects.requireNonNull(symbol);
+            ReadableSignal<SceneTheme> theme, Runnable action) {
+        Objects.requireNonNull(symbol);return create(page,() -> symbol,name,theme,action);
+    }
+    /** 只改变标记，不替换动作节点或改变命中与焦点身份。 */
+    public static SceneNode create(ScenePageContext page, ReadableSignal<Symbol> symbol, ReadableSignal<String> name,
+            ReadableSignal<SceneTheme> theme, Runnable action) {
         return SceneSymbolControl.node(page,name,new Control(theme,symbol),action);
     }
+    /** 复合动作内的纯装饰，使用相同标记但不建立额外的输入目标。 */
+    public static SceneNode graphic(ScenePageContext page, ReadableSignal<Symbol> symbol, ReadableSignal<SceneTheme> theme) {
+        return SceneSymbolControl.graphic(page,new Control(theme,symbol));
+    }
     private static final class Control extends SceneSymbolControl {
-        private final Symbol shape;
-        Control(ReadableSignal<SceneTheme> theme, Symbol shape) { super(theme,false);this.shape=shape; }
+        private final ReadableSignal<Symbol> shape;
+        Control(ReadableSignal<SceneTheme> theme, ReadableSignal<Symbol> shape) {super(theme,false);this.shape=Objects.requireNonNull(shape);}
+        @Override public List<ReadableSignal<?>> paintDependencies(SceneNode node) {return Arrays.asList(theme,shape);}
         @Override void symbol(LayoutBox box, PaintPlanBuilder target, LayoutBox clip, int color) {
-            float x=box.x,y=box.y,w=box.width,h=box.height;
-            if (shape == Symbol.STAR) {
-                float[] px={.5f,.61f,.95f,.68f,.78f,.5f,.22f,.32f,.05f,.39f};
-                float[] py={.02f,.34f,.36f,.57f,.93f,.73f,.93f,.57f,.36f,.34f};
-                for(int i=0;i<px.length;i++) { int j=(i+1)%px.length;target.add(PaintCommand.line(x+w*px[i],y+h*py[i],x+w*px[j],y+h*py[j],1.5f,clip,color)); }
-            } else {
-                LayoutBox outline=new LayoutBox((int)x,(int)(y+h*.15f),(int)w,Math.max(0,(int)(h*.7f)));
-                SceneControlPaint.border(target,outline,clip,color);
-                if(shape == Symbol.MAIL) {
-                    target.add(PaintCommand.line(x,y+h*.15f,x+w*.5f,y+h*.55f,1.5f,clip,color));
-                    target.add(PaintCommand.line(x+w*.5f,y+h*.55f,x+w,y+h*.15f,1.5f,clip,color));
-                } else target.add(PaintCommand.line(x+w*.3f,y+h*.4f,x+w*.7f,y+h*.4f,1.5f,clip,color));
-            }
+            SceneIconGlyph.paint(Objects.requireNonNull(shape.get(),"图标标记"),box,target,clip,color);
         }
     }
 }
