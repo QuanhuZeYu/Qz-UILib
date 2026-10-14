@@ -64,7 +64,7 @@ public final class IncrementalMeasurementScenario extends TestApplication {
         scenario("动态增删重排重挂与卸载后依赖隔离", this::structureScopes);
         scenario("跨父移动保留挂载与文字请求", this::moveScope);
         scenario("同源码新文档声明更新目标且不清理旁行", this::documentScope);
-        scenario("真实共享图像worker换代只更新所属来源", this::imageScope);
+        scenario("真实共享图像换代与READY备用保留当前来源", this::imageScope);
         scenario("退出分支与关闭管线不持续持有旧节点", this::releasedNodes);
     }
     private final class Host implements SceneHost {
@@ -282,15 +282,31 @@ public final class IncrementalMeasurementScenario extends TestApplication {
     @SuppressWarnings("unchecked")
     private void imageScope() throws Exception {
         Signal<ImageSource>[] source = new Signal[1]; SceneNode[] image = {null};
+        Signal<String>[] backupText = new Signal[1];
         // 位图输入已携带真实像素；共享服务仍通过正式有界worker及drain发布生命周期。
         try (SharedImageService service = new SharedImageService(value -> () -> value.bitmap, SharedImageService.Budget.defaults());
                 Page p = new Page((page, context) -> {
                     source[0] = page.domain.signal(ImageSource.bitmap(new ImageContent(4, 3, new byte[4 * 3 * 4])));
-                    image[0] = SceneImage.create(service, source[0], page.domain.signal(ImageOptions.defaults()), new SceneNode().text("未就绪备用"));
-                    page.root.add(image[0]);
+                    backupText[0] = page.domain.signal("未就绪备用");
+                    SceneNode backupNode = new SceneNode().bind(NodeBinding.value(backupText[0], SceneNode::text));
+                    image[0] = SceneImage.create(service, source[0], page.domain.signal(ImageOptions.defaults()), backupNode);
+                    page.root.add(image[0]).add(new SceneNode().size(Size.fixed(1), Size.fixed(400)));
                 })) {
             awaitImage(p, service, image[0]);
             int stable = p.requests.count("固定未变行 Café");
+            int backup = p.requests.count("未就绪备用");
+            require(backup > 0, "真实READY图像没有沿正式绘制捕获自定义备用子树");
+            // READY隐藏备用树仍挂载；旁行重排不能按主几何访问集合清理其有效文字。
+            p.update(() -> p.value.set("旁行更新保留READY备用"));
+            require(p.requests.count("未就绪备用") == backup, "主布局清理了仍挂载READY备用树的有效请求");
+            p.session.pointer(ScenePointerEvent.scroll(20, 20, -1)); p.session.frame();
+            p.domain.execute(() -> require(p.session.runtime().scrollOffset(p.root) > 0, "正式滚动未生效"));
+            require(p.requests.count("未就绪备用") == backup, "滚动重排清理了READY备用的有效请求");
+            p.update(() -> backupText[0].set("当前READY备用内容"));
+            require(p.requests.count("当前READY备用内容") > 0 && p.host.paint.commands().stream()
+                    .anyMatch(command -> command.pendingPaint != null && command.pendingPaint.commands().stream()
+                            .anyMatch(child -> child.text != null && child.text.originalText.equals("当前READY备用内容"))),
+                    "隐藏备用来源更新未进入当代图像备用PaintPlan");
             p.update(() -> source[0].set(ImageSource.bitmap(new ImageContent(13, 7, new byte[13 * 7 * 4]))));
             awaitImage(p, service, image[0]);
             p.domain.execute(() -> require(SceneImage.state(image[0]).get().content.width == 13

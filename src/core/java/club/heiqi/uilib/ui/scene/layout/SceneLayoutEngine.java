@@ -89,6 +89,7 @@ public final class SceneLayoutEngine {
         metricsKnown = false;
     }
 
+    // 跨批寿命按完整挂载树：READY图像的隐藏备用仍会在主布局后独立捕获，不能按本批测量集合修剪。
     private void retainMounted(List<SceneNode> roots) {
         Set<SceneNode> mounted = Collections.newSetFromMap(new IdentityHashMap<SceneNode, Boolean>());
         for (SceneNode root : roots) collectMounted(root, mounted);
@@ -152,8 +153,6 @@ public final class SceneLayoutEngine {
             for (SceneGeometryView.Entry entry : entries) index.put(entry.node, entry);
             Map<SceneNode, Boolean> sources = new IdentityHashMap<>();
             for (SceneNode root : roots) projectLayers(root, viewport, entries, index, sources);
-            // 本次不再测量的节点不能由缓存保活；保留同树隐藏节点的声明身份。
-            batchText.keySet().retainAll(measuredCache.keySet());
             SceneGeometry geometry = ScenePresentationOrder.publish(roots, entries, viewport, sources);
             presentedStyles.clear();
             for (SceneGeometryView.Entry entry : geometry.ordered()) presentedStyles.put(entry.node, entry.node.style());
