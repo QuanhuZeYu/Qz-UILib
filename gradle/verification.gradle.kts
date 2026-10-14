@@ -408,6 +408,11 @@ val performanceGalleryScenario = registerTestApplication("performanceGalleryScen
     systemProperty("performance.frames", providers.gradleProperty("performanceFrames").getOrElse("120"))
     systemProperty("performance.output", providers.gradleProperty("performanceOutput").getOrElse(layout.buildDirectory.dir("reports/performance-core").get().asFile.absolutePath))
 }
+val largeListScopeScenario = registerTestApplication("largeListScopeScenario", "真实列表滚回命中与逻辑模态范围生命周期", "club.heiqi.uilib.ui.scene.integration.LargeListScopeScenario") {
+    dependsOn("coreClasses", "fontAdapterClasses", "testClasses", "testSupportClasses")
+    classpath = coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + testSupportSources.output + fontNativeRuntime + coreContentRuntime
+}
+tasks.named("check") { dependsOn(largeListScopeScenario) }
 val hoverProjectionScenario = registerTestApplication("hoverProjectionScenario", "同代悬停复用与声明/移动失效回归", "club.heiqi.uilib.ui.scene.integration.HoverProjectionScenario") {
     dependsOn("testClasses")
     classpath = coreContentRuntime + sourceSets.getByName("test").runtimeClasspath

@@ -59,6 +59,8 @@ public final class SceneRuntime implements AutoCloseable {
     private boolean inputGeometryReady;
     private long layerPresenceRevision = -1, layerValidationRevision = -1;
     private boolean layersDeclared;
+    private SceneNode logicalModal;
+    private boolean logicalModalKnown;
     private club.heiqi.uilib.ui.scene.input.SceneCompositionSource compositionSource;
     private MountHandle compositionMount;
     private club.heiqi.uilib.ui.scene.edit.SceneEditState compositionState;
@@ -177,6 +179,7 @@ public final class SceneRuntime implements AutoCloseable {
 
     private void invalidateArrangement() {
         domain.checkAccess();
+        clearLogicalModal();
         revision++;
         geometryRevision++;
         inputGeometryReady = false;
@@ -294,6 +297,7 @@ public final class SceneRuntime implements AutoCloseable {
     private void mountSubtree(SceneNode node, Owner parentOwner) {
         Mount mount = new Mount(parentOwner.child(), ++nodeMeasureRevisionClock);
         mounts.put(node, mount);
+        clearLogicalModal();
         node.frameworkRuntime(this, true);
         for (NodeBinding binding : node.bindings()) {
             BindingActivation active = binding.activate(this, node, mount.owner);
@@ -385,6 +389,7 @@ public final class SceneRuntime implements AutoCloseable {
     private void releaseSubtree(SceneNode node) {
         for (SceneNode child : node.children()) releaseSubtree(child);
         mounts.remove(node);
+        clearLogicalModal();
         scrolling.remove(node);
         dirtyBindings.remove(node);
         node.frameworkRuntime(this, false);
@@ -642,13 +647,23 @@ public final class SceneRuntime implements AutoCloseable {
         return true;
     }
 
+    private void clearLogicalModal() {
+        logicalModal = null;
+        logicalModalKnown = false;
+    }
+
     SceneNode activeModal() {
         if (hasLayers()) return inputGeometry == null ? null : inputGeometry.activeModal();
-        for (int i = roots.size() - 1; i >= 0; i--) {
-            SceneNode found = findModal(roots.get(i));
-            if (found != null) return found;
+        // 资格与提示对每个控件查询范围；null也是有效结果，不能每次重扫整棵挂载树。
+        // 核心第5—6节：声明/成员变化立即结束该事实；无几何时仍按逻辑树求解。
+        if (!logicalModalKnown) {
+            for (int i = roots.size() - 1; i >= 0; i--) {
+                logicalModal = findModal(roots.get(i));
+                if (logicalModal != null) break;
+            }
+            logicalModalKnown = true;
         }
-        return null;
+        return logicalModal;
     }
 
     private SceneNode findModal(SceneNode node) {
@@ -1003,6 +1018,7 @@ public final class SceneRuntime implements AutoCloseable {
             if (failure == null) failure = e;
             else if (e != failure) failure.addSuppressed(e);
         } finally {
+            clearLogicalModal();
             inputGeometry = null;
             inputGeometryReady = false;
             disposed = true;
