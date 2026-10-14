@@ -125,6 +125,9 @@ public final class MailboxModel implements AutoCloseable {
     }
     public void update(Message message) { require(message.id).value.set(message); retainVisibleSelection(); }
     public void remove(String id) { require(id); byId.remove(id); publish(); retainVisibleSelection(); }
-    public void reverse() { List<Item> next = new ArrayList<>(source.get()); Collections.reverse(next); source.set(Collections.unmodifiableList(next)); }
+    public void reverse() {
+        domain.checkWrite(); List<Item> next = new ArrayList<>(source.get()); Collections.reverse(next);
+        byId.clear(); for (Item item : next) byId.put(item.id,item); publish();
+    }
     @Override public void close() { owner.dispose(); }
 }

@@ -130,12 +130,30 @@ public final class GalleryJourney {
         SceneGeometryView.Entry message = driver.geometry().ordered().stream()
                 .filter(e -> e.text != null && e.node.focusable() && e.text.logicalText.contains("本周工坊精选"))
                 .findFirst().orElseThrow(() -> new AssertionError("搜索没有当前消息"));
-        click(driver, message.text.originalText);
+        club.heiqi.uilib.ui.scene.layout.LayoutBox messageHit=message.clip==null?message.box:message.box.intersect(message.clip);
+        driver.click(messageHit.x+messageHit.width/2,messageHit.y+messageHit.height/2);driver.frame();
         require(contains(driver, "这封邮件记录"), "收件箱阅读未显示正文");
         driver.evidence("mailbox-reading");
         click(driver, "返回列表");
         require(contains(driver, "本周工坊精选"), "阅读返回没有保留查询");
         click(driver, "清空搜索");
+        namedAction(driver,"选择邮件：周五");
+        namedAction(driver,"添加星标：周五");
+        require(contains(driver,"已选择 1 封"),"行内选择没有批量目标");
+        driver.evidence("mailbox-selection");
+        namedAction(driver,"归档已选邮件");
+        require(contains(driver,"已归档 1 封邮件"),"批量归档没有实际反馈");
+        click(driver,"所有邮件");
+        require(contains(driver,"周五的设计评审"),"所有邮件没有归档对象");
+        driver.evidence("mailbox-all-mail");
+    }
+
+    private static void namedAction(Driver driver,String name) {
+        SceneGeometryView.Entry e=driver.geometry().ordered().stream()
+                .filter(v->v.node.focusable() && v.node.text() != null && v.node.text().startsWith(name) && visible(v))
+                .findFirst().orElseThrow(()->new AssertionError("没有可见命名操作："+name));
+        club.heiqi.uilib.ui.scene.layout.LayoutBox hit=e.clip==null?e.box:e.box.intersect(e.clip);
+        driver.click(hit.x+hit.width/2,hit.y+hit.height/2);driver.frame();
     }
 
     private static void featureCoverage(Driver driver) {

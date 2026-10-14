@@ -6,6 +6,8 @@ import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.scene.control.SceneTheme;
 import club.heiqi.uilib.ui.scene.control.SceneTextField;
 import club.heiqi.uilib.ui.scene.control.SceneButton;
+import club.heiqi.uilib.ui.scene.control.SceneCheckBox;
+import club.heiqi.uilib.ui.scene.control.SceneIconButton;
 import club.heiqi.uilib.ui.scene.edit.SceneEditState;
 import club.heiqi.uilib.ui.scene.host.ScenePageContext;
 import club.heiqi.uilib.ui.scene.layout.Size;
@@ -74,6 +76,25 @@ public final class MailboxPage {
                     "新消息已经进入收件箱。", "你好，\n\n这是刚刚收到的交接记录。请在需要时将它加星，或归档到所有邮件。", "刚刚", false, false, true));
         }));
         listPane.add(tools);
+        SceneNode bulk = new SceneNode().axis(SceneNode.Axis.ROW).size(Size.fill(1),Size.natural()).gap(8);
+        bulk.add(SceneCheckBox.create(p, () -> model.checked.get().isEmpty() ? SceneCheckBox.State.UNCHECKED
+                : model.checked.get().size() == model.results.get().size() ? SceneCheckBox.State.CHECKED : SceneCheckBox.State.MIXED,
+                () -> "全选当前结果", () -> MailStyle.buttonTheme(theme.get(),false), model::setAllChecked,false)
+                .bind(NodeBinding.value(() -> !model.results.get().isEmpty(),SceneNode::enabled)));
+        bulk.add(MailStyle.label(p, () -> model.checked.get().isEmpty() ? "选择邮件以批量整理" : "已选择 " + model.checked.get().size() + " 封",theme,.85f,true)
+                .size(Size.fill(1),Size.natural()));
+        bulk.add(SceneIconButton.create(p,SceneIconButton.Symbol.ARCHIVE,() -> "归档已选邮件",theme,model::archiveChecked)
+                .bind(NodeBinding.value(() -> !model.checked.get().isEmpty(),SceneNode::enabled)));
+        SceneNode bulkActions = new SceneNode().axis(SceneNode.Axis.ROW).size(Size.fill(1),Size.natural()).gap(8);
+        bulkActions.bind(NodeBinding.value(() -> !model.checked.get().isEmpty(),SceneNode::visible));
+        bulkActions.add(MailStyle.button(p,() -> "标为已读",theme,() -> model.readChecked(true))
+                .bind(NodeBinding.value(() -> !model.checked.get().isEmpty(),SceneNode::enabled)));
+        bulkActions.add(MailStyle.button(p,() -> "标为未读",theme,() -> model.readChecked(false))
+                .bind(NodeBinding.value(() -> !model.checked.get().isEmpty(),SceneNode::enabled)));
+        bulkActions.add(MailStyle.button(p,() -> "取消选择",theme,() -> model.setAllChecked(false))
+                .bind(NodeBinding.value(() -> !model.checked.get().isEmpty(),SceneNode::enabled)));
+        listPane.add(bulk);
+        listPane.add(bulkActions);
         SceneNode list = new SceneNode().size(Size.fill(1), Size.fill(1)).scrollable(true).clip(true).gap(1);
         list.bind(NodeBinding.repeat(model.results, item -> item.id, value -> MessageRow.create(p, value, model, theme)));
         listPane.add(list);
