@@ -64,7 +64,7 @@ class MailSurface implements SceneControl {
                 Math.max(0, Math.round(t.textStyle.logicalEm * radius)));
     }
     @Override public void paintAfterChildren(SceneNode n, SceneGeometryView g, PaintPlanBuilder target) {
-        if (n.runtime().focusRouter().focused().get() != n) return;
+        if (!feedback || n.runtime().focusRouter().focused().get() != n) return;
         SceneGeometryView.Entry e = g.get(n); if (e == null) return;
         int color = theme.get().focus;
         target.add(PaintCommand.rect(new LayoutBox(e.box.x, e.box.y, e.box.width, 2), e.clip, color));

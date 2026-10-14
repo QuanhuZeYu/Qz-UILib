@@ -217,6 +217,16 @@ public final class MailboxScenario extends TestApplication {
                         &&view.model.checked.get().isEmpty(),"主体不同内容未打开同一对象或串入勾选"));
                 view.click("返回列表");
             }
+            view.click("周五的设计评审");view.click("切换当前邮件星标");
+            view.domain.execute(() -> {
+                require(view.model.opened.get().starred,"阅读星标未修改当前消息");
+                view.model.toggleChecked("mail-1");
+            });view.frame();
+            view.click("归档当前邮件");
+            view.domain.execute(() -> require(!view.model.opened.get().inbox
+                    &&view.model.opened.get().id.equals("mail-0")&&view.model.checked.get().contains("mail-1"),
+                    "阅读归档串改其他勾选或跳到邻行"));
+            view.click("返回列表");
         }
     }
     private void modernFonts() throws Exception {

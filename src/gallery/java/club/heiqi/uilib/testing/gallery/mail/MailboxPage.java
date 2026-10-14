@@ -43,7 +43,9 @@ public final class MailboxPage {
         ReadableSignal<MailPalette> palette=p.domain().computed(scope, () -> MailPalette.from(base.get().withTextStyle(
                 base.get().textStyle.withEm(base.get().textStyle.logicalEm*fontScale.get())),mode.get()));
         ReadableSignal<SceneTheme> theme=p.domain().computed(scope, () -> palette.get().theme);
-        ReadableSignal<Boolean> wide=p.domain().computed(scope, () -> p.viewportWidth().get()>=Math.ceil(theme.get().textStyle.logicalEm*66));
+        ReadableSignal<Boolean> wide=p.domain().computed(scope, () -> p.viewportWidth().get()>=Math.ceil(theme.get().textStyle.logicalEm*70));
+        ReadableSignal<Boolean> split=p.domain().computed(scope,() -> p.viewportWidth().get()>=Math.ceil(theme.get().textStyle.logicalEm*80));
+        ReadableSignal<Boolean> compact=p.domain().computed(scope,() -> !wide.get()||model.reading.get());
         SceneNode root=new SceneNode().size(Size.fill(1),Size.fill(1)).own(scope);
         root.bind(NodeBinding.value(palette,(n,v) -> n.background(v.canvas)));
         SceneNode search=MailSearch.create(p,theme,palette,model);
@@ -59,25 +61,22 @@ public final class MailboxPage {
         SceneNode workspace=MailStyle.surface(theme,() -> palette.get().surface,1.1f)
                 .axis(SceneNode.Axis.ROW).size(Size.fill(1),Size.fill(1)).clip(true);
         SceneNode listPane=new SceneNode().size(Size.fill(2),Size.fill(1));
-        listPane.bind(NodeBinding.value(() -> wide.get()||!model.reading.get(),SceneNode::visible));
+        listPane.bind(NodeBinding.value(() -> split.get()||!model.reading.get(),SceneNode::visible));
         listPane.add(MailToolbar.create(p,theme,model,wide,receive));
         SceneNode list=new SceneNode().size(Size.fill(1),Size.fill(1));
         list.bind(NodeBinding.repeat(() -> Collections.singletonList(paged?model.pageIndex.get()+":"+model.pageSize.get():"ordinary"),key -> key,ignored -> {
             SceneNode viewport=new SceneNode().size(Size.fill(1),Size.fill(1)).scrollable(true).clip(true);
-            viewport.bind(NodeBinding.repeat(paged?model.pageItems:model.results,item -> item.id,value -> MessageRow.create(p,value,model,theme,palette)));
+            MessageRow.TimeWidths timeWidths=new MessageRow.TimeWidths(paged?model.pageItems:model.results);
+            viewport.bind(NodeBinding.repeat(paged?model.pageItems:model.results,item -> item.id,value -> MessageRow.create(p,value,model,theme,palette,compact,timeWidths)));
             return viewport;
         }));listPane.add(list);
         listPane.add(MailStyle.label(p,() -> "没有匹配的邮件，试试其他关键词。",theme,1f,true)
                 .bind(NodeBinding.value(() -> model.results.get().isEmpty(),SceneNode::visible)));
         workspace.add(listPane);
-        SceneNode reader=new SceneNode().size(Size.fill(3),Size.fill(1)).gap(12).padding(20);
-        reader.bind(NodeBinding.value(model.reading,SceneNode::visible));
-        reader.add(MailStyle.button(p,() -> "返回列表",theme,model::back));
-        reader.add(MailStyle.label(p,() -> model.opened.get()==null?"邮件已不存在":model.opened.get().subject,theme,1.35f,false));
-        reader.add(MailStyle.label(p,() -> model.opened.get()==null?"":model.opened.get().sender+"  ·  "+model.opened.get().time,theme,.9f,true));
-        SceneNode readingArea=new SceneNode().size(Size.fill(1),Size.fill(1)).scrollable(true).clip(true);
-        readingArea.add(MailStyle.label(p,() -> model.opened.get()==null?"请选择其他邮件继续阅读。":model.opened.get().body,theme,1f,false));
-        reader.add(readingArea);workspace.add(reader);body.add(workspace);
+        SceneNode divider=new SceneNode().size(Size.fixed(1),Size.fill(1));
+        divider.bind(NodeBinding.value(() -> split.get()&&model.reading.get(),SceneNode::visible));
+        divider.bind(NodeBinding.value(palette,(n,v) -> n.background(v.outline)));
+        workspace.add(divider).add(MailReader.create(p,theme,palette,model));body.add(workspace);
         body.add(new SceneNode().size(Size.fixed(16),Size.fill(1)).bind(NodeBinding.value(wide,SceneNode::visible)));
         root.add(body);
         // 稳定反馈槽不因归档/收取事件改变列表视口；空状态也占同一自然行高度。

@@ -26,7 +26,8 @@ import java.util.List;
 final class MessageRow {
     private MessageRow() {}
     static SceneNode create(ScenePageContext p, ReadableSignal<MailboxModel.Item> item,
-            MailboxModel model, ReadableSignal<SceneTheme> theme, ReadableSignal<MailPalette> palette) {
+            MailboxModel model, ReadableSignal<SceneTheme> theme, ReadableSignal<MailPalette> palette,
+            ReadableSignal<Boolean> compact, TimeWidths timeWidths) {
         ReadableSignal<Boolean> checked = () -> model.checked.get().contains(item.get().id);
         ReadableSignal<SceneTheme> contentTheme = () -> theme.get().withTextStyle(theme.get().textStyle
                 .withFontStyle(item.get().value.get().read ? FontStyle.NORMAL : new FontStyle(700, FontStyle.Posture.NORMAL)));
@@ -48,18 +49,24 @@ final class MessageRow {
         SceneNode body = MailStyle.surface(theme, () -> 0x00000000, 0, false).axis(SceneNode.Axis.ROW)
                 .size(Size.fill(1),Size.natural()).focusable(true).clickFocus(true).onClick(() -> model.open(item.get().id));
         body.bind(NodeBinding.value(() -> item.get().value.get().sender + "\n" + item.get().value.get().subject, SceneNode::text));
-        body.bind(NodeBinding.value(theme, (n,t) -> n.gap(MailStyle.px(t,16))
-                .size(Size.fill(1),Size.natural().bounds(MailStyle.px(t,32),Integer.MAX_VALUE))));
+        body.bind(NodeBinding.value(() -> compact.get()+":"+theme.get().textStyle.logicalEm,(n,value) -> {
+            SceneTheme t=theme.get();n.axis(compact.get()?SceneNode.Axis.COLUMN:SceneNode.Axis.ROW)
+                    .gap(MailStyle.px(t,compact.get()?2:16))
+                    .size(Size.fill(1),Size.natural().bounds(MailStyle.px(t,32),Integer.MAX_VALUE));
+        }));
         SceneNode sender = MailStyle.single(p, () -> item.get().value.get().sender, contentTheme);
-        sender.bind(NodeBinding.value(theme, (n,t) -> n.size(Size.fixed(MailStyle.px(t,180)),Size.natural())));
+        sender.bind(NodeBinding.value(() -> compact.get()+":"+theme.get().textStyle.logicalEm,(n,value) ->
+                n.size(compact.get()?Size.fill(1):Size.fixed(MailStyle.px(theme.get(),180)),Size.natural())));
         body.add(sender);
         SceneNode summary = new SceneNode().size(Size.fill(1),Size.natural()).control(new SubjectLine());
         summary.add(MailStyle.single(p, () -> item.get().value.get().subject, contentTheme));
         summary.add(MailStyle.single(p, () -> " — " + item.get().value.get().preview,
-                () -> theme.get().withTextStyle(theme.get().textStyle.withColor(palette.get().mutedText))));
+                () -> theme.get().withTextStyle(theme.get().textStyle.withColor(palette.get().mutedText)))
+                .bind(NodeBinding.value(() -> !compact.get(),SceneNode::visible)));
         body.add(summary); row.add(body);
         SceneNode time = MailStyle.single(p, () -> item.get().value.get().time,
                 () -> contentTheme.get().withTextStyle(contentTheme.get().textStyle.withEm(theme.get().textStyle.logicalEm * .8f)));
+        time.control(new TimeColumn(timeWidths)).clip(true);
         time.bind(NodeBinding.value(theme,(n,t) -> n.size(Size.natural().bounds(MailStyle.px(t,64),Integer.MAX_VALUE),Size.natural())));
         row.add(time);
         SceneNode read = SceneIconButton.create(p, () -> item.get().value.get().read
@@ -71,6 +78,44 @@ final class MessageRow {
         row.control(new MailRowSurface(theme,palette,checked,() -> item.get().value.get().read,
                 () -> item.get().id.equals(model.openedId.get())));
         return row;
+    }
+
+    /** 每个列表视口共用列测量缓存；正式字形度量的不可变token换代使缓存自动失效。 */
+    static final class TimeWidths {
+        final ReadableSignal<List<MailboxModel.Item>> items;
+        private List<MailboxModel.Item> sources;
+        private TextLayout fontToken;
+        private int width;
+        TimeWidths(ReadableSignal<List<MailboxModel.Item>> items){this.items=items;}
+        int measure(SceneNode n,SceneTextMeasurer text) {
+            club.heiqi.uilib.ui.scene.text.TextStyle regular=n.style().withFontStyle(FontStyle.NORMAL).withColor(0xff000000);
+            TextLayout token=text.layout("0",regular,Integer.MAX_VALUE,n.textPolicy());
+            List<MailboxModel.Item> current=items.get();
+            if(sources!=current||fontToken!=token) {
+                width=0;
+                for(MailboxModel.Item item:current)for(int weight:new int[]{400,700})
+                    width=Math.max(width,text.layout(item.value.get().time,regular.withFontStyle(new FontStyle(weight,FontStyle.Posture.NORMAL)),
+                            Integer.MAX_VALUE,n.textPolicy()).width);
+                sources=current;fontToken=token;
+            }
+            return width;
+        }
+    }
+    /** 当前展示集合同时测常规/未读字重，状态切换不使时间列边界漂移。 */
+    private static final class TimeColumn implements SceneControl {
+        private final TimeWidths widths;
+        TimeColumn(TimeWidths widths){this.widths=widths;}
+        @Override public List<ReadableSignal<?>> measureDependencies(SceneNode n){return java.util.Collections.singletonList(widths.items);}
+        @Override public MeasuredSize measure(SceneNode n,Constraints c,SceneTextMeasurer text) {
+            TextLayout own=text.layout(n.text(),n.style(),Integer.MAX_VALUE,n.textPolicy());
+            return new MeasuredSize(Math.max(own.width,widths.measure(n,text)),own.height);
+        }
+        @Override public ChildPlacements arrange(SceneNode n,LayoutBox box,SceneChildMeasurer children){return new ChildPlacements(java.util.Collections.emptyList());}
+        @Override public void paint(SceneNode n,SceneGeometryView g,PaintPlanBuilder target) {
+            SceneGeometryView.Entry e=g.get(n);if(e!=null&&e.text!=null)
+                target.add(club.heiqi.uilib.ui.scene.paint.PaintCommand.text(new LayoutBox(e.box.x+Math.max(0,e.box.width-e.text.width),e.box.y,
+                        e.text.width,e.box.height),e.clip,e.text));
+        }
     }
 
     /** 主题先取得自然宽度，余量才给摘要；只测量直属子项，不读回布局或截取原字符串。 */

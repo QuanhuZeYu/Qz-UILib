@@ -135,6 +135,11 @@ public final class MailboxModel implements AutoCloseable {
         // 结果缩短时结束旧的越界翻页意图，后来的新消息不能使它复活。
         requestedPage.set(pageIndex.get());
     }
+    /** 阅读动作仅归档当前稳定id，不借批量选择暂存或改动其他勾选。 */
+    public void archive(String id) {
+        Item item=require(id);Message m=item.value.get();item.value.set(m.flags(m.starred,m.read,false));
+        retainVisibleSelection();feedback.set("已归档邮件，可在所有邮件中查看");
+    }
     public void archiveChecked() {
         Set<String> ids = new LinkedHashSet<>(checked.get());
         for (Item item : new ArrayList<>(results.get())) if (ids.contains(item.id)) {

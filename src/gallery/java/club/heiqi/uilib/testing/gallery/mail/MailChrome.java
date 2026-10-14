@@ -20,10 +20,14 @@ final class MailChrome {
         header.bind(NodeBinding.value(theme,(n,t) -> n.gap(MailStyle.px(t,12))
                 .size(Size.fill(1),Size.natural().bounds(MailStyle.px(t,64),Integer.MAX_VALUE))));
         SceneNode brand = MailStyle.surface(theme, () -> 0x00000000,0).axis(SceneNode.Axis.ROW);
-        brand.bind(NodeBinding.value(theme,(n,t) -> n.padding(MailStyle.px(t,12)).gap(MailStyle.px(t,12))
-                .size(Size.fixed(MailStyle.px(t,228)),Size.natural())));
+        brand.bind(NodeBinding.value(() -> p.viewportWidth().get()+":"+theme.get().textStyle.logicalEm,(n,value) -> {
+            SceneTheme t=theme.get();boolean expanded=p.viewportWidth().get()>=Math.ceil(t.textStyle.logicalEm*70);
+            n.padding(MailStyle.px(t,12)).gap(MailStyle.px(t,12))
+                    .size(Size.fixed(MailStyle.px(t,expanded?228:156)),Size.natural());
+        }));
         if (onBack != null) brand.add(SceneIconButton.create(p,SceneIconButton.Symbol.CHEVRON_LEFT,() -> "场景概览",theme,onBack));
-        brand.add(MailStyle.label(p, () -> "QZ Mail",theme,1.4f,false));
+        brand.add(MailStyle.single(p,() -> "QZ Mail",() -> theme.get().withTextStyle(theme.get().textStyle.withEm(theme.get().textStyle.logicalEm*1.4f)))
+                .size(Size.fill(1),Size.natural()));
         header.add(brand).add(search);
         header.add(new SceneNode().size(Size.fill(1),Size.natural()));
         header.add(MailStyle.button(p,fontName,theme,onFont));

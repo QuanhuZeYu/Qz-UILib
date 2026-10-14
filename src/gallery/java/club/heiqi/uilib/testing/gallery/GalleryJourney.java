@@ -125,6 +125,10 @@ public final class GalleryJourney {
         go(driver, TestGallery.Page.MAILBOX);
         driver.resize(1400,900); driver.frame();
         driver.evidence("mailbox-inbox");
+        if(driver.resize(1000,760)) {driver.frame();driver.evidence("mailbox-medium");}
+        driver.resize(1400,900);driver.frame();
+        click(driver,"放大文字");driver.evidence("mailbox-large-text");
+        click(driver,"标准文字");driver.frame();
         SceneGeometryView.Entry rowSubject=driver.geometry().ordered().stream()
                 .filter(e -> e.text!=null&&e.text.logicalText.equals("周五的设计评审：收件箱与阅读体验")).findFirst().get();
         int stateX=rowSubject.box.x+16,stateY=rowSubject.box.y+rowSubject.box.height/2;
@@ -161,7 +165,7 @@ public final class GalleryJourney {
         click(driver,"所有邮件");
         require(contains(driver,"周五的设计评审"),"所有邮件没有归档对象");
         driver.evidence("mailbox-all-mail");
-        if(driver.resize(720,850)) {
+        if(driver.resize(720,900)) {
             driver.frame();driver.evidence("mailbox-narrow");
             SceneGeometryView.Entry current=driver.geometry().ordered().stream()
                 .filter(e->e.text!=null&&e.text.logicalText.contains("周五的设计评审")&&visible(e))
