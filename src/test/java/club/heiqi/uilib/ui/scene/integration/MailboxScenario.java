@@ -63,7 +63,9 @@ public final class MailboxScenario extends TestApplication {
             int[] point = new int[2];
             domain.execute(() -> {
                 SceneGeometryView.Entry target = geometry().ordered().stream()
-                        .filter(e -> e.text != null && e.text.logicalText.contains(contains))
+                        .filter(e -> e.node.clickAction()!=null&&e.node.text().equals(contains)
+                                ||e.node.text().contains("\n")&&e.node.text().contains(contains)
+                                ||e.text!=null&&e.text.logicalText.contains(contains))
                         .filter(e -> e.node.control() == null || !e.node.control().acceptsTextInput(e.node))
                         .filter(e -> {
                             for (club.heiqi.uilib.ui.scene.node.SceneNode n=e.node;n!=null;n=n.parent())
@@ -111,6 +113,7 @@ public final class MailboxScenario extends TestApplication {
         @Override public void close() { session.close(); }
     }
     @Override protected void runTests() throws Exception {
+        scenario("搜索空态提示与组字复制隔离及工具区不跳位",this::searchPresentation);
         scenario("复合邮件主体文字与空白命中同一当前对象",this::compositeInput);
         scenario("现代中英真实字重与显式字体重载",this::modernFonts);
         scenario("独立行操作批量归档与物理尾部",this::independentOperations);
@@ -150,6 +153,44 @@ public final class MailboxScenario extends TestApplication {
                 require(view.painted("邮件已不存在"), "主题变化丢失业务状态");
             }
         });
+    }
+    private void searchPresentation() {
+        try(View view=new View()) {
+            int[] point=new int[2];
+            view.domain.execute(() -> {
+                SceneGeometryView.Entry field=view.geometry().ordered().stream()
+                        .filter(e -> e.node.control()!=null&&e.node.control().acceptsTextInput(e.node)).findFirst().get();
+                require(field.node.text().isEmpty()&&field.text.logicalText.isEmpty(),"占位提示进入真实编辑内容");
+                point[0]=field.box.x+8;point[1]=field.box.y+field.box.height/2;
+            });
+            require(view.plan.commands().stream().anyMatch(c -> c.kind==PaintCommand.Kind.TEXT&&c.text.logicalText.equals("搜索邮件")),"空态提示没有真实绘制");
+            view.session.pointer(ScenePointerEvent.down(0,point[0],point[1]));view.session.pointer(ScenePointerEvent.up(0,point[0],point[1]));view.frame();
+            final String[] copied={"unchanged"};
+            SceneEditEvent.Clipboard clipboard=new SceneEditEvent.Clipboard() {
+                public String read(){return copied[0];} public void write(String value){copied[0]=value;}
+            };
+            view.session.edit(SceneEditEvent.command(SceneEditEvent.Command.SELECT_ALL,false,null));
+            view.session.edit(SceneEditEvent.command(SceneEditEvent.Command.COPY,false,clipboard));view.frame();
+            require(!"搜索邮件".equals(copied[0]),"占位提示进入复制内容");
+            club.heiqi.uilib.ui.scene.input.SceneCompositionSource source=new club.heiqi.uilib.ui.scene.input.SceneCompositionSource();
+            view.session.edit(SceneEditEvent.compositionBegin(source,"拼音"));view.frame();
+            require(view.plan.commands().stream().noneMatch(c -> c.kind==PaintCommand.Kind.TEXT&&c.text.logicalText.equals("搜索邮件")),"组字被占位提示遮盖");
+            view.session.edit(SceneEditEvent.compositionCommit(source,"Café"));view.frame();
+            view.domain.execute(() -> require(view.model.query.get().equals("Café")&&view.model.results.get().size()==5,"真实组字提交未形成查询"));
+            view.session.edit(SceneEditEvent.command(SceneEditEvent.Command.SELECT_ALL,false,null));
+            view.session.edit(SceneEditEvent.command(SceneEditEvent.Command.COPY,false,clipboard));view.frame();
+            require("Café".equals(copied[0]),"搜索复制没有保留真实草稿");
+            view.click("清空搜索");
+            view.domain.execute(() -> require(view.model.query.get().isEmpty(),"清空图标未发布空查询"));
+            int[] firstTop=new int[1];view.domain.execute(() -> firstTop[0]=view.geometry().ordered().stream()
+                    .filter(e -> e.node.focusable()&&e.node.text().contains("\n")).findFirst().get().box.y);
+            view.click("全选全部筛选结果：24 封");
+            view.domain.execute(() -> require(view.geometry().ordered().stream().filter(e -> e.node.focusable()&&e.node.text().contains("\n"))
+                    .findFirst().get().box.y==firstTop[0],"批量工具出现推移了首行"));
+            view.click("取消选择");
+            view.domain.execute(() -> require(view.geometry().ordered().stream().filter(e -> e.node.focusable()&&e.node.text().contains("\n"))
+                    .findFirst().get().box.y==firstTop[0],"取消工具推移了首行"));
+        }
     }
     private void compositeInput() {
         try(View view=new View()) {

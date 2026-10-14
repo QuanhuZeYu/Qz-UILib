@@ -61,6 +61,18 @@ public final class SceneTextField {
             ReadableSignal<Boolean> readOnly,
             Consumer<Submission> onSubmit,
             SubmitPolicy policy) {
+        return create(context,state,theme,readOnly,onSubmit,policy,() -> "");
+    }
+    /** 提示属于呈现，不参与草稿、输入、提交、选区或复制。 */
+    public static SceneNode create(ScenePageContext context, SceneEditState state,
+            ReadableSignal<SceneTheme> theme, ReadableSignal<Boolean> readOnly,
+            Consumer<Submission> onSubmit, SubmitPolicy policy, ReadableSignal<String> placeholder) {
+        return create(context,state,theme,readOnly,onSubmit,policy,placeholder,true);
+    }
+    /** 无边框形式用于复合搜索等外层表面，仍保留真实caret、选择和组字。 */
+    public static SceneNode create(ScenePageContext context, SceneEditState state,
+            ReadableSignal<SceneTheme> theme, ReadableSignal<Boolean> readOnly,
+            Consumer<Submission> onSubmit, SubmitPolicy policy, ReadableSignal<String> placeholder, boolean framed) {
         Objects.requireNonNull(context, "context").domain().checkWrite();
         Objects.requireNonNull(state, "state");
         if (state.mode() != SceneEditState.Mode.SINGLE_LINE)
@@ -72,7 +84,7 @@ public final class SceneTextField {
                         Objects.requireNonNull(theme, "theme"),
                         Objects.requireNonNull(readOnly, "readOnly"),
                         Objects.requireNonNull(onSubmit, "onSubmit"),
-                        Objects.requireNonNull(policy, "policy"));
+                        Objects.requireNonNull(policy,"policy"),Objects.requireNonNull(placeholder,"placeholder"),framed);
         return SceneEditBindings.create(control, state, theme, readOnly, TextPolicy.SINGLE_LINE);
     }
 
@@ -81,6 +93,13 @@ public final class SceneTextField {
         private final ReadableSignal<SceneTheme> theme;
         private final ReadableSignal<Boolean> readOnly;
         private final SceneEditCommands commands;
+        private final ReadableSignal<String> placeholder;
+        private final boolean framed;
+        private TextLayout hint;
+        private String hintValue;
+        private club.heiqi.uilib.ui.scene.text.TextStyle hintStyle;
+        private int hintWidth=-1;
+        private long hintMetrics=-1;
         // 以下仅为呈现缓存，不是草稿、输入所有权或另一份编辑状态。
         private TextLayout source, presented;
         private Snapshot presentation;
@@ -95,8 +114,9 @@ public final class SceneTextField {
                 ReadableSignal<SceneTheme> theme,
                 ReadableSignal<Boolean> readOnly,
                 Consumer<Submission> onSubmit,
-                SubmitPolicy policy) {
+                SubmitPolicy policy, ReadableSignal<String> placeholder, boolean framed) {
             this.state = state;
+            this.placeholder=placeholder;this.framed=framed;
             this.theme = theme;
             this.readOnly = readOnly;
             this.commands = new SceneEditCommands(state, readOnly, onSubmit, policy);
@@ -115,7 +135,7 @@ public final class SceneTextField {
 
         @Override
         public List<ReadableSignal<?>> paintDependencies(SceneNode node) {
-            return Collections.singletonList(readOnly);
+            return java.util.Arrays.asList(readOnly,placeholder);
         }
 
         private static TextPolicy bodyPolicy(SceneNode node) {
@@ -317,6 +337,19 @@ public final class SceneTextField {
             viewChanged.set(!viewChanged.get());
         }
 
+        @Override public void preparePaint(SceneNode node, SceneGeometryView geometry, SceneTextMeasurer text, long revision) {
+            SceneGeometryView.Entry e=geometry.get(node);if(e==null)return;
+            Snapshot value=state.snapshot().get();
+            if(!value.text.isEmpty()||value.composing) {hint=null;return;}
+            String label=Objects.requireNonNull(placeholder.get(),"placeholder");
+            int available=Math.max(0,e.box.width-node.padding()*2);
+            club.heiqi.uilib.ui.scene.text.TextStyle style=node.style().withColor(theme.get().disabledText);
+            if(hint==null||!label.equals(hintValue)||!style.equals(hintStyle)||hintWidth!=available||hintMetrics!=revision) {
+                hint=text.layout(label,style,available,bodyPolicy(node));
+                hintValue=label;hintStyle=style;hintWidth=available;hintMetrics=revision;
+            }
+        }
+
         @Override
         public void paint(SceneNode node, SceneGeometryView geometry, PaintPlanBuilder target) {
             SceneGeometryView.Entry entry = geometry.get(node);
@@ -327,10 +360,10 @@ public final class SceneTextField {
                     enabled
                             && node.runtime() != null
                             && node.runtime().focusRouter().focused().get() == node;
-            target.add(
-                    PaintCommand.rect(
-                            entry.box, entry.clip, enabled ? colors.panel : colors.disabled));
-            border(target, entry.box, entry.clip, focused ? colors.focus : colors.button);
+            if(framed) {
+                target.add(PaintCommand.rect(entry.box,entry.clip,enabled?colors.panel:colors.disabled));
+                border(target,entry.box,entry.clip,focused?colors.focus:colors.button);
+            }
             LayoutBox inner = inner(entry.box, node.padding());
             LayoutBox clip = entry.clip == null ? inner : entry.clip.intersect(inner);
             Snapshot value = presentation;
@@ -349,6 +382,8 @@ public final class SceneTextField {
                             ? entry.text
                             : entry.text.withStyle(entry.text.style.withColor(colors.disabledText));
             target.add(PaintCommand.text(inner, clip, paint));
+            if(hint!=null&&value!=null&&value.text.isEmpty()&&!value.composing)
+                target.add(PaintCommand.text(inner,clip,hint));
             if (value != null && entry.text == presented && focused) {
                 if (value.composing) {
                     int start = Math.min(value.anchor, value.caret);

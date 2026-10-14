@@ -142,6 +142,37 @@ public final class SceneCoreLoopTest extends TestApplication {
         System.out.println("CORE_SYMBOL publicFactory=true frame=true input=true dynamicSymbol=true graphicPassive=true externalStateAlive=true");
     }
 
+    /** null-parent制品消费者实际调用提示/无边框重载，提示不成为输入文字。 */
+    public static void publicFieldPresentationConsumer() {
+        ReactiveDomain domain=ReactiveDomain.direct();SoftwareSceneScenario.SoftwareHost host=new SoftwareSceneScenario.SoftwareHost();
+        host.width=360;host.height=100;SceneNode[] field=new SceneNode[1];
+        // 成品隔离消费者只验工厂/输入；明确供给单行策略度量，真实face与像素由MailboxScenario覆盖。
+        club.heiqi.uilib.ui.scene.text.SceneTextMeasurer measurer=new club.heiqi.uilib.ui.scene.text.SceneTextMeasurer() {
+            public club.heiqi.uilib.ui.scene.text.TextLayout layout(String text,club.heiqi.uilib.ui.scene.text.TextStyle style,int width) {return host.layout(text,style,width);}
+            public club.heiqi.uilib.ui.scene.text.TextLayout layout(String text,club.heiqi.uilib.ui.scene.text.TextStyle style,int width,
+                    club.heiqi.uilib.ui.scene.text.TextPolicy policy) {return host.layout(text,style,width);}
+        };
+        club.heiqi.uilib.ui.scene.edit.SceneEditState[] state=new club.heiqi.uilib.ui.scene.edit.SceneEditState[1];
+        try(ScenePageSession page=ScenePageSession.open(domain,host,measurer,ctx -> {
+            state[0]=new club.heiqi.uilib.ui.scene.edit.SceneEditState(domain,"");
+            field[0]=club.heiqi.uilib.ui.scene.control.SceneTextField.create(ctx,state[0],ctx.theme(),() -> false,
+                    request -> state[0].accept(request,request.text),club.heiqi.uilib.ui.scene.control.SceneTextField.SubmitPolicy.INPUT,
+                    () -> "搜索提示",false);
+            ctx.mountOwned(field[0]);
+        })) {
+            page.frame();int[] point=new int[2];domain.execute(() -> {
+                club.heiqi.uilib.ui.scene.layout.LayoutBox b=page.pipeline().current().geometry.get(field[0]).box;
+                point[0]=b.x+12;point[1]=b.y+b.height/2;
+                require(field[0].text().isEmpty(),"提示进入成品字段草稿");
+            });
+            page.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.down(0,point[0],point[1]));
+            page.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.up(0,point[0],point[1]));
+            page.edit(club.heiqi.uilib.ui.scene.input.SceneEditEvent.text("实际输入"));page.frame();
+            domain.execute(() -> require(state[0].text().get().equals("实际输入"),"成品提示字段没有正式编辑"));
+        }
+        System.out.println("CORE_FIELD_PRESENTATION publicFactory=true framed=false placeholderPassive=true input=true");
+    }
+
     private void rejectPureCommand(Runnable command) {
         try {
             command.run();

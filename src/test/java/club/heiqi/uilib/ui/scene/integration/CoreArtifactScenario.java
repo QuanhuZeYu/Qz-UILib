@@ -202,6 +202,8 @@ public final class CoreArtifactScenario extends TestApplication {
                                 .getMethod("publicGridConsumer").invoke(null);
                          loader.loadClass("club.heiqi.uilib.ui.scene.integration.SceneCoreLoopTest")
                                  .getMethod("publicSymbolConsumer").invoke(null);
+                         Class.forName("club.heiqi.uilib.ui.scene.integration.SceneCoreLoopTest",true,loader)
+                                 .getMethod("publicFieldPresentationConsumer").invoke(null);
                          loader.loadClass("club.heiqi.uilib.ui.scene.integration.SceneCoreLoopTest")
                                  .getMethod("publicLayerConsumer").invoke(null);
                         // 字素路径实际使用重定位后的 ICU；配置/布局消费者不依赖原始 ICU 名称。
