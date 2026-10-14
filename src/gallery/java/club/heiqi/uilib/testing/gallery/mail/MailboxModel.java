@@ -120,13 +120,18 @@ public final class MailboxModel implements AutoCloseable {
     private void retainVisibleSelection() {
         Set<String> ids = new LinkedHashSet<>(); for (Item item : results.get()) if (checked.get().contains(item.id)) ids.add(item.id);
         checked.set(Collections.unmodifiableSet(ids));
+        normalizePage();
+    }
+    private void normalizePage() {
+        // 结果缩短时结束旧的越界翻页意图，后来的新消息不能使它复活。
+        requestedPage.set(pageIndex.get());
     }
     public void archiveChecked() {
         Set<String> ids = new LinkedHashSet<>(checked.get());
         for (Item item : new ArrayList<>(results.get())) if (ids.contains(item.id)) {
             Message m = item.value.get(); item.value.set(m.flags(m.starred, m.read, false));
         }
-        checked.set(Collections.emptySet()); if (!ids.isEmpty()) feedback.set("已归档 " + ids.size() + " 封邮件，可在所有邮件中查看");
+        checked.set(Collections.emptySet()); normalizePage(); if (!ids.isEmpty()) feedback.set("已归档 " + ids.size() + " 封邮件，可在所有邮件中查看");
     }
     public void readChecked(boolean value) {
         for (Item item : new ArrayList<>(results.get())) if (checked.get().contains(item.id)) setRead(item.id, value);
@@ -139,7 +144,7 @@ public final class MailboxModel implements AutoCloseable {
     public void update(Message message) { require(message.id).value.set(message); retainVisibleSelection(); }
     public void remove(String id) { require(id); byId.remove(id); publish(); retainVisibleSelection(); }
     public void movePage(int delta) {
-        domain.checkWrite();requestedPage.set(Math.max(0,pageIndex.get()+delta));
+        domain.checkWrite();requestedPage.set(Math.max(0,pageIndex.get()+delta));normalizePage();
     }
     public void setPageSize(int value) {
         domain.checkWrite();if(value<=0)throw new IllegalArgumentException("每页数量必须为正");

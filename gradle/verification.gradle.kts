@@ -225,6 +225,7 @@ val mailboxPerformanceScenario = registerTestApplication("mailboxPerformanceScen
     classpath = coreSources.output + fontAdapterSources.output + sourceSets.getByName("gallery").output + sourceSets.getByName("testSupport").output + sourceSets.getByName("test").output + fontNativeRuntime + coreContentRuntime
     systemProperty("uilib.version", project.version.toString())
     systemProperty("mailbox.paged", providers.gradleProperty("mailboxPaged").getOrElse("true"))
+    systemProperty("mailbox.loads", providers.gradleProperty("mailboxLoads").getOrElse("IDLE,SCROLL,UPDATE,RESIZE"))
     systemProperty("performance.scale", providers.gradleProperty("performanceScale").getOrElse("200"))
     systemProperty("performance.warmup", providers.gradleProperty("performanceWarmup").getOrElse("30"))
     systemProperty("performance.frames", providers.gradleProperty("performanceFrames").getOrElse("120"))

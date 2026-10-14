@@ -158,6 +158,7 @@ val desktopMailboxPerformance = desktopApplication("desktopMailboxPerformance", 
     mainClass.set("club.heiqi.uilib.host.desktop.DesktopMailboxPerformance")
     systemProperty("uilib.version", project.version.toString())
     systemProperty("mailbox.paged", providers.gradleProperty("mailboxPaged").getOrElse("true"))
+    systemProperty("mailbox.loads", providers.gradleProperty("mailboxLoads").getOrElse("IDLE,SCROLL,UPDATE,RESIZE"))
     args(file(providers.gradleProperty("performanceOutput").getOrElse(layout.buildDirectory.dir("reports/mailbox-desktop").get().asFile.absolutePath)).absolutePath,
         providers.gradleProperty("performanceScale").getOrElse("200"), providers.gradleProperty("performanceWarmup").getOrElse("30"),
         providers.gradleProperty("performanceFrames").getOrElse("120"))

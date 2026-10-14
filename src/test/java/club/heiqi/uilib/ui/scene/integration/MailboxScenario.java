@@ -111,6 +111,7 @@ public final class MailboxScenario extends TestApplication {
         scenario("真实语言资料换代同语言重载与字体尺寸变化",this::resources);
         scenario("关闭后持有runtime仍释放UI树",this::released);
         scenario("分页保留完整数据跨页身份与旧物理尾部",this::paged);
+        scenario("末页归档后新增消息不复活旧翻页意图",this::pageClamp);
         scenario("真实查询阅读返回及宿主空间自动变化", () -> {
             try (View view = new View()) {
                 require(view.painted("设计评审"), "实际收件箱没有首条消息");
@@ -263,6 +264,17 @@ public final class MailboxScenario extends TestApplication {
             view.domain.execute(()->require(view.model.opened.get().id.equals("mail-0"),"离页更新后搜索打开错误对象"));
             view.click("返回列表");view.click("清空搜索");view.click("每页 25");
             view.domain.execute(()->require(view.model.pageItems.get().size()==50,"每页数量变化未进入动态声明"));
+        }
+    }
+    private void pageClamp() {
+        try(View view=new View(26,null)) {
+            view.click("下一页");view.named("选择邮件：周五");view.named("归档已选邮件");
+            view.domain.execute(()->require(view.model.pageIndex.get()==0&&view.model.results.get().size()==25,
+                    "末页归档后没有限制到有效页"));
+            view.click("接收示例邮件");
+            view.domain.execute(()->require(view.model.pageIndex.get()==0&&view.model.pageItems.get().get(0).id.equals("mail-0"),
+                    "新增消息使旧越界翻页意图复活"));
+            require(view.painted("1–25 / 26"),"新增后当前分页范围错误");
         }
     }
     public static void main(String[] args) throws Exception { new MailboxScenario().run(args); }

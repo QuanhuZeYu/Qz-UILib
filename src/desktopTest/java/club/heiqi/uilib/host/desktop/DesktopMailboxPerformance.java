@@ -26,6 +26,7 @@ public final class DesktopMailboxPerformance {
                 public void frame(){window.frame();}public void scroll(int x,int y,int delta){input.point(x,y);input.scroll.invoke(window.handle(),0,delta);}
                 public void resize(int w,int h){glfwSetWindowSize(window.handle(),w,h);}
                 public SceneGeometryView geometry(){return DesktopTestInput.geometry(window);}
+                public club.heiqi.uilib.ui.scene.paint.PaintPlan paint(){return window.lastPlan;}
                 public int width(){return window.width();}public int height(){return window.height();}
             },"desktop-actions+window.frame-poll-clear-swap",System.getProperty("uilib.version","unknown"),warmup,frames,json->{
                 try{Files.write(output.resolve("desktop-"+scale+"-"+(sequence[0]++)+".json"),json.getBytes(StandardCharsets.UTF_8));}
