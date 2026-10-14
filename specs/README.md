@@ -33,6 +33,7 @@
 | 局部失效传播与增量文字测量 | [增量更新目标稿](<2026-10-14-uilib-incremental-update-spec.md>) |
 | 大列表更新与滚动的性能收敛 | [大列表性能目标稿](<2026-10-14-uilib-large-list-performance-spec.md>) |
 | 真实应用案例驱动的新能力：收件箱与内容浏览 | [现代应用案例目标稿](<2026-10-14-uilib-modern-app-cases-spec.md>) |
+| 收件箱尽可能接近固定 Gmail 前端参考 | [收件箱前端还原目标稿](<2026-10-15-uilib-mailbox-fidelity-spec.md>) |
 | 支撑真实交互行的虚拟集合候选专题 | [虚拟集合候选稿](<2026-10-14-uilib-virtual-list-spec.md>) |
 
 实现不足记录为偏差，不能反向修改已确认合同。局部机制及失败原因维护在源码旁；临时计划、调查与运行记录归忽略的 Superpowers 目录，协作流程沿[AGENTS.md](<../AGENTS.md>)，不在规格中维护提交、审计或编排标准。
