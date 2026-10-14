@@ -15,7 +15,12 @@ final class SceneTextAreaGeometry {
 
     /** 相同定位可由无缓存/带装饰的测量器返回新对象；对象身份变化本身不是重新排版。 */
     boolean sameGeometry(TextLayout other) {
+        return sameGeometry(text, other);
+    }
+
+    static boolean sameGeometry(TextLayout text, TextLayout other) {
         if (text == other) return true;
+        if (text == null || other == null) return false;
         if (text.generation != other.generation
                 || text.width != other.width
                 || text.height != other.height

@@ -255,10 +255,14 @@ public final class DesktopVerification {
             require(x[0] > 0 && y[0] > 0, "native光标未设置到首击目标区域");
         })) {
             DesktopTestInput input = new DesktopTestInput(custom);
+            double[] clickX = new double[1], clickY = new double[1];
+            glfwGetCursorPos(custom.handle(), clickX, clickY);
             input.mouse.invoke(custom.handle(), 0, GLFW_PRESS, 0);
             input.mouse.invoke(custom.handle(), 0, GLFW_RELEASE, 0);
             frames(custom, 1);
-            custom.domain.execute(() -> require(clicks[0].get() == 1, "callbacks安装前定位的无MOVE首击未命中业务按钮"));
+            custom.domain.execute(() -> require(clicks[0].get() == 1, "callbacks安装前定位的无MOVE首击未命中业务按钮: 装配时native="
+                    + nativePosition[0] + "," + nativePosition[1] + " 点击前native=" + clickX[0] + "," + clickY[0]
+                    + " clicks=" + clicks[0].get()));
             pass("same-process reopen + public business ScenePage + first mouse DOWN/UP without MOVE -> native cursor="
                     + nativePosition[0] + "," + nativePosition[1] + ", business signal=1");
         }

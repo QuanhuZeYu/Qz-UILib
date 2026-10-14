@@ -21,6 +21,8 @@ import club.heiqi.uilib.ui.scene.text.font.nativefont.GlyphBitmap;
  * UV 只属于当前 Frame；旧 PaintPlan 保存字体来源而非 UV，下次 prepare 可重建已淘汰资源。
  */
 public final class GlGlyphAtlas implements GlQuadRenderer.ResourceProvider, AutoCloseable {
+    // OpenGL 3.0 核心格式；直接采样 .r，无需 3.3 texture swizzle。
+    private static final int GL_R8 = 0x8229, GL_RED = 0x1903;
     public enum Mode {
         TEXTURE_2D,
         TEXTURE_ARRAY
@@ -79,8 +81,8 @@ public final class GlGlyphAtlas implements GlQuadRenderer.ResourceProvider, Auto
         }
     }
 
-    /** 最小提交单位为含透明padding的RGBA整行：bytes须容纳4*(bitmap.width+2)。
-     * 不累计不足一行的跨帧预算；bytes>=4*pageSize可覆盖所有可放入该页的字形。
+    /** 最小提交单位为含透明 padding 的实际格式整行：mono 主 view 一字节，RGBA view 四字节。
+     * 不累计不足一行的跨帧预算；bytes>=4*pageSize可覆盖所有格式的可放入字形。
      * nanos在驱动调用边界检查，无法抢占单次GL调用；任一预算为0时该帧不上传。 */
     public static final class UploadBudget {
         public final long bytes, nanos;
@@ -184,7 +186,8 @@ public final class GlGlyphAtlas implements GlQuadRenderer.ResourceProvider, Auto
 
     private static final class Group {
         final long resource, generation;
-        final int texture, target;
+        final int texture, target, bytesPerPixel, internalFormat, pixelFormat;
+        final long bytes;
         final boolean color;
         final Page[] pages;
         long lastUsed;
@@ -199,13 +202,18 @@ public final class GlGlyphAtlas implements GlQuadRenderer.ResourceProvider, Auto
                 boolean color,
                 int layers,
                 SamplingView view,
-                int target) {
+                int target,
+                long bytes) {
             this.target = target;
             this.view = view;
             this.resource = resource;
             this.generation = generation;
             this.texture = texture;
             this.color = color;
+            this.bytes = bytes;
+            bytesPerPixel = bytesPerPixel(color, view);
+            internalFormat = bytesPerPixel == 1 ? GL_R8 : GL_RGBA8;
+            pixelFormat = bytesPerPixel == 1 ? GL_RED : GL_RGBA;
             pages = new Page[layers];
             for (int i = 0; i < layers; i++) pages[i] = new Page();
         }
@@ -328,7 +336,7 @@ public final class GlGlyphAtlas implements GlQuadRenderer.ResourceProvider, Auto
         target = mode == Mode.TEXTURE_ARRAY ? GL_TEXTURE_2D_ARRAY : GL_TEXTURE_2D;
         if (budget.pageSize > gl.glGetInteger(GL_MAX_TEXTURE_SIZE)
                 || layers > gl.glGetInteger(GL_MAX_ARRAY_TEXTURE_LAYERS)
-                || (long) budget.pageSize * budget.pageSize * layers * 4 > budget.gpuBytes)
+                || (long) budget.pageSize * budget.pageSize * layers > budget.gpuBytes)
             throw new IllegalArgumentException("图集配置超出GL能力/预算");
     }
 
@@ -458,7 +466,7 @@ public final class GlGlyphAtlas implements GlQuadRenderer.ResourceProvider, Auto
             if (done || active != this) throw new IllegalStateException("图集范围已结束");
         }
 
-        /** 时间预算只在驱动提交边界检查，无法中断单次 GL 调用。RGBA8 padded 区域分行上传。 */
+        /** 时间预算只在驱动提交边界检查，无法中断单次 GL 调用。实际格式 padded 区域分行上传。 */
         public void prepare(AsyncGlyphRasterizer cpu, UploadBudget uploadBudget) {
             prepare(cpu, uploadBudget, true);
         }
@@ -562,35 +570,34 @@ public final class GlGlyphAtlas implements GlQuadRenderer.ResourceProvider, Auto
     /** 生成当前逐行进度对应的 padded 块，不推进 Upload 或发布 Resident。 */
     private ByteBuffer glyphBlock(Upload job, int rows, int rowBytes) {
         ByteBuffer data = uploadScratch(Math.multiplyExact(rows, rowBytes));
-        SamplingView view = job.resident.samplingView;
-        // MASK straight view 的 RGB 恒白，含 alpha0 gutter；linear 过滤覆盖率不会二次变暗。
-        // COLOR view 的 alpha0 RGB 定义为0，保持明确 RGBA 格式而不改变 premult 页。
-        if (view == SamplingView.STRAIGHT_RGBA && !job.bitmap.color)
+        Group group = job.resident.group;
+        boolean straight = group.view == SamplingView.STRAIGHT_RGBA;
+        // 宿主 MASK view 的 RGB 恒白，含 alpha0 gutter；标准 sampler2D 的过滤不会二次变暗。
+        // 彩色 alpha0 RGB 为0；主 mono view 始终只有覆盖率，不借宿主格式增加主图集存储。
+        if (straight && !job.bitmap.color)
             for (int i = 0; i < data.limit(); i += 4) {
                 data.put(i, (byte) 255);
                 data.put(i + 1, (byte) 255);
                 data.put(i + 2, (byte) 255);
             }
-        ByteBuffer source = job.bitmap.pixelsBuffer();
         for (int r = 0; r < rows; r++) {
             int bitmapRow = job.row + r - 1;
             if (bitmapRow < 0 || bitmapRow >= job.bitmap.height) continue;
-            source.position(bitmapRow * job.bitmap.width * 4);
-            source.limit((bitmapRow + 1) * job.bitmap.width * 4);
-            data.position(r * rowBytes + 4);
-            if (view == SamplingView.PREMULT_RGBA) data.put(source);
-            else
-                for (int x = 0; x < job.bitmap.width; x++) {
-                    int offset = bitmapRow * job.bitmap.width * 4 + x * 4,
-                            a = source.get(offset + 3) & 255;
-                    for (int c = 0; c < 3; c++) {
-                        int premult = source.get(offset + c) & 255;
-                        data.put((byte) (!job.bitmap.color ? 255 : a == 0 ? 0
-                                : Math.min(255, (premult * 255 + a / 2) / a)));
+            int start = r * rowBytes + group.bytesPerPixel;
+            data.position(start);
+            if (group.bytesPerPixel == 1) job.bitmap.copyCoverage(data, bitmapRow, 1);
+            else {
+                job.bitmap.copyRgba(data, bitmapRow, 1);
+                if (straight)
+                    for (int x = 0; x < job.bitmap.width; x++) {
+                        int offset = start + x * 4, a = data.get(offset + 3) & 255;
+                        for (int c = 0; c < 3; c++) {
+                            int premult = data.get(offset + c) & 255;
+                            data.put(offset + c, (byte) (!job.bitmap.color ? 255 : a == 0 ? 0
+                                    : Math.min(255, (premult * 255 + a / 2) / a)));
+                        }
                     }
-                    data.put((byte) a);
-                }
-            source.limit(source.capacity());
+            }
         }
         data.position(0);
         data.limit(rows * rowBytes);
@@ -599,7 +606,8 @@ public final class GlGlyphAtlas implements GlQuadRenderer.ResourceProvider, Auto
 
     /** 时间在每次块提交前检查；GL 返回后才记账并推进含 gutter 的逐行进度。 */
     private boolean uploadRows(Upload job, UploadProgress progress) {
-        int rowBytes = Math.multiplyExact(job.bitmap.width + 2, 4),
+        Group group = job.resident.group;
+        int rowBytes = Math.multiplyExact(job.bitmap.width + 2, group.bytesPerPixel),
                 totalRows = job.bitmap.height + 2;
         while (job.row < totalRows && progress.canSubmit(rowBytes)) {
             int rows = (int) Math.min(totalRows - job.row, progress.remaining / rowBytes);
@@ -617,7 +625,7 @@ public final class GlGlyphAtlas implements GlQuadRenderer.ResourceProvider, Auto
                         job.bitmap.width + 2,
                         rows,
                         1,
-                        GL_RGBA,
+                        group.pixelFormat,
                         GL_UNSIGNED_BYTE,
                         data);
             else
@@ -628,7 +636,7 @@ public final class GlGlyphAtlas implements GlQuadRenderer.ResourceProvider, Auto
                         job.y + job.row,
                         job.bitmap.width + 2,
                         rows,
-                        GL_RGBA,
+                        group.pixelFormat,
                         GL_UNSIGNED_BYTE,
                         data);
             progress.record((long) rows * rowBytes);
@@ -659,7 +667,7 @@ public final class GlGlyphAtlas implements GlQuadRenderer.ResourceProvider, Auto
 
     private Upload allocate(GlyphKey key, GlyphBitmap bitmap, SamplingView view) {
         int w = bitmap.width + 2, h = bitmap.height + 2;
-        if (w > budget.pageSize || h > budget.pageSize) {
+        if (w > budget.pageSize || h > budget.pageSize || groupByteSize(bitmap.color, view) > budget.gpuBytes) {
             rejected++;
             return null;
         }
@@ -677,11 +685,27 @@ public final class GlGlyphAtlas implements GlQuadRenderer.ResourceProvider, Auto
         return newGroup == null ? null : place(key, bitmap, newGroup, 0, w, h);
     }
 
+    private static int bytesPerPixel(boolean color, SamplingView view) {
+        return !color && view == SamplingView.PREMULT_RGBA ? 1 : 4;
+    }
+
+    private long groupByteSize(boolean color, SamplingView view) {
+        int groupLayers = view == SamplingView.STRAIGHT_RGBA ? 1 : layers;
+        return (long) budget.pageSize * budget.pageSize * groupLayers * bytesPerPixel(color, view);
+    }
+
     private Group createGroup(boolean color, SamplingView view) {
         // source/fontkey仍唯一；资源view决定实际sampler target，premultarray与straight2D共用同总预算。
         int groupTarget = view == SamplingView.STRAIGHT_RGBA ? GL_TEXTURE_2D : target,
                 groupLayers = view == SamplingView.STRAIGHT_RGBA ? 1 : layers;
-        long size = (long) budget.pageSize * budget.pageSize * groupLayers * 4;
+        int bytesPerPixel = bytesPerPixel(color, view),
+                internalFormat = bytesPerPixel == 1 ? GL_R8 : GL_RGBA8,
+                pixelFormat = bytesPerPixel == 1 ? GL_RED : GL_RGBA;
+        long size = groupByteSize(color, view);
+        if (size > budget.gpuBytes) {
+            rejected++;
+            return null;
+        }
         while (groups.size() >= budget.maxGroups || gpuBytes + size > budget.gpuBytes)
             if (!evict()) {
                 rejected++;
@@ -700,23 +724,23 @@ public final class GlGlyphAtlas implements GlQuadRenderer.ResourceProvider, Auto
                 gl.glTexImage3D(
                         groupTarget,
                         0,
-                        GL_RGBA8,
+                        internalFormat,
                         budget.pageSize,
                         budget.pageSize,
                         groupLayers,
                         0,
-                        GL_RGBA,
+                        pixelFormat,
                         GL_UNSIGNED_BYTE,
                         (ByteBuffer) null);
             else
                 gl.glTexImage2D(
                         groupTarget,
                         0,
-                        GL_RGBA8,
+                        internalFormat,
                         budget.pageSize,
                         budget.pageSize,
                         0,
-                        GL_RGBA,
+                        pixelFormat,
                         GL_UNSIGNED_BYTE,
                         (ByteBuffer) null);
             Group group =
@@ -727,7 +751,8 @@ public final class GlGlyphAtlas implements GlQuadRenderer.ResourceProvider, Auto
                             color,
                             groupLayers,
                             view,
-                            groupTarget);
+                            groupTarget,
+                            size);
             groups.put(group.resource, group);
             gpuBytes += size;
             createdGroups++;
@@ -786,7 +811,7 @@ public final class GlGlyphAtlas implements GlQuadRenderer.ResourceProvider, Auto
         for (ViewKey key : candidate.keys) residents.remove(key);
         groups.remove(candidate.resource);
         gl.glDeleteTextures(candidate.texture);
-        gpuBytes -= (long) budget.pageSize * budget.pageSize * candidate.pages.length * 4;
+        gpuBytes -= candidate.bytes;
         evictedGroups++;
         return true;
     }
@@ -811,7 +836,11 @@ public final class GlGlyphAtlas implements GlQuadRenderer.ResourceProvider, Auto
         Group group = groups.get(resource);
         if (group == null || !group.pinned || group.generation != generation)
             throw new IllegalArgumentException("失效图集资源");
-        return new GlQuadRenderer.Texture(group.target, group.texture);
+        return new GlQuadRenderer.Texture(
+                group.target, group.texture,
+                group.bytesPerPixel == 1
+                        ? GlQuadRenderer.CoverageChannel.RED
+                        : GlQuadRenderer.CoverageChannel.ALPHA);
     }
 
     @Override
@@ -819,12 +848,21 @@ public final class GlGlyphAtlas implements GlQuadRenderer.ResourceProvider, Auto
         if (closed) return;
         check();
         if (active != null) throw new IllegalStateException("先结束图集范围");
-        for (Group group : groups.values()) gl.glDeleteTextures(group.texture);
+        closed = true;
+        Throwable failure = null;
+        for (Group group : groups.values()) {
+            try { gl.glDeleteTextures(group.texture); }
+            catch (RuntimeException | Error error) {
+                if (failure == null) failure = error;
+                else if (failure != error) failure.addSuppressed(error);
+            }
+        }
         groups.clear();
         residents.clear();
         uploading = null;
         partials.clear();
         gpuBytes = 0;
-        closed = true;
+        if (failure instanceof Error) throw (Error) failure;
+        if (failure != null) throw (RuntimeException) failure;
     }
 }

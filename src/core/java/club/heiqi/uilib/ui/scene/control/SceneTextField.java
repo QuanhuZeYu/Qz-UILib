@@ -168,6 +168,7 @@ public final class SceneTextField {
                 SceneTextMeasurer text) {
             Snapshot next = state.snapshot().get();
             boolean changed = source != full;
+            boolean geometryChanged = changed && !SceneTextAreaGeometry.sameGeometry(source, full);
             int position = toDisplay(next, next.caret);
             if (boundary != null && (boundary.position != position
                     || !SceneCaretBoundary.sameProjection(presentation, next)
@@ -176,7 +177,7 @@ public final class SceneTextField {
             int nextOffset = Math.min(offset, maximum);
             // 光标/草稿/组字或真实排版区域变化各消费一次显露意图，不在稳定帧追滚动。
             if (reveal
-                    || changed
+                    || geometryChanged
                     || width != innerWidth
                     || presentation == null
                     || presentation.caret != next.caret

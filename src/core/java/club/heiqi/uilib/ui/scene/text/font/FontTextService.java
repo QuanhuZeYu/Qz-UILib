@@ -68,8 +68,8 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
             new LinkedHashMap<ColorKey, Boolean>(16, .75f, true);
     private final LinkedHashMap<InkKey, InkBounds> ink =
             new LinkedHashMap<InkKey, InkBounds>(16, .75f, true);
-    private final LinkedHashMap<LayoutKey, TextLayout> layouts =
-            new LinkedHashMap<LayoutKey, TextLayout>(16, .75f, true);
+    private final LinkedHashMap<Object, TextLayout> layouts =
+            new LinkedHashMap<Object, TextLayout>(16, .75f, true);
     // 构建结果的修正来自 assembly 而非末部件；弱键只随调用方持有的布局存活。
     private final Map<TextLayout, Float> assemblyItalic =
             new java.util.WeakHashMap<TextLayout, Float>();
@@ -1432,7 +1432,20 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
         Objects.requireNonNull(text, "text");
         Objects.requireNonNull(policy, "policy");
         if (!Float.isFinite(width)) throw new IllegalArgumentException("无效布局宽度");
-        return build(text, text.originalText, width, policy);
+        // 颜色属于绘制；属性范围、来源、内联度量与其余样式才决定定位身份。
+        // 与纯文字共用容量、LRU及资源换代，不能按主题颜色积累第二套缓存。
+        AttributedText resolved = supportedText(resolveScripts(text));
+        AttributedText positioned = positionStyles(resolved);
+        AttributedKey key = new AttributedKey(positioned, width, policy);
+        TextLayout cached = layouts.get(key);
+        if (cached == null) {
+            cached = build(positioned, positioned.originalText, width, policy);
+            if (layoutLimit > 0 && positioned.input.text.length() <= cachedTextLimit) {
+                layouts.put(key, cached);
+                trim(layouts, layoutLimit);
+            }
+        }
+        return cached.withColors(resolved.baseStyle, offset -> resolved.styleAt(offset).color);
     }
 
     @Override
@@ -2875,6 +2888,30 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
         public int hashCode() {
             return super.hashCode() * 31 + glyph;
         }
+    }
+
+    private static final class AttributedKey {
+        final AttributedText.PositionKey text;
+        final float width;
+        final TextPolicy policy;
+        AttributedKey(AttributedText text, float width, TextPolicy policy) {
+            this.text = text.positionKey(); this.width = width; this.policy = policy;
+        }
+        @Override public boolean equals(Object other) {
+            if (!(other instanceof AttributedKey)) return false;
+            AttributedKey key = (AttributedKey) other;
+            return Float.compare(width, key.width) == 0 && policy.equals(key.policy) && text.equals(key.text);
+        }
+        @Override public int hashCode() { return Objects.hash(text, width, policy); }
+    }
+
+    private static AttributedText positionStyles(AttributedText text) {
+        List<StyleSpan> spans = new ArrayList<StyleSpan>();
+        for (StyleSpan s : text.spans())
+            spans.add(new StyleSpan(s.logicalStart, s.logicalEnd, s.style.withColor(0)));
+        return new AttributedText(text.input, text.originalText, text.baseStyle.withColor(0),
+                spans, text.trailingStyle.withColor(0), text.diagnostics())
+                .withInlineBoxes(text.inlineBoxes());
     }
 
     private static final class LayoutKey {

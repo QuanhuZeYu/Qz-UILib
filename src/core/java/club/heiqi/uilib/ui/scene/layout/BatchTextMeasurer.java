@@ -49,21 +49,33 @@ final class BatchTextMeasurer implements SceneTextMeasurer {
     public TextLayout layout(String text, TextStyle style, int width) {
         Request request = new Request(text, style, width, null);
         activeRequests.add(request);
-        return layouts.computeIfAbsent(request, key -> delegate.layout(text, style, width));
+        TextLayout cached = layouts.get(request);
+        if (cached != null) return cached.withColors(style.color, offset -> style.color);
+        TextLayout layout = delegate.layout(text, style, width);
+        layouts.put(request, layout);
+        return layout;
     }
 
     @Override
     public TextLayout layout(String text, TextStyle style, int width, TextPolicy policy) {
         Request request = new Request(text, style, width, policy);
         activeRequests.add(request);
-        return layouts.computeIfAbsent(request, key -> delegate.layout(text, style, width, policy));
+        TextLayout cached = layouts.get(request);
+        if (cached != null) return cached.withColors(style.color, offset -> style.color);
+        TextLayout layout = delegate.layout(text, style, width, policy);
+        layouts.put(request, layout);
+        return layout;
     }
 
     @Override
     public TextLayout layout(AttributedText text, float width, TextPolicy policy) {
         Request request = new Request(text, null, width, policy);
         activeRequests.add(request);
-        return layouts.computeIfAbsent(request, key -> delegate.layout(text, width, policy));
+        TextLayout cached = layouts.get(request);
+        if (cached != null) return cached.withColors(text.baseStyle.color, offset -> text.styleAt(offset).color);
+        TextLayout layout = delegate.layout(text, width, policy);
+        layouts.put(request, layout);
+        return layout;
     }
 
     private static final class Request {
@@ -73,8 +85,8 @@ final class BatchTextMeasurer implements SceneTextMeasurer {
         final TextPolicy policy;
 
         Request(Object content, TextStyle style, double width, TextPolicy policy) {
-            this.content = content;
-            this.style = style;
+            this.content = content instanceof AttributedText ? ((AttributedText) content).positionKey() : content;
+            this.style = style == null ? null : style.withColor(0);
             this.width = width;
             this.policy = policy;
         }
@@ -83,7 +95,7 @@ final class BatchTextMeasurer implements SceneTextMeasurer {
         public boolean equals(Object value) {
             if (!(value instanceof Request)) return false;
             Request other = (Request) value;
-            // AttributedText 不定义值相等：同批声明派生的不可变实例就是事实身份。
+            // 同一定位请求复用度量；前景颜色由调用时的当前声明重新绑定。
             return content.equals(other.content)
                     && Objects.equals(style, other.style)
                     && Double.compare(width, other.width) == 0

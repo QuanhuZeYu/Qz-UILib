@@ -37,7 +37,7 @@ public final class AsyncGlyphRasterizer implements AutoCloseable {
             if (pending < 1
                     || cacheEntries < 1
                     || ready < 1
-                    || bitmapBytes < 4
+                    || bitmapBytes < 1
                     || faces < 1
                     || faceBytes < 1
                     || errors < 1
@@ -263,7 +263,7 @@ public final class AsyncGlyphRasterizer implements AutoCloseable {
                         ownedFaceBytes += sourceBytes;
                     }
                     bitmap = face.rasterize(key.glyphId, key.rasterStyle);
-                    if ((long) bitmap.width * bitmap.height * 4 > budget.bitmapBytes)
+                    if (bitmap.byteSize() > budget.bitmapBytes)
                         throw new IllegalArgumentException("单字形超过 CPU bitmap bytes 预算: " + key);
                 } catch (RuntimeException error) {
                     failure = error;
@@ -275,12 +275,12 @@ public final class AsyncGlyphRasterizer implements AutoCloseable {
                     if (closed) break;
                     if (failure != null) fail(key, failure);
                     else {
-                        long size = (long) bitmap.width * bitmap.height * 4;
+                        long size = bitmap.byteSize();
                         while (cache.size() >= budget.cacheEntries
                                 || bytes + size > budget.bitmapBytes) {
                             GlyphKey first = cache.keySet().iterator().next();
                             GlyphBitmap old = cache.remove(first);
-                            bytes -= (long) old.width * old.height * 4;
+                            bytes -= old.byteSize();
                             ready.remove(first);
                             evicted++;
                         }

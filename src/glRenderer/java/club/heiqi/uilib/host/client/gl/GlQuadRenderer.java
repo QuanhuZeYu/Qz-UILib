@@ -20,7 +20,7 @@ public final class GlQuadRenderer implements AutoCloseable {
     /** ARGB 顶点颜色为直通颜色；输出为 premult RGBA。 */
     public static final int SOLID = 0;
 
-    /** 采样灰度 premult RGBA 的 alpha 为 coverage，RGB 使用顶点着色。 */
+    /** 按资源声明的通道采样 coverage，RGB 使用顶点着色。 */
     public static final int MONOCHROME_COVERAGE = 1;
 
     /** 采样已经 premult 的彩色 RGBA，保留其 RGB，只乘顶点整体 alpha。 */
@@ -30,15 +30,27 @@ public final class GlQuadRenderer implements AutoCloseable {
         Texture resolve(long resource, long generation);
     }
 
+    public enum CoverageChannel {
+        ALPHA,
+        RED
+    }
+
     /** 纹理由调用者拥有；backend 不上传、换代或删除提供者的资源。 */
     public static final class Texture {
         public final int target, id;
+        public final CoverageChannel coverageChannel;
 
+        /** 既有外部 RGBA 资源默认从 alpha 采样，不能因 mono 材质改读 red。 */
         public Texture(int target, int id) {
+            this(target, id, CoverageChannel.ALPHA);
+        }
+
+        public Texture(int target, int id, CoverageChannel coverageChannel) {
             if ((target != GL_TEXTURE_2D && target != GL_TEXTURE_2D_ARRAY) || id <= 0)
                 throw new IllegalArgumentException("无效纹理绑定");
             this.target = target;
             this.id = id;
+            this.coverageChannel = Objects.requireNonNull(coverageChannel, "coverageChannel");
         }
     }
 
@@ -64,7 +76,8 @@ public final class GlQuadRenderer implements AutoCloseable {
     private final int[] programs = new int[2],
             matrices = new int[2],
             materials = new int[2],
-            samplers = new int[2];
+            samplers = new int[2],
+            coverageChannels = new int[2];
     private Scope active;
     private boolean closed;
     private long draws, uploads, bytes, bindings, indexUploads;
@@ -78,7 +91,7 @@ public final class GlQuadRenderer implements AutoCloseable {
         return "#version 150\n"
                 + "uniform "
                 + (array ? "sampler2DArray" : "sampler2D")
-                + " image; uniform int material; uniform vec3 hostLighting; uniform float"
+                + " image; uniform int material,coverageRed; uniform vec3 hostLighting; uniform float"
                 + " hostAlpha; uniform int"
                 + " alphaEnabled,alphaFunction,lightmapEnabled,outputStraight; uniform float"
                 + " alphaReference; uniform sampler2D lightmapImage; uniform vec2 lightmapUv; in"
@@ -94,7 +107,7 @@ public final class GlQuadRenderer implements AutoCloseable {
                 + " s=texture(image,"
                 + (array ? "vec3(texUv,texLayer)" : "texUv")
                 + ");if(material==1){float"
-                + " a=s.a*tint.a;result=vec4(tint.rgb*a,a);}else{result=s*tint.a;}}"
+                + " a=(coverageRed!=0?s.r:s.a)*tint.a;result=vec4(tint.rgb*a,a);}else{result=s*tint.a;}}"
                 + "result*=hostAlpha;result.rgb*=hostLighting;if(lightmapEnabled!=0)result.rgb*=texture(lightmapImage,lightmapUv).rgb;if(alphaEnabled!=0&&!alphaPass(result.a))discard;if(outputStraight!=0){if(material==0||material==1){result.rgb=tint.rgb*hostLighting;if(lightmapEnabled!=0)result.rgb*=texture(lightmapImage,lightmapUv).rgb;}else"
                 + " result.rgb=result.a>0.0?result.rgb/result.a:vec3(0.0);}}";
     }
@@ -119,6 +132,7 @@ public final class GlQuadRenderer implements AutoCloseable {
                 matrices[i] = gl.glGetUniformLocation(programs[i], "mvp");
                 materials[i] = gl.glGetUniformLocation(programs[i], "material");
                 samplers[i] = gl.glGetUniformLocation(programs[i], "image");
+                coverageChannels[i] = gl.glGetUniformLocation(programs[i], "coverageRed");
             }
             vao = gl.glGenVertexArrays();
             vbo = gl.glGenBuffers();
@@ -385,6 +399,8 @@ public final class GlQuadRenderer implements AutoCloseable {
                     currentProgram = variant;
                 }
                 gl.glUniform1i(materials[variant], material);
+                gl.glUniform1i(coverageChannels[variant],
+                        t != null && t.coverageChannel == CoverageChannel.RED ? 1 : 0);
                 if (t != null && (variant == 0 ? bound2d : boundArray) != t.id) {
                     gl.glBindTexture(t.target, t.id);
                     if (variant == 0) bound2d = t.id;
@@ -495,28 +511,43 @@ public final class GlQuadRenderer implements AutoCloseable {
     }
 
     private void release() {
+        Throwable failure = null;
         if (programProducer != null) {
-            programProducer.close();
-            programProducer = null;
+            try { programProducer.close(); }
+            catch (RuntimeException | Error error) { failure = cleanupFailure(failure, error); }
+            finally { programProducer = null; }
         }
-        if (fontEbo != 0) {
-            gl.glDeleteBuffers(fontEbo);
-            fontEbo = 0;
+        for (int buffer : new int[] {fontEbo, ebo, vbo}) if (buffer != 0) {
+            try { gl.glDeleteBuffers(buffer); }
+            catch (RuntimeException | Error error) { failure = cleanupFailure(failure, error); }
         }
-        if (ebo != 0) gl.glDeleteBuffers(ebo);
-        if (vbo != 0) gl.glDeleteBuffers(vbo);
-        if (vao != 0) gl.glDeleteVertexArrays(vao);
-        for (int p : programs) if (p != 0) gl.glDeleteProgram(p);
-        if (staging != null) {
-            staging = null;
+        fontEbo = ebo = vbo = 0;
+        if (vao != 0) {
+            try { gl.glDeleteVertexArrays(vao); }
+            catch (RuntimeException | Error error) { failure = cleanupFailure(failure, error); }
+            finally { vao = 0; }
         }
+        for (int i = 0; i < programs.length; i++) if (programs[i] != 0) {
+            try { gl.glDeleteProgram(programs[i]); }
+            catch (RuntimeException | Error error) { failure = cleanupFailure(failure, error); }
+            finally { programs[i] = 0; }
+        }
+        staging = null;
+        if (failure instanceof Error) throw (Error) failure;
+        if (failure != null) throw (RuntimeException) failure;
+    }
+
+    private static Throwable cleanupFailure(Throwable first, Throwable next) {
+        if (first == null) return next;
+        if (first != next) first.addSuppressed(next);
+        return first;
     }
 
     @Override
     public void close() {
         if (closed) return;
         if (active != null) throw new IllegalStateException("先结束提交范围");
-        release();
         closed = true;
+        release();
     }
 }

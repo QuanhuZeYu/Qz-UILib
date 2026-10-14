@@ -25,8 +25,8 @@ import club.heiqi.uilib.ui.scene.text.font.FontTextService;
 import club.heiqi.uilib.ui.scene.text.font.glyph.AsyncGlyphRasterizer;
 
 /** 客户端主线程的共享字体生命周期；不要求 scene，构造/度量不创建任何 GL 对象。
- * scene 与后续原版即时消费者共享字体/CPU/atlas，独立 consumer 可申请自己的quad renderer。
- * atlas 单 active Frame，所有消费即时结束；不承诺并发 scene/原版或 Angelica 延后提交兼容。
+ * scene 与原版字体适配共享字体/CPU/atlas，独立 consumer 可申请自己的 quad renderer。
+ * atlas 的 active Frame 串行提交；即时 replay 与宿主延后提交分别持有所需资源引用，完成后释放。
  */
 public final class ClientFontServices implements SceneTextMeasurer, AutoCloseable {
     public static final class Settings {
@@ -445,32 +445,38 @@ public final class ClientFontServices implements SceneTextMeasurer, AutoCloseabl
         if (preparedCount != 0) throw new IllegalStateException("退出前先关闭活动Prepared");
         presenting = false;
         presentationDemand.clear();
-        RuntimeException failure = null;
-        try {
-            for (GlPaintPlanRenderer renderer : new ArrayList<GlPaintPlanRenderer>(renderers)) {
-                try {
-                    renderer.close();
-                } catch (RuntimeException error) {
-                    if (failure == null) failure = error;
-                    else failure.addSuppressed(error);
-                }
-            }
-            renderers.clear();
+        // 字体规格 5.2：单项关闭失败仍清理其余所属资源，首错保留，后续错误附入 suppressed。
+        closed = true;
+        Throwable failure = null;
+        for (GlPaintPlanRenderer renderer : new ArrayList<GlPaintPlanRenderer>(renderers)) {
             try {
-                if (atlas != null) atlas.close();
-            } catch (RuntimeException error) {
+                renderer.close();
+            } catch (RuntimeException | Error error) {
                 if (failure == null) failure = error;
-                else failure.addSuppressed(error);
-            }
-        } finally {
-            closed = true;
-            try {
-                fonts.close();
-            } finally {
-                rasterizer.close();
+                else if (failure != error) failure.addSuppressed(error);
             }
         }
-        if (failure != null) throw failure;
+        renderers.clear();
+        try {
+            if (atlas != null) atlas.close();
+        } catch (RuntimeException | Error error) {
+            if (failure == null) failure = error;
+            else if (failure != error) failure.addSuppressed(error);
+        }
+        try {
+            fonts.close();
+        } catch (RuntimeException | Error error) {
+            if (failure == null) failure = error;
+            else if (failure != error) failure.addSuppressed(error);
+        }
+        try {
+            rasterizer.close();
+        } catch (RuntimeException | Error error) {
+            if (failure == null) failure = error;
+            else if (failure != error) failure.addSuppressed(error);
+        }
+        if (failure instanceof Error) throw (Error) failure;
+        if (failure != null) throw (RuntimeException) failure;
     }
 
     /** 仅供退出清理验收显式等待，不在每帧render调用。 */

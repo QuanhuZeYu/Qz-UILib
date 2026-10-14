@@ -224,7 +224,8 @@ public final class GlyphRasterStyleScenario extends TestApplication {
                 FontFace face = source.openFace(service, 18.375f)) {
             glyphId = face.glyphIndex('A');
             GlyphBitmap b = face.rasterize(glyphId);
-            normalBytes = (long) b.width * b.height * 4;
+            normalBytes = (long) b.width * b.height;
+            require(!b.color && b.byteSize() == normalBytes, "正式单色位图未按覆盖率计费");
         }
         AsyncGlyphRasterizer worker =
                 new AsyncGlyphRasterizer(
@@ -274,7 +275,8 @@ public final class GlyphRasterStyleScenario extends TestApplication {
             long sum = 0;
             for (GlyphKey key : keys) {
                 GlyphBitmap b = worker.peek(key);
-                sum += (long) b.width * b.height * 4;
+                require(!b.color && b.byteSize() == (long) b.width * b.height, "单色变体未保持覆盖率存储");
+                sum += (long) b.width * b.height;
                 worker.request(key);
             }
             AsyncGlyphRasterizer.Stats stats = worker.stats();

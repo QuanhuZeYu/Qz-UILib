@@ -6,6 +6,16 @@ import club.heiqi.uilib.testing.GlfwTestEnvironment.Profile;
 import club.heiqi.uilib.host.font.IsolatedFontEngine;
 import club.heiqi.uilib.host.client.gl.Lwjgl3GlApi;
 import club.heiqi.uilib.host.client.gl.GlProgramProvider;
+import club.heiqi.uilib.host.client.gl.GlQuadRenderer;
+import club.heiqi.uilib.host.client.gl.GlApi;
+import club.heiqi.uilib.host.client.gl.GlFontIrisProducer;
+import club.heiqi.uilib.host.client.gl.GlProgramScope;
+import club.heiqi.uilib.host.client.gl.GlProgramAttribute;
+import club.heiqi.uilib.host.client.gl.GlVertexProducer;
+import club.heiqi.uilib.host.client.font.context.FontProjection;
+import club.heiqi.uilib.host.client.font.context.FontRenderContext;
+import club.heiqi.uilib.ui.render.batch.OrderedQuadBatch;
+import club.heiqi.uilib.ui.render.batch.OrderedQuadCollector;
 
 import java.awt.image.BufferedImage;
 import java.io.File;
@@ -238,6 +248,10 @@ public final class GlyphPipelineScenario extends TestApplication {
     }
 
     private static int[] software(GlPaintPlanRenderer.Prepared prepared, AsyncGlyphRasterizer cpu) {
+        return software(prepared, cpu, false);
+    }
+
+    private static int[] software(GlPaintPlanRenderer.Prepared prepared, AsyncGlyphRasterizer cpu, boolean straight) {
         int[] out = new int[W * H * 4];
         for (PaintCommand command : prepared.plan.commands()) {
             LayoutBox clip = command.clip;
@@ -262,6 +276,13 @@ public final class GlyphPipelineScenario extends TestApplication {
                         GlyphBitmap bitmap = cpu.peek(GlyphKey.of(glyph));
                         if (bitmap == null) throw new AssertionError("软件参考位图意外淘汰");
                         byte[] pixels = bitmap.pixels();
+                        if (straight && bitmap.color)
+                            for (int i = 0; i < pixels.length; i += 4) {
+                                int a = pixels[i + 3] & 255;
+                                for (int c = 0; c < 3; c++)
+                                    pixels[i + c] = (byte) (a == 0 ? 0
+                                            : Math.min(255, ((pixels[i + c] & 255) * 255 + a / 2) / a));
+                            }
                         float left = command.box.x + glyph.x + bitmap.bearingX,
                                 top = command.box.y + glyph.y - bitmap.bearingY;
                         float right = left + bitmap.width * bitmap.pixelScale,
@@ -287,7 +308,7 @@ public final class GlyphPipelineScenario extends TestApplication {
                                     for (int c = 0; c < 3; c++)
                                         src[c] =
                                                 linear(pixels, bitmap.width, bitmap.height, u, v, c)
-                                                        * alpha;
+                                                        * (straight ? src[3] / 255f : alpha);
                                 else {
                                     src[0] = (command.color >>> 16 & 255) * src[3] / 255f;
                                     src[1] = (command.color >>> 8 & 255) * src[3] / 255f;
@@ -416,6 +437,7 @@ public final class GlyphPipelineScenario extends TestApplication {
                         finalReady = ready;
                         finalPixels = readback();
                         int[] reference = software(prepared, cpu);
+                        formats(mode, plan, prepared, cpu, atlas);
                         compare(name + " final", reference, finalPixels);
                         image(new File(output, name + "-final.png"), finalPixels);
                         image(new File(output, name + "-software.png"), reference);
@@ -487,9 +509,330 @@ public final class GlyphPipelineScenario extends TestApplication {
                             + renderer.counters().draws
                             + " uploads="
                             + renderer.counters().vertexUploads);
+            straightShader(cpu, atlas, plan, output, name);
             pressure(cpu, plan, name);
+            rowBudget(cpu, plan, mode);
+            monoCpuBytes(cpu, plan);
+            externalRgbaCoverage(mode);
             if (glGetError() != GL_NO_ERROR) throw new AssertionError("GL error");
             return finalPixels;
+        }
+    }
+
+    /** 公开 Texture(target,id) 保留 RGBA alpha 语义，red 与 alpha 特意不同。 */
+    private static void externalRgbaCoverage(GlGlyphAtlas.Mode mode) {
+        int target = mode == GlGlyphAtlas.Mode.TEXTURE_2D ? GL_TEXTURE_2D : GL_TEXTURE_2D_ARRAY;
+        int texture = glGenTextures();
+        int unit = glGetInteger(GL_ACTIVE_TEXTURE), pbo = glGetInteger(GL_PIXEL_UNPACK_BUFFER_BINDING);
+        int[] unpackNames = {
+            GL_UNPACK_ALIGNMENT,
+            GL_UNPACK_ROW_LENGTH,
+            GL_UNPACK_IMAGE_HEIGHT,
+            GL_UNPACK_SKIP_PIXELS,
+            GL_UNPACK_SKIP_ROWS,
+            GL_UNPACK_SKIP_IMAGES,
+            GL_UNPACK_SWAP_BYTES,
+            GL_UNPACK_LSB_FIRST
+        };
+        int[] unpack = new int[unpackNames.length];
+        for (int i = 0; i < unpackNames.length; i++) unpack[i] = glGetInteger(unpackNames[i]);
+        glActiveTexture(GL_TEXTURE0);
+        int binding = target == GL_TEXTURE_2D ? GL_TEXTURE_BINDING_2D : GL_TEXTURE_BINDING_2D_ARRAY;
+        int old = glGetInteger(binding);
+        try {
+            glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+            for (int name : unpackNames) glPixelStorei(name, name == GL_UNPACK_ALIGNMENT ? 1 : 0);
+            glBindTexture(target, texture);
+            ByteBuffer pixel = ByteBuffer.allocateDirect(4);
+            pixel.put((byte) 7).put((byte) 11).put((byte) 19).put((byte) 153).flip();
+            if (target == GL_TEXTURE_2D)
+                glTexImage2D(target, 0, GL_RGBA8, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixel);
+            else glTexImage3D(target, 0, GL_RGBA8, 1, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixel);
+            glTexParameteri(target, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+            glTexParameteri(target, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        } finally {
+            glBindTexture(target, old);
+            glActiveTexture(unit);
+            glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbo);
+            for (int i = 0; i < unpackNames.length; i++) glPixelStorei(unpackNames[i], unpack[i]);
+        }
+        try (GlQuadRenderer renderer = new GlQuadRenderer(new Lwjgl3GlApi(), 1,
+                (resource, generation) -> new GlQuadRenderer.Texture(target, texture), GlProgramProvider.NONE)) {
+            clear();
+            try (GlQuadRenderer.Scope scope = renderer.begin(MVP, H, false)) {
+                System.out.println(mode + " externalRgbaMono drawBlend=" + glIsEnabled(GL_BLEND)
+                        + " srcRgb=" + glGetInteger(GL_BLEND_SRC_RGB) + " dstRgb=" + glGetInteger(GL_BLEND_DST_RGB)
+                        + " srcAlpha=" + glGetInteger(GL_BLEND_SRC_ALPHA) + " dstAlpha=" + glGetInteger(GL_BLEND_DST_ALPHA));
+                OrderedQuadCollector collector = new OrderedQuadCollector(1, scope::consumeBatch);
+                collector.add(new OrderedQuadBatch.State(GlQuadRenderer.MONOCHROME_COVERAGE, 1, 1, null),
+                        new OrderedQuadBatch.Quad(0, 0, 8, 8, 0, 0, 1, 1, 0, 0xffffffff));
+                collector.flush();
+            }
+            // readback 返回独立 RGBA 通道，不是打包像素。
+            int[] actual = readback();
+            String rgba = Arrays.toString(Arrays.copyOf(actual, 4));
+            System.out.println(mode + " externalRgbaMono actual=" + rgba
+                    + " expected=[153, 153, 153, 153] drawFbo=" + glGetInteger(GL_DRAW_FRAMEBUFFER_BINDING)
+                    + " readFbo=" + glGetInteger(GL_READ_FRAMEBUFFER_BINDING));
+            for (int c = 0; c < 4; c++)
+                require(Math.abs(actual[c] - 153) <= 1,
+                        "公开 RGBA mono alpha 采样不符 actual=" + rgba + " channel=" + c);
+        } finally {
+            glDeleteTextures(texture);
+        }
+        System.out.println(mode + " externalRgbaMonoAlpha=true");
+    }
+
+    private static int shader(int type, String source) {
+        int shader = glCreateShader(type);
+        try {
+            glShaderSource(shader, source);
+            glCompileShader(shader);
+            require(glGetShaderi(shader, GL_COMPILE_STATUS) != 0, glGetShaderInfoLog(shader));
+            return shader;
+        } catch (RuntimeException | Error failure) {
+            glDeleteShader(shader);
+            throw failure;
+        }
+    }
+
+    /** 标准宿主只做 texture(image, uv)*color；顶点仍由正式 PaintPlan/backend/producer 输出。 */
+    private void straightShader(AsyncGlyphRasterizer cpu, GlGlyphAtlas atlas, PaintPlan original,
+            File output, String name) throws Exception {
+        int vertex = 0, fragment = 0, program = 0;
+        try {
+            vertex = shader(GL_VERTEX_SHADER, "#version 150\nin vec4 position,color,uv0;uniform mat4 mvp;out vec4 tint;out vec2 uv;void main(){gl_Position=mvp*position;tint=color;uv=uv0.xy;}");
+            fragment = shader(GL_FRAGMENT_SHADER, "#version 150\nuniform sampler2D image;in vec4 tint;in vec2 uv;out vec4 result;void main(){result=texture(image,uv)*tint;}");
+            final int id = program = glCreateProgram();
+            glAttachShader(id, vertex);
+            glAttachShader(id, fragment);
+            glBindAttribLocation(id, 0, "position");
+            glBindAttribLocation(id, 1, "color");
+            glBindAttribLocation(id, 2, "uv0");
+            glBindFragDataLocation(id, 0, "result");
+            glLinkProgram(id);
+            require(glGetProgrami(id, GL_LINK_STATUS) != 0, glGetProgramInfoLog(id));
+            List<GlProgramAttribute> attributes = Arrays.asList(
+                    new GlProgramAttribute("position", 0, GL_FLOAT_VEC4, 1),
+                    new GlProgramAttribute("color", 1, GL_FLOAT_VEC4, 1),
+                    new GlProgramAttribute("uv0", 2, GL_FLOAT_VEC4, 1));
+            GlProgramProvider provider = new GlProgramProvider() {
+                public boolean preview(FontRenderContext context) { return true; }
+                public GlVertexProducer createVertexProducer(GlApi gl, int capacity) {
+                    return new GlFontIrisProducer(gl, capacity);
+                }
+                public GlProgramScope open(FontRenderContext context) {
+                    glEnable(GL_BLEND);
+                    glDisable(GL_CULL_FACE);
+                    glBlendEquationSeparate(GL_FUNC_ADD, GL_FUNC_ADD);
+                    glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+                    return new GlProgramScope() {
+                        public int programId() { return id; }
+                        public List<GlProgramAttribute> attributes() { return attributes; }
+                        public float[] normal() { return new float[] {0, 0, 1}; }
+                        public int packedLight() { return 0; }
+                        public float[] extended(String name, int type) { throw new AssertionError(name); }
+                        public void configure(int vao, int vbo, int ebo, boolean uv, boolean color, boolean lightmap, boolean normal) {
+                            glBindVertexArray(vao);
+                            glBindBuffer(GL_ARRAY_BUFFER, vbo);
+                            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
+                        }
+                        public void pointer(int location, int size, int type, boolean normalized, int stride, long offset) {
+                            glVertexAttribPointer(location, size, type, normalized, stride, offset);
+                        }
+                        public void disable(int location) { glDisableVertexAttribArray(location); }
+                        public void bindTexture2D(int texture) { glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D, texture); }
+                        public void beforeDraw() {
+                            glUseProgram(id);
+                            glUniform1i(glGetUniformLocation(id, "image"), 0);
+                            glUniformMatrix4fv(glGetUniformLocation(id, "mvp"), false, MVP);
+                        }
+                        public void close() {}
+                    };
+                }
+            };
+            PaintPlanBuilder builder = new PaintPlanBuilder();
+            for (PaintCommand command : original.commands())
+                builder.add(command.text == null ? command : PaintCommand.text(command.box, null, command.text));
+            PaintPlan plan = builder.build();
+            float[] identity = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+            Lwjgl3GlApi gl = new Lwjgl3GlApi();
+            FontRenderContext context = new FontRenderContext(
+                    new FontProjection(MVP, identity, new int[] {0, 0, W, H}),
+                    glGetInteger(GL_DRAW_FRAMEBUFFER_BINDING), H, false, GL_LEQUAL, false, false,
+                    new int[] {0, 0, W, H}, FontRenderContext.MatrixState.ui(MVP, identity),
+                    gl.capabilities().contextIdentity, 1, 0);
+            long beforeCpu = cpu.stats().rasterized, beforeGpu = atlas.stats().gpuBytes;
+            try (GlPaintPlanRenderer renderer = new GlPaintPlanRenderer(gl, cpu, atlas, 64, 128, provider)) {
+                long deadline = System.nanoTime() + 10000000000L;
+                for (;;) {
+                    try (GlPaintPlanRenderer.Prepared prepared = renderer.prepareDemandContext(plan, context,
+                            new GlGlyphAtlas.UploadBudget(1024 * 1024, 1000000000, 32), keys(plan), null)) {
+                        if (prepared.readyCount() != prepared.demandCount()) {
+                            require(System.nanoTime() < deadline && cpu.failures().isEmpty(), "标准 shader view 等待超时");
+                            continue;
+                        }
+                        clear();
+                        int[] state = drawState(), upload = uploadState();
+                        prepared.render(context);
+                        require(Arrays.equals(state, drawState()) && Arrays.equals(upload, uploadState()),
+                                "标准 shader 回放污染状态");
+                        int[] actual = readback();
+                        compare(name + " straight-standard-sampler2D", software(prepared, cpu, true), actual);
+                        image(new File(output, name + "-straight-standard.png"), actual);
+                        break;
+                    }
+                }
+            }
+            require(cpu.stats().rasterized == beforeCpu, "宿主 view 重复光栅");
+            require(atlas.stats().gpuBytes - beforeGpu == 2L * 256 * 256 * 4,
+                    "宿主两种 RGBA view 未独立计入同 GPU 预算");
+            System.out.println(name + " straightStandardShader=true sharedCpu=true explicitRgbaViews=true");
+        } finally {
+            if (program != 0) glDeleteProgram(program);
+            if (fragment != 0) glDeleteShader(fragment);
+            if (vertex != 0) glDeleteShader(vertex);
+        }
+    }
+
+    /** 驱动查询留在真实场景中，生产不暴露纹理内部格式测试钩子。 */
+    private static void formats(
+            GlGlyphAtlas.Mode mode, PaintPlan plan, GlPaintPlanRenderer.Prepared prepared,
+            AsyncGlyphRasterizer cpu, GlGlyphAtlas atlas) {
+        Set<Long> resources = new LinkedHashSet<Long>();
+        long gpuBytes = 0, bitmapBytes = 0, uploadedBytes = 0;
+        int mono = 0, color = 0;
+        for (GlyphKey key : keys(plan)) {
+            GlyphBitmap bitmap = cpu.peek(key);
+            if (bitmap == null) continue;
+            require(bitmap.singleChannel() != bitmap.color, "正式 FT owned 格式错误");
+            require(bitmap.byteSize() == bitmap.width * bitmap.height * (bitmap.color ? 4 : 1),
+                    "owned 位图仍按 RGBA 存储 mono");
+            bitmapBytes += bitmap.byteSize();
+            uploadedBytes += (long) (bitmap.width + 2) * (bitmap.height + 2) * (bitmap.color ? 4 : 1);
+        }
+        for (PaintCommand command : plan.commands())
+            if (command.text != null)
+                for (TextLayout.Line line : command.text.lines())
+                    for (TextLayout.Glyph glyph : line.glyphs()) {
+                        GlGlyphAtlas.Resident resident = prepared.resident(glyph);
+                        if (resident == null || !resources.add(resident.resource)) continue;
+                        GlQuadRenderer.Texture texture = atlas.resolve(resident.resource, resident.generation);
+                        int binding = texture.target == GL_TEXTURE_2D ? GL_TEXTURE_BINDING_2D : GL_TEXTURE_BINDING_2D_ARRAY;
+                        int old = glGetInteger(binding);
+                        try {
+                            glBindTexture(texture.target, texture.id);
+                            require(glGetTexLevelParameteri(texture.target, 0, GL_TEXTURE_INTERNAL_FORMAT)
+                                            == (resident.color ? GL_RGBA8 : GL_R8),
+                                    "驱动图集内部格式错误");
+                            require(texture.coverageChannel == (resident.color
+                                            ? GlQuadRenderer.CoverageChannel.ALPHA : GlQuadRenderer.CoverageChannel.RED),
+                                    "资源覆盖率通道事实错误");
+                            int layers = texture.target == GL_TEXTURE_2D_ARRAY
+                                    ? glGetTexLevelParameteri(texture.target, 0, GL_TEXTURE_DEPTH) : 1;
+                            gpuBytes += 256L * 256 * layers * (resident.color ? 4 : 1);
+                            if (resident.color) color++; else mono++;
+                        } finally {
+                            glBindTexture(texture.target, old);
+                        }
+                    }
+        require(mono > 0 && color > 0, "格式场景未同时命中 mono/color");
+        require(atlas.stats().gpuBytes == gpuBytes && atlas.stats().uploadedBytes == uploadedBytes,
+                "实际纹理格式与 GPU 分配/上传字节统计不符");
+        require(cpu.stats().bitmapBytes == bitmapBytes, "CPU owned 字节统计不符");
+        System.out.println(mode + " driverMono=R8 driverColor=RGBA8 gpuBytes=" + gpuBytes
+                + " bitmapBytes=" + bitmapBytes + " uploadedBytes=" + uploadedBytes);
+    }
+
+    private static GlyphKey monoKey(AsyncGlyphRasterizer cpu, PaintPlan plan) {
+        for (GlyphKey key : keys(plan)) {
+            GlyphBitmap bitmap = cpu.peek(key);
+            if (bitmap != null && !bitmap.color && bitmap.width > 0 && bitmap.height > 1
+                    && bitmap.width < 62 && bitmap.height < 62 && (bitmap.width + 2) % 4 != 0)
+                return key;
+        }
+        throw new AssertionError("没有非四字节对齐的真实 mono 行");
+    }
+
+    /** 同一个 mono 的两个 view 交替上传，预算每次只容纳一个实际格式行。 */
+    private static void rowBudget(AsyncGlyphRasterizer cpu, PaintPlan plan, GlGlyphAtlas.Mode mode) {
+        GlyphKey key = monoKey(cpu, plan);
+        GlyphBitmap bitmap = cpu.peek(key);
+        int rows = bitmap.height + 2;
+        long expectedBytes = (long) (bitmap.width + 2) * rows * 5;
+        try (GlGlyphAtlas atlas = new GlGlyphAtlas(new Lwjgl3GlApi(), mode,
+                new GlGlyphAtlas.Budget(64, 2, 2, 2, 2, 64L * 64 * (mode == GlGlyphAtlas.Mode.TEXTURE_ARRAY ? 6 : 5)))) {
+            for (int row = 0; row < rows; row++)
+                for (GlGlyphAtlas.SamplingView view : GlGlyphAtlas.SamplingView.values()) {
+                    int rowBytes = (bitmap.width + 2) * (view == GlGlyphAtlas.SamplingView.PREMULT_RGBA ? 1 : 4);
+                    long before = atlas.stats().uploadedBytes;
+                    int[] state = uploadState();
+                    try (GlGlyphAtlas.Frame frame = atlas.beginFrame(Collections.singleton(key), true, view)) {
+                        frame.prepare(cpu, new GlGlyphAtlas.UploadBudget(rowBytes, 1000000000, 1), false);
+                        frame.freeze();
+                        require(Arrays.equals(state, uploadState()), "实际格式单行上传污染 guard");
+                        require(atlas.stats().uploadedBytes - before == rowBytes, "单行上传字节不是实际格式");
+                        GlGlyphAtlas.Resident resident = frame.lookup(key);
+                        require((resident != null) == (row == rows - 1), "未完整上传 gutter 就发布，或 partial 未推进");
+                        if (resident != null) {
+                            GlQuadRenderer.Texture texture = atlas.resolve(resident.resource, resident.generation);
+                            int binding = texture.target == GL_TEXTURE_2D ? GL_TEXTURE_BINDING_2D : GL_TEXTURE_BINDING_2D_ARRAY;
+                            int old = glGetInteger(binding), pack = glGetInteger(GL_PACK_ALIGNMENT);
+                            try {
+                                glBindTexture(texture.target, texture.id);
+                                int channels = view == GlGlyphAtlas.SamplingView.PREMULT_RGBA ? 1 : 4;
+                                require(glGetTexLevelParameteri(texture.target, 0, GL_TEXTURE_INTERNAL_FORMAT)
+                                        == (channels == 1 ? GL_R8 : GL_RGBA8), "partial 格式错误");
+                                int layers = texture.target == GL_TEXTURE_2D_ARRAY ? 2 : 1;
+                                ByteBuffer pixels = ByteBuffer.allocateDirect(64 * 64 * layers * channels);
+                                glPixelStorei(GL_PACK_ALIGNMENT, 1);
+                                glGetTexImage(texture.target, 0, channels == 1 ? GL_RED : GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+                                byte[] rgba = bitmap.pixels();
+                                int bx = Math.round(resident.u0 * 64) - 1, by = Math.round(resident.v0 * 64) - 1;
+                                for (int y = 0; y < rows; y++)
+                                    for (int x = 0; x < bitmap.width + 2; x++) {
+                                        boolean gutter = y == 0 || y == rows - 1 || x == 0 || x == bitmap.width + 1;
+                                        int a = gutter ? 0 : rgba[((y - 1) * bitmap.width + x - 1) * 4 + 3] & 255;
+                                        int offset = ((resident.layer * 64 + by + y) * 64 + bx + x) * channels;
+                                        require((pixels.get(offset + channels - 1) & 255) == a, "多帧逐行 coverage/gutter 丢失");
+                                        if (channels == 4)
+                                            for (int c = 0; c < 3; c++)
+                                                require((pixels.get(offset + c) & 255) == 255, "STRAIGHT mono 含 gutter 必须恒白");
+                                    }
+                            } finally {
+                                glPixelStorei(GL_PACK_ALIGNMENT, pack);
+                                glBindTexture(texture.target, old);
+                            }
+                        }
+                    }
+                }
+            require(atlas.stats().uploadedBytes == expectedBytes && atlas.stats().uploadCalls == 2L * rows,
+                    "交替 view 累计字节/call 不符");
+            System.out.println(mode + " monoAlternatingOneRow=true actualFormatBytes=" + expectedBytes);
+        }
+    }
+
+    /** byte 预算容纳真实 coverage，却容不下旧的 RGBA 扩展，不能只验证 entry 上限。 */
+    private void monoCpuBytes(AsyncGlyphRasterizer reference, PaintPlan plan) throws Exception {
+        GlyphKey key = monoKey(reference, plan);
+        int bytes = reference.peek(key).byteSize();
+        AsyncGlyphRasterizer worker = new AsyncGlyphRasterizer(
+                new AsyncGlyphRasterizer.Budget(1, 2, 1, bytes, 1, 96 * 1024 * 1024, 1, 96),
+                IsolatedFontEngine.shared());
+        try {
+            worker.request(key);
+            long end = System.nanoTime() + 10000000000L;
+            while (worker.peek(key) == null) {
+                worker.drainReady(1);
+                require(System.nanoTime() < end && worker.workerFailure() == null && worker.failures().isEmpty(),
+                        "实际 mono 字节预算被 RGBA cost 拒绝");
+                Thread.sleep(2);
+            }
+            require(worker.stats().bitmapBytes == bytes, "单字形 CPU byte 统计错误");
+            System.out.println("monoCpuExactByteBudget=" + bytes + " accepted=true");
+        } finally {
+            worker.close();
+            require(worker.awaitClose(10000), "mono budget worker 未关闭");
         }
     }
 
@@ -509,7 +852,7 @@ public final class GlyphPipelineScenario extends TestApplication {
                 new GlGlyphAtlas(
                         new Lwjgl3GlApi(),
                         GlGlyphAtlas.Mode.TEXTURE_2D,
-                        new GlGlyphAtlas.Budget(64, 1, 1, 1, 32, 64 * 64 * 4))) {
+                        new GlGlyphAtlas.Budget(64, 1, 1, 1, 32, 64 * 64))) {
             GlGlyphAtlas.Resident old = null;
             long evictions = 0;
             for (GlyphKey key : small) {
@@ -532,10 +875,18 @@ public final class GlyphPipelineScenario extends TestApplication {
                     }
                     old = resident;
                 }
-                if (tiny.stats().gpuBytes > 64 * 64 * 4 || tiny.stats().residents > 1)
+                if (tiny.stats().gpuBytes != 64 * 64 || tiny.stats().residents > 1)
                     throw new AssertionError("tiny图集预算穿透");
             }
             evictions = tiny.stats().evictedGroups;
+            try (GlGlyphAtlas.Frame frame = tiny.beginFrame(
+                    Collections.singletonList(small.get(small.size() - 1)), false, GlGlyphAtlas.SamplingView.STRAIGHT_RGBA)) {
+                frame.prepare(cpu, UPLOAD);
+                frame.freeze();
+                require(frame.lookup(small.get(small.size() - 1)) == null, "预算不足的RGBA视图必须留白");
+            }
+            require(tiny.stats().gpuBytes == 64 * 64 && tiny.stats().evictedGroups == evictions,
+                    "无法分配的RGBA视图淘汰了有效mono页");
             int texture;
             try (GlGlyphAtlas.Frame frame =
                     tiny.beginFrame(Collections.singletonList(small.get(small.size() - 1)))) {

@@ -87,6 +87,22 @@ public final class DocumentSceneScenario extends TestApplication {
                         .anyMatch(c -> c.style.baselineShift < 0), "数学脚本缺少父层基线");
                 require(layout.lines().stream().flatMap(line -> line.clusters().stream())
                         .anyMatch(c -> c.style.baselineShift > 0), "图像脚本缺少父层基线");
+            });
+            final SceneGeometryView.Entry[] before = new SceneGeometryView.Entry[1];
+            final long[] measure = new long[1];
+            f.domain.execute(() -> {
+                before[0] = f.geometry().get(f.paragraph);
+                measure[0] = f.page.runtime().measureRevision();
+                f.theme.set(f.theme.get().withTextStyle(f.theme.get().textStyle.withColor(0x80556677)));
+            });
+            f.page.frame();
+            f.domain.execute(() -> {
+                verify(f, f.geometry());
+                SceneGeometryView.Entry after = f.geometry().get(f.paragraph);
+                require(after.box == before[0].box && after.clip == before[0].clip
+                        && f.page.runtime().measureRevision() == measure[0], "行内对象纯换色推进量排");
+                require(after.text.style.color == 0x80556677 && before[0].text.style.color != after.text.style.color,
+                        "行内段落换色未刷新或旧计划被修改");
                 f.theme.set(SceneTheme.light().withTextStyle(new TextStyle("default", 38, -1)));
             });
             f.page.frame();

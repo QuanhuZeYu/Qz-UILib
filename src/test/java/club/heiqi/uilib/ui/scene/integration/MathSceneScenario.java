@@ -73,6 +73,7 @@ public final class MathSceneScenario extends TestApplication {
         scenario("数量32真实墨迹随公式盒缩放及提示独立字号", this::quantity);
         scenario("三像素小盒带装饰数量完整保留与有界缩小", this::quantityDecoration);
         scenario("被动hover祖先clip窄视口滚动", this::input);
+        scenario("数学只换颜色保留显式同色与真实定位和有序投影", this::colorRefresh);
         scenario("来源主题字号字体重载与整式错误恢复", this::dynamic);
         scenario("绑定唯一身份passive资格及卸载释放", this::lifecycle);
         scenario("装饰有序图元夹多个Item及phantom失去资格", this::decorations);
@@ -276,7 +277,7 @@ public final class MathSceneScenario extends TestApplication {
 
     private static final class CountedText implements SceneTextMeasurer {
         private final FontTextService delegate;
-        private int textCalls, mathCalls;
+        private int textCalls, mathCalls, nonemptyTextCalls;
 
         CountedText(FontTextService delegate) {
             this.delegate = delegate;
@@ -288,6 +289,7 @@ public final class MathSceneScenario extends TestApplication {
 
         public TextLayout layout(String content, TextStyle style, int width, TextPolicy policy) {
             textCalls++;
+            if (!content.isEmpty()) nonemptyTextCalls++;
             return delegate.layout(content, style, width, policy);
         }
 
@@ -296,13 +298,17 @@ public final class MathSceneScenario extends TestApplication {
             return delegate.layout(content, width, policy);
         }
 
+        public TextStyle resolveStyle(TextStyle style) {
+            return delegate.resolveStyle(style);
+        }
+
         public MathFont mathFont(TextStyle style) {
             mathCalls++;
             return delegate.mathFont(style);
         }
 
         void reset() {
-            textCalls = mathCalls = 0;
+            textCalls = mathCalls = nonemptyTextCalls = 0;
         }
     }
 
@@ -440,6 +446,7 @@ public final class MathSceneScenario extends TestApplication {
 
     private final class Fixture implements AutoCloseable {
         final ReactiveDomain domain = ReactiveDomain.direct();
+        final CountedText text = new CountedText(fonts);
         final SharedImageService images =
                 new SharedImageService(
                         source -> () -> source.bitmap, SharedImageService.Budget.defaults());
@@ -541,7 +548,7 @@ public final class MathSceneScenario extends TestApplication {
                     ScenePageSession.open(
                             domain,
                             host,
-                            fonts,
+                            text,
                             ctx -> {
                                 content = domain.signal(MathContent.parse(formula));
                                 theme = domain.signal(SceneTheme.dark().withTextStyle(textStyle));
@@ -1328,6 +1335,184 @@ public final class MathSceneScenario extends TestApplication {
             f.frame();
             f.domain.execute(
                     () -> require(f.geometry().get(f.viewport).scrollOffset > 0, "滚轮没有沿scene几何滚动"));
+        }
+    }
+
+    private void colorRefresh() throws Exception {
+        String source = tex("@sqrt{@frac{a}{@frac{b}{@frac{m}{n}}}}+@frac{a}{b}+@textcolor{white}{@frac{c}{d}}"
+                + "+@textcolor{red}{@textcolor{currentColor}{e}}+@cancel{f}+@text{office}"
+                + "+@embed{one}+@textcolor{white}{w}+@cancel{g}+@embed{two}"
+                + "+@frac{h}{i}+@embed{three}+@overline{j}"
+                + "+@fcolorbox{white}{white}{p}+@fcolorbox{white}{currentColor}{k}");
+        try (Fixture f = new Fixture(source, MathStyle.DISPLAY, "one", "two", "three")) {
+            f.width = 1800;
+            f.height = 400;
+            f.ready();
+            MathLayout old = f.layout();
+            PaintPlan oldPaint = f.paint;
+            List<Integer> oldColors = paintColors(oldPaint);
+            healthy(old);
+            require(!old.rules.isEmpty() && !old.strokes.isEmpty(), "颜色反例没有真实线/路径");
+            f.text.reset();
+            // 全scene还会提交Item空文字及tooltip属性文字；数学入口是MathFont和非空普通文本。
+            int color = 0xff123456;
+            f.domain.execute(() -> f.theme.set(f.theme.get().withTextStyle(
+                    f.theme.get().textStyle.withColor(color))));
+            f.frame();
+            require(f.text.mathCalls == 0 && f.text.nonemptyTextCalls == 0,
+                    "纯颜色重新进入数学字体/文本整形入口");
+            MathLayout current = f.layout();
+            require(current != old, "颜色刷新没有发布新不可变数学载荷");
+            sameMathGeometry(old, current);
+            mathColors(current, source, color);
+            mathColors(old, source, -1);
+            require(paintColors(oldPaint).equals(oldColors), "旧PaintPlan被颜色刷新修改");
+            List<Integer> expected = new java.util.ArrayList<>();
+            for (MathLayout.Entry entry : current.entries) {
+                if (entry.piece != null) {
+                    for (TextLayout.Line line : entry.piece.text.lines())
+                        for (TextLayout.Glyph glyph : line.glyphs()) expected.add(glyph.resolvedStyle.color);
+                } else if (entry.rule != null) expected.add(entry.rule.color);
+                else if (entry.stroke != null) expected.add(entry.stroke.color);
+            }
+            require(paintColors(f.paint).equals(expected), "多Item有序chunks仍持有旧色");
+            f.domain.execute(() -> {
+                List<Integer> projected = new java.util.ArrayList<>(), texts = new java.util.ArrayList<>();
+                for (TextLayout.Line line : f.geometry().get(f.math).text.lines())
+                    for (TextLayout.Glyph glyph : line.glyphs()) projected.add(glyph.resolvedStyle.color);
+                for (MathLayout.TextPiece piece : current.pieces)
+                    for (TextLayout.Line line : piece.text.lines())
+                        for (TextLayout.Glyph glyph : line.glyphs()) texts.add(glyph.resolvedStyle.color);
+                require(projected.equals(texts), "完整文字projection仍持有旧色");
+            });
+            f.domain.execute(() -> f.theme.set(f.theme.get().withTextStyle(f.theme.get().textStyle.withEm(40))));
+            f.frame();
+            require(f.text.mathCalls > 0, "字号变化没有重新布局");
+            f.text.reset();
+            fonts.reload(fonts.defaultCandidates());
+            f.frame();
+            require(f.text.mathCalls > 0, "字体资源换代没有重新布局");
+            f.domain.execute(() -> f.content.set(MathContent.parse(tex("@unknown{x}"))));
+            f.frame();
+            require(f.layout().fallback, "整式原文反例没有进入正式fallback");
+            MathLayout fallback = f.layout();
+            f.text.reset();
+            f.domain.execute(() -> f.theme.set(f.theme.get().withTextStyle(f.theme.get().textStyle.withColor(0xffabcdef))));
+            f.frame();
+            require(f.text.mathCalls == 0 && f.text.nonemptyTextCalls == 0, "fallback纯颜色重新整形源文");
+            require(f.layout().sourceFallback.style.color == 0xffabcdef
+                    && fallback.sourceFallback.style.color == color, "fallback当前载荷或旧快照颜色错误");
+        }
+        // 宏参数的两个可见使用拥有同一源区间，却分别继承与显式同色；区间/值替换无法判断。
+        try (Fixture f = new Fixture(tex("@def@foo#1{#1+@textcolor{white}{#1}}@foo{x}"), MathStyle.DISPLAY)) {
+            f.frame();
+            MathLayout old = f.layout();
+            healthy(old);
+            require(old.pieces.size() == 3
+                    && old.pieces.get(0).sourceStart == old.pieces.get(2).sourceStart,
+                    "宏颜色反例没有共享实际来源区间");
+            f.text.reset();
+            f.domain.execute(() -> f.theme.set(f.theme.get().withTextStyle(f.theme.get().textStyle.withColor(0xff123456))));
+            f.frame();
+            require(f.text.mathCalls == 0 && f.text.nonemptyTextCalls == 0, "宏颜色刷新重新整形");
+            sameMathGeometry(old, f.layout());
+            require(f.layout().pieces.get(0).text.style.color == 0xff123456
+                    && f.layout().pieces.get(2).text.style.color == -1, "同来源宏参数颜色绑定丢失");
+        }
+        String transparent = tex("a+@color{white}b@@c");
+        try (Fixture f = new Fixture(transparent, MathStyle.DISPLAY)) {
+            f.frame();
+            MathLayout old = f.layout();
+            healthy(old);
+            f.text.reset();
+            f.domain.execute(() -> f.theme.set(f.theme.get().withTextStyle(f.theme.get().textStyle.withColor(0xff123456))));
+            f.frame();
+            require(f.text.mathCalls == 0 && f.text.nonemptyTextCalls == 0, "顶层透明颜色刷新重新整形");
+            sameMathGeometry(old, f.layout());
+            for (MathLayout.TextPiece piece : f.layout().pieces) {
+                String raw = transparent.substring(piece.sourceStart, piece.sourceEnd);
+                require(piece.text.style.color == (raw.equals("b") || raw.equals("c") ? -1 : 0xff123456),
+                        "顶层换行透明作用域丢失显式色");
+            }
+        }
+    }
+
+    private static List<Integer> paintColors(PaintPlan plan) {
+        List<Integer> colors = new java.util.ArrayList<>();
+        for (PaintCommand command : plan.commands()) {
+            if (command.kind == PaintCommand.Kind.TEXT) {
+                for (TextLayout.Line line : command.text.lines())
+                    for (TextLayout.Glyph glyph : line.glyphs()) colors.add(glyph.resolvedStyle.color);
+            } else if (command.kind == PaintCommand.Kind.RECT || command.kind == PaintCommand.Kind.LINE)
+                colors.add(command.color);
+        }
+        return colors;
+    }
+
+    private static void mathColors(MathLayout layout, String source, int inherited) {
+        int fixedFraction = source.indexOf(tex("@frac{c}{d}"));
+        int fixedBox = source.indexOf(tex("@fcolorbox{white}{white}"));
+        int mixedBox = source.indexOf(tex("@fcolorbox{white}{currentColor}")), mixedRules = 0;
+        for (MathLayout.Entry entry : layout.entries) {
+            if (entry.piece != null) {
+                String literal = source.substring(entry.piece.sourceStart, entry.piece.sourceEnd);
+                int expected = java.util.Arrays.asList("c", "d", "w").contains(literal)
+                        ? -1 : literal.equals("e") ? 0xffff0000 : inherited;
+                require(entry.piece.text.style.color == expected, "数学text颜色来源错误: " + literal);
+                for (TextLayout.Line line : entry.piece.text.lines()) {
+                    for (TextLayout.Glyph glyph : line.glyphs())
+                        require(glyph.resolvedStyle.color == expected, "数学glyph颜色来源错误: " + literal);
+                    for (TextLayout.Cluster cluster : line.clusters())
+                        require(cluster.style.color == expected, "数学cluster颜色来源错误: " + literal);
+                }
+            } else if (entry.rule != null) {
+                int start = entry.rule.sourceStart;
+                int expected = start == fixedFraction || start == fixedBox ? -1
+                        : start == mixedBox && mixedRules++ > 0 ? -1 : inherited;
+                require(entry.rule.color == expected, "数学line/背景/边框颜色来源错误: " + start);
+            } else if (entry.stroke != null)
+                require(entry.stroke.color == inherited, "数学stroke没有跟随基础色");
+        }
+        require(mixedRules == 5, "混合背景与边框反例未触达五条真实图元");
+    }
+
+    private static void sameMathGeometry(MathLayout before, MathLayout after) {
+        near(before.width, after.width, "只换色改变数学宽度");
+        near(before.height, after.height, "只换色改变数学高度");
+        near(before.baseline, after.baseline, "只换色改变数学基线");
+        require(before.entries.size() == after.entries.size(), "只换色改变数学条目数");
+        for (int i = 0; i < before.entries.size(); i++) {
+            MathLayout.Entry a = before.entries.get(i), b = after.entries.get(i);
+            require(a.kind == b.kind, "只换色改变图元顺序");
+            if (a.piece != null) {
+                near(a.piece.x, b.piece.x, "只换色移动文字X");
+                near(a.piece.y, b.piece.y, "只换色移动文字Y");
+                require(a.piece.text.generation == b.piece.text.generation, "只换色改变字体代际");
+                for (int l = 0; l < a.piece.text.lines().size(); l++) {
+                    List<TextLayout.Glyph> ga = a.piece.text.lines().get(l).glyphs(), gb = b.piece.text.lines().get(l).glyphs();
+                    require(ga.size() == gb.size(), "只换色改变整形结果");
+                    for (int g = 0; g < ga.size(); g++) {
+                        TextLayout.Glyph x = ga.get(g), y = gb.get(g);
+                        require(x.source == y.source && x.glyphId == y.glyphId
+                                && x.inkBounds == y.inkBounds && x.paintClip == y.paintClip
+                                && x.xExtension == y.xExtension, "只换色改变glyph资源或构建事实");
+                        near(x.x, y.x, "只换色移动glyphX");
+                        near(x.y, y.y, "只换色移动glyphY");
+                        near(x.xAdvance, y.xAdvance, "只换色改变glyph advance");
+                    }
+                }
+            } else if (a.rule != null) {
+                near(a.rule.x, b.rule.x, "只换色移动线X");
+                near(a.rule.y, b.rule.y, "只换色移动线Y");
+                near(a.rule.width, b.rule.width, "只换色改变线宽");
+                near(a.rule.height, b.rule.height, "只换色改变线高");
+            } else if (a.stroke != null) {
+                near(a.stroke.x1, b.stroke.x1, "只换色移动路径X1");
+                near(a.stroke.y1, b.stroke.y1, "只换色移动路径Y1");
+                near(a.stroke.x2, b.stroke.x2, "只换色移动路径X2");
+                near(a.stroke.y2, b.stroke.y2, "只换色移动路径Y2");
+                near(a.stroke.width, b.stroke.width, "只换色改变路径宽度");
+            } else require(a.embed == b.embed, "只换色替换嵌入定位");
         }
     }
 

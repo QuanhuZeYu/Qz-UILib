@@ -1,6 +1,16 @@
 package club.heiqi.uilib.ui.scene.integration;
 
 import club.heiqi.uilib.testing.TestApplication;
+import club.heiqi.uilib.ui.reactive.ReactiveDomain;
+import club.heiqi.uilib.ui.reactive.Signal;
+import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
+import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.control.SceneTheme;
+import club.heiqi.uilib.ui.scene.host.ScenePageSession;
+import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
+import club.heiqi.uilib.ui.scene.control.SceneRichText;
+import club.heiqi.uilib.ui.scene.runtime.ScenePresentation;
+import club.heiqi.uilib.ui.scene.layout.SceneGeometryView;
 import club.heiqi.uilib.testing.TestResources;
 import club.heiqi.uilib.host.font.freetype.LwjglFontEngine;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.ShapedGlyph;
@@ -18,6 +28,10 @@ import com.ibm.icu.text.BreakIterator;
 import com.ibm.icu.util.ULocale;
 import club.heiqi.uilib.ui.scene.text.TextInput;
 import club.heiqi.uilib.ui.scene.text.TextContent;
+import club.heiqi.uilib.ui.scene.text.AttributedText;
+import club.heiqi.uilib.ui.scene.text.font.nativefont.FontEngine;
+import java.lang.reflect.Proxy;
+import java.lang.reflect.InvocationTargetException;
 import club.heiqi.uilib.ui.scene.text.TextLayout;
 import club.heiqi.uilib.ui.scene.text.TextPolicy;
 import club.heiqi.uilib.ui.scene.text.TextStyle;
@@ -604,6 +618,113 @@ public final class FontTextScenario extends TestApplication {
         System.out.println("PASS SHY hidden/adopted/trailing/UTF8/width/RTL/script/spacing/highlight/underline");
     }
 
+    /** 计数包在正式 FT/HB 边界，不以缓存字段或伪造字形作为期望值。 */
+    private static final class CountingEngine implements FontEngine {
+        int shapes, rasters;
+
+        @SuppressWarnings("unchecked")
+        private <T> T observe(Class<T> type, T delegate) {
+            return (T) Proxy.newProxyInstance(type.getClassLoader(), new Class<?>[] {type},
+                    (proxy, method, args) -> {
+                        if (method.getName().equals("shape")) shapes++;
+                        if (method.getName().equals("rasterize")) rasters++;
+                        try {
+                            Object result = method.invoke(delegate, args);
+                            return result instanceof FontFace ? observe(FontFace.class, (FontFace) result) : result;
+                        } catch (InvocationTargetException error) {
+                            throw error.getCause();
+                        }
+                    });
+        }
+
+        public FontSession openSession() {
+            return observe(FontSession.class, new LwjglFontEngine().openSession());
+        }
+    }
+
+    private void paintOnlyColors() throws Exception {
+        CountingEngine engine = new CountingEngine();
+        try (FontTextService fonts = new FontTextService(defaults, engine, 8, 8, 4096)) {
+            TextContent content = TextContent.richTags("<u>AB<color value=\"#ff336699\">CD</color>EF</u>");
+            TextStyle first = style.withColor(0xff336699), next = style.withColor(0x8033cc44);
+            AttributedText a = content.resolve(first).text, b = content.resolve(next).text;
+            TextLayout before = fonts.layout(a, 120, TextPolicy.NORMAL);
+            int shapes = engine.shapes, rasters = engine.rasters;
+            require(shapes > 0, "真实整形边界未命中");
+            TextLayout after = fonts.layout(b, 120, TextPolicy.NORMAL);
+            require(engine.shapes == shapes && engine.rasters == rasters, "富文本只改颜色/透明度重新整形或光栅");
+            require(before.width == after.width && before.height == after.height, "换色改变正文度量");
+            List<TextLayout.Glyph> oldGlyphs = glyphs(before), newGlyphs = glyphs(after);
+            require(oldGlyphs.size() == newGlyphs.size(), "换色改变字形数量");
+            for (int i = 0; i < newGlyphs.size(); i++) {
+                TextLayout.Glyph old = oldGlyphs.get(i), current = newGlyphs.get(i);
+                require(old.glyphId == current.glyphId && old.source.equals(current.source)
+                        && old.x == current.x && old.y == current.y && old.xAdvance == current.xAdvance
+                        && old.sourceStart == current.sourceStart && old.sourceEnd == current.sourceEnd,
+                        "换色未复用原字形定位/来源");
+                int color = current.logicalStart >= 2 && current.logicalStart < 4 ? first.color : next.color;
+                require(current.resolvedStyle.color == color, "继承色或显式色重绑定错误");
+            }
+            for (TextLayout.Line line : after.lines())
+                for (TextLayout.Decoration d : line.decorations())
+                    require(d.color == b.styleAt(d.logicalStart).color, "装饰仍保留旧色");
+            TextLayout oldAgain = fonts.layout(a, 120, TextPolicy.NORMAL);
+            require(glyphs(oldAgain).get(0).resolvedStyle.color == first.color
+                    && glyphs(before).get(0).resolvedStyle.color == first.color, "换色修改了有效旧计划");
+            fonts.layout(content.resolve(next.withEm(30)).text, 120, TextPolicy.NORMAL);
+            require(engine.shapes > shapes, "字号变化误用旧定位");
+            int resized = engine.shapes;
+            fonts.reload(defaults);
+            fonts.layout(b, 120, TextPolicy.NORMAL);
+            require(engine.shapes > resized, "字体换代保留旧定位");
+            System.out.println("PASS 真实富文本颜色/alpha重绑定、显式色、装饰、旧计划、字号/资源失效");
+        }
+    }
+
+    private void scenePaintOnlyColors() throws Exception {
+        CountingEngine engine = new CountingEngine();
+        try (FontTextService fonts = new FontTextService(defaults, engine, 8, 0, 0)) {
+            ReactiveDomain domain = ReactiveDomain.direct();
+            SoftwareSceneScenario.SoftwareHost host = new SoftwareSceneScenario.SoftwareHost();
+            host.width = 320; host.height = 180;
+            SceneRuntime[] runtime = new SceneRuntime[1];
+            SceneNode[] label = new SceneNode[1], rich = new SceneNode[1];
+            Signal<SceneTheme>[] theme = new Signal[1];
+            TextStyle first = style.withColor(0xff336699), next = style.withColor(0x8033cc44);
+            try (ScenePageSession page = ScenePageSession.open(domain, host, fonts, ctx -> {
+                runtime[0] = ctx.runtime();
+                theme[0] = domain.signal(SceneTheme.light().withTextStyle(first));
+                label[0] = new SceneNode().text("ABEF")
+                        .bind(NodeBinding.value(theme[0], (node, value) -> node.style(value.textStyle)));
+                rich[0] = SceneRichText.create(ctx,
+                        domain.signal(TextContent.richTags("<u>AB<color value=\"#ff336699\">CD</color>EF</u>")), theme[0], target -> {});
+                ctx.mount(new SceneNode().add(label[0]).add(rich[0]));
+            })) {
+                page.frame();
+                final ScenePresentation[] snapshots = new ScenePresentation[2];
+                domain.execute(() -> snapshots[0] = page.pipeline().current());
+                final ScenePresentation before = snapshots[0];
+                final long[] revisions = new long[2];
+                domain.execute(() -> { revisions[0] = runtime[0].measureRevision(); revisions[1] = runtime[0].geometryRevision(); });
+                int shapes = engine.shapes, rasters = engine.rasters;
+                domain.execute(() -> theme[0].set(theme[0].get().withTextStyle(next)));
+                page.frame();
+                domain.execute(() -> snapshots[1] = page.pipeline().current());
+                final ScenePresentation after = snapshots[1];
+                domain.execute(() -> require(runtime[0].measureRevision() == revisions[0]
+                        && runtime[0].geometryRevision() == revisions[1], "换色推进了测量/排列代际"));
+                require(engine.shapes == shapes && engine.rasters == rasters, "禁用字体LRU后换色重新整形/光栅");
+                for (SceneNode node : new SceneNode[] {label[0], rich[0]}) {
+                    SceneGeometryView.Entry old = before.geometry.get(node), current = after.geometry.get(node);
+                    require(old.box == current.box && old.clip == current.clip, "换色重新定位盒或裁剪");
+                    require(current.text.style.color == next.color && old.text.style.color == first.color, "当前绘制色未更新或旧计划被修改");
+                }
+                require(glyphs(after.geometry.get(rich[0]).text).stream().anyMatch(g -> g.logicalStart == 2 && g.resolvedStyle.color == first.color), "节点换色覆盖显式同色范围");
+                System.out.println("PASS scene纯颜色不量排/整形/光栅，禁用字体LRU、共同盒、显式同色和旧计划");
+            }
+        }
+    }
+
     public static void main(String[] args) throws Exception {
         new FontTextScenario().run(args);
     }
@@ -624,6 +745,8 @@ public final class FontTextScenario extends TestApplication {
 
     @Override
     protected void runTests() throws Exception {
+        scenario("颜色与透明度复用真实定位", this::paintOnlyColors);
+        scenario("场景颜色绘制失效与禁用字体缓存", this::scenePaintOnlyColors);
         scenario("混合Bidi与显式RTL", () -> bidi(service, style));
         scenario("Arabic最终行独立整形", () -> arabic(service, defaults.get(1)));
         scenario("Indic完整簇与Thai字典断行", () -> indicThai(service, defaults.get(2), defaults.get(3)));

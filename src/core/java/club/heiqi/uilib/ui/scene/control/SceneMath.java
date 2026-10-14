@@ -35,7 +35,7 @@ import java.util.Set;
 
 /** 独立公式控件；中性数学盒分配已有 SceneImage，绘制与输入仍归唯一 scene 管线。 */
 public final class SceneMath implements SceneControl {
-    /** 首期仅接受无焦点、无激活动作的图像子树；尺寸明确按数学 em 分配。 */
+    /** 接受无焦点、无激活动作的图像子树；尺寸明确按数学 em 分配。 */
     public static final class Embed {
         public final SceneNode node;
         public final MathEmbedMetrics metrics;
@@ -247,7 +247,8 @@ public final class SceneMath implements SceneControl {
         MathContent current = Objects.requireNonNull(content, "数学内容尚未绑定");
         if (batch.get() != text
                 || cachedContent != current
-                || !node.style().equals(cachedStyle)
+                || cachedStyle == null
+                || !node.style().withColor(cachedStyle.color).equals(cachedStyle)
                 || cachedInitialEquationNumber != initialEquationNumber) {
             cachedLayout =
                     engine.layout(
@@ -266,6 +267,13 @@ public final class SceneMath implements SceneControl {
                             cachedLayout.pieces,
                             presentationBounds);
             paintChunks = chunks(cachedLayout, current.source, node.style(), presentationBounds);
+        } else if (node.style().color != cachedStyle.color) {
+            // 颜色只刷新不可变载荷与投影；不进入数学盒、字体整形或伸缩构建。
+            cachedLayout = cachedLayout.withColor(node.style().color);
+            cachedStyle = node.style();
+            cachedText = project(cachedLayout, current.source, cachedStyle,
+                    cachedLayout.pieces, presentationBounds);
+            paintChunks = chunks(cachedLayout, current.source, cachedStyle, presentationBounds);
         }
         return cachedLayout;
     }

@@ -663,6 +663,7 @@ public final class ImageServiceScenario extends TestApplication {
                     host.height = 60;
                     SceneNode[] image = {null}, placeholder = {null};
                     Signal<Integer>[] tint = new Signal[1], clicks = new Signal[1];
+                    Signal<club.heiqi.uilib.ui.scene.text.TextStyle>[] textStyle = new Signal[1];
                     Signal<ImageSource>[] source = new Signal[1];
                     ScenePageSession page =
                             ScenePageSession.open(
@@ -671,6 +672,7 @@ public final class ImageServiceScenario extends TestApplication {
                                     host,
                                     c -> {
                                         tint[0] = domain.signal(0x8042A563);
+                                        textStyle[0] = domain.signal(new club.heiqi.uilib.ui.scene.text.TextStyle("default", 18, 0xff224466));
                                         clicks[0] = domain.signal(0);
                                         source[0] =
                                                 domain.signal(ImageSource.bitmap(pixels(16, 16)));
@@ -690,7 +692,7 @@ public final class ImageServiceScenario extends TestApplication {
                                                                                 clicks[0].get()
                                                                                         + 1));
                                         placeholder[0]
-                                                .add(new SceneNode().text("同代备用文字"))
+                                                .add(new SceneNode().text("同代备用文字").bind(club.heiqi.uilib.ui.scene.runtime.NodeBinding.value(textStyle[0], SceneNode::style)))
                                                 .add(
                                                         new SceneNode()
                                                                 .background(0xffabcdef)
@@ -747,6 +749,21 @@ public final class ImageServiceScenario extends TestApplication {
                                     require(
                                             page.pipeline().current().generation == generation[0],
                                             "稳定帧重捕获整树"));
+                    long[] measure = {0};
+                    LayoutBox[] imageBox = {null};
+                    domain.execute(() -> {
+                        measure[0] = page.runtime().measureRevision();
+                        imageBox[0] = page.pipeline().current().geometry.get(image[0]).box;
+                        textStyle[0].set(textStyle[0].get().withColor(0x80664422));
+                    });
+                    page.frame();
+                    PaintCommand colored = host.last.commands().stream().filter(cmd -> cmd.kind == PaintCommand.Kind.IMAGE).findFirst().get();
+                    require(colored.pendingPaint.commands().stream().anyMatch(cmd -> cmd.kind == PaintCommand.Kind.TEXT && cmd.text.style.color == 0x80664422)
+                            && old.pendingPaint.commands().stream().anyMatch(cmd -> cmd.kind == PaintCommand.Kind.TEXT && cmd.text.style.color == 0xff224466),
+                            "隐藏READY备用文字换色未刷新或旧计划被修改");
+                    domain.execute(() -> require(page.runtime().measureRevision() == measure[0]
+                            && page.pipeline().current().geometry.get(image[0]).box == imageBox[0]
+                            && SceneImage.state(image[0]).get().content.identity == identity[0], "备用换色改变主几何或图像身份"));
                     s.presentation(identity[0], true, null);
                     page.frame();
                     require(

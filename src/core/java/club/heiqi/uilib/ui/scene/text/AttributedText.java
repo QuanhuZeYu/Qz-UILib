@@ -1,6 +1,7 @@
 package club.heiqi.uilib.ui.scene.text;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
@@ -110,6 +111,83 @@ public final class AttributedText {
 
     public List<TextLayout.Diagnostic> diagnostics() {
         return diagnostics;
+    }
+
+    /** 完整定位身份排除前景色；供已有请求缓存复用，不改变本声明的身份相等语义。 */
+    public PositionKey positionKey() { return new PositionKey(this); }
+
+    /** 值键包含所有来源事实；颜色归当前声明，不能靠旧颜色数值猜测继承。 */
+    public static final class PositionKey {
+        final List<Object> facts = new ArrayList<Object>();
+
+        private PositionKey(AttributedText text) {
+            facts.add(text.originalText);
+            facts.add(new InputKey(text.input));
+            facts.add(text.baseStyle.withColor(0));
+            facts.add(text.trailingStyle.withColor(0));
+            List<Object> ranges = new ArrayList<Object>();
+            TextStyle previous = null;
+            for (StyleSpan original : text.spans()) {
+                StyleSpan s = new StyleSpan(original.logicalStart, original.logicalEnd, original.style.withColor(0));
+                if (s.style.equals(previous)) ranges.set(ranges.size() - 1, s.logicalEnd);
+                else {
+                    ranges.add(s.style);
+                    ranges.add(s.logicalEnd);
+                    previous = s.style;
+                }
+            }
+            facts.add(ranges);
+            for (TextLayout.Diagnostic d : text.diagnostics())
+                facts.add(Arrays.asList(d.kind, d.sourceStart, d.sourceEnd, d.message));
+            for (InlineBox b : text.inlineBoxes())
+                facts.add(Arrays.asList(b.offset, b.width, b.height, b.baseline));
+        }
+
+        @Override public boolean equals(Object other) {
+            return other instanceof PositionKey && facts.equals(((PositionKey) other).facts);
+        }
+        @Override public int hashCode() { return facts.hashCode(); }
+    }
+
+    /** 来源用紧凑值快照，不能把同文的 byte/UTF16 或语法范围混为一项。 */
+    private static final class InputKey {
+        final TextInput input;
+        final int[] offsets, segments, invalid;
+
+        InputKey(TextInput input) {
+            this.input = input;
+            int length = input.text.length();
+            offsets = new int[length * 3 + 1];
+            for (int i = 0; i < length; i++) {
+                offsets[i * 3] = input.sourceOffset(i);
+                offsets[i * 3 + 1] = input.sourceStart(i);
+                offsets[i * 3 + 2] = input.sourceEnd(i);
+            }
+            offsets[length * 3] = input.sourceOffset(length);
+            segments = new int[input.sourceSegments().size() * 5];
+            int i = 0;
+            for (TextInput.SourceSegment s : input.sourceSegments()) {
+                segments[i++] = s.logicalStart; segments[i++] = s.logicalEnd;
+                segments[i++] = s.sourceStart; segments[i++] = s.sourceEnd;
+                segments[i++] = s.syntax ? 1 : 0;
+            }
+            invalid = new int[input.invalidRanges().size() * 2];
+            i = 0;
+            for (TextInput.InvalidRange s : input.invalidRanges()) {
+                invalid[i++] = s.start; invalid[i++] = s.end;
+            }
+        }
+        @Override public boolean equals(Object other) {
+            if (!(other instanceof InputKey)) return false;
+            InputKey k = (InputKey) other;
+            return input.sourceUnit == k.input.sourceUnit && input.text.equals(k.input.text)
+                    && Arrays.equals(offsets, k.offsets) && Arrays.equals(segments, k.segments)
+                    && Arrays.equals(invalid, k.invalid);
+        }
+        @Override public int hashCode() {
+            return Objects.hash(input.text, input.sourceUnit, Arrays.hashCode(offsets),
+                    Arrays.hashCode(segments), Arrays.hashCode(invalid));
+        }
     }
 
     public TextStyle styleAt(int offset) {

@@ -36,6 +36,8 @@ import club.heiqi.uilib.ui.scene.paint.PaintCommand;
 import club.heiqi.uilib.ui.scene.paint.PaintPlan;
 import club.heiqi.uilib.ui.scene.paint.PaintPlanBuilder;
 import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
+import club.heiqi.uilib.ui.scene.text.TextStyle;
+import club.heiqi.uilib.ui.scene.text.TextLayout;
 import club.heiqi.uilib.ui.scene.text.font.FontTextService;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -51,6 +53,7 @@ public final class LayerInputScenario extends TestApplication {
     private FontTextService fonts;
     protected void setup() throws Exception { fonts = own(new FontTextService(new LwjglFontEngine())); }
     protected void runTests() throws Exception {
+        scenario("所属层首次焦点颜色在本帧结算", this::focusColorAtFirstLayout);
         scenario("真实所属Layer按钮和编辑完整业务链路", this::inputLoop);
         scenario("PASSIVE祖先传播指针透明且Tab保逻辑顺序", this::passiveAndOrder);
         scenario("modal盒外所属点击内层返回及结束", this::modalInput);
@@ -83,6 +86,32 @@ public final class LayerInputScenario extends TestApplication {
         page.pointer(ScenePointerEvent.down(0, xy[0], xy[1]));
         page.pointer(ScenePointerEvent.up(0, xy[0], xy[1])); page.frame();
     }
+    private void focusColorAtFirstLayout() {
+        Host host = new Host(); ReactiveDomain domain = ReactiveDomain.direct();
+        SceneNode[] label = new SceneNode[1];
+        try (ScenePageSession page = ScenePageSession.open(domain, host, fonts, ctx -> {
+            label[0] = new SceneNode().text("Focus").focusable(true).size(Size.fixed(80), Size.fixed(20));
+            TextStyle base = new TextStyle("default", 18, 0xffff0000);
+            label[0].bind(NodeBinding.value(domain.computed(ctx.scope(), () -> base.withColor(
+                    ctx.runtime().focusRouter().focused().get() == label[0] ? 0xff00ff00 : 0xffff0000)), SceneNode::style));
+            SceneNode layer = SceneLayer.create(ctx, domain.signal(new SceneLayer.Policy(7, SceneLayer.Participation.INTERACTIVE)))
+                    .modal(true).initialFocus(label[0]).add(label[0]);
+            ctx.mount(new SceneNode().size(Size.fixed(80), Size.fixed(20)).add(layer));
+        })) {
+            for (int frame = 0; frame < 2; frame++) {
+                page.frame();
+                domain.execute(() -> {
+                    require(page.runtime().focusRouter().focused().get() == label[0], "所属层首帧未选择初始焦点");
+                    TextLayout text = geometry(page).get(label[0]).text;
+                    require(text.style.color == 0xff00ff00, "量排后的焦点绑定没有更新当前绘制色");
+                    require(host.paint.commands().stream().anyMatch(c -> c.kind == PaintCommand.Kind.TEXT
+                            && c.text.lines().stream().flatMap(line -> line.glyphs().stream())
+                                    .anyMatch(g -> g.resolvedStyle.color == 0xff00ff00)), "当前PaintPlan仍保留未聚焦色");
+                });
+            }
+        }
+    }
+
     private void activeModalBranchOrder() {
         Host host = new Host(); ReactiveDomain domain = ReactiveDomain.direct();
         SceneNode[] nested = new SceneNode[1], current = new SceneNode[1], nestedButton = new SceneNode[1], currentButton = new SceneNode[1];

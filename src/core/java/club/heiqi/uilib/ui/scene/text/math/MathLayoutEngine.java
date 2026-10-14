@@ -102,7 +102,7 @@ public final class MathLayoutEngine {
                 Collections.singletonList(
                         MathLayout.Entry.text(
                                 new MathLayout.TextPiece(
-                                        source, 0, 0, 0, content.source.length()))),
+                                        source, 0, 0, 0, content.source.length())).bindColor(true)),
                 diagnostics,
                 true,
                 source,
@@ -131,6 +131,8 @@ public final class MathLayoutEngine {
         final float scriptPercent, scriptScriptPercent;
         int nextTag = 1;
         final Node rootBody;
+        // 绑定事实随 AST 调用作用域传播；宏来源区间可能重叠，不能从区间或数值反猜。
+        boolean inheritedColor = true;
 
         Session(
                 TextStyle base,
@@ -213,6 +215,43 @@ public final class MathLayoutEngine {
         }
 
         MathBox box(Node node, MathLayoutContext context) {
+            boolean parentColor = inheritedColor;
+            if (node.kind == MathContent.Kind.COLOR
+                    && !currentColor(((MathContent.ColorSpec) node.payload).css))
+                inheritedColor = false;
+            try {
+                MathBox value = boxValue(node, context);
+                int ownRule = 0;
+                for (int i = 0; i < value.entries.size(); i++) {
+                    MathLayout.Entry entry = value.entries.get(i);
+                    if (entry.colorBound) continue;
+                    boolean inherited = inheritedColor;
+                    if (entry.rule != null && (node.kind == MathContent.Kind.BOX
+                            || node.kind == MathContent.Kind.ENCLOSE
+                                    && (node.payload instanceof MathContent.BoxSpec
+                                            || node.value.equals("\\fbox")
+                                            || node.value.equals("\\boxed")))) {
+                        MathContent.BoxSpec spec = node.payload instanceof MathContent.BoxSpec
+                                ? (MathContent.BoxSpec) node.payload : null;
+                        String css = spec == null ? "currentColor"
+                                : spec.background != null && ownRule == 0
+                                        ? spec.background : spec.border;
+                        ownRule++;
+                        inherited &= currentColor(css);
+                    }
+                    value.entries.set(i, entry.bindColor(inherited));
+                }
+                return value;
+            } finally {
+                inheritedColor = parentColor;
+            }
+        }
+
+        private static boolean currentColor(String css) {
+            return css != null && css.trim().equalsIgnoreCase("currentColor");
+        }
+
+        private MathBox boxValue(Node node, MathLayoutContext context) {
             try {
                 switch (node.kind) {
                     case ROW:
@@ -480,7 +519,9 @@ public final class MathLayoutEngine {
                 value.ascent = baseline;
                 value.descent = Math.max(0, layout.advanceHeight - baseline);
             }
-            value.piece(new MathLayout.TextPiece(layout, -left, -baseline, node.start, node.end));
+            value.entry(MathLayout.Entry.text(
+                    new MathLayout.TextPiece(layout, -left, -baseline, node.start, node.end))
+                    .bindColor(inheritedColor && node.kind != MathContent.Kind.UNSUPPORTED));
             if (mathematical) value.italic = font(context, node).italicCorrection(layout);
             return value;
         }
@@ -747,12 +788,16 @@ public final class MathLayoutEngine {
                                 || child.kind == MathContent.Kind.SIZE)
                         && child.first != null
                         && child.first.kind == MathContent.Kind.ROW) {
-                    collectRow(
-                            child.first.children,
-                            MathDecorations.scope(this, child, context),
-                            fenced,
-                            true,
-                            items);
+                    boolean parentColor = inheritedColor;
+                    if (child.kind == MathContent.Kind.COLOR
+                            && !currentColor(((MathContent.ColorSpec) child.payload).css))
+                        inheritedColor = false;
+                    try {
+                        collectRow(child.first.children, MathDecorations.scope(this, child, context),
+                                fenced, true, items);
+                    } finally {
+                        inheritedColor = parentColor;
+                    }
                     continue;
                 }
                 if (textRun(child, context)) {

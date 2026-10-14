@@ -51,6 +51,27 @@ public final class SceneGeometry implements SceneGeometryView {
         presentation = Collections.unmodifiableMap(relation);
     }
 
+    /** 颜色更新只替换文字载荷；盒、裁剪、滚动、层序和范围仍引用同一批定位事实。 */
+    SceneGeometry withText(Map<SceneNode, club.heiqi.uilib.ui.scene.text.TextLayout> text) {
+        if (text.isEmpty()) return this;
+        Map<Entry, Entry> replaced = new IdentityHashMap<>();
+        List<Group> nextGroups = new ArrayList<>();
+        for (Group group : groups) {
+            List<Entry> next = new ArrayList<>();
+            for (Entry entry : group.entries) {
+                Entry updated = text.containsKey(entry.node)
+                        ? new Entry(entry.node, entry.box, entry.clip, text.get(entry.node),
+                                entry.scrollOffset, entry.scrollMaximum) : entry;
+                replaced.put(entry, updated);
+                next.add(updated);
+            }
+            nextGroups.add(new Group(group.root, group.layer, group.scope, group.policy, next));
+        }
+        List<Entry> source = new ArrayList<>();
+        for (Entry entry : sourceEntries) source.add(replaced.get(entry));
+        return new SceneGeometry(nextGroups, viewport, sources, modal, source);
+    }
+
     @Override public List<Group> groups() { return groups; }
     @Override public List<Entry> sourceOrdered() { return sourceEntries; }
     @Override public SceneNode layerBoundary(SceneNode node) {

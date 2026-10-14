@@ -28,6 +28,32 @@ public final class NativeFontVisualScenario extends TestApplication {
 
     private FontSession service;
 
+    /** 软件出口仍为 premult RGBA，主 owned mono 不因导出变成四通道缓存。 */
+    private static void checkOwnedRows(GlyphBitmap bitmap) {
+        int bytes = bitmap.width * bitmap.height * (bitmap.color ? 4 : 1);
+        require(bitmap.byteSize() == bytes && bitmap.singleChannel() != bitmap.color,
+                "FT owned mono/color 格式错误");
+        byte[] expected = bitmap.pixels();
+        ByteBuffer rows = ByteBuffer.allocate(expected.length + 2);
+        rows.put((byte) 37);
+        for (int y = 0; y < bitmap.height; y++) bitmap.copyRgba(rows, y, 1);
+        rows.put((byte) 91);
+        require(rows.position() == expected.length + 2 && rows.get(0) == 37
+                && rows.get(expected.length + 1) == 91, "逐行 RGBA 导出越界");
+        for (int i = 0; i < expected.length; i++)
+            require(rows.get(i + 1) == expected[i], "逐行 RGBA 导出丢行");
+        ByteBuffer alpha = ByteBuffer.allocate(bitmap.width * bitmap.height);
+        for (int y = 0; y < bitmap.height; y++) bitmap.copyCoverage(alpha, y, 1);
+        for (int i = 0; i < alpha.capacity(); i++)
+            require(alpha.get(i) == expected[i * 4 + 3], "coverage 导出不是 alpha");
+        try {
+            bitmap.copyRgba(ByteBuffer.allocate(0), bitmap.height, 1);
+            throw new AssertionError("越界行被接受");
+        } catch (IndexOutOfBoundsException expectedFailure) {
+        }
+        require(bitmap.byteSize() == bytes, "导出改变 owned 存储成本");
+    }
+
     @Override
     protected void setup() {
         service = own(new LwjglFontEngine().openSession());
@@ -35,6 +61,19 @@ public final class NativeFontVisualScenario extends TestApplication {
 
     @Override
     protected void runTests() throws Exception {
+        scenario("既有 RGBA 输入不按 mono 重解释", () -> {
+            byte[] rgba = {11, 22, 33, 44, 55, 66, 77, 88};
+            GlyphBitmap bitmap = new GlyphBitmap(1, 2, 0, 0, 1, false, rgba);
+            rgba[0] = 0;
+            require(!bitmap.singleChannel() && bitmap.byteSize() == 8 && bitmap.pixels()[0] == 11,
+                    "公开 RGBA 构造语义或防御复制被改变");
+            ByteBuffer row = ByteBuffer.allocate(4);
+            bitmap.copyRgba(row, 1, 1);
+            require(row.get(0) == 55 && row.get(3) == 88, "RGBA 指定行复制错误");
+            ByteBuffer coverage = ByteBuffer.allocate(2);
+            bitmap.copyCoverage(coverage, 0, 2);
+            require(coverage.get(0) == 44 && coverage.get(1) == 88, "RGBA mono coverage 应取 alpha");
+        });
         String[] args = arguments();
         File fonts = new File(args[0]);
         File output = TestResources.outputDirectory(args, 1, args[1]).toFile();
@@ -81,6 +120,7 @@ public final class NativeFontVisualScenario extends TestApplication {
                             if (glyph.glyphId == 0)
                                 throw new AssertionError("真实字形缺失：" + faces[index]);
                             GlyphBitmap bitmap = face.rasterize(glyph.glyphId);
+                            checkOwnedRows(bitmap);
                             if (bitmap.width > 0 && bitmap.height > 0) {
                                 BufferedImage pixels =
                                         new BufferedImage(

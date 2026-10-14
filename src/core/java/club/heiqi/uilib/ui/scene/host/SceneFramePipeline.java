@@ -337,6 +337,11 @@ public final class SceneFramePipeline implements AutoCloseable {
             runtime.preparePresentation();
             geometryDirty = arrangedRevision[0] != runtime.geometryRevision();
         } while (geometryDirty);
+        if (presentation == null || revision != runtime.revision() || prepared != presentation.geometry) {
+            SceneGeometry located = prepared;
+            prepared = runtime.domain().readOnly(() -> layout.refreshTextStyles(located));
+            runtime.prepareInputGeometry(prepared);
+        }
         final SceneGeometry geometry = prepared;
         if (presentation == null
                 || revision != runtime.revision()

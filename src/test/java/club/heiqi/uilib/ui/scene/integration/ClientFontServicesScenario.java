@@ -8,12 +8,23 @@ import club.heiqi.uilib.testing.GlfwTestEnvironment.Profile;
 import club.heiqi.uilib.host.font.IsolatedFontEngine;
 import club.heiqi.uilib.host.client.gl.Lwjgl3GlApi;
 import club.heiqi.uilib.host.client.gl.GlProgramProvider;
+import club.heiqi.uilib.host.client.gl.GlApi;
+import club.heiqi.uilib.host.client.gl.GlGlyphAtlas;
+import club.heiqi.uilib.ui.scene.text.font.FontTextService;
+import club.heiqi.uilib.ui.scene.text.font.glyph.AsyncGlyphRasterizer;
+import club.heiqi.uilib.ui.scene.text.font.nativefont.FontEngine;
+import club.heiqi.uilib.ui.scene.text.font.nativefont.FontSession;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Proxy;
+import java.util.ArrayList;
+import java.util.List;
 
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
+import java.util.Collections;
 import javax.imageio.ImageIO;
 import org.lwjgl.system.MemoryUtil;
 import club.heiqi.uilib.host.client.font.ClientFontServices;
@@ -220,6 +231,7 @@ public final class ClientFontServicesScenario extends TestApplication {
         scenario("点击滚动与动态resize", this::inputAndResize);
         scenario("字体来源退休与旧glyph重开", this::reloadSources);
         scenario("screen关闭保留sharedowner", this::screenOwnership);
+        scenario("共享资源关闭失败仍清理并保留首错", this::closeFailures);
         scenario("应用退出与幂等owner关闭", this::closeOwner);
     }
 
@@ -1483,6 +1495,106 @@ public final class ClientFontServicesScenario extends TestApplication {
         try (GlPaintPlanRenderer.Prepared prepared =
                 shared.prepare(white, new LayoutBox(0, 0, W, H), owner.settings().upload)) {
             prepared.render(FramebufferCoordinates.orthographic(W, H), H, false);
+        }
+    }
+
+    private void closeFailures() throws Exception {
+        closeFailure(new IllegalStateException("首个 renderer 关闭失败"));
+        closeFailure(new AssertionError("首个 renderer 关闭 Error"));
+    }
+
+    /** 只在正式 GL/native 边界注入失败，仍创建和关闭真实 renderer、字体会话及 worker。 */
+    private void closeFailure(Throwable first) throws Exception {
+        RuntimeException second = new IllegalStateException("后续 renderer 关闭失败");
+        RuntimeException nativeFailure = new IllegalStateException("native 会话关闭失败");
+        Thread ownerThread = Thread.currentThread();
+        boolean[] armed = {false};
+        int[] rendererCloses = {0}, nativeCloses = {0};
+        GlApi actualGl = new Lwjgl3GlApi();
+        List<Integer> programs = new ArrayList<>(), buffers = new ArrayList<>(), textures = new ArrayList<>();
+        GlApi failingGl =
+                (GlApi) Proxy.newProxyInstance(
+                        GlApi.class.getClassLoader(), new Class<?>[] {GlApi.class},
+                        (proxy, method, args) -> {
+                            Object result;
+                            try {
+                                result = method.invoke(actualGl, args);
+                            } catch (InvocationTargetException failure) {
+                                throw failure.getCause();
+                            }
+                            if (method.getName().equals("glCreateProgram")) programs.add((Integer) result);
+                            if (method.getName().equals("glGenBuffers")) buffers.add((Integer) result);
+                            if (method.getName().equals("glGenTextures")) textures.add((Integer) result);
+                            if (armed[0] && method.getName().equals("glDeleteVertexArrays"))
+                                throw ++rendererCloses[0] == 1 ? first : second;
+                            return result;
+                        });
+        FontEngine failingEngine = () -> {
+            FontSession actual = IsolatedFontEngine.shared().openSession();
+            return (FontSession) Proxy.newProxyInstance(
+                    FontSession.class.getClassLoader(), new Class<?>[] {FontSession.class},
+                    (proxy, method, args) -> {
+                        Object result;
+                        try {
+                            result = method.invoke(actual, args);
+                        } catch (InvocationTargetException failure) {
+                            throw failure.getCause();
+                        }
+                        if (method.getName().equals("close") && Thread.currentThread() == ownerThread) {
+                            nativeCloses[0]++;
+                            if (armed[0]) throw nativeFailure;
+                        }
+                        return result;
+                    });
+        };
+        ClientFontServices failingOwner = new ClientFontServices(
+                getClass().getClassLoader(), 1, ClientFontServices.Settings.defaults(),
+                failingEngine, failingGl, GlProgramProvider.NONE);
+        List<GlPaintPlanRenderer> consumers = new ArrayList<>();
+        try {
+            consumers.add(failingOwner.createPlanRenderer());
+            consumers.add(failingOwner.createPlanRenderer());
+            GlGlyphAtlas atlas = failingOwner.atlas();
+            FontTextService fonts = failingOwner.fonts();
+            AsyncGlyphRasterizer worker = failingOwner.rasterizer();
+            TextLayout text = fonts.layout("x", new TextStyle("default", 20, -1), 100);
+            worker.request(GlyphKey.of(text.lines().get(0).glyphs().get(0)));
+            try (GlGlyphAtlas.Frame frame = atlas.beginFrame(Collections.<GlyphKey>emptyList(), false, GlGlyphAtlas.SamplingView.STRAIGHT_RGBA, true)) {
+                frame.prepare(null, new GlGlyphAtlas.UploadBudget(4096, 1000000000, 8));
+            }
+            require(!programs.isEmpty() && !buffers.isEmpty() && !textures.isEmpty(), "真实所属GL资源未创建");
+            require(worker.stats().started, "失败清理未覆盖实际 worker");
+            armed[0] = true;
+            Throwable caught = null;
+            try {
+                failingOwner.close();
+            } catch (RuntimeException | Error failure) {
+                caught = failure;
+            }
+            require(caught == first, "后续 native 错误替换了首个关闭异常");
+            for (int program : programs) require(!glIsProgram(program), "单次owner关闭遗漏shader program");
+            for (int buffer : buffers) require(!glIsBuffer(buffer), "单次owner关闭遗漏buffer");
+            for (int texture : textures) require(!glIsTexture(texture), "单次owner关闭遗漏atlas texture");
+            require(Arrays.equals(first.getSuppressed(), new Throwable[] {second, nativeFailure}),
+                    "后续 renderer/native 关闭错误未依序保留");
+            require(rendererCloses[0] == consumers.size() && nativeCloses[0] == 1,
+                    "单项失败中断了其余所属关闭");
+            require(worker.stats().closed && failingOwner.awaitRasterizerClose(10000),
+                    "native 关闭失败后 worker 未结束");
+            boolean atlasClosed = false, fontsClosed = false;
+            try { atlas.stats(); } catch (IllegalStateException expected) { atlasClosed = true; }
+            try { fonts.layout("x", new TextStyle("default", 20, -1), 100); }
+            catch (IllegalStateException expected) { fontsClosed = true; }
+            require(atlasClosed && fontsClosed, "失败后共享 atlas/字体仍可使用");
+            failingOwner.close();
+            require(rendererCloses[0] == consumers.size() && nativeCloses[0] == 1,
+                    "重复关闭重新执行失败资源");
+        } finally {
+            armed[0] = false;
+            failingOwner.close();
+            // 失败断言也释放测试持有的资源；正式断言在此之前已确认单次owner关闭完成全部删除。
+            for (GlPaintPlanRenderer consumer : consumers) consumer.close();
+            require(failingOwner.awaitRasterizerClose(10000), "失败场景 worker 未清理");
         }
     }
 

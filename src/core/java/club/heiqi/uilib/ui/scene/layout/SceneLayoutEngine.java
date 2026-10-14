@@ -18,7 +18,9 @@ public final class SceneLayoutEngine {
     private final java.util.function.ToIntFunction<SceneNode> scrollOffsets;
     private final Map<SceneNode, Map<Long, int[]>> measuredCache = new IdentityHashMap<>();
     private final Map<SceneNode, Map<Integer, TextLayout>> textCache = new IdentityHashMap<>();
+    private final Map<SceneNode, club.heiqi.uilib.ui.scene.text.TextStyle> textCacheStyles = new IdentityHashMap<>();
     private final Map<SceneNode, BatchTextMeasurer> batchText = new IdentityHashMap<>();
+    private final Map<SceneNode, club.heiqi.uilib.ui.scene.text.TextStyle> presentedStyles = new IdentityHashMap<>();
     // 子测量入口仅在当批保持身份，文字缓存的代际和生命周期独立。
     private final Map<SceneNode, SceneChildMeasurer> batchChildren = new IdentityHashMap<>();
     private final Set<BatchTextMeasurer> activeText =
@@ -97,6 +99,7 @@ public final class SceneLayoutEngine {
         try {
             measuredCache.clear();
             textCache.clear();
+            textCacheStyles.clear();
             List<SceneGeometryView.Entry> entries = new ArrayList<>();
             for (SceneNode root : roots) {
                 if (layerPolicy(root) != null) throw new IllegalArgumentException("所属层不能作为无来源根: node=" + root.id());
@@ -112,7 +115,56 @@ public final class SceneLayoutEngine {
             for (SceneNode root : roots) projectLayers(root, viewport, entries, index, sources);
             // 本次不再测量的节点不能由缓存保活；保留同树隐藏节点的声明身份。
             batchText.keySet().retainAll(measuredCache.keySet());
-            return ScenePresentationOrder.publish(roots, entries, viewport, sources);
+            SceneGeometry geometry = ScenePresentationOrder.publish(roots, entries, viewport, sources);
+            presentedStyles.clear();
+            for (SceneGeometryView.Entry entry : geometry.ordered()) presentedStyles.put(entry.node, entry.node.style());
+            return geometry;
+        } finally {
+            endTextRequests();
+        }
+    }
+
+    /** 纯绘制投影只能读取定位阶段已消费的子度量，不得偷偷触发新测量。 */
+    private SceneChildMeasurer positionedChildrenFor(SceneNode parent) {
+        SceneChildMeasurer measured = childrenFor(parent);
+        return new SceneChildMeasurer() {
+            public List<SceneNode> flowChildren() { return measured.flowChildren(); }
+            public MeasuredSize measureChild(SceneNode child, Constraints constraints) {
+                if (child.parent() != parent || layerPolicy(child) != null)
+                    throw new IllegalArgumentException("纯绘制只能读取直属普通流子内容度量");
+                Map<Long, int[]> cached = measuredCache.get(child);
+                long key = ((long) constraints.availableWidth << 32) | (constraints.availableHeight & 0xffffffffL);
+                int[] size = cached == null ? null : cached.get(key);
+                if (size == null) throw new IllegalStateException("纯绘制投影请求了未定位的子度量: node=" + child.id());
+                return new MeasuredSize(size[0], size[1]);
+            }
+        };
+    }
+
+    /** 纯前景色变化沿正式内容投影刷新绘制样式，不调用控件 measure/arrange。 */
+    public SceneGeometry refreshTextStyles(SceneGeometry geometry) {
+        Map<SceneNode, TextLayout> updated = new IdentityHashMap<>();
+        try {
+            for (SceneGeometryView.Entry entry : geometry.sourceOrdered()) {
+                SceneNode node = entry.node;
+                club.heiqi.uilib.ui.scene.text.TextStyle previous = presentedStyles.get(node);
+                if (node.style().equals(previous)) continue;
+                if (previous == null || !previous.withColor(node.style().color).equals(node.style()))
+                    throw new IllegalStateException("文字几何样式变化必须先重新布局: node=" + node.id());
+                textCache.remove(node);
+                int innerWidth = Math.max(0, entry.box.width - node.padding() * 2);
+                int innerHeight = Math.max(0, entry.box.height - node.padding() * 2);
+                TextLayout lines = node.control() == null
+                        ? textFor(node).layout(node.text(), node.style(), innerWidth, node.textPolicy())
+                        : node.control().layoutText(node, textFor(node), innerWidth, positionedChildrenFor(node));
+                if (node.control() != null)
+                    lines = node.control().presentText(node, lines, innerWidth, innerHeight,
+                            textFor(node), positionedChildrenFor(node));
+                updated.put(node, lines);
+            }
+            SceneGeometry refreshed = geometry.withText(updated);
+            for (SceneNode node : updated.keySet()) presentedStyles.put(node, node.style());
+            return refreshed;
         } finally {
             endTextRequests();
         }
@@ -167,6 +219,11 @@ public final class SceneLayoutEngine {
     }
 
     private TextLayout textLayout(SceneNode node, int width) {
+        // 备用子树不在主几何内，捕获时也必须消费当前绘制样式。
+        if (!node.style().equals(textCacheStyles.get(node))) {
+            textCache.remove(node);
+            textCacheStyles.put(node, node.style());
+        }
         return textCache
                 .computeIfAbsent(node, key -> new HashMap<>())
                 .computeIfAbsent(

@@ -304,8 +304,13 @@ public final class SceneNode {
 
     public SceneNode style(TextStyle style) {
         writable();
-        this.style = Objects.requireNonNull(style, "style");
-        changed();
+        Objects.requireNonNull(style, "style");
+        TextStyle previous = this.style;
+        if (previous.equals(style)) return this;
+        this.style = style;
+        if (runtime != null && previous.withColor(style.color).equals(style))
+            runtime.invalidatePaint();
+        else changed();
         return this;
     }
 

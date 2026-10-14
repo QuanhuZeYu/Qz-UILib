@@ -10,11 +10,13 @@ import club.heiqi.uilib.ui.scene.text.font.nativefont.GlyphBitmap;
 final class FreeTypeBitmap {
     static GlyphBitmap copy(FT_Bitmap bitmap, float bearingX, float bearingY, float pixelScale) {
         int width = bitmap.width(), height = bitmap.rows();
-        byte[] rgba = new byte[Math.multiplyExact(Math.multiplyExact(width, height), 4)];
         int mode = bitmap.pixel_mode() & 255;
         boolean color = mode == FreeType.FT_PIXEL_MODE_BGRA;
+        byte[] pixels = new byte[Math.multiplyExact(Math.multiplyExact(width, height), color ? 4 : 1)];
         if (width == 0 || height == 0)
-            return new GlyphBitmap(width, height, bearingX, bearingY, pixelScale, color, rgba);
+            return color
+                    ? new GlyphBitmap(width, height, bearingX, bearingY, pixelScale, true, pixels)
+                    : GlyphBitmap.coverage(width, height, bearingX, bearingY, pixelScale, pixels);
         if (!color && mode != FreeType.FT_PIXEL_MODE_GRAY && mode != FreeType.FT_PIXEL_MODE_MONO) {
             throw new IllegalStateException("Unsupported FreeType bitmap pixel mode: " + mode);
         }
@@ -34,13 +36,13 @@ final class FreeTypeBitmap {
             // FT 的 buffer 指向第一行，pitch 的符号决定下一行地址；不要假定正 pitch。
             long row = address + (long) y * bitmap.pitch();
             for (int x = 0; x < width; x++) {
-                int dest = (y * width + x) * 4;
+                int dest = (y * width + x) * (color ? 4 : 1);
                 if (color) {
                     long src = row + (long) x * 4;
-                    rgba[dest] = MemoryUtil.memGetByte(src + 2);
-                    rgba[dest + 1] = MemoryUtil.memGetByte(src + 1);
-                    rgba[dest + 2] = MemoryUtil.memGetByte(src);
-                    rgba[dest + 3] = MemoryUtil.memGetByte(src + 3);
+                    pixels[dest] = MemoryUtil.memGetByte(src + 2);
+                    pixels[dest + 1] = MemoryUtil.memGetByte(src + 1);
+                    pixels[dest + 2] = MemoryUtil.memGetByte(src);
+                    pixels[dest + 3] = MemoryUtil.memGetByte(src + 3);
                 } else {
                     int alpha =
                             mode == FreeType.FT_PIXEL_MODE_MONO
@@ -53,10 +55,12 @@ final class FreeTypeBitmap {
                                             (MemoryUtil.memGetByte(row + x) & 255)
                                                     * 255
                                                     / (grayLevels - 1));
-                    rgba[dest] = rgba[dest + 1] = rgba[dest + 2] = rgba[dest + 3] = (byte) alpha;
+                    pixels[dest] = (byte) alpha;
                 }
             }
         }
-        return new GlyphBitmap(width, height, bearingX, bearingY, pixelScale, color, rgba);
+        return color
+                ? new GlyphBitmap(width, height, bearingX, bearingY, pixelScale, true, pixels)
+                : GlyphBitmap.coverage(width, height, bearingX, bearingY, pixelScale, pixels);
     }
 }

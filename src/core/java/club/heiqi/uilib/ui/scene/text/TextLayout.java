@@ -625,94 +625,85 @@ public final class TextLayout {
                 || !Objects.equals(style.highlightColor, this.style.highlightColor)
                 || style.defaultHighlightColor != this.style.defaultHighlightColor)
             throw new IllegalArgumentException("已定位计划只允许统一颜色重绑定");
+        return withColors(style, offset -> style.color);
+    }
+
+    /** 按逻辑安全簇绑定当前前景色，调用方只提供颜色，不能改变定位或资源事实。 */
+    public TextLayout withColors(int baseColor, java.util.function.IntUnaryOperator colorAt) {
+        return withColors(style.color == baseColor ? style : style.withColor(baseColor), colorAt);
+    }
+
+    /** 字体服务可保留本次已经解析的基础样式实例；其余定位属性必须等价。 */
+    public TextLayout withColors(TextStyle baseStyle, java.util.function.IntUnaryOperator colorAt) {
+        Objects.requireNonNull(baseStyle, "baseStyle");
+        if (!style.withColor(baseStyle.color).equals(baseStyle))
+            throw new IllegalArgumentException("颜色绑定不能改变定位样式");
+        Objects.requireNonNull(colorAt, "colorAt");
+        final String colorDiagnostic = "安全簇内部颜色统一使用逻辑首样式";
+        List<Diagnostic> currentDiagnostics = new ArrayList<Diagnostic>();
+        for (Diagnostic d : diagnostics)
+            if (!(d.kind == Diagnostic.Kind.STYLE_COALESCED && d.message.equals(colorDiagnostic)))
+                currentDiagnostics.add(d);
         List<Line> recolored = new ArrayList<Line>();
+        boolean changed = style != baseStyle;
         for (Line line : lines) {
             List<Glyph> glyphs = new ArrayList<Glyph>();
             List<Cluster> clusters = new ArrayList<Cluster>();
             List<Decoration> decorations = new ArrayList<Decoration>();
             for (Glyph g : line.glyphs()) {
-                TextStyle paint =
-                        g.resolvedStyle == null ? style : g.resolvedStyle.withColor(style.color);
-                glyphs.add(
-                        new Glyph(
-                                g.source,
-                                g.size,
-                                g.glyphId,
-                                g.logicalStart,
-                                g.logicalEnd,
-                                g.sourceStart,
-                                g.sourceEnd,
-                                g.x,
-                                g.y,
-                                g.xAdvance,
-                                g.yAdvance,
-                                g.color,
-                                g.replacement,
-                                g.inkBounds,
-                                g.logicalEm,
-                                g.rasterToLayout,
-                                g.rasterStyle,
-                                paint,
-                                g.clusterIndex,
-                                g.paintClip,
-                                g.xExtension));
+                int color = colorAt.applyAsInt(g.logicalStart);
+                TextStyle old = g.resolvedStyle == null ? style : g.resolvedStyle;
+                if (old.color == color) glyphs.add(g);
+                else {
+                    changed = true;
+                    glyphs.add(new Glyph(g.source, g.size, g.glyphId, g.logicalStart,
+                            g.logicalEnd, g.sourceStart, g.sourceEnd, g.x, g.y, g.xAdvance,
+                            g.yAdvance, g.color, g.replacement, g.inkBounds, g.logicalEm,
+                            g.rasterToLayout, g.rasterStyle, old.withColor(color), g.clusterIndex,
+                            g.paintClip, g.xExtension));
+                }
             }
-            for (Cluster c : line.clusters())
-                clusters.add(
-                        new Cluster(
-                                c.logicalStart,
-                                c.logicalEnd,
-                                c.sourceStart,
-                                c.sourceEnd,
-                                c.glyphIndexStart,
-                                c.glyphIndexEnd,
-                                c.x,
-                                c.advance,
-                                c.style.withColor(style.color),
-                                c.rtl));
-            for (Decoration d : line.decorations())
-                decorations.add(
-                        new Decoration(
-                                d.kind,
-                                d.x,
-                                d.y,
-                                d.width,
-                                d.height,
-                                d.kind == Decoration.Kind.HIGHLIGHT ? d.color : style.color,
-                                d.logicalStart,
-                                d.logicalEnd,
-                                d.sourceStart,
-                                d.sourceEnd));
-            recolored.add(
-                    new Line(
-                            line.text,
-                            line.x,
-                            line.y,
-                            line.logicalStart,
-                            line.logicalEnd,
-                            line.sourceStart,
-                            line.sourceEnd,
-                            line.advance,
-                            line.baseline,
-                            line.ascent,
-                            line.descent,
-                            line.lineHeight,
-                            glyphs,
-                            clusters,
-                            decorations,
-                            line.paragraphRtl));
+            for (Cluster c : line.clusters()) {
+                int color = colorAt.applyAsInt(c.logicalStart);
+                if (c.style.color == color) clusters.add(c);
+                else {
+                    changed = true;
+                    clusters.add(new Cluster(c.logicalStart, c.logicalEnd, c.sourceStart,
+                            c.sourceEnd, c.glyphIndexStart, c.glyphIndexEnd, c.x, c.advance,
+                            c.style.withColor(color), c.rtl));
+                }
+                for (int i = c.logicalStart + 1; i < c.logicalEnd; i++) {
+                    if (colorAt.applyAsInt(i) == color) continue;
+                    boolean exists = false;
+                    for (Diagnostic d : currentDiagnostics)
+                        if (d.kind == Diagnostic.Kind.STYLE_COALESCED
+                                && d.sourceStart == c.sourceStart && d.sourceEnd == c.sourceEnd) exists = true;
+                    if (!exists) currentDiagnostics.add(new Diagnostic(Diagnostic.Kind.STYLE_COALESCED,
+                            c.sourceStart, c.sourceEnd, colorDiagnostic));
+                    break;
+                }
+            }
+            for (Decoration d : line.decorations()) {
+                int color = d.kind == Decoration.Kind.HIGHLIGHT ? d.color : colorAt.applyAsInt(d.logicalStart);
+                if (d.color == color) decorations.add(d);
+                else {
+                    changed = true;
+                    decorations.add(new Decoration(d.kind, d.x, d.y, d.width, d.height,
+                            color, d.logicalStart, d.logicalEnd, d.sourceStart, d.sourceEnd));
+                }
+            }
+            recolored.add(new Line(line.text, line.x, line.y, line.logicalStart,
+                    line.logicalEnd, line.sourceStart, line.sourceEnd, line.advance, line.baseline,
+                    line.ascent, line.descent, line.lineHeight, glyphs, clusters, decorations, line.paragraphRtl));
         }
-        return new TextLayout(
-                width,
-                height,
-                advanceWidth,
-                advanceHeight,
-                style,
-                recolored,
-                logicalText,
-                originalText,
-                generation,
-                diagnostics,
-                input);
+        boolean sameDiagnostics = currentDiagnostics.size() == diagnostics.size();
+        for (int i = 0; sameDiagnostics && i < diagnostics.size(); i++) {
+            Diagnostic a = diagnostics.get(i), b = currentDiagnostics.get(i);
+            sameDiagnostics = a.kind == b.kind && a.sourceStart == b.sourceStart
+                    && a.sourceEnd == b.sourceEnd && a.message.equals(b.message);
+        }
+        if (!changed && sameDiagnostics) return this;
+        return new TextLayout(width, height, advanceWidth, advanceHeight, baseStyle,
+                recolored, logicalText, originalText, generation, currentDiagnostics, input);
     }
 }

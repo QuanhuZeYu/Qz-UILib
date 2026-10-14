@@ -99,6 +99,38 @@ public final class MathLayout {
         return entries;
     }
 
+    /** 只重绑继承前景色；几何、来源、字体和旧快照都保持原事实。 */
+    public MathLayout withColor(int color) {
+        List<Entry> current = new ArrayList<Entry>();
+        boolean changed = false;
+        TextLayout fallbackText = sourceFallback;
+        for (Entry entry : entries) {
+            Entry value = entry;
+            if (entry.inheritedColor) {
+                if (entry.piece != null) {
+                    TextPiece p = entry.piece;
+                    TextLayout text = p.text.withColors(color, offset -> color);
+                    if (text != p.text)
+                        value = Entry.text(new TextPiece(text, p.x, p.y, p.sourceStart, p.sourceEnd))
+                                .bindColor(true);
+                    if (sourceFallback == p.text) fallbackText = text;
+                } else if (entry.rule != null && entry.rule.color != color) {
+                    Rule r = entry.rule;
+                    value = Entry.fill(new Rule(r.x, r.y, r.width, r.height, color,
+                            r.sourceStart, r.sourceEnd)).bindColor(true);
+                } else if (entry.stroke != null && entry.stroke.color != color) {
+                    Stroke s = entry.stroke;
+                    value = Entry.stroke(new Stroke(s.x1, s.y1, s.x2, s.y2, s.width, color,
+                            s.sourceStart, s.sourceEnd)).bindColor(true);
+                }
+            }
+            current.add(value);
+            changed |= value != entry;
+        }
+        return changed ? new MathLayout(width, height, baseline, current, diagnostics,
+                fallback, fallbackText, nextEquationNumber) : this;
+    }
+
     public static final class Entry {
         public enum Kind {
             TEXT,
@@ -112,8 +144,18 @@ public final class MathLayout {
         public final Rule rule;
         public final Stroke stroke;
         public final Embed embed;
+        /** 默认条目为显式色；生产引擎在生成作用域标明继承，不能按颜色数值猜来源。 */
+        public final boolean inheritedColor;
+        final boolean colorBound;
 
         private Entry(Kind kind, TextPiece piece, Rule rule, Stroke stroke, Embed embed) {
+            this(kind, piece, rule, stroke, embed, false, false);
+        }
+
+        private Entry(Kind kind, TextPiece piece, Rule rule, Stroke stroke, Embed embed,
+                boolean inheritedColor, boolean colorBound) {
+            this.inheritedColor = inheritedColor;
+            this.colorBound = colorBound;
             this.kind = kind;
             this.piece = piece;
             this.rule = rule;
@@ -137,7 +179,16 @@ public final class MathLayout {
             return new Entry(Kind.EMBED, null, null, null, value);
         }
 
+        Entry bindColor(boolean inherited) {
+            return new Entry(kind, piece, rule, stroke, embed, inherited, true);
+        }
+
         Entry translated(float x, float y) {
+            Entry value = translatedValue(x, y);
+            return colorBound ? value.bindColor(inheritedColor) : value;
+        }
+
+        private Entry translatedValue(float x, float y) {
             if (piece != null)
                 return text(
                         new TextPiece(
