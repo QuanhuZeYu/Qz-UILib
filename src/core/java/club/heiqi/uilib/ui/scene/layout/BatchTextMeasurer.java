@@ -6,20 +6,39 @@ import club.heiqi.uilib.ui.scene.text.TextLayout;
 import club.heiqi.uilib.ui.scene.text.TextPolicy;
 import club.heiqi.uilib.ui.scene.text.TextStyle;
 
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
-/** 同节点、同字体度量代际的测量入口；本次排列及备用捕获共享请求。 纯视图位置重排复用当前请求；测量输入换代前清空，不积累动态内容。 */
+/** 同节点有效测量代际内复用精确文字请求；不保留同批子测量入口。 */
 final class BatchTextMeasurer implements SceneTextMeasurer {
     private final SceneTextMeasurer delegate;
-    private final Map<Request, TextLayout> layouts = new HashMap<>();
+    private static final int MAX_REQUESTS = 16;
+    private final Map<Request, TextLayout> layouts = new LinkedHashMap<>(16, 0.75f, true);
+    private boolean revisionKnown;
+    private long measureRevision;
     private final Set<Request> activeRequests = new HashSet<>();
 
     BatchTextMeasurer(SceneTextMeasurer delegate) {
         this.delegate = delegate;
+    }
+
+    void prepareRevision(long revision) {
+        if (!revisionKnown || measureRevision != revision) resetRequests();
+        revisionKnown = true;
+        measureRevision = revision;
+    }
+
+    private void remember(Request request, TextLayout layout) {
+        layouts.put(request, layout);
+        // 活跃集合也随淘汰收缩，控件在一批内发出许多约束时不能旁路容量边界。
+        while (layouts.size() > MAX_REQUESTS) {
+            Request eldest = layouts.keySet().iterator().next();
+            layouts.remove(eldest);
+            activeRequests.remove(eldest);
+        }
     }
 
     void resetRequests() {
@@ -52,7 +71,7 @@ final class BatchTextMeasurer implements SceneTextMeasurer {
         TextLayout cached = layouts.get(request);
         if (cached != null) return cached.withColors(style.color, offset -> style.color);
         TextLayout layout = delegate.layout(text, style, width);
-        layouts.put(request, layout);
+        remember(request, layout);
         return layout;
     }
 
@@ -63,7 +82,7 @@ final class BatchTextMeasurer implements SceneTextMeasurer {
         TextLayout cached = layouts.get(request);
         if (cached != null) return cached.withColors(style.color, offset -> style.color);
         TextLayout layout = delegate.layout(text, style, width, policy);
-        layouts.put(request, layout);
+        remember(request, layout);
         return layout;
     }
 
@@ -74,7 +93,7 @@ final class BatchTextMeasurer implements SceneTextMeasurer {
         TextLayout cached = layouts.get(request);
         if (cached != null) return cached.withColors(text.baseStyle.color, offset -> text.styleAt(offset).color);
         TextLayout layout = delegate.layout(text, width, policy);
-        layouts.put(request, layout);
+        remember(request, layout);
         return layout;
     }
 

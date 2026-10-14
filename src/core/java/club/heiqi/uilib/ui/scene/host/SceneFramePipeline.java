@@ -71,7 +71,7 @@ public final class SceneFramePipeline implements AutoCloseable {
     public SceneFramePipeline(SceneRuntime runtime, SceneHost host, SceneTextMeasurer measurer) {
         this.runtime = runtime;
         this.host = host;
-        this.layout = new SceneLayoutEngine(measurer, runtime::scrollOffset);
+        this.layout = new SceneLayoutEngine(measurer, runtime::scrollOffset, runtime::nodeMeasureRevision);
         this.paint = new ScenePaintCollector(layout, measurer);
     }
 
@@ -282,9 +282,13 @@ public final class SceneFramePipeline implements AutoCloseable {
                         () -> {
                             ScenePointerRouter router = runtime.pointerRouter();
                             // close不执行业务，但不能丢掉已采集的第二键；另一管线仍共享该物理段。
-                            for (QueuedInput event : pending) event.discard(router);
-                            router.discardAfterFailure(ScenePointerEvent.cancel());
-                            presentation = null;
+                            try {
+                                for (QueuedInput event : pending) event.discard(router);
+                                router.discardAfterFailure(ScenePointerEvent.cancel());
+                            } finally {
+                                presentation = null;
+                                layout.clearCaches();
+                            }
                         });
     }
 
@@ -298,7 +302,7 @@ public final class SceneFramePipeline implements AutoCloseable {
                                                 w,
                                                 h,
                                                 metricsRevision,
-                                                runtime.measureRevision()));
+                                                runtime.wholeMeasureRevision()));
         // 布局只读，唯一runtime记录在布局返回后发布；显露重排也复用这一入口。
         runtime.prepareScrollPositions(geometry);
         return geometry;

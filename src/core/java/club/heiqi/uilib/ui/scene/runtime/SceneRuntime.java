@@ -28,8 +28,11 @@ public final class SceneRuntime implements AutoCloseable {
         final List<BindingActivation> bindings = new ArrayList<>();
         final List<BindingActivation> transfers = new ArrayList<>();
 
-        Mount(Owner owner) {
+        long measureRevision;
+
+        Mount(Owner owner, long measureRevision) {
             this.owner = owner;
+            this.measureRevision = measureRevision;
         }
     }
 
@@ -49,7 +52,8 @@ public final class SceneRuntime implements AutoCloseable {
     private boolean mutation;
     private boolean routing;
     private boolean disposed;
-    private long revision, geometryRevision, measureRevision;
+    private long revision, geometryRevision, measureRevision, wholeMeasureRevision;
+    private long nodeMeasureRevisionClock;
     // 只引用布局发布的唯一几何；声明结算与来源事实未齐时不推进范围转换。
     private SceneGeometryView inputGeometry;
     private boolean inputGeometryReady;
@@ -133,10 +137,42 @@ public final class SceneRuntime implements AutoCloseable {
         return measureRevision;
     }
 
+    /** 无来源通知保留整体测量语义，供不能报告来源的扩展使用。 */
     public void invalidate() {
         domain.checkAccess();
+        wholeMeasureRevision++;
         measureRevision++;
         invalidateArrangement();
+    }
+
+    /** 局部内容变更影响来源及祖先；共同几何仍由下一批完整控件回调建立。 */
+    public void invalidate(SceneNode origin) {
+        domain.checkAccess();
+        if (origin == null || !mounts.containsKey(origin)) {
+            invalidate();
+            return;
+        }
+        long next = ++nodeMeasureRevisionClock;
+        for (SceneNode node = origin; node != null; node = node.parent()) {
+            Mount mount = mounts.get(node);
+            if (mount == null) break;
+            mount.measureRevision = next;
+        }
+        measureRevision++;
+        invalidateArrangement();
+    }
+
+    public long wholeMeasureRevision() {
+        domain.checkAccess();
+        return wholeMeasureRevision;
+    }
+
+    /** 同节点卸载后重挂也不能复用上一次挂载的文字请求。 */
+    public long nodeMeasureRevision(SceneNode node) {
+        domain.checkAccess();
+        Mount mount = mounts.get(node);
+        if (mount == null) throw new IllegalArgumentException("节点未挂载到此运行时");
+        return mount.measureRevision;
     }
 
     private void invalidateArrangement() {
@@ -240,7 +276,7 @@ public final class SceneRuntime implements AutoCloseable {
     }
 
     private void mountSubtree(SceneNode node, Owner parentOwner) {
-        Mount mount = new Mount(parentOwner.child());
+        Mount mount = new Mount(parentOwner.child(), ++nodeMeasureRevisionClock);
         mounts.put(node, mount);
         node.frameworkRuntime(this, true);
         for (NodeBinding binding : node.bindings()) {
@@ -254,7 +290,7 @@ public final class SceneRuntime implements AutoCloseable {
             mount.owner.own(active);
         }
         if (node.control() != null) {
-            observeControl(node, mount, () -> node.control().measureDependencies(node), this::invalidate);
+            observeControl(node, mount, () -> node.control().measureDependencies(node), () -> invalidate(node));
             observeControl(node, mount, () -> node.control().arrangementDependencies(node), this::invalidateArrangement);
             observeControl(node, mount, () -> node.control().paintDependencies(node), this::invalidatePaint);
         }

@@ -15,6 +15,7 @@ import java.util.Set;
 /** 先测内容，再按声明分配；固定尺寸不因父空间不足被缩小。 */
 public final class SceneLayoutEngine {
     private final SceneTextMeasurer text;
+    private final java.util.function.ToLongFunction<SceneNode> nodeMeasureRevision;
     private final java.util.function.ToIntFunction<SceneNode> scrollOffsets;
     private final Map<SceneNode, Map<Long, int[]>> measuredCache = new IdentityHashMap<>();
     private final Map<SceneNode, Map<Integer, TextLayout>> textCache = new IdentityHashMap<>();
@@ -32,6 +33,7 @@ public final class SceneLayoutEngine {
     private BatchTextMeasurer textFor(SceneNode node) {
         BatchTextMeasurer batch =
                 batchText.computeIfAbsent(node, key -> new BatchTextMeasurer(text));
+        batch.prepareRevision(nodeMeasureRevision == null ? 0 : nodeMeasureRevision.applyAsLong(node));
         if (activeText.add(batch)) batch.beginRequests();
         return batch;
     }
@@ -64,8 +66,40 @@ public final class SceneLayoutEngine {
 
     /** 布局只读取本次滚动位置，位置权威及最终范围发布由调用方协调。 */
     public SceneLayoutEngine(SceneTextMeasurer text, java.util.function.ToIntFunction<SceneNode> scrollOffsets) {
+        this(text, scrollOffsets, null);
+    }
+
+    public SceneLayoutEngine(SceneTextMeasurer text,
+            java.util.function.ToIntFunction<SceneNode> scrollOffsets,
+            java.util.function.ToLongFunction<SceneNode> nodeMeasureRevision) {
         this.text = text;
         this.scrollOffsets = java.util.Objects.requireNonNull(scrollOffsets, "scrollOffsets");
+        this.nodeMeasureRevision = nodeMeasureRevision;
+    }
+
+    /** 帧管线结束后释放跨批文字与本批事实，不持续持有已退出页面。 */
+    public void clearCaches() {
+        batchText.clear();
+        presentedStyles.clear();
+        measuredCache.clear();
+        textCache.clear();
+        textCacheStyles.clear();
+        batchChildren.clear();
+        activeText.clear();
+        metricsKnown = false;
+    }
+
+    private void retainMounted(List<SceneNode> roots) {
+        Set<SceneNode> mounted = Collections.newSetFromMap(new IdentityHashMap<SceneNode, Boolean>());
+        for (SceneNode root : roots) collectMounted(root, mounted);
+        // 主几何省略 READY 图像的备用子树；生命周期必须按完整挂载树判定。
+        batchText.keySet().retainAll(mounted);
+        presentedStyles.keySet().retainAll(mounted);
+    }
+
+    private void collectMounted(SceneNode node, Set<SceneNode> mounted) {
+        if (!mounted.add(node)) return;
+        for (SceneNode child : node.children()) collectMounted(child, mounted);
     }
 
     public SceneGeometry layout(List<SceneNode> roots, int width, int height) {
@@ -75,9 +109,10 @@ public final class SceneLayoutEngine {
         return arrangeRoots(roots, width, height);
     }
 
-    /** 字体、测量输入或视口换代时清空；纯滚动重排复用节点当前的测量请求。 */
+    /** 字体、整体测量或视口换代结束旧请求；局部代际在访问节点时检查。 */
     public SceneGeometry layout(
             List<SceneNode> roots, int width, int height, long nextMetrics, long nextMeasure) {
+        retainMounted(roots);
         if (!metricsKnown || metricsRevision != nextMetrics) batchText.clear();
         else if (measureRevision != nextMeasure
                 || measuredWidth != width

@@ -497,6 +497,6 @@ public final class SceneNode {
     }
 
     private void changed() {
-        if (runtime != null) runtime.invalidate();
+        if (runtime != null) runtime.invalidate(this);
     }
 }

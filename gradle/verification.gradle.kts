@@ -225,6 +225,11 @@ val layoutFoundationScenario = registerTestApplication("layoutFoundationScenario
     classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("gallery").output + sourceSets.getByName("test").output + fontNativeRuntime + coreContentRuntime
 }
 tasks.named("check") { dependsOn(layoutFoundationScenario) }
+val incrementalMeasurementScenario = registerTestApplication("incrementalMeasurementScenario", "真实字体局部测量来源与请求复用回归", "club.heiqi.uilib.ui.scene.integration.IncrementalMeasurementScenario") {
+    dependsOn(tasks.named("testClasses"))
+    classpath = coreSources.output + fontAdapterSources.output + sourceSets.getByName("testSupport").output + sourceSets.getByName("test").output + fontNativeRuntime + coreContentRuntime
+}
+tasks.named("check") { dependsOn(incrementalMeasurementScenario) }
 val layerInputScenario = registerTestApplication("layerInputScenario", "所属层正式页面真实字体共同空间验收", "club.heiqi.uilib.ui.scene.integration.LayerInputScenario") {
     dependsOn(tasks.named("testClasses"))
     classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + fontNativeRuntime + coreContentRuntime
