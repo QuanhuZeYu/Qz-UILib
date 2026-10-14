@@ -282,7 +282,7 @@ public final class SceneNode {
         writable();
         if (modal != value) {
             modal = value;
-            if (runtime != null) runtime.invalidateRange();
+            if (runtime != null) runtime.invalidateRange(this);
         }
         return this;
     }
@@ -356,7 +356,7 @@ public final class SceneNode {
         writable();
         if (visible != value) {
             visible = value;
-            if (runtime != null) runtime.invalidateRange();
+            if (runtime != null) runtime.invalidateRange(this);
         }
         return this;
     }
@@ -430,7 +430,7 @@ public final class SceneNode {
         writable();
         if (enabled != value) {
             enabled = value;
-            if (runtime != null) runtime.invalidateRange();
+            if (runtime != null) runtime.invalidateRange(this);
         }
         return this;
     }

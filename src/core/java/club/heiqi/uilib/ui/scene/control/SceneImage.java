@@ -130,7 +130,7 @@ public final class SceneImage implements SceneControl {
                                                 control.state = lease[0].state().get();
                                                 control.current.set(control.state);
                                                 control.describe(target);
-                                                runtime.invalidate();
+                                                runtime.invalidate(target);
                                             },
                                             () -> runtime.invalidateBinding(target));
                     return new BindingActivation() {

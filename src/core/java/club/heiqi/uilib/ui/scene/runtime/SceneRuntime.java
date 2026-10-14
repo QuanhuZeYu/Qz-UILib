@@ -192,6 +192,22 @@ public final class SceneRuntime implements AutoCloseable {
         invalidate();
     }
 
+    public void invalidateRange(SceneNode origin) {
+        domain.checkAccess();
+        focusRouter.rangeChanged();
+        invalidate(origin);
+    }
+
+    private void invalidateRemovedRange(SceneNode formerParent) {
+        if (formerParent != null) invalidateRange(formerParent);
+        else {
+            // 移除根没有仍挂载的祖先；仍更新共同几何与输入范围，不能清理其他根的文字。
+            focusRouter.rangeChanged();
+            measureRevision++;
+            invalidateArrangement();
+        }
+    }
+
     public void invalidatePaint() {
         domain.checkAccess();
         revision++;
@@ -243,7 +259,7 @@ public final class SceneRuntime implements AutoCloseable {
             else if (logicalScope != null) root.frameworkOwnership(this, logicalScope);
             if (parent == null) roots.add(root);
             mountSubtree(root, parent == null ? owner : mounts.get(parent).owner);
-            invalidateRange();
+            invalidateRange(parent == null ? root : parent);
             return new MountHandle(this, root, mounts.get(root).token);
         } catch (RuntimeException | Error failure) {
             Mount partial = mounts.get(root);
@@ -259,7 +275,7 @@ public final class SceneRuntime implements AutoCloseable {
             root.frameworkParent(this, null);
             // 声明激活可在失败前显露模态；卸载部分挂载后也要结束该范围，不能留下幽灵输入范围。
             try {
-                invalidateRange();
+                invalidateRemovedRange(parent);
             } catch (RuntimeException | Error cleanup) {
                 failure.addSuppressed(cleanup);
             }
@@ -350,6 +366,7 @@ public final class SceneRuntime implements AutoCloseable {
 
     void detach(SceneNode node, Object token) {
         Mount mount = requireMount(node, token);
+        SceneNode formerParent = node.parent();
         mutation = true;
         try {
             try {
@@ -358,7 +375,7 @@ public final class SceneRuntime implements AutoCloseable {
                 releaseSubtree(node);
                 roots.remove(node);
                 node.frameworkParent(this, null);
-                invalidateRange();
+                invalidateRemovedRange(formerParent);
             }
         } finally {
             mutation = false;
@@ -427,12 +444,15 @@ public final class SceneRuntime implements AutoCloseable {
 
     /** 两种授权入口共用迁移步骤；保留挂载token与绑定，逻辑拥有权另行交接。 */
     private void transferMounted(SceneNode node, Mount mount, SceneNode next) {
+        SceneNode formerParent = node.parent();
         mount.owner.moveTo(next == null ? owner : mounts.get(next).owner);
         roots.remove(node);
         node.frameworkParent(this, next);
         node.frameworkTransfer(this, next);
         if (next == null) roots.add(node);
-        invalidateRange();
+        // 移动保留子树挂载；新旧父链都重新建立内容度量，移动节点按实际新约束匹配文字。
+        invalidateRange(formerParent == null ? next : formerParent);
+        if (formerParent != null && next != null) invalidate(next);
     }
 
     /** 声明子序列更新；保留节点不卸载，移除节点结束挂载，新增节点激活当前来源。 */
@@ -498,10 +518,11 @@ public final class SceneRuntime implements AutoCloseable {
                 }
             }
         }
-        invalidateRange();
+        invalidateRange(parent);
     }
 
     private void removeDeclared(SceneNode node, boolean owned) {
+        SceneNode formerParent = node.parent();
         Throwable failure = null;
         Mount mount = mounts.get(node);
         try {
@@ -519,7 +540,7 @@ public final class SceneRuntime implements AutoCloseable {
             }
         } else node.frameworkOwnership(this, null);
         try {
-            invalidateRange();
+            invalidateRemovedRange(formerParent);
         } catch (RuntimeException | Error error) {
             failure = collectFailure(failure, error);
         }

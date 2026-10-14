@@ -95,6 +95,10 @@ public final class SceneLayoutEngine {
         // 主几何省略 READY 图像的备用子树；生命周期必须按完整挂载树判定。
         batchText.keySet().retainAll(mounted);
         presentedStyles.keySet().retainAll(mounted);
+        // 隐藏节点可能本批不访问；代际结束也要及时丢弃其旧内容及inline载荷。
+        if (nodeMeasureRevision != null)
+            for (Map.Entry<SceneNode, BatchTextMeasurer> entry : batchText.entrySet())
+                entry.getValue().prepareRevision(nodeMeasureRevision.applyAsLong(entry.getKey()));
     }
 
     private void collectMounted(SceneNode node, Set<SceneNode> mounted) {

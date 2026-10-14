@@ -81,7 +81,7 @@ public final class SceneDocument {
                                 control.items.keySet().retainAll(value.inlineContents());
                                 node.text(value.source);
                                 // 相同源码的新声明仍会改变链接/内联身份，必须通知测量和手势资格。
-                                if (node.runtime() != null) node.runtime().invalidate();
+                                if (node.runtime() != null) node.runtime().invalidate(node);
                             }
                         }));
         root.bind(NodeBinding.value(theme, (node, value) -> node.style(value.textStyle)));

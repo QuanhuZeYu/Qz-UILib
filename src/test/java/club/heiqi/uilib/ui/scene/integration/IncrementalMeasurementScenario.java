@@ -6,6 +6,20 @@ import club.heiqi.uilib.ui.reactive.ReactiveDomain;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.control.SceneControl;
+import club.heiqi.uilib.ui.scene.control.SceneDocument;
+import club.heiqi.uilib.ui.scene.control.SceneImage;
+import club.heiqi.uilib.ui.scene.image.ImageContent;
+import club.heiqi.uilib.ui.scene.image.ImageOptions;
+import club.heiqi.uilib.ui.scene.image.ImageSource;
+import club.heiqi.uilib.ui.scene.image.ImageState;
+import club.heiqi.uilib.ui.scene.image.SharedImageService;
+import club.heiqi.uilib.ui.scene.runtime.MountHandle;
+import club.heiqi.uilib.ui.scene.host.ScenePageContext;
+import club.heiqi.uilib.ui.scene.input.SceneEditEvent;
+import club.heiqi.uilib.ui.scene.text.TextContent;
+import java.lang.ref.WeakReference;
+import java.util.ArrayList;
+import java.util.Arrays;
 import club.heiqi.uilib.ui.scene.control.SceneTextField;
 import club.heiqi.uilib.ui.scene.control.SceneTheme;
 import club.heiqi.uilib.ui.scene.edit.SceneEditState;
@@ -47,6 +61,11 @@ public final class IncrementalMeasurementScenario extends TestApplication {
         scenario("自然高度变化带动兄弟位置裁剪和范围", this::naturalHeight);
         scenario("窗口字号字体换代与无来源失效结束旧请求", this::globalInputs);
         scenario("过量宽度请求正常淘汰并保留最近请求", this::boundedRequests);
+        scenario("动态增删重排重挂与卸载后依赖隔离", this::structureScopes);
+        scenario("跨父移动保留挂载与文字请求", this::moveScope);
+        scenario("同源码新文档声明更新目标且不清理旁行", this::documentScope);
+        scenario("真实共享图像worker换代只更新所属来源", this::imageScope);
+        scenario("退出分支与关闭管线不持续持有旧节点", this::releasedNodes);
     }
     private final class Host implements SceneHost {
         int width = 320;
@@ -105,9 +124,11 @@ public final class IncrementalMeasurementScenario extends TestApplication {
         Signal<TextStyle> style;
         Signal<Integer> background;
         Extension extension;
-        SceneNode first, stable, custom, root, editor;
+        SceneNode first, stable, custom, root, editor, dynamic, destination;
+        Signal<List<SceneNode>> branch;
         SceneEditState draft;
-        Page() {
+        Page() { this((page, context) -> {}); }
+        Page(java.util.function.BiConsumer<Page, ScenePageContext> decorate) {
             session = ScenePageSession.open(domain, host, requests, context -> {
                 value = domain.signal("初始文案");
                 style = domain.signal(new TextStyle("default", 18, 0xff223344));
@@ -121,8 +142,12 @@ public final class IncrementalMeasurementScenario extends TestApplication {
                 custom = new SceneNode().size(Size.fill(1), Size.natural()).control(extension).onClick(() -> extension.clicks++);
                 draft = new SceneEditState(domain, "独立草稿", SceneEditState.Mode.SINGLE_LINE);
                 editor = SceneTextField.create(context, draft, domain.signal(SceneTheme.light()), () -> false, r -> {});
+                branch = domain.signal(Collections.emptyList());
+                dynamic = new SceneNode().size(Size.fill(1), Size.natural()).bind(NodeBinding.children(branch));
+                destination = new SceneNode().size(Size.fill(1), Size.natural());
                 root = new SceneNode().size(Size.fill(1), Size.fill(1)).scrollable(true).clip(true).gap(6)
-                        .add(first).add(stable).add(custom).add(editor);
+                        .add(first).add(stable).add(custom).add(editor).add(dynamic).add(destination);
+                decorate.accept(this, context);
                 context.mount(root);
             });
             session.frame();
@@ -182,6 +207,139 @@ public final class IncrementalMeasurementScenario extends TestApplication {
             });
             require(p.requests.count("固定未变行 Café") == stable, "父重排使未变同宽文字重复请求");
         }
+    }
+    @SuppressWarnings("unchecked")
+    private void structureScopes() {
+        try (Page p = new Page()) {
+            int stable = p.requests.count("固定未变行 Café");
+            SceneNode[] nodes = new SceneNode[2]; Extension[] control = new Extension[1];
+            Signal<Boolean>[] visible = new Signal[1], enabled = new Signal[1];
+            MountHandle[] original = new MountHandle[1];
+            p.update(() -> {
+                control[0] = new Extension(p.domain);
+                visible[0] = p.domain.signal(true); enabled[0] = p.domain.signal(true);
+                nodes[0] = new SceneNode().text("可重挂条目").control(control[0])
+                        .bind(NodeBinding.value(visible[0], SceneNode::visible))
+                        .bind(NodeBinding.value(enabled[0], SceneNode::enabled));
+                nodes[1] = new SceneNode().text("另一条目");
+                p.branch.set(Arrays.asList(nodes[0], nodes[1]));
+                p.session.runtime().focusRouter().request(p.session.runtime().captureMount(p.editor));
+            });
+            require(p.requests.count("固定未变行 Café") == stable, "添加子树使无关行重复请求");
+            p.domain.execute(() -> original[0] = p.session.runtime().captureMount(nodes[0]));
+            p.update(() -> p.branch.set(Arrays.asList(nodes[1], nodes[0])));
+            p.domain.execute(() -> require(original[0].active() && p.entry(nodes[1]).box.y < p.entry(nodes[0]).box.y,
+                    "子序列重排丢失挂载或未更新实际位置"));
+            p.update(() -> visible[0].set(false));
+            p.domain.execute(() -> require(p.entry(nodes[0]) == null, "隐藏节点仍发布几何"));
+            p.update(() -> { visible[0].set(true); enabled[0].set(false); });
+            p.update(() -> { enabled[0].set(true); p.branch.set(Collections.emptyList()); });
+            int requests = p.requests.count("可重挂条目"), measures = control[0].measures;
+            PaintPlan empty = p.host.paint;
+            p.update(() -> control[0].measure.set(17));
+            require(p.host.paint == empty && control[0].measures == measures, "卸载后依赖仍唤醒旧节点");
+            p.update(() -> p.branch.set(Collections.singletonList(nodes[0])));
+            p.domain.execute(() -> require(!original[0].active() && p.entry(nodes[0]).text.originalText.equals("可重挂条目"), "重挂未结束旧token或未建立当前正文"));
+            require(p.requests.count("可重挂条目") > requests, "同节点重挂复用了旧挂载请求");
+            p.session.edit(SceneEditEvent.text("X")); p.session.frame();
+            p.domain.execute(() -> require(p.draft.text().get().contains("X")
+                    && p.session.runtime().focusRouter().focused().get() == p.editor, "无关结构更新破坏草稿或焦点"));
+            require(p.requests.count("固定未变行 Café") == stable, "结构或显隐资格变化清理了无关文字");
+        }
+    }
+    private void moveScope() {
+        try (Page p = new Page()) {
+            SceneNode[] node = {null}; MountHandle[] handle = {null}; int stable = p.requests.count("固定未变行 Café");
+            p.update(() -> { node[0] = new SceneNode().size(Size.fill(1), Size.natural()).text("连续移动的正文"); p.branch.set(Collections.singletonList(node[0])); });
+            int calls = p.requests.count("连续移动的正文");
+            p.domain.execute(() -> handle[0] = p.session.runtime().captureMount(node[0]));
+            p.update(() -> handle[0].moveTo(p.destination));
+            p.domain.execute(() -> require(handle[0].active() && node[0].parent() == p.destination
+                    && p.entry(node[0]).text.originalText.equals("连续移动的正文"), "跨父移动丢失连续挂载或当前正文"));
+            require(p.requests.count("连续移动的正文") == calls && p.requests.count("固定未变行 Café") == stable,
+                    "同约束跨父移动清理了仍有效的节点请求");
+        }
+    }
+    @SuppressWarnings("unchecked")
+    private void documentScope() {
+        Signal<TextContent>[] content = new Signal[1]; SceneNode[] paragraph = {null}; List<String> actions = new ArrayList<>();
+        try (Page p = new Page((page, context) -> {
+            content[0] = page.domain.signal(TextContent.richTags("<a href=\"next\">link</a>"));
+            paragraph[0] = SceneDocument.paragraph(context, content[0], page.domain.signal(SceneTheme.light()), null, actions::add);
+            page.root.add(paragraph[0]);
+        })) {
+            int stable = p.requests.count("固定未变行 Café");
+            final LayoutBox[] box = {null}; p.domain.execute(() -> box[0] = p.entry(paragraph[0]).box);
+            p.session.pointer(ScenePointerEvent.down(0, box[0].x + 2, box[0].y + 2)); p.session.frame();
+            p.update(() -> content[0].set(TextContent.richTags(content[0].get().source)));
+            p.session.pointer(ScenePointerEvent.up(0, box[0].x + 2, box[0].y + 2)); p.session.frame();
+            require(actions.isEmpty(), "同源码新声明复活旧链接手势");
+            p.session.pointer(ScenePointerEvent.syntheticActivation(box[0].x + 2, box[0].y + 2)); p.session.frame();
+            require(actions.equals(Collections.singletonList("next")), "新声明未建立当前链接目标");
+            require(p.requests.count("固定未变行 Café") == stable, "同源码文档通知未保留节点来源");
+        }
+    }
+    @SuppressWarnings("unchecked")
+    private void imageScope() throws Exception {
+        Signal<ImageSource>[] source = new Signal[1]; SceneNode[] image = {null};
+        // 位图输入已携带真实像素；共享服务仍通过正式有界worker及drain发布生命周期。
+        try (SharedImageService service = new SharedImageService(value -> () -> value.bitmap, SharedImageService.Budget.defaults());
+                Page p = new Page((page, context) -> {
+                    source[0] = page.domain.signal(ImageSource.bitmap(new ImageContent(4, 3, new byte[4 * 3 * 4])));
+                    image[0] = SceneImage.create(service, source[0], page.domain.signal(ImageOptions.defaults()), new SceneNode().text("未就绪备用"));
+                    page.root.add(image[0]);
+                })) {
+            awaitImage(p, service, image[0]);
+            int stable = p.requests.count("固定未变行 Café");
+            p.update(() -> source[0].set(ImageSource.bitmap(new ImageContent(13, 7, new byte[13 * 7 * 4]))));
+            awaitImage(p, service, image[0]);
+            p.domain.execute(() -> require(SceneImage.state(image[0]).get().content.width == 13
+                    && p.entry(image[0]).box.width == 13 && p.entry(image[0]).box.height == 7, "图像新资源未更新自然盒"));
+            require(p.requests.count("固定未变行 Café") == stable, "内部图像通知未保留所属节点来源");
+        }
+    }
+    private void awaitImage(Page p, SharedImageService service, SceneNode image) throws Exception {
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(5);
+        boolean[] ready = {false};
+        do {
+            service.drain(); p.session.frame();
+            p.domain.execute(() -> ready[0] = SceneImage.state(image).get().status == ImageState.Status.READY);
+            if (ready[0]) return;
+            Thread.sleep(5);
+        } while (System.nanoTime() < deadline);
+        throw new AssertionError("正式图像worker未就绪");
+    }
+    private List<WeakReference<SceneNode>> removedBranch(Page p) {
+        List<SceneNode> nodes = new ArrayList<>();
+        p.domain.execute(() -> { for (int i = 0; i < 12; i++) nodes.add(new SceneNode().text("生命周期条目" + i)); });
+        p.update(() -> p.branch.set(nodes));
+        List<WeakReference<SceneNode>> refs = new ArrayList<>();
+        for (SceneNode node : nodes) refs.add(new WeakReference<>(node));
+        p.update(() -> p.branch.set(Collections.emptyList()));
+        return refs;
+    }
+    private static final class ClosedPage {
+        final Object pipeline;
+        final WeakReference<SceneNode> root;
+        ClosedPage(Object pipeline, SceneNode root) { this.pipeline = pipeline; this.root = new WeakReference<>(root); }
+    }
+    private ClosedPage closedPage() {
+        Page page = new Page();
+        ClosedPage[] closed = {null};
+        page.domain.execute(() -> closed[0] = new ClosedPage(page.session.pipeline(), page.root));
+        page.close();
+        return closed[0];
+    }
+    private void releasedNodes() {
+        try (Page p = new Page()) {
+            List<WeakReference<SceneNode>> refs = new ArrayList<>();
+            for (int i = 0; i < 3; i++) refs.addAll(removedBranch(p));
+            for (int i = 0; i < 3; i++) { System.gc(); System.runFinalization(); }
+            require(refs.stream().allMatch(ref -> ref.get() == null), "退出分支仍被活动页面持续持有");
+        }
+        ClosedPage closed = closedPage();
+        for (int i = 0; i < 3; i++) { System.gc(); System.runFinalization(); }
+        require(closed.pipeline != null && closed.root.get() == null, "关闭管线仍被调用方持有时没有释放旧树");
     }
     private void boundedRequests() {
         ReactiveDomain domain = ReactiveDomain.direct();
