@@ -17,17 +17,18 @@ final class SceneIconGlyph {
     private SceneIconGlyph() {}
     static void paint(SceneIconButton.Symbol symbol, LayoutBox box, PaintPlanBuilder target, LayoutBox clip, int color) {
         int side=Math.min(box.width,box.height);if(side<=0||(color>>>24)==0)return;
+        if(clip!=null) {LayoutBox visible=box.intersect(clip);if(visible.width==0||visible.height==0)return;}
         long key=((long)symbol.ordinal()<<32)|(side&0xffffffffL);int[] spans;
         synchronized(MASKS) { spans=MASKS.get(key); }
         if(spans==null) { spans=raster(path(symbol),side);synchronized(MASKS){MASKS.put(key,spans);} }
-        for(int i=0;i<spans.length;i+=4) {
-            int alpha=((color>>>24)*spans[i+3]+SAMPLES*SAMPLES/2)/(SAMPLES*SAMPLES);
-            if(alpha!=0)target.add(PaintCommand.rect(new LayoutBox(box.x+spans[i],box.y+spans[i+1],spans[i+2],1),clip,
+        for(int i=0;i<spans.length;i+=5) {
+            int alpha=((color>>>24)*spans[i+4]+SAMPLES*SAMPLES/2)/(SAMPLES*SAMPLES);
+            if(alpha!=0)target.add(PaintCommand.rect(new LayoutBox(box.x+spans[i],box.y+spans[i+1],spans[i+2],spans[i+3]),clip,
                     (color&0xffffff)|(alpha<<24)));
         }
     }
     private static int[] raster(Path path,int side) {
-        List<Integer> spans=new ArrayList<>();
+        List<int[]> rectangles=new ArrayList<>();Map<Long,int[]> lastByKey=new LinkedHashMap<>();
         for(int y=0;y<side;y++) {
             int from=0,last=-1;
             for(int x=0;x<=side;x++) {
@@ -35,12 +36,19 @@ final class SceneIconGlyph {
                 if(x<side)for(int sy=0;sy<SAMPLES;sy++)for(int sx=0;sx<SAMPLES;sx++)
                     if(path.contains((x+(sx+.5f)/SAMPLES)*24/side,(y+(sy+.5f)/SAMPLES)*24/side))coverage++;
                 if(coverage!=last) {
-                    if(last>0) {spans.add(from);spans.add(y);spans.add(x-from);spans.add(last);}
+                    if(last>0) append(rectangles,lastByKey,from,y,x-from,last);
                     from=x;last=coverage;
                 }
             }
         }
-        int[] result=new int[spans.size()];for(int i=0;i<result.length;i++)result[i]=spans.get(i);return result;
+        int[] result=new int[rectangles.size()*5];int index=0;
+        for(int[] rectangle:rectangles)for(int value:rectangle)result[index++]=value;return result;
+    }
+    /** 同coverage的相邻条带是同一个矩形，合并不改变任意像素的alpha或绘制顺序。 */
+    private static void append(List<int[]> rectangles,Map<Long,int[]> last,int x,int y,int width,int coverage) {
+        long key=((long)x<<32)|((long)width<<8)|coverage;int[] previous=last.get(key);
+        if(previous!=null&&previous[1]+previous[3]==y)previous[3]++;
+        else {int[] rectangle={x,y,width,1,coverage};rectangles.add(rectangle);last.put(key,rectangle);}
     }
     private static Path path(SceneIconButton.Symbol symbol) {
         Path p=new Path();

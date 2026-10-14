@@ -8,6 +8,7 @@ public final class ScenePaintShapes {
     private ScenePaintShapes() {}
     public static void rounded(PaintPlanBuilder paint, LayoutBox box, LayoutBox clip, int color, int requested) {
         if(box.width<=0||box.height<=0||(color>>>24)==0)return;
+        if(clip!=null) {LayoutBox visible=box.intersect(clip);if(visible.width==0||visible.height==0)return;}
         int radius=Math.max(0,Math.min(requested,Math.min(box.width,box.height)/2));
         paint.add(PaintCommand.rect(new LayoutBox(box.x,box.y+radius,box.width,box.height-radius*2),clip,color));
         for(int y=0;y<radius;y++) {

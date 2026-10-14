@@ -35,7 +35,7 @@ public final class MailboxWorkload implements ScenePage {
         long start=System.nanoTime();domain=page.domain();model=new MailboxModel(domain,MailSamples.messages(scale));
         root=MailboxPage.create(page,page.theme(),model,paged).own(model);page.mountOwned(root);declarationNanos=System.nanoTime()-start;
     }
-    private static final class Facts {int offset,maximum,mounted,visible,x,y,width,height;}
+    private static final class Facts {int offset,maximum,mounted,visible,x,y,width,height,commands,visibleInkGlyphs,unknownInkGlyphs;}
     private Facts facts(Driver driver){
         Facts f=new Facts();domain.execute(()->{
             SceneGeometryView g=driver.geometry();
@@ -43,6 +43,19 @@ public final class MailboxWorkload implements ScenePage {
             f.width=driver.width();f.height=driver.height();f.offset=scroll.scrollOffset;f.maximum=scroll.scrollMaximum;
             f.x=scroll.box.x+2;f.y=scroll.box.y+Math.min(20,scroll.box.height/2);f.mounted=count(root);
             f.visible=(int)g.ordered().stream().filter(e->e.clip==null||e.box.intersect(e.clip).height>0&&e.box.intersect(e.clip).width>0).count();
+            f.commands=driver.paint().commands().size();
+            LayoutBox viewport=new LayoutBox(0,0,f.width,f.height);
+            for(PaintCommand command:driver.paint().commands())if(command.kind==PaintCommand.Kind.TEXT) {
+                LayoutBox clip=command.clip==null?viewport:command.clip.intersect(viewport);
+                for(club.heiqi.uilib.ui.scene.text.TextLayout.Line line:command.text.lines())
+                    for(club.heiqi.uilib.ui.scene.text.TextLayout.Glyph glyph:line.glyphs()) {
+                        club.heiqi.uilib.ui.scene.text.font.nativefont.InkBounds b=glyph.inkBounds;
+                        if(!b.known) {f.unknownInkGlyphs++;continue;}
+                        float left=command.box.x+glyph.x+b.left,top=command.box.y+glyph.y+b.top;
+                        float right=command.box.x+glyph.x+b.right,bottom=command.box.y+glyph.y+b.bottom;
+                        if(right>left&&bottom>top&&right>clip.x&&bottom>clip.y&&left<clip.x+clip.width&&top<clip.y+clip.height)f.visibleInkGlyphs++;
+                    }
+            }
         });return f;
     }
     private static int count(SceneNode n){int count=1;for(SceneNode child:n.children())count+=count(child);return count;}
@@ -107,7 +120,10 @@ public final class MailboxWorkload implements ScenePage {
                 +",\"warmup\":"+warmup+",\"frames\":"+frames+",\"firstFrameNanos\":"+first+",\"declarationNanos\":"+declarationNanos
                 +",\"mounted\":"+initial.mounted+",\"visible\":"+initial.visible+",\"lastMounted\":"+last.mounted
                 +",\"insideUpdates\":"+updates[0]+",\"outsideUpdates\":"+updates[1]+",\"visiblePaintUpdates\":"+visiblePaintUpdates
-                +",\"lastVisible\":"+last.visible+",\"scrollMaximum\":"+last.maximum+",\"samples\":"+samples.toJson()+"}";
+                +",\"lastVisible\":"+last.visible+",\"scrollMaximum\":"+last.maximum
+                +",\"paintCommands\":"+initial.commands+",\"visibleInkGlyphs\":"+initial.visibleInkGlyphs+",\"unknownInkGlyphs\":"+initial.unknownInkGlyphs
+                +",\"lastPaintCommands\":"+last.commands+",\"lastVisibleInkGlyphs\":"+last.visibleInkGlyphs+",\"lastUnknownInkGlyphs\":"+last.unknownInkGlyphs
+                +",\"samples\":"+samples.toJson()+"}";
             save.accept(json);System.out.println("MAILBOX_PERFORMANCE host="+host+" scale="+scale+" load="+load+" p95ns="+samples.frame().p95Nanos);
         }
     }
