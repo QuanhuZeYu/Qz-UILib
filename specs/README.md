@@ -10,6 +10,7 @@
 | 声明式页面与宿主生命周期 | [页面接入规格](<2026-10-07-uilib-page-host-spec.md>) |
 | 横纵排列、响应网格与布局扩展 | [常规布局规格](<2026-10-13-uilib-layout-spec.md>) |
 | 所属层空间、共同呈现、输入参与与结束 | [所属层与输入范围规格](<2026-10-13-uilib-layer-input-spec.md>) |
+| 内部协作、类职责与结构整理 | [内部职责整理规格](<2026-10-14-uilib-internal-responsibilities-spec.md>) |
 | 动态节点结构与交互身份 | [动态结构规格](<uilib-dynamic-structure-spec.md>) |
 | 测试应用、场景与报告 | [测试应用规格](<2026-10-07-uilib-testing-spec.md>) |
 | 专用性能压测、采样口径与基线 | [性能压测广场规格](<2026-10-14-uilib-performance-testing-spec.md>) |

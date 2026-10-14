@@ -2,7 +2,6 @@ package club.heiqi.uilib.ui.scene.control;
 
 import static club.heiqi.uilib.ui.scene.control.SceneControlPaint.inner;
 import static club.heiqi.uilib.ui.scene.control.SceneControlPaint.border;
-import static club.heiqi.uilib.ui.scene.control.SceneEditCommands.display;
 import static club.heiqi.uilib.ui.scene.control.SceneEditCommands.toDisplay;
 import static club.heiqi.uilib.ui.scene.control.SceneEditCommands.fromDisplay;
 
@@ -27,11 +26,9 @@ import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneChildMeasurer;
 import club.heiqi.uilib.ui.scene.layout.MeasuredSize;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometryView;
-import club.heiqi.uilib.ui.scene.layout.Size;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.PaintCommand;
 import club.heiqi.uilib.ui.scene.paint.PaintPlanBuilder;
-import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
 import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
 import club.heiqi.uilib.ui.scene.text.TextLayout;
 import club.heiqi.uilib.ui.scene.text.TextPolicy;
@@ -92,28 +89,7 @@ public final class SceneTextArea {
                         Objects.requireNonNull(onSubmit, "onSubmit"),
                         Objects.requireNonNull(policy, "policy"),
                         Objects.requireNonNull(tabMode, "tabMode"));
-        SceneNode node =
-                new SceneNode()
-                        .control(control)
-                        .textPolicy(TextPolicy.NORMAL)
-                        .size(Size.fill(1), Size.natural())
-                        .focusable(true)
-                        .clickFocus(true)
-                        .onClick(() -> {});
-        node.bind(
-                NodeBinding.value(
-                        state.snapshot(), (target, value) -> target.text(display(value))));
-        node.bind(
-                NodeBinding.value(
-                        theme,
-                        (target, value) -> target.style(value.textStyle).padding(value.padding)));
-        node.bind(
-                NodeBinding.value(
-                        readOnly,
-                        (target, locked) -> {
-                            if (locked) target.runtime().invalidateComposition(target);
-                        }));
-        return node;
+        return SceneEditBindings.create(control, state, theme, readOnly, TextPolicy.NORMAL);
     }
 
     private static final class Control implements SceneControl, SceneCompositionTarget {
@@ -300,24 +276,9 @@ public final class SceneTextArea {
         @Override
         public boolean edit(SceneNode node, SceneEditEvent event) {
             Snapshot before = state.snapshot().get();
-            boolean locked = readOnly.get();
-            if (event.compositionEvent) {
-                resetNavigation();
-                if (!locked || !event.composing) state.composition(event.text, event.composing);
-                return true;
-            }
-            if (event.text != null) {
-                resetNavigation();
-                if (!locked) {
-                    if (before.composing) state.composition("", false);
-                    state.replaceSelection(event.text, !event.atomic && !before.composing);
-                    inputChanged(before);
-                }
-                return true;
-            }
+            if (commands.input(before, event, this::resetNavigation)) return true;
             if (event.command == null) return false;
-            if (before.composing && !locked && event.command != SceneEditEvent.Command.ESCAPE)
-                return true;
+            boolean locked = readOnly.get();
             if (commands.command(before, event, this::resetNavigation, node.textPolicy().language)) return true;
             switch (event.command) {
                 case UP:

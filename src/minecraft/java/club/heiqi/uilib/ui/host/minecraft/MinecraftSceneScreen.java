@@ -416,8 +416,8 @@ public class MinecraftSceneScreen extends GuiScreen {
             if (spaceInput != null) spaceInput.availability(active);
             if (!active) {
                 if (pointerWindowActive) {
-                    opened.pointer(ScenePointerEvent.cancel());
-                    opened.edit(club.heiqi.uilib.ui.scene.input.SceneEditEvent.composition("", false));
+                    // 仅递交原生失焦事实；指针/焦点/组字沿核心同一有序入口结束。
+                    opened.focusLost();
                 }
                 pointerSuspended = true;
                 pendingHigh = 0;

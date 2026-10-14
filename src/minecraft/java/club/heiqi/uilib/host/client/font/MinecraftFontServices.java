@@ -174,9 +174,9 @@ public final class MinecraftFontServices {
         checkThread();
         ClientFontServices owner = shared;
         shared = null;
-        try {
+        // 桥先关闭；其失败也必须结束共享owner，标准资源块保留首错和suppressed。
+        try (ClientFontServices closing = owner) {
             MinecraftVanillaFont.close();
-            owner.close();
         } finally {
             if (loader != null) {
                 loader.retire();

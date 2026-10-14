@@ -346,12 +346,7 @@ public final class SceneRuntime implements AutoCloseable {
             if (cursor == node) throw new IllegalArgumentException("节点不能包含自身");
         mutation = true;
         try {
-            mount.owner.moveTo(next == null ? owner : mounts.get(next).owner);
-            roots.remove(node);
-            node.frameworkParent(this, next);
-            node.frameworkTransfer(this, next);
-            if (next == null) roots.add(node);
-            invalidateRange();
+            transferMounted(node, mount, next);
         } finally {
             mutation = false;
         }
@@ -391,6 +386,11 @@ public final class SceneRuntime implements AutoCloseable {
         if (node.parent() == next) return;
         for (SceneNode cursor = next; cursor != null; cursor = cursor.parent())
             if (cursor == node) throw new IllegalArgumentException("移动形成环: " + node.id());
+        transferMounted(node, mount, next);
+    }
+
+    /** 两种授权入口共用迁移步骤；保留挂载token与绑定，逻辑拥有权另行交接。 */
+    private void transferMounted(SceneNode node, Mount mount, SceneNode next) {
         mount.owner.moveTo(next == null ? owner : mounts.get(next).owner);
         roots.remove(node);
         node.frameworkParent(this, next);

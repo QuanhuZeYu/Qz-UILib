@@ -19,7 +19,6 @@ import club.heiqi.uilib.ui.scene.text.DocumentContent;
 import club.heiqi.uilib.ui.scene.text.FontStyle;
 import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
 import club.heiqi.uilib.ui.scene.text.TableContent;
-import club.heiqi.uilib.ui.scene.text.TextLayout;
 import club.heiqi.uilib.ui.scene.text.TextStyle;
 
 import java.util.ArrayList;
@@ -30,7 +29,6 @@ import java.util.function.Consumer;
 final class SceneDocumentTable implements SceneControl {
     private final ReadableSignal<DocumentContent.Block> source;
     private int offset, maximum;
-    private ChildPlacements prepared;
     // 仅在本次测量到排列之间复用；arrange后及卸载时释放，不保活旧测量批次。
     private GridRequest request;
 
@@ -56,7 +54,6 @@ final class SceneDocumentTable implements SceneControl {
 
                             public void close() {
                                 control.request = null;
-                                control.prepared = null;
                             }
                         });
         table.bind(
@@ -239,39 +236,28 @@ final class SceneDocumentTable implements SceneControl {
     }
 
     @Override
-    public TextLayout presentText(
-            SceneNode node,
-            TextLayout full,
-            int width,
-            int height,
-            SceneTextMeasurer text,
-            SceneChildMeasurer children) {
-        Grid grid = grid(node, width, children);
-        maximum = Math.max(0, grid.width - width);
-        offset = SceneControlViewport.clamp(offset, maximum);
-        List<ChildPlacements.Entry> entries = new ArrayList<>();
-        int index = 0, y = node.padding();
-        for (int row = 0; row < grid.rows.length; row++) {
-            int x = node.padding() - offset;
-            for (int col = 0; col < source.get().table.rows().get(row).cells().size(); col++) {
-                entries.add(
-                        new ChildPlacements.Entry(
-                                node.children().get(index++),
-                                new LayoutBox(x, y, grid.columns[col], grid.rows[row])));
-                x += grid.columns[col] + node.gap();
+    public ChildPlacements arrange(SceneNode node, LayoutBox box, SceneChildMeasurer children) {
+        // GridRequest只复用当批测量；最终列宽/行高与滚动范围由实际外盒决定。
+        try {
+            int width = Math.max(0, box.width - node.padding() * 2);
+            Grid grid = grid(node, width, children);
+            maximum = Math.max(0, grid.width - width);
+            offset = SceneControlViewport.clamp(offset, maximum);
+            List<ChildPlacements.Entry> entries = new ArrayList<>();
+            int index = 0, y = node.padding();
+            for (int row = 0; row < grid.rows.length; row++) {
+                int x = node.padding() - offset;
+                for (int col = 0; col < source.get().table.rows().get(row).cells().size(); col++) {
+                    entries.add(new ChildPlacements.Entry(node.children().get(index++),
+                            new LayoutBox(x, y, grid.columns[col], grid.rows[row])));
+                    x += grid.columns[col] + node.gap();
+                }
+                y += grid.rows[row] + node.gap();
             }
-            y += grid.rows[row] + node.gap();
+            return new ChildPlacements(entries);
+        } finally {
+            request = null;
         }
-        prepared = new ChildPlacements(entries);
-        return full;
-    }
-
-    @Override
-    public ChildPlacements arrange(SceneNode node, LayoutBox box, SceneChildMeasurer childMeasurer) {
-        ChildPlacements result = prepared;
-        prepared = null;
-        request = null;
-        return result;
     }
 
     @Override
@@ -302,7 +288,6 @@ final class SceneDocumentTable implements SceneControl {
 
     /** 单元格聚合实际子内容宽度，不用fill声明掩盖不可拆分原子项的最小宽度。 */
     private static final class Cell implements SceneControl {
-        private ChildPlacements prepared;
 
         @Override
         public MeasuredSize measure(SceneNode node, Constraints limits, SceneTextMeasurer text) {
@@ -330,34 +315,17 @@ final class SceneDocumentTable implements SceneControl {
         }
 
         @Override
-        public TextLayout presentText(
-                SceneNode node,
-                TextLayout full,
-                int width,
-                int height,
-                SceneTextMeasurer text,
-                SceneChildMeasurer children) {
+        public ChildPlacements arrange(SceneNode node, LayoutBox box, SceneChildMeasurer children) {
+            int width = Math.max(0, box.width - node.padding() * 2);
             List<ChildPlacements.Entry> entries = new ArrayList<>();
             int y = node.padding();
-            for (SceneNode child : node.children())
-                if (child.visible()) {
-                    MeasuredSize measured =
-                            children.measureChild(child, new Constraints(width, Integer.MAX_VALUE));
-                    entries.add(
-                            new ChildPlacements.Entry(
-                                    child,
-                                    new LayoutBox(node.padding(), y, width, measured.height)));
-                    y += measured.height + node.gap();
-                }
-            prepared = new ChildPlacements(entries);
-            return full;
-        }
-
-        @Override
-        public ChildPlacements arrange(SceneNode node, LayoutBox box, SceneChildMeasurer childMeasurer) {
-            ChildPlacements result = prepared;
-            prepared = null;
-            return result;
+            for (SceneNode child : children.flowChildren()) {
+                MeasuredSize measured = children.measureChild(child, new Constraints(width, Integer.MAX_VALUE));
+                entries.add(new ChildPlacements.Entry(child,
+                        new LayoutBox(node.padding(), y, width, measured.height)));
+                y += measured.height + node.gap();
+            }
+            return new ChildPlacements(entries);
         }
 
         @Override

@@ -76,6 +76,28 @@ final class SceneEditCommands {
             onSubmit.accept(state.request(true));
     }
 
+    /** 来源文本与候选组字优先；各模式只决定本地导航清理，不复制草稿/IME协议。 */
+    boolean input(Snapshot before, SceneEditEvent event, Runnable beforeInput) {
+        boolean locked = readOnly.get();
+        if (event.compositionEvent) {
+            beforeInput.run();
+            if (!locked || !event.composing) state.composition(event.text, event.composing);
+            return true;
+        }
+        if (event.text != null) {
+            beforeInput.run();
+            if (!locked) {
+                if (before.composing) state.composition("", false);
+                state.replaceSelection(event.text, !event.atomic && !before.composing);
+                inputChanged(before);
+            }
+            return true;
+        }
+        // 方向/删除/空格等候选键归IME，不同时修改已确认草稿或提交字段。
+        return event.command != null && before.composing && !locked
+                && event.command != SceneEditEvent.Command.ESCAPE;
+    }
+
     boolean command(Snapshot before, SceneEditEvent event, Runnable beforeMutation, String language) {
         boolean locked = readOnly.get();
         switch (event.command) {

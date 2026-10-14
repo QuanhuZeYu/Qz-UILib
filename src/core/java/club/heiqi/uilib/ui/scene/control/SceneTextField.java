@@ -15,18 +15,15 @@ import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneChildMeasurer;
 import club.heiqi.uilib.ui.scene.layout.MeasuredSize;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometryView;
-import club.heiqi.uilib.ui.scene.layout.Size;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.PaintCommand;
 import club.heiqi.uilib.ui.scene.paint.PaintPlanBuilder;
-import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
 import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
 import club.heiqi.uilib.ui.scene.text.TextLayout;
 import club.heiqi.uilib.ui.scene.text.TextPolicy;
 
 import static club.heiqi.uilib.ui.scene.control.SceneControlPaint.inner;
 import static club.heiqi.uilib.ui.scene.control.SceneControlPaint.border;
-import static club.heiqi.uilib.ui.scene.control.SceneEditCommands.display;
 import static club.heiqi.uilib.ui.scene.control.SceneEditCommands.toDisplay;
 import static club.heiqi.uilib.ui.scene.control.SceneEditCommands.fromDisplay;
 
@@ -76,29 +73,7 @@ public final class SceneTextField {
                         Objects.requireNonNull(readOnly, "readOnly"),
                         Objects.requireNonNull(onSubmit, "onSubmit"),
                         Objects.requireNonNull(policy, "policy"));
-        SceneNode node =
-                new SceneNode()
-                        .control(control)
-                        .textPolicy(TextPolicy.SINGLE_LINE)
-                        .size(Size.fill(1), Size.natural())
-                        .focusable(true)
-                        .clickFocus(true)
-                        .onClick(() -> {});
-        // snapshot 同时通知光标、组字与文本代际；绑定仅在正常挂载刷新中改节点。
-        node.bind(
-                NodeBinding.value(
-                        state.snapshot(), (target, value) -> target.text(display(value))));
-        node.bind(
-                NodeBinding.value(
-                        theme,
-                        (target, value) -> target.style(value.textStyle).padding(value.padding)));
-        node.bind(
-                NodeBinding.value(
-                        readOnly,
-                        (target, locked) -> {
-                            if (locked) target.runtime().invalidateComposition(target);
-                        }));
-        return node;
+        return SceneEditBindings.create(control, state, theme, readOnly, TextPolicy.SINGLE_LINE);
     }
 
     private static final class Control implements SceneControl, SceneCompositionTarget {
@@ -243,23 +218,9 @@ public final class SceneTextField {
         @Override
         public boolean edit(SceneNode node, SceneEditEvent event) {
             Snapshot before = state.snapshot().get();
-            boolean locked = readOnly.get();
-            if (event.compositionEvent) {
-                if (!locked || !event.composing) state.composition(event.text, event.composing);
-                return true;
-            }
-            if (event.text != null) {
-                if (!locked) {
-                    if (before.composing) state.composition("", false);
-                    state.replaceSelection(event.text, !event.atomic && !before.composing);
-                    inputChanged(before);
-                }
-                return true;
-            }
+            if (commands.input(before, event, () -> {})) return true;
             if (event.command == null) return false;
-            // 真实组字期间方向/删除/空格等候选键归IME；不同时修改已确认草稿或提交字段。
-            if (before.composing && !locked && event.command != SceneEditEvent.Command.ESCAPE)
-                return true;
+            boolean locked = readOnly.get();
             if (commands.command(before, event, this::resetBoundary, node.textPolicy().language)) return true;
             switch (event.command) {
                 case LEFT:

@@ -33,53 +33,24 @@ final class DocumentCodeViewport implements SceneControl {
         return new MeasuredSize(constraints.availableWidth, content.height);
     }
 
-    private ChildPlacements prepared;
-
-    @Override
-    public club.heiqi.uilib.ui.scene.text.TextLayout presentText(
-            SceneNode node,
-            club.heiqi.uilib.ui.scene.text.TextLayout full,
-            int availableWidth,
-            int availableHeight,
-            SceneTextMeasurer text,
-            SceneChildMeasurer children) {
-        if (children.flowChildren().isEmpty()) {
-            prepared = new ChildPlacements(Collections.emptyList());
-            return full;
-        }
-        LayoutBox box = new LayoutBox(0, 0, availableWidth, availableHeight);
-        SceneNode content = children.flowChildren().get(0);
-        // presentText收到的是框架已扣除padding的内容宽度。
-        int width = box.width;
-        MeasuredSize measured =
-                children.measureChild(
-                        content, new Constraints(Integer.MAX_VALUE, Integer.MAX_VALUE));
-        int maximum = Math.max(0, measured.width - width);
-        // 字体、源码和视口改变后从本次测量求范围，不保留已失效旧上限。
-        offset = SceneControlViewport.clamp(offset, maximum);
-        prepared =
-                new ChildPlacements(
-                        Collections.singletonList(
-                                new ChildPlacements.Entry(
-                                        content,
-                                        new LayoutBox(
-                                                node.padding() - offset,
-                                                node.padding(),
-                                                Math.max(width, measured.width),
-                                                measured.height))));
-        return full;
-    }
-
     @Override
     public MeasuredSize measure(SceneNode node, Constraints limits, SceneTextMeasurer text) {
         return new MeasuredSize(0, 0);
     }
 
     @Override
-    public ChildPlacements arrange(SceneNode node, LayoutBox box, SceneChildMeasurer childMeasurer) {
-        ChildPlacements result = prepared;
-        prepared = null;
-        return result;
+    public ChildPlacements arrange(SceneNode node, LayoutBox box, SceneChildMeasurer children) {
+        if (children.flowChildren().isEmpty()) return new ChildPlacements(Collections.emptyList());
+        SceneNode content = children.flowChildren().get(0);
+        // 普通容器在最终外盒排列；文字投影不再为子布局保存跨阶段prepared。
+        int width = Math.max(0, box.width - node.padding() * 2);
+        MeasuredSize measured = children.measureChild(
+                content, new Constraints(Integer.MAX_VALUE, Integer.MAX_VALUE));
+        int maximum = Math.max(0, measured.width - width);
+        offset = SceneControlViewport.clamp(offset, maximum);
+        return new ChildPlacements(Collections.singletonList(new ChildPlacements.Entry(content,
+                new LayoutBox(node.padding() - offset, node.padding(),
+                        Math.max(width, measured.width), measured.height))));
     }
 
     @Override

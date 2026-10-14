@@ -91,6 +91,62 @@ public final class MinecraftScreenSwitchScenario extends TestApplication {
             require(newHost.frames == 2, "下一正常帧不能继续呈现新页");
             System.out.println("ACTUAL_MC_DRAW oldReplay=1 newReplay=2 oldClick=1 newClick=0");
         });
+        scenario("MC失焦入口按采集序列清焦点和组字", () -> {
+            ReactiveDomain domain = ReactiveDomain.direct();
+            club.heiqi.uilib.ui.scene.edit.SceneEditState[] declared = {null};
+            domain.execute(() -> declared[0] = new club.heiqi.uilib.ui.scene.edit.SceneEditState(domain, "A"));
+            club.heiqi.uilib.ui.scene.edit.SceneEditState state = declared[0];
+            SceneNode[] node = {null};
+            SceneTextMeasurer text = own(new club.heiqi.uilib.ui.scene.text.font.FontTextService(
+                    club.heiqi.uilib.host.font.IsolatedFontEngine.shared()));
+            ScenePageSession session = own(ScenePageSession.open(domain, new Host(), text, context -> {
+                node[0] = club.heiqi.uilib.ui.scene.control.SceneTextField.create(context, state,
+                        domain.signal(club.heiqi.uilib.ui.scene.control.SceneTheme.light()),
+                        domain.signal(false), ignored -> {});
+                context.mount(node[0]);
+            }));
+            MinecraftSceneScreen screen = new MinecraftSceneScreen(context -> {});
+            AutoCloseable inputs = own(installSession(screen, session));
+            session.frame();
+            domain.execute(() -> session.runtime().focusRouter().request(session.runtime().captureMount(node[0])));
+            session.edit(club.heiqi.uilib.ui.scene.input.SceneEditEvent.composition("候选", true));
+            session.frame();
+            domain.execute(() -> require(session.runtime().focusRouter().focused().get() == node[0]
+                    && state.snapshot().get().composing, "失焦前未建立真实焦点和组字"));
+            field(inputs.getClass(), inputs, "pointerWindowActive", true);
+            // 只注入Display的原生可用性事实；实际Inputs/有序事件与核心焦点协议照常运行。
+            Field displayField = org.lwjgl.opengl.Display.class.getDeclaredField("display_impl");
+            displayField.setAccessible(true);
+            Object original = displayField.get(null);
+            Object inactive = java.lang.reflect.Proxy.newProxyInstance(original.getClass().getClassLoader(),
+                    new Class<?>[] {displayField.getType()}, (proxy, method, arguments) -> {
+                        if (method.getName().equals("isActive")) return false;
+                        method.setAccessible(true);
+                        return method.invoke(original, arguments);
+                    });
+            Field access = sun.misc.Unsafe.class.getDeclaredField("theUnsafe");
+            access.setAccessible(true);
+            sun.misc.Unsafe unsafe = (sun.misc.Unsafe) access.get(null);
+            Object base = unsafe.staticFieldBase(displayField);
+            long offset = unsafe.staticFieldOffset(displayField);
+            java.lang.reflect.Method sync = inputs.getClass().getDeclaredMethod("syncInputAvailability");
+            sync.setAccessible(true);
+            try {
+                unsafe.putObjectVolatile(base, offset, inactive);
+                sync.invoke(inputs);
+            } finally {
+                unsafe.putObjectVolatile(base, offset, original);
+            }
+            domain.execute(() -> require(session.runtime().focusRouter().focused().get() == node[0],
+                    "采集失焦事实过早改焦点"));
+            session.edit(club.heiqi.uilib.ui.scene.input.SceneEditEvent.text("迟到"));
+            session.frame();
+            domain.execute(() -> {
+                require(session.runtime().focusRouter().focused().get() == null && !state.snapshot().get().composing,
+                        "MC失焦未经正式入口清焦点/组字");
+                require(state.snapshot().get().text.equals("A"), "失焦后的同批文字落到旧字段");
+            });
+        });
     }
 
     public static void main(String[] args) throws Exception {

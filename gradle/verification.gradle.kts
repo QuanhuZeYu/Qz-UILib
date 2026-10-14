@@ -31,6 +31,13 @@ tasks.withType<Test>().configureEach {
 }
 
 // 集成场景直启只包含核心与场景类，不将 MC/Forge/LWJGL 放到执行类路径。
+val documentArrangementScenario = registerTestApplication("documentArrangementScenario", "验证普通文档容器直接最终排列", "club.heiqi.uilib.ui.scene.control.DocumentArrangementScenario") {
+    dependsOn(tasks.named("testClasses"))
+    classpath = coreSources.output + sourceSets.getByName("test").output + sourceSets.getByName("testSupport").output + coreContentRuntime
+    javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(8)) })
+}
+tasks.named("check") { dependsOn(documentArrangementScenario) }
+
 val coreLoopScenario = registerTestApplication("coreLoopScenario", "运行无平台核心业务与场景闭环", "club.heiqi.uilib.ui.scene.integration.SceneCoreLoopTest") {
     dependsOn(tasks.named("testClasses"))
     classpath = sourceSets.getByName("main").output + glRendererSources.output + coreSources.output + fontAdapterSources.output + sourceSets.getByName("test").output + coreContentRuntime
@@ -194,6 +201,13 @@ val minecraftScreenSwitchScenario = registerTestApplication("minecraftScreenSwit
     jvmArgs("-Dfile.encoding=UTF-8", "-Djava.library.path=" + layout.buildDirectory.dir("lwjgl2-test/natives").get().asFile.absolutePath)
 }
 tasks.named("check") { dependsOn(minecraftScreenSwitchScenario) }
+val minecraftFontShutdownScenario = registerTestApplication("minecraftFontShutdownScenario", "MC共享字体桥失败仍结束真实owner", "club.heiqi.uilib.ui.scene.integration.MinecraftFontShutdownScenario", useDefaultLauncher = false) {
+    dependsOn(tasks.named(lwjgl2TestSources.classesTaskName), "extractLwjgl2TestNatives")
+    classpath = lwjgl2TestSources.runtimeClasspath + sourceSets.getByName("patchedMc").output + sourceSets.getByName("main").compileClasspath.filter { !it.name.contains("jabel") }
+    javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(8)) })
+    jvmArgs("-Dfile.encoding=UTF-8", "-Djava.library.path=" + layout.buildDirectory.dir("lwjgl2-test/natives").get().asFile.absolutePath)
+}
+tasks.named("check") { dependsOn(minecraftFontShutdownScenario) }
 
 val imageLwjgl2Scenario = registerTestApplication("imageLwjgl2Scenario", "原LWJGL2 actual IMAGE像素与compat item scope正常异常状态（不启动MC）", "club.heiqi.uilib.ui.scene.integration.ImageLwjgl2Scenario", useDefaultLauncher = false) {
     dependsOn(tasks.named(lwjgl2TestSources.classesTaskName), "extractLwjgl2TestNatives")
