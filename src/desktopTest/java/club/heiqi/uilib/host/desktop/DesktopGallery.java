@@ -76,6 +76,7 @@ public final class DesktopGallery {
                                 case REDO: code = GLFW_KEY_Y; mods |= GLFW_MOD_CONTROL; break;
                                 case SUBMIT: code = GLFW_KEY_ENTER; mods |= GLFW_MOD_CONTROL; break;
                                 case CONFIRM: code = GLFW_KEY_ENTER; break;
+                                case TAB: code = GLFW_KEY_TAB; break;
                                 case DOCUMENT_HOME: code = GLFW_KEY_HOME; mods |= GLFW_MOD_CONTROL; break;
                                 case DOCUMENT_END: code = GLFW_KEY_END; mods |= GLFW_MOD_CONTROL; break;
                                 default: throw new IllegalArgumentException("旅程未声明宿主键：" + command);

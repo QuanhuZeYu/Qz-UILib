@@ -100,6 +100,7 @@ public final class SceneTextField {
         private club.heiqi.uilib.ui.scene.text.TextStyle hintStyle;
         private int hintWidth=-1;
         private long hintMetrics=-1;
+        private TextPolicy hintPolicy;
         // 以下仅为呈现缓存，不是草稿、输入所有权或另一份编辑状态。
         private TextLayout source, presented;
         private Snapshot presentation;
@@ -344,9 +345,11 @@ public final class SceneTextField {
             String label=Objects.requireNonNull(placeholder.get(),"placeholder");
             int available=Math.max(0,e.box.width-node.padding()*2);
             club.heiqi.uilib.ui.scene.text.TextStyle style=node.style().withColor(theme.get().disabledText);
-            if(hint==null||!label.equals(hintValue)||!style.equals(hintStyle)||hintWidth!=available||hintMetrics!=revision) {
-                hint=text.layout(label,style,available,bodyPolicy(node));
-                hintValue=label;hintStyle=style;hintWidth=available;hintMetrics=revision;
+            TextPolicy policy=bodyPolicy(node);
+            // 空草稿也能单独换方向/语言；提示不能沿用另一份排版策略的缓存。
+            if(hint==null||!label.equals(hintValue)||!style.equals(hintStyle)||hintWidth!=available||hintMetrics!=revision||!policy.equals(hintPolicy)) {
+                hint=text.layout(label,style,available,policy);
+                hintValue=label;hintStyle=style;hintWidth=available;hintMetrics=revision;hintPolicy=policy;
             }
         }
 

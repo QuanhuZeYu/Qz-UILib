@@ -8,6 +8,7 @@ import club.heiqi.uilib.ui.reactive.ReactiveDomain;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.control.SceneTheme;
 import club.heiqi.uilib.ui.scene.control.SceneCheckBox;
+import club.heiqi.uilib.ui.scene.control.SceneTextField;
 import club.heiqi.uilib.ui.scene.input.SceneNavigationEvent;
 import club.heiqi.uilib.ui.scene.host.SceneHost;
 import club.heiqi.uilib.ui.scene.host.ScenePageSession;
@@ -113,6 +114,7 @@ public final class MailboxScenario extends TestApplication {
         @Override public void close() { session.close(); }
     }
     @Override protected void runTests() throws Exception {
+        scenario("空态混排提示方向动态换代",this::placeholderPolicy);
         scenario("搜索空态提示与组字复制隔离及工具区不跳位",this::searchPresentation);
         scenario("复合邮件主体文字与空白命中同一当前对象",this::compositeInput);
         scenario("现代中英真实字重与显式字体重载",this::modernFonts);
@@ -154,6 +156,35 @@ public final class MailboxScenario extends TestApplication {
             }
         });
     }
+    /** 保护实际评审发现：空草稿不改变时只切文本方向，提示仍须重新呈现。 */
+    private void placeholderPolicy() throws Exception {
+        try(View view=new View()) {
+            club.heiqi.uilib.ui.scene.node.SceneNode[] field=new club.heiqi.uilib.ui.scene.node.SceneNode[1];
+            club.heiqi.uilib.ui.reactive.Signal<club.heiqi.uilib.ui.scene.text.TextPolicy>[] policy=new club.heiqi.uilib.ui.reactive.Signal[1];
+            try(ScenePageSession page=ScenePageSession.open(view.domain,view,fonts,ctx -> {
+                club.heiqi.uilib.ui.scene.edit.SceneEditState state=new club.heiqi.uilib.ui.scene.edit.SceneEditState(view.domain,"");
+                policy[0]=view.domain.signal(new club.heiqi.uilib.ui.scene.text.TextPolicy(club.heiqi.uilib.ui.scene.text.TextPolicy.Direction.LTR,
+                        club.heiqi.uilib.ui.scene.text.TextPolicy.Wrap.NONE,"he",0,0,club.heiqi.uilib.ui.scene.text.TextPolicy.HardBreak.MARKER));
+                field[0]=SceneTextField.create(ctx,state,ctx.theme(),() -> false,request -> state.accept(request,request.text),
+                        SceneTextField.SubmitPolicy.CONFIRM,() -> "ABC אבג 123",false)
+                        .bind(club.heiqi.uilib.ui.scene.runtime.NodeBinding.value(policy[0],club.heiqi.uilib.ui.scene.node.SceneNode::textPolicy));
+                ctx.mountOwned(field[0]);
+            })) {
+                page.frame();
+                club.heiqi.uilib.ui.scene.text.TextLayout left=view.plan.commands().stream()
+                        .filter(c -> c.kind==PaintCommand.Kind.TEXT&&c.text.logicalText.equals("ABC אבג 123")).findFirst().get().text;
+                view.domain.execute(() -> policy[0].set(new club.heiqi.uilib.ui.scene.text.TextPolicy(club.heiqi.uilib.ui.scene.text.TextPolicy.Direction.RTL,
+                        club.heiqi.uilib.ui.scene.text.TextPolicy.Wrap.NONE,"he",0,0,club.heiqi.uilib.ui.scene.text.TextPolicy.HardBreak.MARKER)));
+                page.frame();
+                club.heiqi.uilib.ui.scene.text.TextLayout right=view.plan.commands().stream()
+                        .filter(c -> c.kind==PaintCommand.Kind.TEXT&&c.text.logicalText.equals("ABC אבג 123")).findFirst().get().text;
+                require(right!=left&&right.lines().get(0).glyphs().get(0).logicalStart!=left.lines().get(0).glyphs().get(0).logicalStart,
+                        "只改变排版策略的空态提示仍保留旧方向");
+                view.domain.execute(() -> require(field[0].text().isEmpty(),"提示方向变化改写了草稿"));
+            }
+        }
+    }
+
     private void searchPresentation() {
         try(View view=new View()) {
             int[] point=new int[2];

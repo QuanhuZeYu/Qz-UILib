@@ -138,8 +138,16 @@ public final class GalleryJourney {
             driver.frame();driver.evidence("mailbox-pressed");
             driver.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.Kind.MOVE,180,40);
             driver.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.Kind.UP,180,40);
-            driver.frame();driver.evidence("mailbox-focus");
+            driver.frame();driver.evidence("mailbox-cancelled");
             require(!contains(driver,"这封邮件记录"),"取消主体按压仍打开邮件");
+            club.heiqi.uilib.ui.scene.node.SceneNode rowAction=rowSubject.node;
+            while(rowAction!=null&&rowAction.clickAction()==null)rowAction=rowAction.parent();
+            require(rowAction!=null,"邮件内容没有复合动作来源");
+            for(int step=0;step<32&&driver.focused()!=rowAction;step++) {
+                driver.command(club.heiqi.uilib.ui.scene.input.SceneEditEvent.Command.TAB,false);driver.frame();
+            }
+            require(driver.focused()==rowAction,"Tab未到达邮件主体合法焦点");
+            driver.evidence("mailbox-focus");
         }
         SceneGeometryView.Entry field = driver.geometry().ordered().stream()
                 .filter(e -> e.node.control() != null && e.node.control().acceptsTextInput(e.node))
@@ -156,6 +164,12 @@ public final class GalleryJourney {
         click(driver, "返回列表");
         require(contains(driver, "本周工坊精选"), "阅读返回没有保留查询");
         click(driver, "清空搜索");
+        SceneGeometryView.Entry emptyField=driver.geometry().ordered().stream()
+                .filter(e -> e.node.control()!=null&&e.node.control().acceptsTextInput(e.node)).findFirst().get();
+        driver.click(emptyField.box.x+12,emptyField.box.y+emptyField.box.height/2);
+        driver.replaceText("不存在的邮件主题");driver.frame();
+        require(contains(driver,"没有匹配的邮件"),"空结果未显示真实说明");driver.evidence("mailbox-empty");
+        click(driver,"清空搜索");
         namedAction(driver,"选择邮件：周五");
         namedAction(driver,"添加星标：周五");
         require(contains(driver,"已选择 1 封"),"行内选择没有批量目标");
