@@ -106,6 +106,7 @@ public final class MailboxScenario extends TestApplication {
         @Override public void close() { session.close(); }
     }
     @Override protected void runTests() throws Exception {
+        scenario("现代中英真实字重与显式字体重载",this::modernFonts);
         scenario("独立行操作批量归档与物理尾部",this::independentOperations);
         scenario("正式复选三态Space和禁用释放",this::checkBoxInput);
         scenario("真实语言资料换代同语言重载与字体尺寸变化",this::resources);
@@ -143,6 +144,44 @@ public final class MailboxScenario extends TestApplication {
                 require(view.painted("邮件已不存在"), "主题变化丢失业务状态");
             }
         });
+    }
+    private void modernFonts() throws Exception {
+        try (View view = new View()) {
+            view.domain.execute(() -> {
+                MailboxModel.Message m = view.model.results.get().get(0).value.get();
+                view.model.update(new MailboxModel.Message(m.id, m.sender, "界面 Café 10:28 😀",
+                        m.preview, m.body, m.time, m.starred, false, m.inbox));
+            });
+            view.frame();
+            boolean normal = false, bold = false, colorEmoji = false;
+            java.util.Set<String> faces = new java.util.LinkedHashSet<>();
+            for (PaintCommand command : view.plan.commands()) {
+                if (command.kind != PaintCommand.Kind.TEXT) continue;
+                for (club.heiqi.uilib.ui.scene.text.TextLayout.Line line : command.text.lines()) {
+                    for (club.heiqi.uilib.ui.scene.text.TextLayout.Glyph glyph : line.glyphs()) {
+                        faces.add(glyph.source.metadata().family + ":" + glyph.source.actualStyle().weight);
+                        if (glyph.source.metadata().family.equals("Noto Sans SC")) {
+                            normal |= glyph.source.actualStyle().weight == 400;
+                            bold |= glyph.source.actualStyle().weight == 700;
+                        }
+                        colorEmoji |= glyph.color && !glyph.replacement;
+                    }
+                }
+            }
+            require(normal && bold && colorEmoji, "正式页面未使用真实常规/粗体及彩色emoji: " + faces);
+            java.util.List<club.heiqi.uilib.ui.scene.text.font.FontSource> replacement = new java.util.ArrayList<>();
+            replacement.add(club.heiqi.uilib.ui.scene.text.font.FontSource.fromResource("mail-font-reload", 2,
+                    "assets/qz_uilib/gallery/fonts/noto-sans-sc/NotoSansSC-VF.ttf", false));
+            replacement.addAll(FontTextService.defaultSources(getClass().getClassLoader(), 2));
+            view.domain.execute(() -> view.theme.set(SceneTheme.light().withTextStyle(
+                    new club.heiqi.uilib.ui.scene.text.TextStyle("default", 21, 0xff202124, replacement))));
+            view.frame();
+            boolean current = view.plan.commands().stream().filter(c -> c.kind == PaintCommand.Kind.TEXT)
+                    .flatMap(c -> c.text.lines().stream()).flatMap(l -> l.glyphs().stream())
+                    .anyMatch(g -> g.source.id.equals("mail-font-reload") && g.source.revision == 2 && g.logicalEm == 21);
+            require(current, "显式字体来源换代未更新当前页面的真实字形");
+            System.out.println("MAILBOX_FONT actualFaces=" + faces + " explicitReload=true samePage=true");
+        }
     }
     private void independentOperations() {
         try (View view = new View()) {

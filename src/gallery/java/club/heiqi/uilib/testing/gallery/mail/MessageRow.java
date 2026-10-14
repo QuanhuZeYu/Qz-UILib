@@ -44,7 +44,7 @@ final class MessageRow {
             MailboxModel.Message m=item.get().value.get(); return m.sender + "\n" + m.subject;
         }, () -> {
             SceneTheme t=MailStyle.buttonTheme(theme.get(),item.get().id.equals(model.openedId.get()));
-            return t.withTextStyle(t.textStyle.withFontStyle(item.get().value.get().read ? FontStyle.NORMAL : new FontStyle(600,FontStyle.Posture.NORMAL)));
+            return t.withTextStyle(t.textStyle.withFontStyle(item.get().value.get().read ? FontStyle.NORMAL : new FontStyle(700,FontStyle.Posture.NORMAL)));
         }, () -> model.open(item.get().id));
         row.add(open);
         SceneNode tail=new SceneNode().size(Size.natural(),Size.natural()).gap(4);

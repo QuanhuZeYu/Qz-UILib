@@ -4,6 +4,7 @@ import club.heiqi.uilib.ui.reactive.Owner;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.scene.control.SceneTheme;
+import club.heiqi.uilib.ui.scene.control.ThemeMode;
 import club.heiqi.uilib.ui.scene.control.SceneTextField;
 import club.heiqi.uilib.ui.scene.control.SceneButton;
 import club.heiqi.uilib.ui.scene.control.SceneCheckBox;
@@ -22,16 +23,25 @@ public final class MailboxPage {
         MailboxModel model = new MailboxModel(p.domain(), MailSamples.messages(24));
         return create(p, theme, model).own(model);
     }
+    public static SceneNode create(ScenePageContext p, ReadableSignal<SceneTheme> theme, ReadableSignal<ThemeMode> mode) {
+        MailboxModel model = new MailboxModel(p.domain(), MailSamples.messages(24));
+        return create(p, theme, mode, model, true).own(model);
+    }
     /** 外部模型由调用方拥有，可用于同一业务的不同视图；页面不关闭它。 */
     public static SceneNode create(ScenePageContext p, ReadableSignal<SceneTheme> base, MailboxModel model) {
         return create(p,base,model,true);
     }
     /** 行为对照消费者可选择完整结果；普通案例使用显式分页浏览。 */
     public static SceneNode create(ScenePageContext p, ReadableSignal<SceneTheme> base, MailboxModel model, boolean paged) {
+        return create(p, base, p.themeMode(), model, paged);
+    }
+    /** 局部预览明确递交模式；嵌入消费者默认跟随页面主题来源。 */
+    public static SceneNode create(ScenePageContext p, ReadableSignal<SceneTheme> base,
+            ReadableSignal<ThemeMode> mode, MailboxModel model, boolean paged) {
         Owner scope = p.domain().owner();
         Signal<Float> fontScale = p.domain().signal(1f);
         ReadableSignal<SceneTheme> theme = p.domain().computed(scope,
-                () -> base.get().withTextStyle(base.get().textStyle.withEm(base.get().textStyle.logicalEm * fontScale.get())));
+                () -> MailPalette.from(base.get().withTextStyle(base.get().textStyle.withEm(base.get().textStyle.logicalEm * fontScale.get())), mode.get()).theme);
         // 响应式策略消费宿主根空间与当前字号，不读取布局结果回写宽度。
         ReadableSignal<Boolean> wide = p.domain().computed(scope,
                 () -> p.viewportWidth().get() >= Math.ceil(theme.get().textStyle.logicalEm * 66));

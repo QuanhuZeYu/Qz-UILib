@@ -98,8 +98,10 @@ public final class TestGallery implements ScenePage {
             global.get();
             preview.set(null);
         });
+        ReadableSignal<ThemeMode> mode = context.domain().computed(context.scope(),
+                () -> preview.get() == null ? global.get() : preview.get());
         ReadableSignal<Boolean> dark = context.domain().computed(context.scope(),
-                () -> (preview.get() == null ? global.get() : preview.get()).isDark());
+                () -> mode.get().isDark());
         ReadableSignal<SceneTheme> theme =
                 context.domain().computed(context.scope(), () -> GalleryStyle.theme(dark.get()));
         Consumer<Page> navigate = selected::set;
@@ -142,7 +144,7 @@ public final class TestGallery implements ScenePage {
             else if (id == Page.EDITING || id == Page.STRUCTURE)
                 page = InteractionScenarios.create(context, id, theme);
             else if (id == Page.RESOURCES) page = ResourceScenarios.create(context, theme);
-            else if (id == Page.MAILBOX) page = club.heiqi.uilib.testing.gallery.mail.MailboxPage.create(context, theme);
+            else if (id == Page.MAILBOX) page = club.heiqi.uilib.testing.gallery.mail.MailboxPage.create(context, theme, mode);
             else page = UsageScenarios.create(context, environment, id, theme);
             SceneNode layer =
                     new SceneNode().size(Size.fill(1), Size.fill(1)).control(new Layers());
