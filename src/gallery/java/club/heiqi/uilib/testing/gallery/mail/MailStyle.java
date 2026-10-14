@@ -7,10 +7,20 @@ import club.heiqi.uilib.ui.scene.control.SceneButton;
 import club.heiqi.uilib.ui.scene.host.ScenePageContext;
 import club.heiqi.uilib.ui.scene.layout.Size;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
+import club.heiqi.uilib.ui.scene.control.SceneTextPolicy;
 
 /** 案例局部视觉词汇，尺寸仍由正式控件测量。 */
 final class MailStyle {
     private MailStyle() {}
+    static int px(SceneTheme theme, float value) { return Math.round(theme.textStyle.logicalEm * value / 15f); }
+    static SceneNode surface(ReadableSignal<SceneTheme> theme, ReadableSignal<Integer> color, float radius) {
+        return new SceneNode().control(new MailSurface(theme,color,radius))
+                .bind(NodeBinding.value(theme,(n,t)->n.style(t.textStyle)));
+    }
+    static SceneNode single(ScenePageContext p, ReadableSignal<String> text, ReadableSignal<SceneTheme> theme) {
+        return SceneLabel.create(p,text,theme,SceneTextPolicy.ELLIPSIS_SINGLE_LINE);
+    }
     static SceneTheme buttonTheme(SceneTheme t, boolean selected) {
         int surface = selected ? t.pressed : 0x00000000;
         return new SceneTheme(t.textStyle, t.panel, surface, t.hover,

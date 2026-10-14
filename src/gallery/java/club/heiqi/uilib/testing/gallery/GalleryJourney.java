@@ -122,6 +122,7 @@ public final class GalleryJourney {
 
     private static void mailbox(Driver driver) {
         go(driver, TestGallery.Page.MAILBOX);
+        driver.resize(1400,900); driver.frame();
         driver.evidence("mailbox-inbox");
         SceneGeometryView.Entry field = driver.geometry().ordered().stream()
                 .filter(e -> e.node.control() != null && e.node.control().acceptsTextInput(e.node))
@@ -129,7 +130,7 @@ public final class GalleryJourney {
         driver.click(field.box.x + 10, field.box.y + field.box.height / 2);
         driver.replaceText("Café"); driver.frame();
         SceneGeometryView.Entry message = driver.geometry().ordered().stream()
-                .filter(e -> e.text != null && e.node.focusable() && e.text.logicalText.contains("本周工坊精选"))
+                .filter(e -> e.text != null && e.text.logicalText.contains("本周工坊精选") && visible(e))
                 .findFirst().orElseThrow(() -> new AssertionError("搜索没有当前消息"));
         club.heiqi.uilib.ui.scene.layout.LayoutBox messageHit=message.clip==null?message.box:message.box.intersect(message.clip);
         driver.click(messageHit.x+messageHit.width/2,messageHit.y+messageHit.height/2);driver.frame();
@@ -150,7 +151,7 @@ public final class GalleryJourney {
         if(driver.resize(720,850)) {
             driver.frame();driver.evidence("mailbox-narrow");
             SceneGeometryView.Entry current=driver.geometry().ordered().stream()
-                .filter(e->e.text!=null&&e.node.focusable()&&e.text.logicalText.contains("周五的设计评审"))
+                .filter(e->e.text!=null&&e.text.logicalText.contains("周五的设计评审")&&visible(e))
                 .findFirst().orElseThrow(()->new AssertionError("窄窗口消息不可达"));
             club.heiqi.uilib.ui.scene.layout.LayoutBox hit=current.clip==null?current.box:current.box.intersect(current.clip);
             driver.click(hit.x+hit.width/2,hit.y+hit.height/2);driver.frame();

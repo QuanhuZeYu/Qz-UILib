@@ -64,8 +64,13 @@ public final class MailboxScenario extends TestApplication {
             domain.execute(() -> {
                 SceneGeometryView.Entry target = geometry().ordered().stream()
                         .filter(e -> e.text != null && e.text.logicalText.contains(contains))
-                        .filter(e -> e.node.focusable() && (e.node.control() == null || !e.node.control().acceptsTextInput(e.node)))
-                        .filter(e -> (e.clip == null ? e.box : e.box.intersect(e.clip)).height > 0)
+                        .filter(e -> e.node.control() == null || !e.node.control().acceptsTextInput(e.node))
+                        .filter(e -> {
+                            for (club.heiqi.uilib.ui.scene.node.SceneNode n=e.node;n!=null;n=n.parent())
+                                if (n.focusable() && n.clickAction()!=null) return true;
+                            return false;
+                        })
+                        .filter(e -> { LayoutBox v=e.clip==null?e.box:e.box.intersect(e.clip); return v.width>0&&v.height>0; })
                         .findFirst().orElseThrow(() -> new AssertionError("找不到可见操作: " + contains));
                 LayoutBox hit = target.clip == null ? target.box : target.box.intersect(target.clip);
                 point[0] = hit.x + hit.width / 2; point[1] = hit.y + hit.height / 2;
@@ -106,6 +111,7 @@ public final class MailboxScenario extends TestApplication {
         @Override public void close() { session.close(); }
     }
     @Override protected void runTests() throws Exception {
+        scenario("复合邮件主体文字与空白命中同一当前对象",this::compositeInput);
         scenario("现代中英真实字重与显式字体重载",this::modernFonts);
         scenario("独立行操作批量归档与物理尾部",this::independentOperations);
         scenario("正式复选三态Space和禁用释放",this::checkBoxInput);
@@ -144,6 +150,33 @@ public final class MailboxScenario extends TestApplication {
                 require(view.painted("邮件已不存在"), "主题变化丢失业务状态");
             }
         });
+    }
+    private void compositeInput() {
+        try(View view=new View()) {
+            for(int part=0;part<4;part++) {
+                final int selected=part;int[] point=new int[2];
+                view.domain.execute(() -> {
+                    MailboxModel.Message m=view.model.results.get().get(0).value.get();
+                    SceneGeometryView.Entry action=view.geometry().ordered().stream()
+                            .filter(e -> e.node.focusable() && e.node.text().equals(m.sender+"\n"+m.subject)).findFirst().get();
+                    SceneGeometryView.Entry content=view.geometry().ordered().stream()
+                            .filter(e -> e.text!=null && e.text.logicalText.equals(selected==0?m.sender:selected==1?m.subject:" — "+m.preview))
+                            .filter(e -> {LayoutBox b=e.clip==null?e.box:e.box.intersect(e.clip);return b.width>0&&b.height>0;}).findFirst().get();
+                    LayoutBox b=content.clip==null?content.box:content.box.intersect(content.clip);
+                    point[0]=b.x+b.width/2;point[1]=b.y+b.height/2;
+                    if(selected==3) {
+                        SceneGeometryView.Entry sender=view.geometry().get(action.node.children().get(0));
+                        point[0]=sender.box.x+sender.box.width+action.node.gap()/2;
+                        point[1]=action.box.y+action.box.height/2;
+                    }
+                });
+                view.session.pointer(ScenePointerEvent.down(0,point[0],point[1]));
+                view.session.pointer(ScenePointerEvent.up(0,point[0],point[1]));view.frame();
+                view.domain.execute(() -> require(view.model.reading.get() && view.model.opened.get().id.equals("mail-0")
+                        &&view.model.checked.get().isEmpty(),"主体不同内容未打开同一对象或串入勾选"));
+                view.click("返回列表");
+            }
+        }
     }
     private void modernFonts() throws Exception {
         try (View view = new View()) {

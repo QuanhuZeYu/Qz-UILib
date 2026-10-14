@@ -84,6 +84,15 @@ public final class MailboxModel implements AutoCloseable {
             source.get(); Item item = byId.get(openedId.get()); return item == null ? null : item.value.get();
         });
     }
+    /** 分类计数独立于当前查询；声明绑定追踪同一消息来源，不另存一份邮箱快照。 */
+    public int count(Folder selected) {
+        int total = 0;
+        for (Item item : source.get()) {
+            Message m = item.value.get();
+            if (selected == Folder.ALL || selected == Folder.INBOX && m.inbox || selected == Folder.STARRED && m.starred) total++;
+        }
+        return total;
+    }
     private void publish() { source.set(Collections.unmodifiableList(new ArrayList<>(byId.values()))); }
     private Item require(String id) {
         domain.checkWrite(); Item value = byId.get(id);

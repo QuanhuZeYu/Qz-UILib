@@ -91,7 +91,13 @@ public final class DesktopGallery {
                             value.codePoints().forEach(c -> input.character.invoke(window.handle(), c));
                         }
                         public void evidence(String name) {
-                            try { settle(window); screenshot(window, output.resolve(name + ".png"), name.equals("mailbox-dark") ? 0xff09090b : 0xfffafafa); }
+                            try {
+                                settle(window);
+                                int background=name.startsWith("mailbox-")
+                                        ? name.equals("mailbox-dark")?0xff111315:0xfff6f8fc : 0xfffafafa;
+                                screenshot(window,output.resolve(name+".png"),background);
+                                if(name.startsWith("mailbox-")) saveGeometry(window,output.resolve(name+".geometry.json"));
+                            }
                             catch (Exception failure) { throw new IllegalStateException("广场实窗取证失败：" + name, failure); }
                         }
                         public void replaceText(String value) {
@@ -231,6 +237,42 @@ public final class DesktopGallery {
             throw new AssertionError("PNG纹理没有真实蓝色像素");
     }
 
+    /** 证据只读正式几何与实际绘制，不为页面增加定位标记或布局接缝。 */
+    private static void saveGeometry(DesktopWindow window, Path target) throws Exception {
+        StringBuilder out=new StringBuilder();
+        window.domain.execute(() -> {
+            out.append("{\"width\":").append(window.width()).append(",\"height\":").append(window.height())
+                    .append(",\"paintCommands\":").append(window.lastPlan.commands().size()).append(",\"entries\":[");
+            boolean first=true;
+            for(SceneGeometryView.Entry e:DesktopTestInput.geometry(window).ordered()) {
+                if(!first)out.append(',');first=false;
+                out.append("{\"id\":").append(quote(e.node.id().toString())).append(",\"name\":").append(quote(e.node.text()))
+                        .append(",\"text\":").append(quote(e.text==null?"":e.text.logicalText))
+                        .append(",\"focusable\":").append(e.node.focusable())
+                        .append(",\"control\":").append(quote(e.node.control()==null?"":e.node.control().getClass().getSimpleName()))
+                        .append(",\"parent\":").append(quote(e.node.parent()==null?"":e.node.parent().id().toString()))
+                        .append(",\"x\":").append(e.box.x).append(",\"y\":").append(e.box.y)
+                        .append(",\"width\":").append(e.box.width).append(",\"height\":").append(e.box.height)
+                        .append(",\"em\":").append(e.node.style().logicalEm);
+                if(e.clip!=null)out.append(",\"clip\":[").append(e.clip.x).append(',').append(e.clip.y)
+                        .append(',').append(e.clip.width).append(',').append(e.clip.height).append(']');
+                out.append('}');
+            }
+            out.append("]}");
+        });
+        Files.write(target,out.toString().getBytes("UTF-8"));
+    }
+    private static String quote(String value) {
+        StringBuilder out=new StringBuilder("\"");
+        for(int i=0;i<value.length();i++) {
+            char c=value.charAt(i);
+            if(c=='\\'||c=='\"')out.append('\\').append(c);
+            else if(c<' ')out.append(String.format(java.util.Locale.ROOT,"\\u%04x",(int)c));
+            else out.append(c);
+        }
+        return out.append('"').toString();
+    }
+
     private static void screenshot(DesktopWindow window, Path target, int background)
             throws Exception {
         window.fonts.beginPresentation(1000000);
@@ -248,7 +290,8 @@ public final class DesktopGallery {
                         .filter(
                                 c ->
                                         c.kind == PaintCommand.Kind.TEXT
-                                                && c.text.originalText.startsWith("QZ / 场景工作台"))
+                                                && (c.text.originalText==null?c.text.logicalText:c.text.originalText)
+                                                        .startsWith(target.getFileName().toString().startsWith("mailbox-")?"QZ Mail":"QZ / 场景工作台"))
                         .findFirst()
                         .orElseThrow(() -> new AssertionError("广场标题缺失"));
         int ink = 0;

@@ -114,7 +114,9 @@ public final class TestGallery implements ScenePage {
                                         value
                                                 ? GalleryStyle.DARK_BACKGROUND
                                                 : GalleryStyle.LIGHT_BACKGROUND)));
+        shell.bind(NodeBinding.value(selected,(n,value) -> n.padding(value==Page.MAILBOX?0:24).gap(value==Page.MAILBOX?0:20)));
         SceneNode header = new SceneNode().size(Size.fill(1), Size.natural()).gap(6);
+        header.bind(NodeBinding.value(() -> selected.get()!=Page.MAILBOX,SceneNode::visible));
         header.add(GalleryStyle.label(context, () -> "QZ / 场景工作台", theme, 24, false));
         header.add(
                 GalleryStyle.label(
@@ -144,7 +146,8 @@ public final class TestGallery implements ScenePage {
             else if (id == Page.EDITING || id == Page.STRUCTURE)
                 page = InteractionScenarios.create(context, id, theme);
             else if (id == Page.RESOURCES) page = ResourceScenarios.create(context, theme);
-            else if (id == Page.MAILBOX) page = club.heiqi.uilib.testing.gallery.mail.MailboxPage.create(context, theme, mode);
+            else if (id == Page.MAILBOX) page = club.heiqi.uilib.testing.gallery.mail.MailboxPage.create(context, theme, mode,
+                    () -> navigate.accept(Page.HOME), () -> preview.set(dark.get()?ThemeMode.LIGHT:ThemeMode.DARK));
             else page = UsageScenarios.create(context, environment, id, theme);
             SceneNode layer =
                     new SceneNode().size(Size.fill(1), Size.fill(1)).control(new Layers());
