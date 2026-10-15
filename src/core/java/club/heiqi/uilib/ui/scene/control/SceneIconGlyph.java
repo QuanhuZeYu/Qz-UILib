@@ -77,6 +77,14 @@ final class SceneIconGlyph {
             case CHECK:p.line(5,12,10,17);p.line(10,17,19,7);break;
             case MINUS:p.line(6,12,18,12);break;
             case MENU:p.line(4,6,20,6);p.line(4,12,20,12);p.line(4,18,20,18);break;
+            case SLIDERS:
+                p.line(4,6,20,6);p.line(4,12,20,12);p.line(4,18,20,18);
+                p.circle(8,6,2,1.5f);p.circle(16,12,2,1.5f);p.circle(10,18,2,1.5f);break;
+            case FILE:
+                p.polygon(false,6,3,14,3,19,8,19,21,6,21);p.line(14,3,14,8);p.line(14,8,19,8);
+                p.line(9,12,16,12);p.line(9,16,16,16);break;
+            case MONITOR:
+                p.polygon(false,3,4,21,4,21,17,3,17);p.line(12,17,12,21);p.line(8,21,16,21);break;
             case CHECK_BOX:p.polygon(false,4,4,20,4,20,20,4,20);break;
             case TAG:p.polygon(false,3,3,11,3,21,13,13,21,3,11);p.circle(7,7,1,1.5f);break;
             case PEOPLE:p.circle(9,8,3,1.8f);p.circle(17,9,2.5f,1.8f);

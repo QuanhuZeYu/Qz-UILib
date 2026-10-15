@@ -12,7 +12,7 @@ import java.util.Objects;
 /** 标准图形及完整名称；实际大小 coverage 共用普通 PaintPlan，不依赖宿主图标字体。 */
 public final class SceneIconButton {
     public enum Symbol { STAR, STAR_FILLED, ARCHIVE, MAIL, MAIL_OPEN, SEARCH, CLOSE,
-        CHEVRON_LEFT, CHEVRON_RIGHT, INBOX, ALL_MAIL, THEME, SORT, CHECK, MINUS, CHECK_BOX, TAG, PEOPLE, MENU }
+        CHEVRON_LEFT, CHEVRON_RIGHT, INBOX, ALL_MAIL, THEME, SORT, CHECK, MINUS, CHECK_BOX, TAG, PEOPLE, MENU, SLIDERS, FILE, MONITOR }
     private SceneIconButton() {}
     public static SceneNode create(ScenePageContext page, Symbol symbol, ReadableSignal<String> name,
             ReadableSignal<SceneTheme> theme, Runnable action) {

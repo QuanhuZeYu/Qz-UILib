@@ -43,7 +43,7 @@ public final class GalleryJourney {
     }
     private static void settings(Driver driver) {
         go(driver,TestGallery.Page.SETTINGS);
-        require(text(driver,"字体与排版")&&text(driver,"已保存"),"配置案例未引用正式设置页面");
+        require(text(driver,"外观")&&action(driver,"管理字体来源")&&!action(driver,"下移")&&text(driver,"已保存"),"配置案例未引用正式设置页面");
         click(driver,"外观");
         require(text(driver,"界面主题"),"外观分类缺失");
         click(driver,"深色外观");

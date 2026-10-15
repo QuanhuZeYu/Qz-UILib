@@ -49,14 +49,13 @@ public final class SettingsPage implements ScenePage {
     public void requestReload() { configuration.domain().execute(() -> { if(view!=null)view.reloadRequested(); }); }
 
     private enum Section {
-        FONT("字体与排版","管理字体来源与优先顺序。"),
-        APPEARANCE("外观","选择适合你的界面主题。"),
+        APPEARANCE("外观","设置界面主题、字体来源与文字预览。"),
         MINECRAFT("Minecraft 接入","管理游戏原版文字与 UILib 的接入。"),
         FILE("配置文件","查看配置来源，保存或重新加载当前设置。");
         final String title,description;
         Section(String title,String description){this.title=title;this.description=description;}
     }
-    private enum Dialog { NONE, ADD, RELOAD, CLOSE }
+    private enum Dialog { NONE, FONTS, ADD, RELOAD, CLOSE }
     private final class View {
         final ScenePageContext ctx;
         final SettingsModel model;
@@ -76,7 +75,7 @@ public final class SettingsPage implements ScenePage {
             compact=ctx.domain().computed(ctx.scope(),() -> ctx.viewportWidth().get()<SettingsLayout.COMPACT_WIDTH);
             navigationOpen=ctx.domain().signal(false);
             ctx.domain().effect(ctx.scope(),() -> {compact.get();navigationOpen.set(false);});
-            section=ctx.domain().signal(Section.FONT);dialog=ctx.domain().signal(Dialog.NONE);
+            section=ctx.domain().signal(Section.APPEARANCE);dialog=ctx.domain().signal(Dialog.NONE);
             List<String> builtins=configuration.builtinCandidates();
             selectedBuiltin=ctx.domain().signal(builtins.isEmpty()?"":builtins.get(0));
             palette=ctx.domain().computed(ctx.scope(),() -> new SettingsStyle.Palette(model.theme().get().isDark()));
@@ -106,11 +105,11 @@ public final class SettingsPage implements ScenePage {
                     .add(SettingsStyle.column(6).add(SettingsStyle.heading(ctx,() -> "设置",palette,30))
                     .add(text("管理字体、界面外观与当前宿主的本地配置。",15,true)))
                     .add(SettingsStyle.line(palette));
-            SceneNode fonts=fontPage(),appearance=appearancePage(),minecraft=minecraftPage(),file=filePage();
-            ctx.own(fonts::destroy);ctx.own(appearance::destroy);ctx.own(minecraft::destroy);ctx.own(file::destroy);
+            SceneNode appearance=appearancePage(),minecraft=minecraftPage(),file=filePage();
+            ctx.own(appearance::destroy);ctx.own(minecraft::destroy);ctx.own(file::destroy);
             SceneNode deck=SettingsStyle.column(0);
-            deck.bind(NodeBinding.children(() -> Collections.singletonList(section.get()==Section.FONT?fonts:
-                    section.get()==Section.APPEARANCE?appearance:section.get()==Section.MINECRAFT?minecraft:file)));
+            deck.bind(NodeBinding.children(() -> Collections.singletonList(section.get()==Section.APPEARANCE?appearance:
+                    section.get()==Section.MINECRAFT?minecraft:file)));
             SceneNode content=SettingsStyle.column(24).add(pageHeading()).add(deck);
             SceneNode feedback=text(() -> model.message().get(),13,true);
             feedback.bind(NodeBinding.value(model.message(),(n,s) -> n.visible(!s.isEmpty())));content.add(feedback);
@@ -123,10 +122,10 @@ public final class SettingsPage implements ScenePage {
             SceneNode shell=SettingsStyle.column(0).size(Size.fill(1),Size.fill(1))
                     .bind(NodeBinding.value(palette,(n,v) -> n.background(v.background)))
                     .add(SettingsLayout.workspace(compact,toolbar,heading,navigation(),body,footer()));
-            SceneNode add=addDialog(),reload=confirmation(Dialog.RELOAD),close=confirmation(Dialog.CLOSE);
-            ctx.own(add::destroy);ctx.own(reload::destroy);ctx.own(close::destroy);
+            SceneNode fonts=fontsDialog(),add=addDialog(),reload=confirmation(Dialog.RELOAD),close=confirmation(Dialog.CLOSE);
+            ctx.own(fonts::destroy);ctx.own(add::destroy);ctx.own(reload::destroy);ctx.own(close::destroy);
             SceneNode overlay=SettingsStyle.column(0).size(Size.fill(1),Size.fill(1)).control(new SettingsLayout.Layers(false));
-            overlay.bind(NodeBinding.children(() -> dialog.get()==Dialog.NONE?Collections.emptyList():Collections.singletonList(dialog.get()==Dialog.ADD?add:dialog.get()==Dialog.RELOAD?reload:close)));
+            overlay.bind(NodeBinding.children(() -> dialog.get()==Dialog.NONE?Collections.emptyList():Collections.singletonList(dialog.get()==Dialog.FONTS?fonts:dialog.get()==Dialog.ADD?add:dialog.get()==Dialog.RELOAD?reload:close)));
             SceneNode root=SettingsStyle.column(0).size(Size.fill(1),Size.fill(1)).control(new SettingsLayout.Layers(false));
             root.add(shell).add(overlay).onEscape(() -> {closeRequested();return true;});
             return root;
@@ -138,12 +137,15 @@ public final class SettingsPage implements ScenePage {
                     .add(SettingsStyle.line(palette));
         }
         SceneNode navigation() {
-            SceneNode sidebar=SettingsStyle.column(4);
-            sidebar.add(text("偏好设置",12,true));
-            for(Section target:Section.values())if(target!=Section.MINECRAFT||configuration.hasMinecraft())
-                sidebar.add(navButton(target));
-            sidebar.add(SettingsStyle.column(8).padding(10).add(text("本地工作区",12,true))
-                    .add(text(configuration.hasMinecraft()?"Minecraft":"Desktop",12,true)));
+            SceneNode sidebar=SettingsStyle.column(24).size(Size.fill(1),Size.fill(1)).padding(20)
+                    .bind(NodeBinding.value(palette,(n,colors) -> n.background(colors.panel)));
+            sidebar.add(SettingsStyle.column(4).padding(8).add(SettingsStyle.heading(ctx,() -> "QZ UILib",palette,21))
+                    .add(text("工作区设置",12,true)));
+            SceneNode categories=SettingsStyle.column(6).size(Size.fill(1),Size.fill(1)).add(text("偏好设置",12,true));
+            for(Section target:Section.values())if(target!=Section.MINECRAFT||configuration.hasMinecraft())categories.add(navButton(target));
+            sidebar.add(categories).add(SettingsStyle.column(8).padding(8).add(SettingsStyle.line(palette))
+                    .add(text(configuration.hasMinecraft()?"Minecraft 工作区":"Desktop 工作区",13,false))
+                    .add(text("本地配置 · 显式保存",12,true)));
             sidebar.bind(NodeBinding.value(compact,(n,value) -> n.visible(!value)));
             SettingsStyle.Button trigger=SettingsStyle.button(ctx,() -> section.get().title+" · 切换分类",palette,
                     () -> navigationOpen.set(!navigationOpen.get()),false,false);
@@ -159,39 +161,57 @@ public final class SettingsPage implements ScenePage {
                     .add(SettingsStyle.surface(menu,palette,false));
             SceneNode selector=SettingsStyle.column(0).size(Size.natural(),Size.natural()).add(trigger.view).add(layer);
             selector.bind(NodeBinding.value(compact,SceneNode::visible));
-            return SettingsStyle.column(0).add(sidebar).add(selector);
+            return SettingsStyle.column(0).bind(NodeBinding.value(compact,(n,small) -> n.size(Size.fill(1),small?Size.natural():Size.fill(1))))
+                    .add(sidebar).add(selector);
         }
         SceneNode navButton(Section target) {
-            return SettingsStyle.navigationButton(ctx,() -> target.title,() -> section.get()==target,palette,
+            club.heiqi.uilib.ui.scene.control.SceneIconButton.Symbol symbol=target==Section.APPEARANCE
+                    ?club.heiqi.uilib.ui.scene.control.SceneIconButton.Symbol.SLIDERS:target==Section.FILE
+                    ?club.heiqi.uilib.ui.scene.control.SceneIconButton.Symbol.FILE:club.heiqi.uilib.ui.scene.control.SceneIconButton.Symbol.MONITOR;
+            return SettingsStyle.navigationButton(ctx,() -> target.title,() -> section.get()==target,palette,symbol,
                     () -> {section.set(target);navigationOpen.set(false);});
         }
         SceneNode appearancePage() {
             SceneNode choices=club.heiqi.uilib.ui.scene.control.SceneGrid.create(ctx,
-                    () -> new club.heiqi.uilib.ui.scene.control.SceneGrid.Policy(180,16,16));
+                    () -> new club.heiqi.uilib.ui.scene.control.SceneGrid.Policy(220,20,16));
             choices.add(SettingsStyle.themeChoice(ctx,"浅色外观",false,() -> model.theme().get()==ThemeMode.LIGHT,palette,
                     () -> model.setTheme(ThemeMode.LIGHT)));
             choices.add(SettingsStyle.themeChoice(ctx,"深色外观",true,() -> model.theme().get()==ThemeMode.DARK,palette,
                     () -> model.setTheme(ThemeMode.DARK)));
-            return SettingsStyle.column(24).add(SettingsStyle.column(8).add(text("界面主题",14,false))
-                    .add(text("设置页立即预览。应用后全局生效，保存后重启保留。",14,true)))
-                    .add(choices).add(SettingsStyle.line(palette))
-                    .add(text("主题与其他分类共享一份草稿，可以统一应用或放弃。",13,true));
+            SceneNode font=SettingsStyle.column(8).add(text("字体来源",14,false));
+            SceneNode summary=SettingsStyle.column(4).add(text(this::fontSummary,14,false));
+            font.add(SettingsStyle.surface(SettingsLayout.sourceRow(summary,
+                    actions(button("管理字体来源",() -> dialog.set(Dialog.FONTS)))),palette,false));
+            font.add(text("选择内置字体或本地文件，按字形覆盖依次尝试。",13,true)).add(error(model.fontError()));
+            SceneNode theme=SettingsStyle.column(12).add(text("界面主题",14,false))
+                    .add(text("选择工作区的浅色或深色外观。",13,true)).add(choices);
+            return SettingsStyle.column(24).add(font).add(theme).add(sampleCard());
         }
-        SceneNode fontPage() {
+        String fontSummary() {
+            List<SettingsModel.Source> sources=model.sources().get();
+            if(sources.isEmpty())return "未配置字体候选";
+            String first=sourceName(sources.get(0).declaration());
+            return sources.size()==1?first:first+"，以及其他 "+(sources.size()-1)+" 个来源";
+        }
+        SceneNode fontsDialog() {
             SceneNode list=SettingsStyle.column(0).size(Size.fill(1),Size.fixed(320)).scrollable(true).clip(true);
             list.bind(NodeBinding.repeat(model.sources(),SettingsModel.Source::identity,this::sourceRow));
-            list.bind(NodeBinding.value(model.sources(),(n,items) -> n.visible(!items.isEmpty())));
-            SceneNode empty=text("未配置字体候选。这是明确的空列表，不会自动补入默认字体。",14,true);
+            // 空态隐藏整个表面，避免仍参与布局的容器失去唯一可见正文。
+            SceneNode sourceList=SettingsStyle.surface(list,palette,false)
+                    .bind(NodeBinding.value(model.sources(),(n,items) -> n.visible(!items.isEmpty())));
+            SceneNode empty=text("未配置字体候选。不会自动补入默认字体。",14,true);
             empty.bind(NodeBinding.value(model.sources(),(n,items) -> n.visible(items.isEmpty())));
-            SceneNode sources=SettingsStyle.column(12).add(text("字体候选顺序",14,false))
-                    .add(text("从上到下尝试来源，按字形覆盖选择合适的候选。",14,true))
-                    .add(text(() -> model.sources().get().size()+" 个来源 · 优先级从高到低",12,true))
-                    .add(empty).add(SettingsStyle.surface(list,palette,false))
-                    .add(error(model.fontError()))
+            SettingsStyle.Button done=SettingsStyle.button(ctx,() -> "完成字体编辑",palette,() -> dialog.set(Dialog.NONE),true,false);
+            SceneNode content=SettingsStyle.column(16).add(SettingsStyle.heading(ctx,() -> "管理字体来源",palette,20))
+                    .add(text("从上到下依次匹配。编辑后仍需在设置页应用。",14,true))
+                    .add(empty).add(sourceList).add(error(model.fontError()))
                     .add(actions(button("+ 添加来源",() -> {path.reset("");fileSource.set(false);dialog.set(Dialog.ADD);}),
                             button(() -> "恢复默认",model::resetFonts,false,true)))
-                    .add(text("内置字体与本地文件可混合排序。仅使用列表中声明的来源。",13,true));
-            return SettingsStyle.column(28).add(sources).add(SettingsStyle.line(palette)).add(sampleCard());
+                    .add(text("移除的来源不会补回；空列表也不会追加默认字体。",12,true))
+                    .add(done.view);
+            return SettingsStyle.column(0).size(Size.fill(1),Size.fill(1)).control(new SettingsLayout.Layers(true,720))
+                    .background(0x66000000).modal(true).onEscape(() -> {cancelDialog();return true;})
+                    .add(SettingsStyle.card(content,palette)).initialFocus(done.target);
         }
         SceneNode sourceRow(ReadableSignal<SettingsModel.Source> source) {
             SceneNode info=SettingsStyle.column(4).add(text(() -> String.format(java.util.Locale.ROOT,"%02d",model.sources().get().indexOf(source.get())+1)
@@ -206,28 +226,25 @@ public final class SettingsPage implements ScenePage {
                     enabledButton(() -> "下移",() -> model.move(source.get(),1),false,true,
                             () -> model.sources().get().indexOf(source.get())<model.sources().get().size()-1),
                     button(() -> "移除",() -> model.remove(source.get()),false,true));
-            return SettingsStyle.column(0).add(SettingsStyle.column(0).padding(12)
-                    .control(new SettingsLayout.SourceRow(info,buttons)).add(info).add(buttons)).add(SettingsStyle.line(palette));
+            return SettingsStyle.column(0).add(SettingsLayout.sourceRow(info,buttons)).add(SettingsStyle.line(palette));
         }
         SceneNode sampleCard() {
-            SceneNode samples=SettingsStyle.column(12).padding(20);
-            samples.add(liveText(() -> "让文字清晰可读。",24)).add(liveText(() -> "The quick brown fox.",22))
-                    .add(liveText(() -> "0123456789 · ± ∞ → 🎨",16)).add(SettingsStyle.line(palette))
-                    .add(liveText(sample.text(),16));
             ReadableSignal<SceneTheme> theme=() -> palette.get().theme(
-                    new club.heiqi.uilib.ui.scene.text.TextStyle("default",14,palette.get().text),10,false);
+                    new club.heiqi.uilib.ui.scene.text.TextStyle("default",18,palette.get().text),14,false);
             SceneNode editor=SceneTextArea.create(ctx,sample,theme,() -> false,s -> sample.accept(s,s.text),
                     SceneTextField.SubmitPolicy.CONFIRM,() -> SceneTextArea.TabMode.NAVIGATE,false)
                     .size(Size.fill(1),Size.fixed(96));
-            return SettingsStyle.column(12).add(text("文字样本",14,false))
-                    .add(text("当前生效配置。应用字体更改后，这里的文字会随之更新。",14,true))
-                    .add(SettingsStyle.surface(samples,palette,true))
-                    .add(actions(text("自定义样本",14,false),button(() -> "重置",() -> sample.reset(defaultSample),false,true)))
-                    .add(SettingsStyle.field(editor,palette)).add(text("样本文字仅供查看，不作为配置保存。",13,true));
-        }
-        SceneNode liveText(ReadableSignal<String> value,int em) {
-            return SceneLabel.create(ctx,value,() -> palette.get().theme(
-                    new club.heiqi.uilib.ui.scene.text.TextStyle("default",em,palette.get().text),0,true));
+            SceneNode field=SettingsStyle.field(editor,palette);
+            SceneNode unavailable=text("未配置生效字体来源，当前没有可用的文字样本。",14,true);
+            ctx.own(field::destroy);ctx.own(unavailable::destroy);
+            // default样本只消费真实生效来源；显式空值不能借界面字体生成伪样本。
+            SceneNode preview=SettingsStyle.column(0).bind(NodeBinding.children(() -> Collections.singletonList(
+                    configuration.current().candidates().isEmpty()?unavailable:field)));
+            return SettingsStyle.column(8).add(SettingsStyle.row(12)
+                    .add(text("文字样本",14,false).size(Size.fill(1),Size.natural()))
+                    .add(button(() -> "重置",() -> sample.reset(defaultSample),false,true)))
+                    .add(preview)
+                    .add(text("使用当前生效字体。可编辑预览文字；样本文字不会保存。",12,true));
         }
         SceneNode minecraftPage() {
             SceneNode card=SettingsStyle.column(16).add(text("原版文字接入",16,false)).add(text("控制 Minecraft 原版文字是否使用 UILib 字体服务。",13,true));
@@ -283,7 +300,7 @@ public final class SettingsPage implements ScenePage {
             if(model.dirty().get()||model.unsaved().get()){confirmedLeave=action;dialog.set(Dialog.CLOSE);}
             else {confirmedLeave=null;action.run();}
         }
-        void cancelDialog(){confirmedLeave=null;dialog.set(Dialog.NONE);}
+        void cancelDialog(){confirmedLeave=null;dialog.set(dialog.get()==Dialog.ADD?Dialog.FONTS:Dialog.NONE);}
         void discardAndLeave(){
             Runnable action=confirmedLeave;confirmedLeave=null;dialog.set(Dialog.NONE);
             model.discard();action.run();
@@ -320,10 +337,10 @@ public final class SettingsPage implements ScenePage {
                     .add(text("例如 C:/Fonts/Example.ttf；应用前会检查字体来源。",12,true));
             file.bind(NodeBinding.value(fileSource,SceneNode::visible));content.add(file);
             content.add(error(() -> path.snapshot().get().error==null?model.fontError().get():path.snapshot().get().error));
-            SettingsStyle.Button cancel=SettingsStyle.button(ctx,() -> "取消",palette,() -> dialog.set(Dialog.NONE),false,false);
+            SettingsStyle.Button cancel=SettingsStyle.button(ctx,() -> "取消",palette,this::cancelDialog,false,false);
             content.add(actions(cancel.view,button(() -> "添加到末尾",() -> {
                 if(fileSource.get())addFile(path.request(true));
-                else if(!selectedBuiltin.get().isEmpty()){model.add(selectedBuiltin.get());if(model.fontError().get().isEmpty())dialog.set(Dialog.NONE);}
+                else if(!selectedBuiltin.get().isEmpty()){model.add(selectedBuiltin.get());if(model.fontError().get().isEmpty())dialog.set(Dialog.FONTS);}
             },true,false)));
             return modal(content).initialFocus(cancel.target);
         }
@@ -333,7 +350,7 @@ public final class SettingsPage implements ScenePage {
             if(value.isEmpty()){path.reject(submission,"请输入字体文件路径。");return;}
             model.add("file:"+value);
             if(!model.fontError().get().isEmpty()){path.reject(submission,model.fontError().get());return;}
-            path.accept(submission,value);dialog.set(Dialog.NONE);
+            path.accept(submission,value);dialog.set(Dialog.FONTS);
         }
     }
     private static String sourceName(String declaration) {

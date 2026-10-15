@@ -29,6 +29,9 @@ final class SettingsLayout {
     static SceneNode form(SceneNode content) {
         return SettingsStyle.column(0).control(new Form(content)).add(content);
     }
+    static SceneNode sourceRow(SceneNode info,SceneNode actions) {
+        return SettingsStyle.column(0).padding(12).control(new SourceRow(info,actions)).add(info).add(actions);
+    }
     static final class Result {
         final MeasuredSize size;final ChildPlacements children;
         Result(int width,int height,List<ChildPlacements.Entry> entries) {
@@ -61,24 +64,24 @@ final class SettingsLayout {
         }
         public List<ReadableSignal<?>> measureDependencies(SceneNode n){return Collections.singletonList(compact);}
         Result layout(SceneNode n,Constraints c,SceneChildMeasurer m) {
-            boolean small=compact.get();int inset=small?16:32,width=Math.min(1200,Math.max(0,c.availableWidth-inset*2));
-            int x=(c.availableWidth-width)/2;
-            int th=m.measureChild(toolbar,new Constraints(c.availableWidth,c.availableHeight)).height;
+            boolean small=compact.get();int rail=small?0:232,inset=small?16:40;
+            int mainWidth=Math.max(0,c.availableWidth-rail),width=Math.min(1120,Math.max(0,mainWidth-inset*2));
+            int x=rail+inset;
+            int th=m.measureChild(toolbar,new Constraints(mainWidth,c.availableHeight)).height;
             int hh=m.measureChild(heading,new Constraints(width,c.availableHeight)).height;
             int fh=m.measureChild(footer,new Constraints(width,c.availableHeight)).height;
             int y=th+(small?16:24),start=y+hh+24,bottom=Math.max(start,c.availableHeight-fh-16);
             List<ChildPlacements.Entry> e=new ArrayList<>();
-            place(e,toolbar,0,0,c.availableWidth,th);place(e,heading,x,y,width,hh);
+            place(e,toolbar,rail,0,mainWidth,th);place(e,heading,x,y,width,hh);
             if(small) {
                 int nh=m.measureChild(navigation,new Constraints(width,Math.max(0,bottom-start))).height;
                 place(e,navigation,x,start,width,nh);start+=nh+20;
-                m.measureChild(content,new Constraints(width,Math.max(0,bottom-start)));
-                place(e,content,x,start,width,Math.max(0,bottom-start));
             } else {
-                int navWidth=184,gap=48,body=Math.max(0,width-navWidth-gap),h=Math.max(0,bottom-start);
-                m.measureChild(navigation,new Constraints(navWidth,h));m.measureChild(content,new Constraints(body,h));
-                place(e,navigation,x,start,navWidth,h);place(e,content,x+navWidth+gap,start,body,h);
+                m.measureChild(navigation,new Constraints(rail,c.availableHeight));
+                place(e,navigation,0,0,rail,c.availableHeight);
             }
+            m.measureChild(content,new Constraints(width,Math.max(0,bottom-start)));
+            place(e,content,x,start,width,Math.max(0,bottom-start));
             place(e,footer,x,Math.max(bottom,c.availableHeight-fh-16),width,fh);
             return new Result(c.availableWidth,c.availableHeight,e);
         }
@@ -86,7 +89,7 @@ final class SettingsLayout {
     private static final class Form extends Arrangement {
         final SceneNode content;Form(SceneNode content){this.content=content;}
         Result layout(SceneNode n,Constraints c,SceneChildMeasurer m) {
-            int width=Math.min(720,c.availableWidth);MeasuredSize s=m.measureChild(content,new Constraints(width,c.availableHeight));
+            int width=Math.min(680,c.availableWidth);MeasuredSize s=m.measureChild(content,new Constraints(width,c.availableHeight));
             return new Result(c.availableWidth,s.height,Collections.singletonList(new ChildPlacements.Entry(content,new LayoutBox(0,0,width,s.height))));
         }
     }
@@ -126,11 +129,18 @@ final class SettingsLayout {
         }
     }
     static final class Layers extends Arrangement {
-        final boolean centered;Layers(boolean centered){this.centered=centered;}
+        final boolean centered;final int preferredWidth;
+        Layers(boolean centered){this(centered,480);}
+        Layers(boolean centered,int preferredWidth){this.centered=centered;this.preferredWidth=preferredWidth;}
+        @Override public void paint(SceneNode n,club.heiqi.uilib.ui.scene.layout.SceneGeometryView geometry,
+                club.heiqi.uilib.ui.scene.paint.PaintPlanBuilder target) {
+            club.heiqi.uilib.ui.scene.layout.SceneGeometryView.Entry entry=geometry.get(n);
+            if((n.background()>>>24)!=0)target.add(club.heiqi.uilib.ui.scene.paint.PaintCommand.rect(entry.box,entry.clip,n.background()));
+        }
         Result layout(SceneNode n,Constraints c,SceneChildMeasurer m) {
             List<ChildPlacements.Entry> e=new ArrayList<>();
             for(SceneNode child:m.flowChildren())if(child.visible()) {
-                int maxWidth=centered?Math.max(0,Math.min(480,c.availableWidth-32)):c.availableWidth;
+                int maxWidth=centered?Math.max(0,Math.min(preferredWidth,c.availableWidth-32)):c.availableWidth;
                 MeasuredSize s=m.measureChild(child,new Constraints(maxWidth,c.availableHeight));
                 int w=child.width().mode==Size.Mode.FILL?maxWidth:Math.min(maxWidth,s.width);
                 int h=child.height().mode==Size.Mode.FILL?c.availableHeight:Math.min(c.availableHeight,s.height);

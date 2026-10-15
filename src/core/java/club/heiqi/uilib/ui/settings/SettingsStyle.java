@@ -6,6 +6,7 @@ import java.util.List;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.scene.control.SceneButton;
 import club.heiqi.uilib.ui.scene.control.SceneLabel;
+import club.heiqi.uilib.ui.scene.control.SceneIconButton;
 import club.heiqi.uilib.ui.scene.control.SceneTextPolicy;
 import club.heiqi.uilib.ui.scene.control.SceneTheme;
 import club.heiqi.uilib.ui.scene.host.ScenePageContext;
@@ -73,11 +74,14 @@ final class SettingsStyle {
                 .control(new Surface(p,primary,ghost,control,8,false)).add(control),control);
     }
     static SceneNode navigationButton(ScenePageContext ctx,ReadableSignal<String> text,ReadableSignal<Boolean> selected,
-            ReadableSignal<Palette> p,Runnable action) {
+            ReadableSignal<Palette> p,SceneIconButton.Symbol symbol,Runnable action) {
         SceneNode button=SceneButton.create(ctx,text,() -> p.get().theme(
                 SettingsTypography.style(14,p.get().text,selected.get()?600:400),9,true),action)
                 .size(Size.fill(1),Size.natural());
-        return column(0).control(new NavigationSurface(p,selected,button)).add(button);
+        SceneNode icon=SceneIconButton.graphic(ctx,() -> symbol,() -> p.get().theme(14,p.get().text,0,true))
+                .size(Size.fixed(18),Size.fixed(20));
+        SceneNode label=SceneLabel.create(ctx,text,() -> p.get().theme(SettingsTypography.style(14,p.get().text,selected.get()?600:400),0,true));
+        return button.control(new NavigationSurface(p,selected,button)).add(row(12).add(icon).add(label));
     }
     static SceneNode toggle(ScenePageContext ctx,ReadableSignal<Boolean> checked,ReadableSignal<Palette> p,Runnable action) {
         SceneNode button=SceneButton.create(ctx,() -> checked.get()?"关闭接管原版文字绘制":"开启接管原版文字绘制",
@@ -98,8 +102,10 @@ final class SettingsStyle {
                 .size(Size.fill(1),Size.natural());
         SceneNode preview=column(0).size(Size.fill(1),Size.fixed(112)).control(new ThemePreview(dark,p,selected));
         // 只扩展标准按钮的内容与装饰；整张选项仍只有一个动作与键盘焦点。
+        SceneNode mark=SceneIconButton.graphic(ctx,() -> SceneIconButton.Symbol.CHECK,() -> p.get().theme(14,p.get().text,0,true))
+                .size(Size.fixed(16),Size.fixed(20)).bind(NodeBinding.value(selected,SceneNode::visible));
         return button.control(new NavigationSurface(p,selected,button))
-                .add(column(8).add(preview).add(label(ctx,() -> label,p,14,false)));
+                .add(column(10).add(preview).add(row(8).add(label(ctx,() -> label,p,14,false).size(Size.fill(1),Size.natural())).add(mark)));
     }
     private static class Surface extends Arrangement {
         final ReadableSignal<Palette> colors;final boolean primary,ghost,muted;
@@ -114,7 +120,11 @@ final class SettingsStyle {
             return new Result(s.width+2,s.height+2,Collections.singletonList(new ChildPlacements.Entry(child,new LayoutBox(1,1,
                     child.width().mode==Size.Mode.FILL?w:s.width,child.height().mode==Size.Mode.FILL?h:s.height))));
         }
-        boolean enabled(){return button==null||button.runtime()==null||button.runtime().interactive(button);}
+        boolean enabled(){
+            // 模态只阻止背页输入，不把背页变成禁用态；颜色与标准按钮沿同一声明enabled。
+            for(SceneNode node=button;node!=null;node=node.parent())if(!node.enabled())return false;
+            return true;
+        }
         boolean focused(){return button!=null&&button.runtime()!=null&&button.runtime().focusRouter().focused().get()==button;}
         boolean hovered(SceneGeometryView g){return button!=null&&button.runtime()!=null&&button.runtime().pointerRouter().hovered(g)==button;}
         public void paint(SceneNode n,SceneGeometryView g,PaintPlanBuilder paint) {
@@ -161,11 +171,16 @@ final class SettingsStyle {
             ScenePaintShapes.rounded(p,b,e.clip,selected.get()?colors.get().text:colors.get().border,8);
             LayoutBox inside=new LayoutBox(b.x+3,b.y+3,Math.max(0,b.width-6),Math.max(0,b.height-6));
             ScenePaintShapes.rounded(p,inside,e.clip,c.background,6);
-            ScenePaintShapes.rounded(p,new LayoutBox(b.x+12,b.y+14,36,84),e.clip,c.panel,4);
-            int x=b.x+60,w=Math.max(0,b.width-76);
-            ScenePaintShapes.rounded(p,new LayoutBox(x,b.y+18,w,12),e.clip,c.selected,3);
-            ScenePaintShapes.rounded(p,new LayoutBox(x,b.y+40,w,22),e.clip,c.border,4);
-            ScenePaintShapes.rounded(p,new LayoutBox(x,b.y+72,Math.max(0,w/2),12),e.clip,c.primary,3);
+            int x=b.x+12,w=Math.max(0,b.width-24);
+            ScenePaintShapes.rounded(p,new LayoutBox(x,b.y+12,w,28),e.clip,c.panel,5);
+            ScenePaintShapes.rounded(p,new LayoutBox(x+8,b.y+19,Math.max(0,w/2),5),e.clip,c.muted,2);
+            ScenePaintShapes.rounded(p,new LayoutBox(x+8,b.y+29,Math.max(0,w*2/3),4),e.clip,c.border,2);
+            for(int row=0;row<2;row++){
+                int y=b.y+48+row*27;
+                ScenePaintShapes.rounded(p,new LayoutBox(x,y,w,21),e.clip,c.panel,5);
+                ScenePaintShapes.rounded(p,new LayoutBox(x+7,y+6,9,9),e.clip,c.border,4);
+                ScenePaintShapes.rounded(p,new LayoutBox(x+23,y+8,Math.max(0,w-36),5),e.clip,c.border,2);
+            }
         }
     }
 }
