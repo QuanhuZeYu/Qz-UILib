@@ -124,6 +124,7 @@ public final class MailboxScenario extends TestApplication {
         scenario("外部模型跨页面重建与两棵独立树接收",this::sharedReceive);
         scenario("点击保留唯一逻辑焦点且键盘导航显示线索",this::focusCues);
         scenario("有限搜索过渡仅重绘且结束复用计划",this::finiteTransition);
+        scenario("有限呈现绑定同批反向与卸载重挂",this::finiteBindingClock);
         scenario("真实分类切换跨分类搜索归档与动态计数",this::categories);
         scenario("空态混排提示方向动态换代",this::placeholderPolicy);
         scenario("搜索空态提示与组字复制隔离及工具区不跳位",this::searchPresentation);
@@ -268,6 +269,43 @@ public final class MailboxScenario extends TestApplication {
                     &&c.box.y+c.box.height<=bounds[0].y+bounds[0].height),"hover渐显途中聚焦同一动作仍未立即可见");
         }
     }
+    /** 用正式runtime的宿主时间入口验证真实时间合同，不依赖sleep碰巧落在中点。 */
+    private void finiteBindingClock() {
+        ReactiveDomain domain=ReactiveDomain.direct();
+        domain.execute(() -> {
+            try(club.heiqi.uilib.ui.scene.runtime.SceneRuntime runtime=new club.heiqi.uilib.ui.scene.runtime.SceneRuntime(domain)) {
+                Signal<Float> target=domain.signal(0f);
+                java.util.List<Float> values=new java.util.ArrayList<>();
+                club.heiqi.uilib.ui.scene.node.SceneNode node=new club.heiqi.uilib.ui.scene.node.SceneNode()
+                    .bind(club.heiqi.uilib.ui.scene.runtime.NodeBinding.transition(target,100,p -> p,(n,v) -> {
+                        values.add(v);n.size(club.heiqi.uilib.ui.scene.layout.Size.fixed(Math.round(v)),club.heiqi.uilib.ui.scene.layout.Size.fixed(20));
+                    }));
+                club.heiqi.uilib.ui.scene.runtime.MountHandle mount=runtime.attach(null,node);
+                runtime.preparePresentation(0);
+                require(values.size()==1&&values.get(0)==0f,"首次挂载没有直接使用当前目标");
+                target.set(100f);runtime.preparePresentation(10);runtime.preparePresentation(35);
+                require(values.get(values.size()-1)==25f&&node.width().value==25,"宿主时间未推进正式尺寸声明");
+                int writes=values.size();runtime.preparePresentation(35);
+                require(values.size()==writes,"同批重复prepare推进了时间");
+                target.set(0f);runtime.preparePresentation(35);
+                require(values.get(values.size()-1)==25f,"反向跳回了旧端点");
+                runtime.preparePresentation(40);
+                require(values.get(values.size()-1)==25f*(1-5f/25f),"反向没有按已走距离缩短时长");
+                runtime.preparePresentation(60);
+                require(values.get(values.size()-1)==0f,"短途反向仍拖满完整时长");
+                runtime.preparePresentation(135);writes=values.size();runtime.preparePresentation(500);
+                require(values.get(values.size()-1)==0f&&values.size()==writes,"结束没有精确落端点或继续写入");
+                target.set(100f);runtime.preparePresentation(501);runtime.preparePresentation(526);
+                writes=values.size();mount.detach();target.set(70f);runtime.preparePresentation(700);
+                require(values.size()==writes,"卸载后有限过渡仍在更新节点");
+                runtime.attach(null,node);runtime.preparePresentation(700);
+                require(values.size()==writes+1&&values.get(values.size()-1)==70f,"重挂复活旧时间线或没有消费当前目标");
+                runtime.preparePresentation(900);
+                require(values.size()==writes+1,"重挂静止目标仍在推进");
+            }
+        });
+    }
+
     private void categories() {
         try(View view=new View()) {
             view.domain.execute(() -> {

@@ -66,40 +66,24 @@ final class DesktopGalleryEvidence {
                 .filter(e -> e.node.focusable()&&e.node.text().equals("星标邮件")).findFirst().get());
         input.point(1100,40);window.frame();settle(window);
         int x=item[0].box.x+item[0].box.width-20,y=item[0].box.y+item[0].box.height/2;
-        int[] pixels=new int[6];long[] elapsed=new long[6];pixels[0]=pixel(window,x,y);
-        int[] times={0,20,45,75,180};
-        ByteBuffer[] images=new ByteBuffer[times.length];
-        for(int i=0;i<images.length;i++)images[i]=ByteBuffer.allocateDirect(window.width()*window.height()*4);
-        long start=System.nanoTime();input.point(x,y);
-        for(int i=0;i<times.length;i++) {
-            long target=start+times[i]*1000000L;
-            do {window.frame();}while(System.nanoTime()<target);
-            elapsed[i+1]=System.nanoTime()-start;pixels[i+1]=pixel(window,x,y);
-            glReadPixels(0,0,window.width(),window.height(),GL_RGBA,GL_UNSIGNED_BYTE,images[i]);
-            if(glGetError()!=GL_NO_ERROR)throw new AssertionError("过渡帧读取失败");
-        }
-        java.util.Set<Integer> colors=new java.util.HashSet<>();for(int value:pixels)colors.add(value);
+        java.util.List<Integer> pixels=new java.util.ArrayList<>();java.util.List<Long> elapsed=new java.util.ArrayList<>();
+        pixels.add(pixel(window,x,y));elapsed.add(0L);input.point(x,y);long start=System.nanoTime();
+        do {window.frame();pixels.add(pixel(window,x,y));elapsed.add(System.nanoTime()-start);}
+        while(System.nanoTime()-start<220000000L);
+        java.util.Set<Integer> colors=new java.util.HashSet<>(pixels);
         if(colors.size()<3)throw new AssertionError("没有采到真实过渡中间颜色");
-        // PNG编码与文件写入在连续GPU采样之后，避免编码耗时挤掉短过渡的中间帧。
-        for(int i=0;i<images.length;i++) {
-            BufferedImage image=new BufferedImage(window.width(),window.height(),BufferedImage.TYPE_INT_ARGB);
-            for(int py=0;py<window.height();py++)for(int px=0;px<window.width();px++) {
-                int at=(py*window.width()+px)*4;ByteBuffer bytes=images[i];
-                image.setRGB(px,window.height()-1-py,((bytes.get(at+3)&255)<<24)|((bytes.get(at)&255)<<16)
-                        |((bytes.get(at+1)&255)<<8)|(bytes.get(at+2)&255));
-            }
-            ImageIO.write(image,"png",output.resolve("mailbox-motion-"+times[i]+".png").toFile());
-        }
         for(int value:pixels)for(int shift=0;shift<24;shift+=8) {
-            int channel=(value>>>shift)&255,a=(pixels[0]>>>shift)&255,b=(pixels[pixels.length-1]>>>shift)&255;
+            int channel=(value>>>shift)&255,a=(pixels.get(0)>>>shift)&255,b=(pixels.get(pixels.size()-1)>>>shift)&255;
             if(channel<Math.min(a,b)-1||channel>Math.max(a,b)+1)throw new AssertionError("导航过渡中途颜色超出端点范围");
         }
-        Files.write(output.resolve("mailbox-motion.json"),("{\"elapsedNanos\":"+java.util.Arrays.toString(elapsed)+",\"argb\":"+java.util.Arrays.toString(pixels)+"}").getBytes("UTF-8"));
+        Files.write(output.resolve("mailbox-motion.json"),("{\"elapsedNanos\":"+elapsed+",\"argb\":"+pixels+",\"readBuffer\":\"GL_FRONT\",\"everyPresentedFrame\":true}").getBytes("UTF-8"));
         input.point(1100,40);window.frame();
-        System.out.println("MAILBOX_MOTION actualGpuPixels=true monotonicTimes=true noDarkFlash=true");
+        System.out.println("MAILBOX_MOTION actualGpuPixels=true monotonicTimes=true noDarkFlash=true everyPresentedFrame=true frames="+pixels.size());
     }
     static int pixel(DesktopWindow window,int x,int y) {
-        glFinish();ByteBuffer value=ByteBuffer.allocateDirect(4);glReadPixels(x,window.height()-1-y,1,1,GL_RGBA,GL_UNSIGNED_BYTE,value);
+        glFinish();ByteBuffer value=ByteBuffer.allocateDirect(4);int previous=glGetInteger(GL_READ_BUFFER);
+        try {glReadBuffer(GL_FRONT);glReadPixels(x,window.height()-1-y,1,1,GL_RGBA,GL_UNSIGNED_BYTE,value);}
+        finally {glReadBuffer(previous);}
         if(glGetError()!=GL_NO_ERROR)throw new AssertionError("过渡像素读取失败");
         return 0xff000000|((value.get(0)&255)<<16)|((value.get(1)&255)<<8)|(value.get(2)&255);
     }

@@ -45,6 +45,9 @@ public final class SceneRuntime implements AutoCloseable {
     private final ScenePointerRouter pointerRouter;
     private final SceneFocusRouter focusRouter;
     private final ReactiveDomain domain;
+    private final SceneTransitions transitions = new SceneTransitions();
+
+    SceneTransitions transitions() { return transitions; }
     private final club.heiqi.uilib.ui.reactive.Signal<Integer> viewportWidth, viewportHeight;
     private final Owner owner;
     private final Map<SceneNode, Mount> mounts = new IdentityHashMap<>();
@@ -346,9 +349,15 @@ public final class SceneRuntime implements AutoCloseable {
     }
 
     public void preparePresentation() {
+        preparePresentation(System.nanoTime());
+    }
+
+    /** 帧协调传入本批唯一单调时刻；重复结算不重复推进有限呈现值。 */
+    public void preparePresentation(long frameNanos) {
         command();
         mutation = true;
         try {
+            transitions.advance(frameNanos);
             do {
                 while (!dirtyBindings.isEmpty()) {
                     List<SceneNode> batch = new ArrayList<>(dirtyBindings);

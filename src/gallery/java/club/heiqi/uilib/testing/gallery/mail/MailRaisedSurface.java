@@ -9,7 +9,7 @@ import club.heiqi.uilib.ui.scene.paint.PaintPlanBuilder;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintShapes;
 
 /** 搜索聚焦与主动作悬停的有限阴影，不改变父布局或命中。 */
-final class MailRaisedSurface extends MailSurface {
+class MailRaisedSurface extends MailSurface {
     private final ReadableSignal<SceneTheme> theme;
     private final ReadableSignal<Integer> color;
     private final ReadableSignal<Boolean> raised;
@@ -23,13 +23,13 @@ final class MailRaisedSurface extends MailSurface {
     @Override public void paint(SceneNode n,SceneGeometryView geometry,PaintPlanBuilder target) {
         SceneGeometryView.Entry e=geometry.get(n);if(e==null)return;
         boolean active=raised==null?n.runtime().pointerRouter().hovered(geometry)==n:raised.get();
-        int opacity=shadow.opacity(active,duration),r=Math.round(theme.get().textStyle.logicalEm*radius);
+        int opacity=shadow.opacity(active,raised==null?duration:0,MailMotion.Curve.LINEAR),r=Math.round(theme.get().textStyle.logicalEm*radius);
         if(opacity>0)for(int spread=3;spread>0;spread--) {
             int alpha=opacity*(spread==1?18:spread==2?9:4)/255;
             ScenePaintShapes.rounded(target,new LayoutBox(e.box.x-spread,e.box.y+1-spread,e.box.width+spread*2,e.box.height+spread*2),
                     e.clip,(alpha<<24)|0x3c4043,r+spread);
         }
-        int fill=background.color(color.get(),duration);
+        int fill=background.color(color.get(),duration,raised==null?MailMotion.Curve.STANDARD:MailMotion.Curve.EASE_IN);
         if(n.clickAction()!=null&&n.runtime().pointerRouter().pressed(n))fill=theme.get().pressed;
         ScenePaintShapes.rounded(target,e.box,e.clip,fill,r);
     }

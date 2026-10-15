@@ -35,6 +35,14 @@ public interface NodeBinding {
         return new ChildrenBinding(source, false);
     }
 
+    /** 有限呈现值过渡。初挂/重挂直接消费目标，反向从当前值续接，卸载结束推进。
+     * 曲线将0到1映射到0到1；apply只更新呈现声明或所属呈现Signal，不执行业务动作。
+     * 时间由帧准备统一采样，apply不在布局、绘制或纯派生内执行。 */
+    static NodeBinding transition(ReadableSignal<Float> source, long durationNanos,
+            java.util.function.DoubleUnaryOperator easing, BiConsumer<SceneNode, Float> apply) {
+        return new TransitionBinding(source, durationNanos, easing, apply);
+    }
+
     static <T> NodeBinding value(ReadableSignal<T> source, BiConsumer<SceneNode, T> apply) {
         return (runtime, node, owner) -> {
             Observation observation =

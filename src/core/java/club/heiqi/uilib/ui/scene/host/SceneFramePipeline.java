@@ -99,6 +99,7 @@ public final class SceneFramePipeline implements AutoCloseable {
     private static final class InputBatch {
         final List<QueuedInput> events;
         final boolean independent;
+        final long frameNanos = System.nanoTime();
         boolean failed, released;
 
         InputBatch(List<QueuedInput> events, boolean independent) {
@@ -122,6 +123,7 @@ public final class SceneFramePipeline implements AutoCloseable {
     private ScenePresentation presentation;
     private long revision = -1, geometryRevision = -1, metrics = -1, generation;
     private int width = -1, height = -1;
+    private long preparedNanos;
 
     public SceneFramePipeline(SceneRuntime runtime, SceneHost host, SceneTextMeasurer measurer) {
         this.runtime = runtime;
@@ -234,7 +236,7 @@ public final class SceneFramePipeline implements AutoCloseable {
             event.discard(router);
             return;
         }
-        SceneGeometryView geometry = prepare().geometry;
+        SceneGeometryView geometry = prepare(batch.frameNanos).geometry;
         switch (event.kind) {
             case FOCUS_LOST:
                 try { router.route(ScenePointerEvent.cancel(), geometry); }
@@ -285,7 +287,7 @@ public final class SceneFramePipeline implements AutoCloseable {
 
     private void replay(InputBatch batch) {
         try {
-            if (!batch.failed && !isClosed() && runtime.alive()) host.replay(prepare().paint);
+            if (!batch.failed && !isClosed() && runtime.alive()) host.replay(prepare(batch.frameNanos).paint);
         } finally {
             if (batch.independent) release(batch);
         }
@@ -302,7 +304,8 @@ public final class SceneFramePipeline implements AutoCloseable {
         synchronized (inputs) {
             checkOpen();
         }
-        return prepare();
+        // 读取当前呈现不推进几何动画；下一宿主frame才提供新的时间样本。
+        return prepare(presentation == null ? System.nanoTime() : preparedNanos);
     }
 
     private void checkOpen() {
@@ -358,10 +361,11 @@ public final class SceneFramePipeline implements AutoCloseable {
         return geometry;
     }
 
-    private ScenePresentation prepare() {
+    private ScenePresentation prepare(long frameNanos) {
+        preparedNanos = frameNanos;
         int w = host.width(), h = host.height();
         runtime.prepareViewport(w, h);
-        runtime.preparePresentation();
+        runtime.preparePresentation(frameNanos);
         long nextMetrics = host.metricsRevision();
         boolean geometryDirty =
                 presentation == null
@@ -378,7 +382,7 @@ public final class SceneFramePipeline implements AutoCloseable {
             }
             runtime.prepareInputGeometry(prepared);
             // 范围投影沿原绑定结算；只有其真实布局依赖变化才继续求下一批事实。
-            runtime.preparePresentation();
+            runtime.preparePresentation(frameNanos);
             geometryDirty = arrangedRevision[0] != runtime.geometryRevision();
             if (geometryDirty) continue;
             // 单项导航也消费一次意图；其滚动或范围投影仍在同一声明结算循环中闭合。
@@ -388,7 +392,7 @@ public final class SceneFramePipeline implements AutoCloseable {
                 runtime.prepareInputGeometry(updated);
                 return updated;
             });
-            runtime.preparePresentation();
+            runtime.preparePresentation(frameNanos);
             geometryDirty = arrangedRevision[0] != runtime.geometryRevision();
         } while (geometryDirty);
         if (presentation == null || revision != runtime.revision() || prepared != presentation.geometry) {

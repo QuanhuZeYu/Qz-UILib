@@ -113,7 +113,7 @@ final class DesktopGalleryVerification extends TestApplication {
                     }
                     public void evidence(String name) {
                         try {
-                            if(name.equals("mailbox-navigation-motion")) {navigationMotion(window,input,output);return;}
+                            if(name.equals("mailbox-navigation-motion")) {navigationMotion(window,input,output);DesktopMailboxMotion.verify(window,input,output);return;}
                             long motionEnd=System.nanoTime()+220000000L;
                             while(System.nanoTime()<motionEnd)window.frame();
                             settle(window);
