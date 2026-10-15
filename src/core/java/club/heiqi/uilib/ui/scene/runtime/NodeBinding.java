@@ -43,6 +43,17 @@ public interface NodeBinding {
         return new TransitionBinding(source, durationNanos, easing, apply);
     }
 
+    /** 当前被动命中处于本节点逻辑子树时，停留后发布true；离开/卸载立即结束。
+     * apply仅发布呈现值；命中、裁剪、模态及所属层资格沿唯一路由器。 */
+    static NodeBinding hoverWithin(long enterDelayNanos, BiConsumer<SceneNode, Boolean> apply) {
+        return hoverWithin(() -> true,enterDelayNanos,apply);
+    }
+
+    /** 可用来源变化会结束旧等待；恢复资格后仍在区域内时重新等待完整期限。 */
+    static NodeBinding hoverWithin(ReadableSignal<Boolean> enabled,long enterDelayNanos, BiConsumer<SceneNode, Boolean> apply) {
+        return new HoverBinding(enabled,enterDelayNanos,apply);
+    }
+
     static <T> NodeBinding value(ReadableSignal<T> source, BiConsumer<SceneNode, T> apply) {
         return (runtime, node, owner) -> {
             Observation observation =

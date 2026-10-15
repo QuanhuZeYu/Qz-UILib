@@ -21,6 +21,29 @@ public final class ScenePointerRouter implements AutoCloseable {
     private boolean closed, positionKnown;
     private final HoverProjection hover = new HoverProjection(), passive = new HoverProjection();
     private SceneGeometryView preparedGeometry;
+    private final java.util.Set<HoverInterest> hoverInterests = new java.util.LinkedHashSet<>();
+
+    /** 只订阅正式被动命中到逻辑祖先的投影，不建立新的区域或手势owner。 */
+    final class HoverInterest implements AutoCloseable {
+        final SceneNode node;
+        final Runnable changed;
+        boolean inside;
+        HoverInterest(SceneNode node,Runnable changed) {this.node=node;this.changed=changed;}
+        @Override public void close() {hoverInterests.remove(this);}
+    }
+    HoverInterest observeHover(SceneNode node,Runnable changed) {
+        HoverInterest interest=new HoverInterest(node,changed);hoverInterests.add(interest);return interest;
+    }
+    private void publishHover(SceneGeometryView geometry) {
+        if(hoverInterests.isEmpty())return;
+        SceneNode target=passiveHovered(geometry);
+        for(HoverInterest interest:new java.util.ArrayList<>(hoverInterests)) {
+            boolean inside=false;
+            for(SceneNode cursor=target;cursor!=null;cursor=cursor.parent())
+                if(cursor==interest.node) {inside=true;break;}
+            if(interest.inside!=inside) {interest.inside=inside;interest.changed.run();}
+        }
+    }
 
     /** 多个控件在同一呈现中读取同一指针投影；不能为每个文字重新扫描整页和模态树。
      * 几何身份、声明/交互代际和坐标共同失效，仍由正式HitTester裁决。只保留各一种当前查询。 */
@@ -75,6 +98,7 @@ public final class ScenePointerRouter implements AutoCloseable {
         if (preparedGeometry != geometry) { hover.clear(); passive.clear(); preparedGeometry = geometry; }
         revalidate();
         if (owner != null && geometry.get(owner.node()) == null) setOwner(null);
+        publishHover(geometry);
     }
 
     /** 生命周期/声明已生效时即时复核当前owner，不依赖几何重建。
@@ -104,6 +128,7 @@ public final class ScenePointerRouter implements AutoCloseable {
                     || event.kind == ScenePointerEvent.Kind.DOWN
                     || event.kind == ScenePointerEvent.Kind.UP) runtime.invalidatePaint();
         }
+        try {
         switch (event.kind) {
             case DOWN:
                 x = event.x;
@@ -170,6 +195,7 @@ public final class ScenePointerRouter implements AutoCloseable {
             default:
                 throw new AssertionError(event.kind);
         }
+        } finally {publishHover(geometry);}
     }
 
     /** 仅首次主键空命中离开；保留物理占位，尾部不能激活拖入的邻控件。
@@ -234,6 +260,7 @@ public final class ScenePointerRouter implements AutoCloseable {
         setOwner(null);
         buttons.clear();
         hover.clear(); passive.clear(); preparedGeometry = null;
+        hoverInterests.clear();
         closed = true;
     }
 }

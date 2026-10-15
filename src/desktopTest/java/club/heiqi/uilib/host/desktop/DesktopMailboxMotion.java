@@ -32,6 +32,7 @@ final class DesktopMailboxMotion {
         capture(window,input,output,"reverse","折叠导航",true);
         search(window,input,output);
         receiveShadow(window,input,output);
+        navigationHover(window,input,output);
         // 动画尚未结束时按正式当前区域点击，不能只让画面滑走、命中留在原位。
         input.click("折叠导航");runFor(window,35000000L);
         SceneGeometryView.Entry star=action(window,"星标邮件");
@@ -64,6 +65,121 @@ final class DesktopMailboxMotion {
         if(window.lastPlan!=plan||DesktopTestInput.geometry(window)!=geometry)
             throw new AssertionError("导航动效结束后没有恢复静态呈现复用");
         System.out.println("MAILBOX_GEOMETRY_MOTION actualGpuFrames=true reverse=true currentHit=true settledReuse=true");
+    }
+
+    private static void focusAction(DesktopWindow window,DesktopTestInput input,String name) {
+        SceneNode target=action(window,name).node;
+        int maximum=DesktopTestInput.geometry(window).ordered().size()+1;
+        for(int i=0;i<maximum;i++) {
+            SceneNode[] focused={null};
+            window.domain.execute(() -> focused[0]=window.page.runtime().focusRouter().focused().get());
+            if(focused[0]==target)return;
+            input.key.invoke(window.handle(),org.lwjgl.glfw.GLFW.GLFW_KEY_TAB,0,org.lwjgl.glfw.GLFW.GLFW_PRESS,org.lwjgl.glfw.GLFW.GLFW_MOD_SHIFT);
+            input.key.invoke(window.handle(),org.lwjgl.glfw.GLFW.GLFW_KEY_TAB,0,org.lwjgl.glfw.GLFW.GLFW_RELEASE,org.lwjgl.glfw.GLFW.GLFW_MOD_SHIFT);
+            window.frame();
+        }
+        throw new AssertionError("Tab未到达正式返回动作");
+    }
+    private static void activateKey(DesktopWindow window,DesktopTestInput input) {
+        input.key.invoke(window.handle(),org.lwjgl.glfw.GLFW.GLFW_KEY_ENTER,0,org.lwjgl.glfw.GLFW.GLFW_PRESS,0);
+        input.key.invoke(window.handle(),org.lwjgl.glfw.GLFW.GLFW_KEY_ENTER,0,org.lwjgl.glfw.GLFW.GLFW_RELEASE,0);
+        window.frame();
+    }
+    private static void navigationHover(DesktopWindow window,DesktopTestInput input,Path output) throws Exception {
+        input.click("收件箱");input.point(1100,40);runFor(window,200000000L);
+        SceneGeometryView.Entry inbox=action(window,"收件箱");
+        int background=presentedPixel(window,0,inbox.box.y);
+        int center=presentedPixel(window,0,inbox.box.y+inbox.box.height/2);
+        if(background!=center)throw new AssertionError("展开导航左角没有保持平边：top="+Integer.toHexString(background)+",center="+Integer.toHexString(center)+",box="+inbox.box.x+","+inbox.box.y+","+inbox.box.width);
+        input.click("折叠导航");input.point(1100,40);runFor(window,200000000L);
+        SceneGeometryView.Entry collapsed=action(window,"收件箱");
+        SceneNode nav=collapsed.node.parent().parent();
+        int rowY=collapsed.box.y+collapsed.box.height/2;
+        input.cursor.invoke(window.handle(),36,rowY);window.frame();runFor(window,180000000L);
+        if(action(window,"星标邮件").box.width!=32)throw new AssertionError("短暂停留未等到期限就展开");
+        input.point(1100,40);runFor(window,260000000L);
+        if(action(window,"星标邮件").box.width!=32)throw new AssertionError("离开后仍执行过期悬停展开");
+        // 指针仍在导航内时改变视口，旧等待须失效，不能从resize前已累计的停留提前展开。
+        input.cursor.invoke(window.handle(),36,rowY);window.frame();runFor(window,200000000L);
+        org.lwjgl.glfw.GLFW.glfwSetWindowSize(window.handle(),1380,900);window.frame();runFor(window,220000000L);
+        if(action(window,"星标邮件").box.width!=32)throw new AssertionError("窗口变化没有结束旧悬停等待");
+        input.point(1100,40);org.lwjgl.glfw.GLFW.glfwSetWindowSize(window.handle(),1400,900);runFor(window,220000000L);
+        int captureWidth=280,captureHeight=272,captureY=64;
+        List<ByteBuffer> images=new ArrayList<>();
+        for(int i=0;i<256;i++)images.add(org.lwjgl.system.MemoryUtil.memAlloc(captureWidth*captureHeight*4));
+        input.cursor.invoke(window.handle(),36,rowY);window.frame();
+        long start=System.nanoTime();int frames=0;boolean intermediate=false;
+        int workspaceX=-1;
+        StringBuilder facts=new StringBuilder("{\"readBuffer\":\"GL_FRONT\",\"region\":[0,64,280,272],\"frames\":[");
+        try {
+        do {
+            if(frames==images.size())throw new AssertionError("悬停逐帧采样容量不足");
+            long frameStart=System.nanoTime();window.frame();long presented=System.nanoTime();long elapsed=presented-start;
+            SceneGeometryView geometry=DesktopTestInput.geometry(window);
+            SceneGeometryView.Entry entry=action(window,"星标邮件");
+            SceneGeometryView.Entry currentNav=geometry.get(nav);
+            SceneNode body=nav.parent();SceneNode workspace=body.children().get(1);
+            int x=geometry.get(workspace).box.x;
+            if(workspaceX<0)workspaceX=x;
+            if(x!=workspaceX)throw new AssertionError("悬停展开推动了工作区");
+            if(currentNav.box.width>72&&currentNav.box.width<256)intermediate=true;
+            int previous=glGetInteger(GL_READ_BUFFER);
+            try {
+                glReadBuffer(GL_FRONT);
+                glReadPixels(0,window.height()-captureY-captureHeight,captureWidth,captureHeight,GL_RGBA,GL_UNSIGNED_BYTE,images.get(frames));
+            } finally {glReadBuffer(previous);}
+            if(glGetError()!=GL_NO_ERROR)throw new AssertionError("悬停逐呈现帧GPU读取失败");
+            if(frames>0)facts.append(',');facts.append("{\"frame\":").append(frames)
+                .append(",\"frameStartNanos\":").append(frameStart-start).append(",\"presentedNanos\":").append(elapsed)
+                .append(",\"sampledNanos\":").append(System.nanoTime()-start).append(",\"elapsedNanos\":").append(elapsed)
+                .append(",\"navigationWidth\":").append(currentNav.box.width)
+                .append(",\"entryWidth\":").append(entry.box.width).append(",\"workspaceX\":").append(x).append('}');
+            frames++;
+        }while(System.nanoTime()-start<650000000L);
+        Path frameOutput=output.resolve("mailbox-hover-frames");Files.createDirectories(frameOutput);
+        for(int i=0;i<frames;i++) {
+            ByteBuffer bytes=images.get(i);BufferedImage image=new BufferedImage(captureWidth,captureHeight,BufferedImage.TYPE_INT_ARGB);
+            for(int y=0;y<captureHeight;y++)for(int x=0;x<captureWidth;x++) {
+                int at=(y*captureWidth+x)*4;
+                image.setRGB(x,captureHeight-1-y,((bytes.get(at+3)&255)<<24)|((bytes.get(at)&255)<<16)
+                        |((bytes.get(at+1)&255)<<8)|(bytes.get(at+2)&255));
+            }
+            ImageIO.write(image,"png",frameOutput.resolve(String.format(java.util.Locale.ROOT,"frame-%04d.png",i)).toFile());
+        }
+        } finally {for(ByteBuffer image:images)org.lwjgl.system.MemoryUtil.memFree(image);}
+        if(!intermediate||action(window,"星标邮件").box.width!=240)
+            throw new AssertionError("持续悬停未沿真实中间态展开");
+        DesktopGalleryEvidence.screenshot(window,output.resolve("mailbox-hover-open.png"),0xfff8fafd);
+        SceneGeometryView beforeScroll=DesktopTestInput.geometry(window);
+        java.util.Map<SceneNode,Integer> scrolls=new java.util.IdentityHashMap<>();
+        for(SceneGeometryView.Entry e:beforeScroll.ordered())if(e.node.scrollable())scrolls.put(e.node,e.scrollOffset);
+        input.cursor.invoke(window.handle(),150,action(window,"星标邮件").box.y+16);
+        input.scroll.invoke(window.handle(),0,-3);window.frame();
+        for(java.util.Map.Entry<SceneNode,Integer> e:scrolls.entrySet())
+            if(DesktopTestInput.geometry(window).get(e.getKey()).scrollOffset!=e.getValue())
+                throw new AssertionError("导航覆盖区滚轮穿透并滚动了后台列表");
+        // 已展开的覆盖区内文字位于原工作区上方，合法完整点击只能激活导航。
+        SceneGeometryView.Entry stars=action(window,"星标邮件");
+        input.enqueueAt(stars.box.x+150,stars.box.y+stars.box.height/2);window.frame();
+        window.domain.execute(() -> {
+            if(window.page.runtime().focusRouter().focused().get()!=stars.node)
+                throw new AssertionError("覆盖区点击穿透了导航");
+        });
+        input.point(1100,40);runFor(window,220000000L);
+        if(action(window,"星标邮件").box.width!=32)throw new AssertionError("离开没有收回临时展开");
+        facts.append("]}");Files.write(output.resolve("mailbox-hover-motion.json"),facts.toString().getBytes("UTF-8"));
+        // 等待中切出，再进入须重新等待；展开中切出不能保留临时覆盖状态。
+        focusAction(window,input,"场景概览");
+        input.cursor.invoke(window.handle(),36,rowY);window.frame();runFor(window,120000000L);
+        activateKey(window,input);input.click("打开收件箱");input.point(1100,40);runFor(window,420000000L);
+        if(action(window,"星标邮件").box.width!=32)throw new AssertionError("重挂复活了离开前的悬停等待");
+        focusAction(window,input,"场景概览");
+        input.cursor.invoke(window.handle(),36,rowY);window.frame();runFor(window,540000000L);
+        if(action(window,"星标邮件").box.width!=240)throw new AssertionError("重挂后悬停声明没有重新激活");
+        activateKey(window,input);input.click("打开收件箱");input.point(1100,40);runFor(window,420000000L);
+        if(action(window,"星标邮件").box.width!=32)throw new AssertionError("重挂保留了旧临时展开呈现");
+        input.click("展开导航");runFor(window,200000000L);input.click("收件箱");input.point(1100,40);runFor(window,200000000L);
+        System.out.println("MAILBOX_HOVER delay=true cancellation=true overlayWithoutReflow=true currentHit=true scrollBlocked=true reverse=true remount=true actualGpuFrames=true frames="+frames);
     }
 
     private static int presentedPixel(DesktopWindow window,int x,int y) {

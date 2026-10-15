@@ -62,8 +62,11 @@ class MailSurface implements SceneControl {
             else if (n.runtime().pointerRouter().hovered(g) == n) background = t.hover;
         }
         if(feedback&&n.clickAction()!=null)background=transition.color(background,n.runtime().pointerRouter().pressed(n)?0:150000000L);
-        if ((background >>> 24) != 0) ScenePaintShapes.rounded(target, e.box, e.clip, background,
+        if ((background >>> 24) != 0) paintBackground(n,e,target,background,
                 Math.max(0, Math.round(t.textStyle.logicalEm * radius)));
+    }
+    protected void paintBackground(SceneNode node,SceneGeometryView.Entry entry,PaintPlanBuilder target,int color,int radius) {
+        ScenePaintShapes.rounded(target,entry.box,entry.clip,color,radius);
     }
     @Override public long nextPaintNanos(SceneNode n) {return transition.nextPaintNanos();}
     @Override public void paintAfterChildren(SceneNode n, SceneGeometryView g, PaintPlanBuilder target) {

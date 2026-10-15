@@ -81,6 +81,8 @@ public final class MailboxScenario extends TestApplication {
                             return false;
                         })
                         .filter(e -> { LayoutBox v=e.clip==null?e.box:e.box.intersect(e.clip); return v.width>0&&v.height>0; })
+                        // 精确动作名优先；视觉呈现序可因覆盖变化，邮件正文中的同词不是导航意图。
+                        .sorted(java.util.Comparator.comparingInt(e -> e.node.clickAction()!=null&&e.node.text().equals(contains)?0:1))
                         .findFirst().orElseThrow(() -> new AssertionError("找不到可见操作: " + contains));
                 LayoutBox hit = target.clip == null ? target.box : target.box.intersect(target.clip);
                 point[0] = hit.x + hit.width / 2; point[1] = hit.y + hit.height / 2;
@@ -125,6 +127,7 @@ public final class MailboxScenario extends TestApplication {
         scenario("点击保留唯一逻辑焦点且键盘导航显示线索",this::focusCues);
         scenario("有限搜索过渡仅重绘且结束复用计划",this::finiteTransition);
         scenario("有限呈现绑定同批反向与卸载重挂",this::finiteBindingClock);
+        scenario("页面语义声明新增导航项与动态来源",() -> club.heiqi.uilib.testing.gallery.mail.MailNavigationDeclaration.verify(fonts));
         scenario("真实分类切换跨分类搜索归档与动态计数",this::categories);
         scenario("空态混排提示方向动态换代",this::placeholderPolicy);
         scenario("搜索空态提示与组字复制隔离及工具区不跳位",this::searchPresentation);
