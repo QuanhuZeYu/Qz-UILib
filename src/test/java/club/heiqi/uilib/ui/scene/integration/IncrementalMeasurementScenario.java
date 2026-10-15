@@ -21,6 +21,8 @@ import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.Arrays;
 import club.heiqi.uilib.ui.scene.control.SceneTextField;
+import club.heiqi.uilib.ui.scene.control.SceneTextArea;
+import club.heiqi.uilib.ui.scene.control.SceneButton;
 import club.heiqi.uilib.ui.scene.control.SceneTheme;
 import club.heiqi.uilib.ui.scene.edit.SceneEditState;
 import club.heiqi.uilib.ui.scene.host.SceneHost;
@@ -58,6 +60,8 @@ public final class IncrementalMeasurementScenario extends TestApplication {
     @Override protected void runTests() throws Exception {
         scenario("稳定帧与固定宽度局部文案更新复用未变请求", this::localText);
         scenario("绘制与排列依赖保留正文请求且命中当前盒", this::dependencyStages);
+        scenario("正式单多行编辑配色不重测但字号内边距仍失效", this::editorThemeStages);
+        scenario("设置装饰使用合法填充边界且配色不重测", this::settingsSurfaceStages);
         scenario("自然高度变化带动兄弟位置裁剪和范围", this::naturalHeight);
         scenario("窗口字号字体换代与无来源失效结束旧请求", this::globalInputs);
         scenario("过量宽度请求正常淘汰并保留最近请求", this::boundedRequests);
@@ -192,6 +196,52 @@ public final class IncrementalMeasurementScenario extends TestApplication {
             p.update(() -> p.extension.measure.set(9));
             require(p.requests.count("扩展正文") > requests && p.requests.count("固定未变行 Café") == stable,
                     "正式测量依赖未携带节点来源");
+        }
+    }
+    private void editorThemeStages() {
+        Signal<SceneTheme>[] theme=new Signal[1];SceneNode[] field={null},area={null},button={null};
+        try(Page p=new Page((page,ctx)->{
+            theme[0]=page.domain.signal(SceneTheme.light());
+            field[0]=SceneTextField.create(ctx,new SceneEditState(page.domain,"配色单行"),theme[0],()->false,r->{});
+            area[0]=SceneTextArea.create(ctx,new SceneEditState(page.domain,"配色多行",SceneEditState.Mode.MULTI_LINE),theme[0],()->false,r->{});
+            button[0]=SceneButton.create(ctx,()->"配色按钮",theme[0],()->{});
+            page.branch.set(Arrays.asList(field[0],area[0],button[0]));
+        })) {
+            int measured=p.extension.measures,fieldRequests=p.requests.count("配色单行"),areaRequests=p.requests.count("配色多行");
+            p.update(()->theme[0].set(theme[0].get().withTextStyle(theme[0].get().textStyle.withColor(0xff13579b))));
+            require(p.extension.measures==measured&&p.requests.count("配色单行")==fieldRequests&&p.requests.count("配色多行")==areaRequests,"正式编辑纯颜色变化触发了祖先测量或字体请求");
+            p.domain.execute(()->require(p.entry(field[0]).text.style.color==0xff13579b&&p.entry(area[0]).text.style.color==0xff13579b,"正式编辑颜色载荷未更新"));
+            int buttonRequests=p.requests.count("配色按钮");
+            p.update(()->theme[0].set(SceneTheme.dark()));
+            require(p.extension.measures==measured&&p.requests.count("配色单行")==fieldRequests&&p.requests.count("配色多行")==areaRequests&&p.requests.count("配色按钮")==buttonRequests,"标准明暗主题的默认高亮色或按钮同值padding扩大了测量");
+            p.domain.execute(()->require(p.entry(field[0]).text.style.defaultHighlightColor==theme[0].get().textStyle.defaultHighlightColor,"新计划默认高亮声明未交接"));
+            p.update(()->theme[0].set(theme[0].get().withTextStyle(new TextStyle("default",24,0xff13579b))));
+            require(p.requests.count("配色单行")>fieldRequests&&p.requests.count("配色多行")>areaRequests,"字号变化被错误降为绘制");
+            p.update(()->{SceneTheme t=theme[0].get();theme[0].set(new SceneTheme(t.textStyle,t.panel,t.button,t.hover,t.pressed,t.focus,t.disabled,t.disabledText,t.tooltip,t.tooltipText,t.padding+3,t.gap));});
+            p.domain.execute(()->require(field[0].padding()==theme[0].get().padding&&area[0].padding()==theme[0].get().padding,"内边距变化未进入正式声明"));
+        }
+    }
+    private void settingsSurfaceStages() throws Exception {
+        // 使用内部装饰的实际工厂，不为此组合边界增加生产公开接缝。
+        Class<?> style=Class.forName("club.heiqi.uilib.ui.settings.SettingsStyle"),palette=Class.forName("club.heiqi.uilib.ui.settings.SettingsStyle$Palette");
+        java.lang.reflect.Constructor<?> constructor=palette.getDeclaredConstructor(boolean.class);constructor.setAccessible(true);
+        Object light=constructor.newInstance(false),dark=constructor.newInstance(true);
+        java.lang.reflect.Method surface=style.getDeclaredMethod("surface",SceneNode.class,ReadableSignal.class,boolean.class);surface.setAccessible(true);
+        Signal<Object>[] colors=new Signal[1];SceneNode[] content={null},wrapper={null};
+        try(Page p=new Page((page,ctx)->{
+            colors[0]=page.domain.signal(light);
+            content[0]=new SceneNode().size(Size.fill(1).bounds(0,80),Size.fill(1).bounds(0,80)).text("有界填充正文");
+            try{wrapper[0]=((SceneNode)surface.invoke(null,content[0],colors[0],false)).size(Size.fixed(102),Size.natural());}
+            catch(ReflectiveOperationException failure){throw new AssertionError(failure);}
+            page.branch.set(Collections.singletonList(wrapper[0]));
+        })) {
+            p.domain.execute(()->{
+                require(p.entry(content[0]).box.width==80,"设置装饰绕过填充max边界");
+                require(p.entry(wrapper[0]).box.height==p.entry(content[0]).text.height+2,"自然装饰把尚未分配的FILL高度当成自然高");
+            });
+            int measured=p.extension.measures,requests=p.requests.count("有界填充正文");PaintPlan before=p.host.paint;
+            p.update(()->colors[0].set(dark));
+            require(p.host.paint!=before&&p.extension.measures==measured&&p.requests.count("有界填充正文")==requests,"装饰换色未呈现或扩大为祖先测量");
         }
     }
     private void naturalHeight() {

@@ -5,6 +5,7 @@ import club.heiqi.uilib.testing.TestResources;
 import club.heiqi.uilib.host.font.freetype.LwjglFontEngine;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.ShapedGlyph;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.ShapeDirection;
+import club.heiqi.uilib.ui.scene.text.font.nativefont.ShapeContext;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.FontMetrics;
 
 import java.nio.ByteBuffer;
@@ -107,6 +108,75 @@ public final class NativeFontScenario extends TestApplication {
 
     public static void main(String[] args) throws Exception {
         new NativeFontScenario().run(args);
+    }
+
+    private static void sameShape(List<ShapedGlyph> expected, List<ShapedGlyph> actual) {
+        require(expected.size() == actual.size(), "prepared 上下文字形数量改变");
+        for (int i = 0; i < expected.size(); i++) {
+            ShapedGlyph a = expected.get(i), b = actual.get(i);
+            require(a.glyphId == b.glyphId && a.cluster == b.cluster
+                            && a.xAdvance == b.xAdvance && a.yAdvance == b.yAdvance
+                            && a.xOffset == b.xOffset && a.yOffset == b.yOffset,
+                    "prepared 上下文改变字形、UTF-16 cluster 或真实定位");
+        }
+    }
+
+    private static void reject(Class<? extends RuntimeException> type, Runnable action) {
+        try {
+            action.run();
+        } catch (RuntimeException failure) {
+            require(type.isInstance(failure), "拒绝原因不符: " + failure);
+            return;
+        }
+        throw new AssertionError("缺少预期拒绝: " + type.getName());
+    }
+
+    private void preparedContexts() throws Exception {
+        String text = "ببب हिन्दी 😀";
+        int indicStart = text.indexOf("हिन्दी"), indicEnd = indicStart + "हिन्दी".length();
+        ShapeContext shared = service.prepareShapeContext(text);
+        try (FontFace arabic = service.openFace(TestResources.font(directory, "NotoSansArabic"), 0, 32);
+                FontFace indic = service.openFace(TestResources.font(directory, "NotoSansDevanagari"), 0, 32)) {
+            try (ShapeContext owned = shared) {
+                List<ShapedGlyph> middle = arabic.shape(
+                        owned, 1, 2, ShapeDirection.RTL, "ar", "Arab", false, false);
+                sameShape(arabic.shape(text, 1, 2, ShapeDirection.RTL, "ar", "Arab", false, false), middle);
+                List<ShapedGlyph> whole = arabic.shape(
+                        text, 0, 3, ShapeDirection.RTL, "ar", "Arab", true, false);
+                ShapedGlyph medial = whole.stream().filter(g -> g.cluster == 1).findFirst().orElse(null);
+                require(medial != null && middle.size() == 1 && middle.get(0).glyphId == medial.glyphId
+                                && middle.get(0).glyphId != arabic.shape("ب", ShapeDirection.RTL, "ar").get(0).glyphId,
+                        "短 run 没有保留两侧 Arabic 连接上下文");
+                sameShape(indic.shape(text, indicStart, indicEnd, ShapeDirection.LTR, "hi", "Deva", false, false),
+                        indic.shape(owned, indicStart, indicEnd, ShapeDirection.LTR, "hi", "Deva", false, false));
+                for (boolean bot : new boolean[] {false, true})
+                    for (boolean eot : new boolean[] {false, true})
+                        sameShape(arabic.shape(text, 0, 3, ShapeDirection.RTL, "ar", "Arab", bot, eot),
+                                arabic.shape(owned, 0, 3, ShapeDirection.RTL, "ar", "Arab", bot, eot));
+                reject(IllegalArgumentException.class, () -> arabic.shape(
+                        owned, text.length() - 1, text.length(), ShapeDirection.LTR, "und", null, false, true));
+                reject(IllegalStateException.class, () -> service.prepareShapeContext(text));
+                try (FontSession foreign = new LwjglFontEngine().openSession();
+                        FontFace face = foreign.openFace(TestResources.font(directory, "NotoSansArabic"), 0, 32)) {
+                    reject(IllegalArgumentException.class, () -> face.shape(
+                            owned, 0, 3, ShapeDirection.RTL, "ar", "Arab", true, false));
+                }
+                arabic.close();
+                try (FontFace reopened = service.openFace(TestResources.font(directory, "NotoSansArabic"), 0, 24)) {
+                    sameShape(reopened.shape(text, 1, 2, ShapeDirection.RTL, "ar", "Arab", false, false),
+                            reopened.shape(owned, 1, 2, ShapeDirection.RTL, "ar", "Arab", false, false));
+                }
+            }
+            reject(IllegalStateException.class, shared::text);
+            reject(IllegalStateException.class, () -> indic.shape(
+                    shared, indicStart, indicEnd, ShapeDirection.LTR, "hi", "Deva", false, false));
+            shared.close();
+            try (ShapeContext next = service.prepareShapeContext(text)) {
+                require(next.text().equals(text), "上下文释放后 session 无法继续准备");
+            }
+        } finally {
+            shared.close();
+        }
     }
 
     private Path directory;
@@ -297,6 +367,7 @@ public final class NativeFontScenario extends TestApplication {
                         System.out.println("PASS em<1实际FT尺寸归一：" + reduced.pixelScale);
                     }
                 });
+        scenario("prepared上下文跨run/face、连接、边界与定界释放", this::preparedContexts);
         scenario(
                 "长上下文线程归属与关闭契约",
                 () -> {
@@ -317,6 +388,10 @@ public final class NativeFontScenario extends TestApplication {
                                     null,
                                     false,
                                     true);
+                    try (ShapeContext prepared = service.prepareShapeContext(longContext)) {
+                        sameShape(longRun, open.shape(prepared, padding.length, longContext.length(),
+                                ShapeDirection.RTL, "ar", null, false, true));
+                    }
                     require(!longRun.isEmpty(), "长段落短run整形为空");
                     for (ShapedGlyph glyph : longRun)
                         require(
@@ -324,15 +399,18 @@ public final class NativeFontScenario extends TestApplication {
                                 "长段落源文位置或字形错误");
                     System.out.println(
                             "PASS 超64KiB UTF16上下文短run：" + longContext.length() + " units");
+                    final ShapeContext pending = service.prepareShapeContext(longContext);
                     final Throwable[] failure = new Throwable[1];
                     Thread foreign =
                             new Thread(
                                     () -> {
                                         try {
-                                            open.metrics();
-                                            failure[0] = new AssertionError("错误线程可访问 face");
-                                        } catch (IllegalStateException expected) {
-                                            // 线程契约要求明确拒绝访问。
+                                            reject(IllegalStateException.class, open::metrics);
+                                            reject(IllegalStateException.class, pending::text);
+                                            reject(IllegalStateException.class, pending::close);
+                                            reject(IllegalStateException.class, () -> open.shape(
+                                                    pending, padding.length, longContext.length(),
+                                                    ShapeDirection.RTL, "ar", null, false, true));
                                         } catch (Throwable unexpected) {
                                             failure[0] = unexpected;
                                         }
@@ -342,6 +420,8 @@ public final class NativeFontScenario extends TestApplication {
                     if (failure[0] != null) throw new AssertionError(failure[0]);
                     service.close();
                     service.close();
+                    reject(IllegalStateException.class, pending::text);
+                    pending.close();
                     open.close();
                     try {
                         open.metrics();

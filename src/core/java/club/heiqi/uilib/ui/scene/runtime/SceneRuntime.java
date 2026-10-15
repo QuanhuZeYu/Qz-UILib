@@ -421,31 +421,41 @@ public final class SceneRuntime implements AutoCloseable {
         try {
             transitions.advance(frameNanos);
             do {
-                while (!dirtyBindings.isEmpty()) {
-                    List<SceneNode> batch = new ArrayList<>(dirtyBindings);
-                    dirtyBindings.clear();
-                    // 同批显式转移先于旧声明退出；不让订阅注册顺序决定条目生死。
-                    for (SceneNode node : batch) {
-                        Mount mount = mounts.get(node);
-                        if (mount != null)
-                            for (BindingActivation active : mount.transfers) active.refresh();
-                    }
-                    for (SceneNode node : batch) {
-                        Mount mount = mounts.get(node);
-                        if (mount != null)
-                            for (BindingActivation active : mount.bindings) active.refresh();
-                    }
-                }
-                if (layerValidationRevision != geometryRevision) {
-                    if (hasLayers()) for (SceneNode root : roots) validateLayerPolicies(root, null);
-                    layerValidationRevision = geometryRevision;
-                }
-                // 进入选择依赖已结算声明；选择的响应投影再结算绑定，首次回放即可显示。
-                if (scopeFactsReady()) focusRouter.prepareScopes();
-            } while (!dirtyBindings.isEmpty());
+                settleBindingDeclarations();
+                validateCurrentLayerPolicies();
+                // 选择依赖已结算声明；其响应投影再结算绑定，首次回放即可显示。
+                if(scopeFactsReady())focusRouter.prepareScopes();
+            }while(!dirtyBindings.isEmpty());
         } finally {
             mutation = false;
         }
+    }
+
+    /** 同批转移先于旧声明退出，不让订阅注册顺序决定条目生死。 */
+    private void settleBindingDeclarations() {
+        while(!dirtyBindings.isEmpty()) {
+            List<SceneNode> batch=new ArrayList<>(dirtyBindings);
+            dirtyBindings.clear();
+            refreshTransferDeclarations(batch);
+            refreshNodeDeclarations(batch);
+        }
+    }
+    private void refreshTransferDeclarations(List<SceneNode> batch) {
+        for(SceneNode node:batch) {
+            Mount mount=mounts.get(node);
+            if(mount!=null)for(BindingActivation active:mount.transfers)active.refresh();
+        }
+    }
+    private void refreshNodeDeclarations(List<SceneNode> batch) {
+        for(SceneNode node:batch) {
+            Mount mount=mounts.get(node);
+            if(mount!=null)for(BindingActivation active:mount.bindings)active.refresh();
+        }
+    }
+    private void validateCurrentLayerPolicies() {
+        if(layerValidationRevision==geometryRevision)return;
+        if(hasLayers())for(SceneNode root:roots)validateLayerPolicies(root,null);
+        layerValidationRevision=geometryRevision;
     }
 
     private Mount requireMount(SceneNode node, Object token) {
@@ -562,55 +572,93 @@ public final class SceneRuntime implements AutoCloseable {
         checkMutation();
         if (!mounts.containsKey(parent)) throw new IllegalArgumentException("父节点未挂载");
         List<SceneNode> next = new ArrayList<>(declared);
-        Set<SceneNode> unique =
-                Collections.newSetFromMap(new IdentityHashMap<SceneNode, Boolean>());
-        for (SceneNode node : next) {
-            if (!unique.add(node)) throw new IllegalArgumentException("声明子序列重复节点");
-            if (node.parent() != parent) {
-                if (node.parent() != null || node.runtime() != null)
-                    throw new IllegalArgumentException("新增节点已有归属");
-                validateSubtree(node);
-                if (node == parent) throw new IllegalArgumentException("节点不能包含自身");
-            }
-        }
-        for (SceneNode node : next) {
-            if (node.parent() == parent && node.logicalOwner() != scope
-                    && !(node.logicalOwner() == parent && !node.transferred()))
-                throw new IllegalArgumentException("声明拥有权冲突: " + parent.id() + " -> " + node.id());
-        }
+        Set<SceneNode> members = validateDeclaredChildren(parent, next, scope);
         if (parent.children().equals(next)) {
-            for (SceneNode node : next) node.frameworkOwnership(this, scope, owned);
+            adoptDeclaredOwnership(next, scope, owned);
             return;
         }
+        settleExitedChildren(parent, members, scope, owned);
+        attachDeclaredChildren(parent, next, scope, owned);
+        publishChildrenOrder(parent, next, members);
+    }
+
+    /** 先核验全部结构身份，再核验声明拥有权；校验不改变挂载与逻辑归属。 */
+    private Set<SceneNode> validateDeclaredChildren(SceneNode parent, List<SceneNode> next, Object scope) {
+        Set<SceneNode> members =
+                Collections.newSetFromMap(new IdentityHashMap<SceneNode, Boolean>());
+        for (SceneNode node : next) {
+            if (!members.add(node)) throw new IllegalArgumentException("声明子序列重复节点");
+            validateDeclaredPlacement(parent, node);
+        }
+        for (SceneNode node : next) {
+            if (node.parent() == parent && !belongsToDeclaration(node, parent, scope))
+                throw new IllegalArgumentException("声明拥有权冲突: " + parent.id() + " -> " + node.id());
+        }
+        return members;
+    }
+
+    private void validateDeclaredPlacement(SceneNode parent, SceneNode node) {
+        if (node.parent() == parent) return;
+        if (node.parent() != null || node.runtime() != null)
+            throw new IllegalArgumentException("新增节点已有归属");
+        validateSubtree(node);
+        if (node == parent) throw new IllegalArgumentException("节点不能包含自身");
+    }
+
+    /** 首次声明可接管静态孩子，明确迁移后的孩子只归新拥有者管理。 */
+    private boolean belongsToDeclaration(SceneNode node, SceneNode parent, Object scope) {
+        return node.logicalOwner() == scope
+                || (node.logicalOwner() == parent && !node.transferred());
+    }
+
+    private void adoptDeclaredOwnership(List<SceneNode> next, Object scope, boolean owned) {
+        for (SceneNode node : next) node.frameworkOwnership(this, scope, owned);
+    }
+
+    /** 全部所属退出都完成清理后再暴露聚合异常，不接入后续新节点。 */
+    private void settleExitedChildren(SceneNode parent, Set<SceneNode> members, Object scope, boolean owned) {
         Throwable failure = null;
         for (SceneNode child : new ArrayList<>(parent.children())) {
-            if (!unique.contains(child) && (child.logicalOwner() == scope
-                    || (child.logicalOwner() == parent && !child.transferred()))) {
-                try {
-                    removeDeclared(child, owned);
-                } catch (RuntimeException | Error error) {
-                    failure = collectFailure(failure, error);
-                }
+            if (members.contains(child) || !belongsToDeclaration(child, parent, scope)) continue;
+            try {
+                removeDeclared(child, owned);
+            } catch (RuntimeException | Error error) {
+                failure = collectFailure(failure, error);
             }
         }
         throwFailure(failure);
+    }
+
+    /** 存续孩子只更新声明拥有；只有新增孩子建立父归属与挂载。 */
+    private void attachDeclaredChildren(SceneNode parent, List<SceneNode> next, Object scope, boolean owned) {
         for (SceneNode node : next) {
             boolean fresh = node.runtime() == null;
-            node.frameworkParent(this, parent);
+            if (fresh) node.frameworkParent(this, parent);
             node.frameworkOwnership(this, scope, owned);
-            if (fresh) {
-                try {
-                    mountSubtree(node, mounts.get(parent).owner);
-                } catch (RuntimeException | Error error) {
-                    try {
-                        removeDeclared(node, owned);
-                    } catch (RuntimeException | Error cleanup) {
-                        if (cleanup != error) error.addSuppressed(cleanup);
-                    }
-                    throw error;
-                }
-            }
+            if (fresh) mountDeclaredChild(parent, node, owned);
         }
+    }
+
+    private void mountDeclaredChild(SceneNode parent, SceneNode node, boolean owned) {
+        try {
+            mountSubtree(node, mounts.get(parent).owner);
+        } catch (RuntimeException | Error error) {
+            try {
+                removeDeclared(node, owned);
+            } catch (RuntimeException | Error cleanup) {
+                if (cleanup != error) error.addSuppressed(cleanup);
+            }
+            throw error;
+        }
+    }
+
+    private void publishChildrenOrder(SceneNode parent, List<SceneNode> next, Set<SceneNode> members) {
+        // 迁入但不归当前声明拥有的孩子继续存续，沿原相对顺序排在本声明序列之前。
+        // 与逐项 remove/append 的结果一致；同父节点只在此一次确定顺序，不迁移挂载 Owner。
+        List<SceneNode> ordered = new ArrayList<>();
+        for (SceneNode child : parent.children()) if (!members.contains(child)) ordered.add(child);
+        ordered.addAll(next);
+        parent.frameworkChildrenOrder(this, ordered);
         invalidateRange(parent);
     }
 

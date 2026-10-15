@@ -179,7 +179,7 @@ public final class SceneLayoutEngine {
         };
     }
 
-    /** 纯前景色变化沿正式内容投影刷新绘制样式，不调用控件 measure/arrange。 */
+    /** 纯绘制样式沿正式内容投影刷新，不调用控件measure/arrange；分类与SceneNode一致。 */
     public SceneGeometry refreshTextStyles(SceneGeometry geometry) {
         Map<SceneNode, TextLayout> updated = new IdentityHashMap<>();
         try {
@@ -187,7 +187,7 @@ public final class SceneLayoutEngine {
                 SceneNode node = entry.node;
                 club.heiqi.uilib.ui.scene.text.TextStyle previous = presentedStyles.get(node);
                 if (node.style().equals(previous)) continue;
-                if (previous == null || !previous.withColor(node.style().color).equals(node.style()))
+                if (previous == null || !previous.sameLayout(node.style()))
                     throw new IllegalStateException("文字几何样式变化必须先重新布局: node=" + node.id());
                 textCache.remove(node);
                 int innerWidth = Math.max(0, entry.box.width - node.padding() * 2);
@@ -375,55 +375,64 @@ public final class SceneLayoutEngine {
             List<SceneGeometryView.Entry> entries,
             boolean captureRoot) {
         if (!captureRoot && !node.visible()) return;
-        int innerWidth = Math.max(0, box.width - node.padding() * 2);
-        int innerHeight = Math.max(0, box.height - node.padding() * 2);
-        LayoutBox ownClip = node.clip() || node.scrollable() ? box : null;
-        LayoutBox clip =
-                ancestorClip == null
-                        ? ownClip
-                        : ownClip == null ? ancestorClip : ancestorClip.intersect(ownClip);
-        TextLayout lines = textLayout(node, innerWidth);
-        if (node.control() != null)
-            lines =
-                    node.control()
-                            .presentText(
-                                    node,
-                                    lines,
-                                    innerWidth,
-                                    innerHeight,
-                                    textFor(node),
-                                    childrenFor(node));
-        int entryIndex = entries.size();
-        entries.add(new SceneGeometryView.Entry(node, box, clip, lines));
-        java.util.Set<SceneNode> placed = java.util.Collections.newSetFromMap(new IdentityHashMap<SceneNode, Boolean>());
-        boolean builtin = node.control() == null;
-        boolean flow = builtin || layerPolicy(node) != null;
-        ChildPlacements arrangement = builtin ? SceneFlowLayout.arrange(node, box, childrenFor(node))
-                : requireControlResult(node, "arrange", node.control().arrange(node, box, childrenFor(node)));
-        List<ChildPlacements.Entry> placements = arrangement.entries();
-        boolean row = node.axis() == SceneNode.Axis.ROW;
-        long extent = 0;
-        for (ChildPlacements.Entry child : placements) {
-            if (child.child.parent() != node || !placed.add(child.child))
-                throw new IllegalArgumentException("控件排列包含非逻辑子节点或重复节点: parent=" + node.id() + " child=" + child.child.id());
-            if (layerPolicy(child.child) != null)
-                throw new IllegalArgumentException("普通排列不能包含所属层: parent=" + node.id() + " control="
-                        + (node.control() == null ? "flow" : node.control().getClass().getName()) + " child=" + child.child.id());
-            if (!child.contentBox) {
-                validatePlacement(node, child.child, "width", child.relativeBox.width, child.child.width());
-                validatePlacement(node, child.child, "height", child.relativeBox.height, child.child.height());
+        LayoutBox clip=clipFor(node,box,ancestorClip);
+        TextLayout lines=presentedText(node,box);
+        int entryIndex=entries.size();
+        entries.add(new SceneGeometryView.Entry(node,box,clip,lines));
+        List<ChildPlacements.Entry> placements=childArrangement(node,box).entries();
+        long extent=validateArrangement(node,placements);
+        int maximum=scrollMaximum(node,box,placements,extent);
+        int scroll=node.scrollable()?Math.min(scrollOffsets.applyAsInt(node),maximum):0;
+        entries.set(entryIndex,new SceneGeometryView.Entry(node,box,clip,lines,scroll,maximum));
+        arrangePlacedChildren(node,box,clip,placements,scroll,entries);
+    }
+
+    private static LayoutBox clipFor(SceneNode node,LayoutBox box,LayoutBox ancestorClip) {
+        LayoutBox own=node.clip()||node.scrollable()?box:null;
+        return ancestorClip==null?own:own==null?ancestorClip:ancestorClip.intersect(own);
+    }
+    private TextLayout presentedText(SceneNode node,LayoutBox box) {
+        int width=Math.max(0,box.width-node.padding()*2),height=Math.max(0,box.height-node.padding()*2);
+        TextLayout lines=textLayout(node,width);
+        return node.control()==null?lines:node.control().presentText(node,lines,width,height,textFor(node),childrenFor(node));
+    }
+    private ChildPlacements childArrangement(SceneNode node,LayoutBox box) {
+        return node.control()==null?SceneFlowLayout.arrange(node,box,childrenFor(node))
+                :requireControlResult(node,"arrange",node.control().arrange(node,box,childrenFor(node)));
+    }
+    /** 先验证整个排列再进入子节点；任何失败都不能发布一部分正式几何。 */
+    private long validateArrangement(SceneNode node,List<ChildPlacements.Entry> placements) {
+        java.util.Set<SceneNode> placed=java.util.Collections.newSetFromMap(new IdentityHashMap<SceneNode,Boolean>());
+        boolean row=node.axis()==SceneNode.Axis.ROW;
+        long extent=0;
+        for(ChildPlacements.Entry child:placements) {
+            if(child.child.parent()!=node||!placed.add(child.child))
+                throw new IllegalArgumentException("控件排列包含非逻辑子节点或重复节点: parent="+node.id()+" child="+child.child.id());
+            if(layerPolicy(child.child)!=null)
+                throw new IllegalArgumentException("普通排列不能包含所属层: parent="+node.id()+" control="
+                        +(node.control()==null?"flow":node.control().getClass().getName())+" child="+child.child.id());
+            if(!child.contentBox) {
+                validatePlacement(node,child.child,"width",child.relativeBox.width,child.child.width());
+                validatePlacement(node,child.child,"height",child.relativeBox.height,child.child.height());
             }
-            extent = Math.max(extent, row ? (long) child.relativeBox.x + child.relativeBox.width
-                    : (long) child.relativeBox.y + child.relativeBox.height);
+            extent=Math.max(extent,row?(long)child.relativeBox.x+child.relativeBox.width:(long)child.relativeBox.y+child.relativeBox.height);
         }
-        int maximum = node.scrollable() ? (int) Math.min(Integer.MAX_VALUE,
-                Math.max(0L, extent + (flow && !placements.isEmpty() ? node.padding() : 0) - (row ? box.width : box.height))) : 0;
-        int scroll = node.scrollable() ? Math.min(scrollOffsets.applyAsInt(node), maximum) : 0;
-        entries.set(entryIndex, new SceneGeometryView.Entry(node, box, clip, lines, scroll, maximum));
-        for (ChildPlacements.Entry child : placements) {
-            LayoutBox relative = child.relativeBox;
-            arrange(child.child, new LayoutBox(box.x + relative.x - (row ? scroll : 0),
-                    box.y + relative.y - (row ? 0 : scroll), relative.width, relative.height), clip, entries);
+        return extent;
+    }
+    private int scrollMaximum(SceneNode node,LayoutBox box,List<ChildPlacements.Entry> placements,long extent) {
+        if(!node.scrollable())return 0;
+        boolean flow=node.control()==null||layerPolicy(node)!=null;
+        int padding=flow&&!placements.isEmpty()?node.padding():0;
+        int available=node.axis()==SceneNode.Axis.ROW?box.width:box.height;
+        return (int)Math.min(Integer.MAX_VALUE,Math.max(0L,extent+padding-available));
+    }
+    private void arrangePlacedChildren(SceneNode node,LayoutBox box,LayoutBox clip,List<ChildPlacements.Entry> placements,
+            int scroll,List<SceneGeometryView.Entry> entries) {
+        boolean row=node.axis()==SceneNode.Axis.ROW;
+        for(ChildPlacements.Entry child:placements) {
+            LayoutBox relative=child.relativeBox;
+            arrange(child.child,new LayoutBox(box.x+relative.x-(row?scroll:0),
+                    box.y+relative.y-(row?0:scroll),relative.width,relative.height),clip,entries);
         }
     }
 

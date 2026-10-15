@@ -1,7 +1,10 @@
 package club.heiqi.uilib.ui.scene.runtime;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Set;
 import club.heiqi.uilib.ui.reactive.Owner;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
@@ -9,7 +12,8 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
 /** 声明对应关系与挂载订阅分离，旧声明不再取得已转移条目。 */
 final class ChildrenBinding implements NodeBinding {
     private static final class State {
-        final List<SceneNode> associated = new ArrayList<>();
+        final Set<SceneNode> associated =
+                Collections.newSetFromMap(new IdentityHashMap<SceneNode, Boolean>());
     }
 
     private final ReadableSignal<List<SceneNode>> source;

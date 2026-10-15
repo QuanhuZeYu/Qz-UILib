@@ -31,6 +31,7 @@ public final class DesktopDraggableDeepVerification {
         output=Paths.get(args.length==0?"draggable-deep-report":args[0]);Files.createDirectories(output);
         for(String kind:Arrays.asList("handles","handle-distance","handle-delay","axisX","axisY","grid","parent","viewport","overlay","distance","delay","or")) verifyDrag(kind);
         verifySorting();
+        verifySortingActivation();
         verifyKeyboardFrameFailure();
         System.out.println("DRAG_DEEP handles=true dual=true overlay=true axis=true grid=true bounds=true distance=true delay=true tolerance=true or=true enter=true dropCancel=true sorting=true stableIdentity=true variableHeight=true stoppedPointerAutoScroll=true deleteKey=true hidden=true actualCallbacks=true realGl=true");
     }
@@ -154,6 +155,24 @@ public final class DesktopDraggableDeepVerification {
             Integer selected=handles.entrySet().stream().filter(e -> e.getValue()==handle.node).map(Map.Entry::getKey).findFirst().get();grip=hit(handle);down(w,input,grip.x+8,grip.y+8);move(w,input,grip.x+8,grip.y+30);
             w.domain.execute(() -> {List<Item> next=new ArrayList<>(items[0].get());next.removeIf(item -> item.key==selected);items[0].set(Collections.unmodifiableList(next));});w.frame();up(w,input);require(moves[0]==2,"删除来源后旧UP仍提交排序");
             require(glGetError()==GL_NO_ERROR,"排序真实GL回放异常");save(w,"sort-finished.png");
+        }
+    }
+    private static void verifySortingActivation() throws Exception {
+        SceneNode[] first={null},preview={null};int[] commits={0};
+        try(DesktopWindow w=DesktopWindow.openWithServices(output.resolve("sort-no-handle.yaml"),false,services -> ctx -> {
+            SceneNode list=SceneSortableList.create(ctx,ctx.domain().signal(Arrays.asList(1,2)),v->v,value->{
+                SceneNode row=new SceneNode().size(Size.fixed(240),Size.fixed(60)).text("无把手条目 "+value.get());
+                if(value.get()==1)first[0]=row;return new SceneSortableList.Row(row);
+            },value->{preview[0]=new SceneNode().size(Size.fixed(240),Size.fixed(60)).text("待定激活预览");return preview[0];},move->commits[0]++);
+            ctx.mountOwned(new SceneNode().size(Size.fill(1),Size.fill(1)).padding(30).add(list));
+        })) {
+            settle(w);DesktopTestInput input=new DesktopTestInput(w);LayoutBox box=hit(geometry(w,first[0]));int x=box.x+12,y=box.y+12;
+            down(w,input,x,y);up(w,input);require(commits[0]==0&&preview[0]==null,"无把手等待阶段释放误激活或提交");
+            down(w,input,x,y);move(w,input,x+8,y);require(preview[0]!=null&&geometry(w).get(preview[0])!=null,"无把手距离条件未激活");
+            key(w,input,GLFW_KEY_ESCAPE);up(w,input);require(commits[0]==0&&geometry(w).get(preview[0])==null,"距离取消遗留预览或提交");
+            down(w,input,x,y);Thread.sleep(240);w.frame();require(geometry(w).get(preview[0])!=null,"无把手静止延时未激活");
+            key(w,input,GLFW_KEY_ESCAPE);up(w,input);require(commits[0]==0,"延时取消误提交");
+            System.out.println("SORT_ACTIVATION pendingRelease=true distance=true stoppedDelay=true cancelZero=true");
         }
     }
     private static List<Integer> keys(DesktopWindow w,Signal<List<Item>> source){List<Integer> result=new ArrayList<>();w.domain.execute(() -> {for(Item item:source.get())result.add(item.key);});return result;}

@@ -308,7 +308,7 @@ public final class SceneNode {
         TextStyle previous = this.style;
         if (previous.equals(style)) return this;
         this.style = style;
-        if (runtime != null && previous.withColor(style.color).equals(style))
+        if (runtime != null && previous.sameLayout(style))
             runtime.invalidatePaint();
         else changed();
         return this;
@@ -470,9 +470,25 @@ public final class SceneNode {
         authority.checkMutation();
         if (runtime != null && runtime != authority)
             throw new IllegalArgumentException("节点属于另一运行时");
+        if (parent == next) return;
         if (parent != null) parent.children.remove(this);
         parent = next;
         if (next != null) next.children.add(this);
+    }
+
+    /** 仅确定全部存续孩子的顺序；父归属、逻辑拥有和挂载身份仍由各自端口维护。 */
+    public void frameworkChildrenOrder(SceneRuntime authority, List<SceneNode> ordered) {
+        authority.checkMutation();
+        if (runtime != authority) throw new IllegalArgumentException("父节点不属于运行时");
+        List<SceneNode> next = new ArrayList<>(ordered);
+        Map<SceneNode, Boolean> unique = new IdentityHashMap<>();
+        for (SceneNode child : next) {
+            if (child.parent != this || unique.put(child, Boolean.TRUE) != null)
+                throw new IllegalArgumentException("子序列归属或身份冲突: " + id + " -> " + child.id);
+        }
+        if (next.size() != children.size())
+            throw new IllegalArgumentException("子序列必须包含全部存续孩子: " + id);
+        for (int i = 0; i < next.size(); i++) children.set(i, next.get(i));
     }
 
     public void frameworkRuntime(SceneRuntime authority, boolean attached) {

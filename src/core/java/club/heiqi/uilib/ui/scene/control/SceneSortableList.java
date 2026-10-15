@@ -116,7 +116,7 @@ public final class SceneSortableList {
         final int startX, startY, grabY;
         final long pressed;
         final SceneDragSupport.AutoScroll scrolling = new SceneDragSupport.AutoScroll();
-        boolean active, delayAllowed = true;
+        boolean active;
         int pointerX, pointerY, overlayX, overlayY, width, slot;
         K beforeKey;
         Session(RowControl<T, K> row, boolean keyboard, int x, int y, LayoutBox box, long now) {
@@ -177,9 +177,8 @@ public final class SceneSortableList {
         }
         void pending(Session<T, K> current, long now) {
             double distance = Math.hypot((long) current.pointerX - current.startX, (long) current.pointerY - current.startY);
-            if (distance >= 5) { activate(current, now); return; }
-            if (distance > 10) current.delayAllowed = false;
-            if (current.delayAllowed && now - current.pressed >= 200_000_000L) activate(current, now);
+            // 默认排序是距离或延时；距离先达到就已激活，不保留不可达的容差失效态。
+            if (distance >= 5 || now - current.pressed >= 200_000_000L) activate(current, now);
         }
         void refresh(Session<T, K> current, SceneGeometryView geometry, SceneDragSupport.AutoScroll.Shift shift) {
             if (session != current || !current.active) return;

@@ -12,6 +12,7 @@ import club.heiqi.uilib.ui.scene.control.SceneTheme;
 import club.heiqi.uilib.ui.scene.host.SceneHost;
 import club.heiqi.uilib.ui.scene.host.ScenePageContext;
 import club.heiqi.uilib.ui.scene.host.ScenePageSession;
+import club.heiqi.uilib.ui.scene.input.SceneNavigationEvent;
 import club.heiqi.uilib.ui.scene.input.ScenePointerEvent;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.Size;
@@ -83,6 +84,7 @@ public final class DynamicStructureScenario extends TestApplication {
         scenario("逻辑资源失败仍释放其余并保留suppressed", this::cleanupFailure);
         scenario("页面拥有根移动到保留树交接释放责任", this::ownedRootTransfer);
         scenario("同父移动不改变声明拥有权", this::sameParentMove);
+        scenario("子序列同序追加轮转及迁入孩子保持挂载拥有和手势", this::childrenOrderAndTransfer);
         scenario("重复移动声明明确冲突", this::duplicateMoves);
     }
 
@@ -372,6 +374,94 @@ public final class DynamicStructureScenario extends TestApplication {
         page.frame();
         require(nodes[1].destroyed() && nodes[0].children().isEmpty(),
                 "同父移动偷走声明拥有权，使退出条目存活");
+    }
+
+    @SuppressWarnings("unchecked")
+    private void childrenOrderAndTransfer() {
+        for (boolean owning : new boolean[] {false, true}) {
+            ReactiveDomain domain = ReactiveDomain.direct();
+            Software host = new Software();
+            SceneNode[] left = new SceneNode[1], right = new SceneNode[1], rows = new SceneNode[4];
+            Signal<List<SceneNode>>[] declared = new Signal[1], origin = new Signal[1], containers = new Signal[1];
+            Signal<SceneNode>[] destination = new Signal[1];
+            MountHandle[] mounts = new MountHandle[3];
+            int[] released = {0}, movedReleased = {0};
+            List<Integer> actions = new ArrayList<>();
+            ScenePageSession page = own(ScenePageSession.open(domain, host, host, context -> {
+                left[0] = new SceneNode().size(Size.fixed(50), Size.fixed(80));
+                right[0] = new SceneNode().size(Size.fixed(50), Size.fixed(80));
+                destination[0] = domain.signal(left[0]);
+                for (int i = 0; i < 3; i++) {
+                    final int value = i;
+                    rows[i] = button(context, () -> actions.add(value)).own(() -> released[0]++);
+                }
+                rows[3] = button(context, () -> actions.add(3)).own(() -> movedReleased[0]++)
+                        .bind(NodeBinding.move(destination[0]));
+                origin[0] = domain.signal(Collections.singletonList(rows[3]));
+                left[0].bind(NodeBinding.ownedChildren(origin[0]));
+                declared[0] = domain.signal(Arrays.asList(rows[0], rows[1]));
+                right[0].bind(owning ? NodeBinding.ownedChildren(declared[0]) : NodeBinding.children(declared[0]));
+                containers[0] = domain.signal(Arrays.asList(left[0], right[0]));
+                context.mountOwned(new SceneNode().axis(SceneNode.Axis.ROW)
+                        .bind(NodeBinding.ownedChildren(containers[0])));
+            }));
+            page.frame();
+            domain.execute(() -> {
+                mounts[0] = page.runtime().captureMount(rows[0]);
+                mounts[1] = page.runtime().captureMount(rows[1]);
+                mounts[2] = page.runtime().captureMount(rows[3]);
+                page.runtime().focusRouter().request(mounts[0]);
+                declared[0].changed();
+            });
+            page.frame();
+            domain.execute(() -> require(right[0].children().equals(Arrays.asList(rows[0], rows[1]))
+                    && mounts[0].active() && mounts[1].active()
+                    && page.runtime().focusRouter().focused().get() == rows[0], "同序失效重建挂载或改变焦点"));
+            page.pointer(ScenePointerEvent.down(0, 51, 1)); page.frame();
+            domain.execute(() -> declared[0].set(Arrays.asList(rows[0], rows[1], rows[2])));
+            page.frame();
+            domain.execute(() -> require(right[0].children().equals(Arrays.asList(rows[0], rows[1], rows[2]))
+                    && mounts[0].active() && mounts[1].active(), "尾部追加重建原条目或顺序错误"));
+            domain.execute(() -> declared[0].set(Arrays.asList(rows[1], rows[2], rows[0])));
+            page.frame();
+            domain.execute(() -> require(right[0].children().equals(Arrays.asList(rows[1], rows[2], rows[0]))
+                    && mounts[0].active() && page.runtime().focusRouter().focused().get() == rows[0], "轮转丢失挂载或合法焦点"));
+            page.pointer(ScenePointerEvent.up(0, 51, 41)); page.frame();
+            require(actions.equals(Collections.singletonList(0)), "轮转后的合法按压没有只激活原条目");
+            page.navigation(SceneNavigationEvent.PREVIOUS); page.frame();
+            domain.execute(() -> {
+                require(page.runtime().focusRouter().focused().get() == rows[2], "反向Tab没有采用最终声明顺序");
+                destination[0].set(right[0]);
+                origin[0].changed();
+                declared[0].changed();
+            });
+            page.frame();
+            domain.execute(() -> {
+                require(left[0].children().isEmpty()
+                        && right[0].children().equals(Arrays.asList(rows[3], rows[1], rows[2], rows[0]))
+                        && mounts[2].active() && !rows[3].destroyed(), "同批排序丢失迁入孩子或旧声明重新取得它");
+                declared[0].changed();
+            });
+            page.frame();
+            domain.execute(() -> {
+                require(right[0].children().equals(Arrays.asList(rows[3], rows[1], rows[2], rows[0]))
+                        && mounts[0].active() && mounts[1].active() && mounts[2].active(), "重复同序结算移走未owned的迁入孩子");
+                declared[0].set(Collections.emptyList());
+            });
+            page.frame();
+            domain.execute(() -> {
+                require(right[0].children().equals(Collections.singletonList(rows[3])) && mounts[2].active()
+                        && !mounts[0].active() && !mounts[1].active(), "空声明清退了迁入孩子或留下旧挂载");
+                for (int i = 0; i < 3; i++) require(rows[i].destroyed() == owning, "批量顺序改变声明拥有语义");
+                containers[0].set(Collections.singletonList(right[0]));
+            });
+            page.frame();
+            require(left[0].destroyed() && !rows[3].destroyed() && movedReleased[0] == 0, "旧作用域释放误销毁迁入孩子");
+            page.close();
+            require(rows[3].destroyed() && movedReleased[0] == 1, "迁入孩子没有由新父归属释放");
+            if (!owning) for (int i = 0; i < 3; i++) rows[i].destroy();
+            require(released[0] == 3, "声明条目逻辑资源没有各自释放一次");
+        }
     }
 
     private void duplicateMoves() {

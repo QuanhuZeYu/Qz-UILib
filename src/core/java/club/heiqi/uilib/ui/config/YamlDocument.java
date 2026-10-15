@@ -161,77 +161,81 @@ final class YamlDocument {
     }
     private static MappingNode mapping() { return new MappingNode(Tag.MAP, new ArrayList<NodeTuple>(), DumperOptions.FlowStyle.BLOCK); }
     private static ScalarNode scalar(Tag tag, String value) { return new ScalarNode(tag, value, null, null, DumperOptions.ScalarStyle.PLAIN); }
+    /** 递归只决定节点种类；键匹配、索引匹配、标量写法与注释各在所属阶段处理。 */
     private Node merge(Node old, Object value, String path, Map<String, String> comments) {
         Node result;
-        if (value instanceof Map) {
-            MappingNode node = old instanceof MappingNode ? (MappingNode) old : mapping();
-            Map<String, NodeTuple> previous = new LinkedHashMap<>();
-            for (NodeTuple tuple : node.getValue()) previous.put(((ScalarNode) tuple.getKeyNode()).getValue(), tuple);
-            List<NodeTuple> next = new ArrayList<>();
-            for (Map.Entry<?, ?> entry : ((Map<?, ?>) value).entrySet()) {
-                if (!(entry.getKey() instanceof String)) throw new ConfigException(path, "codec 输出映射键必须是 string");
-                String key = (String) entry.getKey();
-                String child = ConfigCodecs.child(path, key);
-                NodeTuple tuple = previous.get(key);
-                Node keyNode = tuple == null ? scalar(Tag.STR, key) : tuple.getKeyNode();
-                Node childNode = merge(tuple == null ? null : tuple.getValueNode(), entry.getValue(), child, comments);
-                if (tuple == null) addComment(keyNode, comments.get(child));
-                next.add(new NodeTuple(keyNode, childNode));
-            }
-            boolean unchanged = next.size() == node.getValue().size();
-            for (int i = 0; unchanged && i < next.size(); i++)
-                unchanged = next.get(i).getKeyNode() == node.getValue().get(i).getKeyNode()
-                        && next.get(i).getValueNode() == node.getValue().get(i).getValueNode();
-            DumperOptions.FlowStyle style = node.getFlowStyle();
-            // SnakeYaml 2.4 对含前置注释的 flow 集合会丢失缩进；保留注释，改用 block 表示。
-            if (style == DumperOptions.FlowStyle.FLOW && hasComments(node)) style = DumperOptions.FlowStyle.BLOCK;
-            result = unchanged && style == node.getFlowStyle() && !(style == DumperOptions.FlowStyle.BLOCK && hasInlineComments(node))
-                    ? node : new MappingNode(Tag.MAP, next, style);
-        } else if (value instanceof List) {
-            SequenceNode node = old instanceof SequenceNode ? (SequenceNode) old : new SequenceNode(Tag.SEQ, new ArrayList<Node>(), DumperOptions.FlowStyle.BLOCK);
-            List<Node> next = new ArrayList<>();
-            List<?> input = (List<?>) value;
-            for (int i = 0; i < input.size(); i++) next.add(merge(i < node.getValue().size() ? node.getValue().get(i) : null, input.get(i), path + "[" + i + "]", comments));
-            boolean unchanged = next.size() == node.getValue().size();
-            for (int i = 0; unchanged && i < next.size(); i++) unchanged = next.get(i) == node.getValue().get(i);
-            DumperOptions.FlowStyle style = node.getFlowStyle();
-            if (style == DumperOptions.FlowStyle.FLOW && hasComments(node)) style = DumperOptions.FlowStyle.BLOCK;
-            result = unchanged && style == node.getFlowStyle() && !(style == DumperOptions.FlowStyle.BLOCK && hasInlineComments(node))
-                    ? node : new SequenceNode(Tag.SEQ, next, style);
-        } else {
-            Tag tag;
-            String text;
-            if (value == null) { tag = Tag.NULL; text = "null"; }
-            else if (value instanceof String) { tag = Tag.STR; text = (String) value; }
-            else if (value instanceof Boolean) { tag = Tag.BOOL; text = value.toString(); }
-            else if (value instanceof Integer || value instanceof Long || value instanceof BigInteger) { tag = Tag.INT; text = value.toString(); }
-            else if (value instanceof Double || value instanceof Float || value instanceof BigDecimal) {
-                if (!Double.isFinite(((Number) value).doubleValue())) throw new ConfigException(path, "codec 输出非有限数值");
-                tag = Tag.FLOAT; text = value.toString();
-            } else throw new ConfigException(path, "codec 输出不支持的对象树类型: " + value.getClass().getName());
-            // 语义相同的标量直接复用；保留用户引号、数值写法及其注释。
-            if (old instanceof ScalarNode && tag.equals(old.getTag()) && equivalent(old, value)) return old;
-            result = scalar(tag, text);
-        }
-        if (old != null && old != result) {
-            result.setBlockComments(old.getBlockComments());
-            result.setInLineComments(old.getInLineComments());
-            result.setEndComments(old.getEndComments());
-            boolean blockContainer = result instanceof MappingNode && ((MappingNode) result).getFlowStyle() == DumperOptions.FlowStyle.BLOCK
-                    || result instanceof SequenceNode && ((SequenceNode) result).getFlowStyle() == DumperOptions.FlowStyle.BLOCK;
-            if (blockContainer && hasInlineComments(old)) {
-                // Serializer 在集合结束后发 IN_LINE；Emitter 的 block 集合结束态只接受
-                // 下个 NodeEvent，不能消费这个事件。将说明转为本集合前的 BLOCK 注释，
-                // 保留文本和所属字段/列表项，不把说明迁到文档根或丢弃。
-                List<CommentLine> nearby = new ArrayList<>();
-                if (old.getBlockComments() != null) nearby.addAll(old.getBlockComments());
-                for (CommentLine comment : old.getInLineComments())
-                    nearby.add(new CommentLine(comment.getStartMark(), comment.getEndMark(), comment.getValue(), CommentType.BLOCK));
-                result.setBlockComments(nearby);
-                result.setInLineComments(Collections.emptyList());
-            }
-        }
+        if(value instanceof Map)result=mergeMapping(old,(Map<?,?>)value,path,comments);
+        else if(value instanceof List)result=mergeSequence(old,(List<?>)value,path,comments);
+        else result=mergeScalar(old,value,path);
+        if(old!=null&&old!=result)inheritComments(old,result);
         return result;
+    }
+    /** 映射按键复用原表示；只对新键添加声明注释，输出按本次值顺序，保留原键写法。 */
+    private Node mergeMapping(Node old,Map<?,?> value,String path,Map<String,String> comments) {
+        MappingNode node=old instanceof MappingNode?(MappingNode)old:mapping();
+        Map<String,NodeTuple> previous=new LinkedHashMap<>();
+        for(NodeTuple tuple:node.getValue())previous.put(((ScalarNode)tuple.getKeyNode()).getValue(),tuple);
+        List<NodeTuple> next=new ArrayList<>();
+        for(Map.Entry<?,?> entry:value.entrySet()) {
+            if(!(entry.getKey() instanceof String))throw new ConfigException(path,"codec 输出映射键必须是 string");
+            String key=(String)entry.getKey(),child=ConfigCodecs.child(path,key);
+            NodeTuple tuple=previous.get(key);
+            Node keyNode=tuple==null?scalar(Tag.STR,key):tuple.getKeyNode();
+            Node childNode=merge(tuple==null?null:tuple.getValueNode(),entry.getValue(),child,comments);
+            if(tuple==null)addComment(keyNode,comments.get(child));
+            next.add(new NodeTuple(keyNode,childNode));
+        }
+        boolean unchanged=next.size()==node.getValue().size();
+        for(int i=0;unchanged&&i<next.size();i++)
+            unchanged=next.get(i).getKeyNode()==node.getValue().get(i).getKeyNode()
+                    &&next.get(i).getValueNode()==node.getValue().get(i).getValueNode();
+        DumperOptions.FlowStyle style=collectionStyle(node,node.getFlowStyle());
+        return unchanged&&style==node.getFlowStyle()&&!(style==DumperOptions.FlowStyle.BLOCK&&hasInlineComments(node))
+                ?node:new MappingNode(Tag.MAP,next,style);
+    }
+    /** 序列仅按位置匹配，引用相同才保留原节点；不引入业务条目的身份猜测。 */
+    private Node mergeSequence(Node old,List<?> input,String path,Map<String,String> comments) {
+        SequenceNode node=old instanceof SequenceNode?(SequenceNode)old:new SequenceNode(Tag.SEQ,new ArrayList<Node>(),DumperOptions.FlowStyle.BLOCK);
+        List<Node> next=new ArrayList<>();
+        for(int i=0;i<input.size();i++)next.add(merge(i<node.getValue().size()?node.getValue().get(i):null,input.get(i),path+"["+i+"]",comments));
+        boolean unchanged=next.size()==node.getValue().size();
+        for(int i=0;unchanged&&i<next.size();i++)unchanged=next.get(i)==node.getValue().get(i);
+        DumperOptions.FlowStyle style=collectionStyle(node,node.getFlowStyle());
+        return unchanged&&style==node.getFlowStyle()&&!(style==DumperOptions.FlowStyle.BLOCK&&hasInlineComments(node))
+                ?node:new SequenceNode(Tag.SEQ,next,style);
+    }
+    private Node mergeScalar(Node old,Object value,String path) {
+        Tag tag;
+        String text;
+        if(value==null){tag=Tag.NULL;text="null";}
+        else if(value instanceof String){tag=Tag.STR;text=(String)value;}
+        else if(value instanceof Boolean){tag=Tag.BOOL;text=value.toString();}
+        else if(value instanceof Integer||value instanceof Long||value instanceof BigInteger){tag=Tag.INT;text=value.toString();}
+        else if(value instanceof Double||value instanceof Float||value instanceof BigDecimal){
+            if(!Double.isFinite(((Number)value).doubleValue()))throw new ConfigException(path,"codec 输出非有限数值");
+            tag=Tag.FLOAT;text=value.toString();
+        }else throw new ConfigException(path,"codec 输出不支持的对象树类型: "+value.getClass().getName());
+        // 语义相同的标量直接复用，保留引号、数值写法和注释；不规范化用户原表示。
+        return old instanceof ScalarNode&&tag.equals(old.getTag())&&equivalent(old,value)?old:scalar(tag,text);
+    }
+    private static DumperOptions.FlowStyle collectionStyle(Node node,DumperOptions.FlowStyle style) {
+        // SnakeYaml 2.4 对含前置注释的flow集合会丢失缩进；注释优先，改为block表示。
+        return style==DumperOptions.FlowStyle.FLOW&&hasComments(node)?DumperOptions.FlowStyle.BLOCK:style;
+    }
+    private static void inheritComments(Node old,Node result) {
+        result.setBlockComments(old.getBlockComments());
+        result.setInLineComments(old.getInLineComments());
+        result.setEndComments(old.getEndComments());
+        boolean blockContainer=result instanceof MappingNode&&((MappingNode)result).getFlowStyle()==DumperOptions.FlowStyle.BLOCK
+                ||result instanceof SequenceNode&&((SequenceNode)result).getFlowStyle()==DumperOptions.FlowStyle.BLOCK;
+        if(!blockContainer||!hasInlineComments(old))return;
+        // Emitter的block集合结束态不能消费IN_LINE；说明保持归属，转到本集合前。
+        List<CommentLine> nearby=new ArrayList<>();
+        if(old.getBlockComments()!=null)nearby.addAll(old.getBlockComments());
+        for(CommentLine comment:old.getInLineComments())
+            nearby.add(new CommentLine(comment.getStartMark(),comment.getEndMark(),comment.getValue(),CommentType.BLOCK));
+        result.setBlockComments(nearby);
+        result.setInLineComments(Collections.emptyList());
     }
     private static boolean hasInlineComments(Node node) {
         return node.getInLineComments() != null && !node.getInLineComments().isEmpty();

@@ -9,6 +9,14 @@ import java.nio.ByteBuffer;
 public interface FontSession extends AutoCloseable {
     FontFace openFace(ByteBuffer source, long faceIndex, float emSize);
 
+    /**
+     * 为本次行/段落整形准备完整上下文，同 session 的各 face/run 可借用，结束时立即关闭。
+     * native 适配管理编码、线程及 session 归属；默认后端继续通过原 String shape 消费。
+     */
+    default ShapeContext prepareShapeContext(String text) {
+        return new ShapeContext(text);
+    }
+
     default boolean supportsVariations() {
         return false;
     }

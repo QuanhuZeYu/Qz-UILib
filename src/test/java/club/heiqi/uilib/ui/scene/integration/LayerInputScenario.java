@@ -61,6 +61,7 @@ public final class LayerInputScenario extends TestApplication {
         scenario("覆盖期间来源失效永久取消saved恢复资格", this::coveredSourceEnds);
         scenario("首次来源fullclip及resize不能进入无效内层范围", this::unavailableScopeStart);
         scenario("Layer内部导航和滚轮停在呈现边界", this::scrollBoundary);
+        scenario("普通clip和正交滚动来源下嵌套Layer主动显露", this::clippedSourceReveal);
         scenario("同页来源移动保持挂载并按新scope复核", this::sourceMove);
         scenario("隐藏PASSIVE中的modal声明仍定位诊断", this::passiveModalDiagnostic);
         scenario("来源普通自然大小不被层改变且绘制逃离局部clip", this::ownedSpace);
@@ -340,6 +341,48 @@ public final class LayerInputScenario extends TestApplication {
             domain.execute(() -> require(geometry(page).get(panel[0]).scrollOffset == 0, "命中Layer无scroll目标时透到底"));
             page.pointer(ScenePointerEvent.scroll(220, 60, -1)); page.frame();
             domain.execute(() -> require(geometry(page).get(panel[0]).scrollOffset > 0, "未命中Layer的旧wheel行为被破坏"));
+        }
+    }
+    private void clippedSourceReveal() {
+        for (boolean sourceScrollable : new boolean[] {false, true}) {
+            for (boolean nested : new boolean[] {false, true}) {
+                Host host = new Host(); ReactiveDomain domain = ReactiveDomain.direct();
+                SceneNode[] panel = new SceneNode[1], layer = new SceneNode[1], outer = new SceneNode[1];
+                SceneNode[] first = new SceneNode[1], last = new SceneNode[1];
+                try (ScenePageSession page = ScenePageSession.open(domain, host, fonts, ctx -> {
+                    Signal<SceneTheme> theme = domain.signal(SceneTheme.light());
+                    first[0] = SceneButton.create(ctx, domain.signal("First"), theme, () -> {})
+                            .size(Size.fixed(180), Size.fixed(40));
+                    last[0] = SceneButton.create(ctx, domain.signal("Last"), theme, () -> {})
+                            .size(Size.fixed(180), Size.fixed(40));
+                    layer[0] = SceneLayer.create(ctx, domain.signal(new SceneLayer.Policy(5, SceneLayer.Participation.INTERACTIVE)))
+                            .size(Size.fixed(180), Size.fixed(55)).clip(true).scrollable(true).add(first[0]).add(last[0]);
+                    SceneNode source = new SceneNode().size(Size.fixed(180), Size.fixed(30)).add(layer[0]);
+                    if (nested) {
+                        outer[0] = SceneLayer.create(ctx, domain.signal(new SceneLayer.Policy(5, SceneLayer.Participation.INTERACTIVE)))
+                                .size(Size.fixed(200), Size.fixed(30)).clip(true).add(source);
+                        source = new SceneNode().size(Size.fixed(180), Size.fixed(30)).add(outer[0]);
+                    }
+                    // 正交滚动也不能使来源裁剪成为层内导航的显露窗口。
+                    panel[0] = new SceneNode().axis(SceneNode.Axis.ROW).size(Size.fixed(230), Size.fixed(30))
+                            .clip(true).scrollable(sourceScrollable).add(source)
+                            .add(new SceneNode().size(Size.fixed(250), Size.fixed(30)));
+                    ctx.mount(panel[0]);
+                })) {
+                    page.frame();
+                    domain.execute(() -> page.runtime().focusRouter().request(page.runtime().captureMount(first[0])));
+                    page.frame(); page.navigation(SceneNavigationEvent.NEXT); page.frame();
+                    domain.execute(() -> {
+                        SceneGeometryView g = geometry(page);
+                        SceneGeometryView.Entry end = g.get(last[0]);
+                        require(page.runtime().focusRouter().focused().get() == last[0]
+                                && g.get(layer[0]).scrollOffset == 25 && g.get(layer[0]).scrollMaximum == 25
+                                && end.box.intersect(end.clip).height == end.box.height, "来源clip使Layer焦点末项仍被裁掉");
+                        require(g.get(panel[0]).scrollOffset == 0 && g.layerBoundary(last[0]) == layer[0]
+                                && (!nested || g.get(outer[0]).scrollOffset == 0), "Layer显露越过最近呈现边界");
+                    });
+                }
+            }
         }
     }
     private void sourceMove() {

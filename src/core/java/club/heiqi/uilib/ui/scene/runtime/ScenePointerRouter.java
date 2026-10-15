@@ -118,102 +118,142 @@ public final class ScenePointerRouter implements AutoCloseable {
                         || !runtime.pointerTargetValid(owner.node(), ownerTarget))) cancelOwner();
     }
 
-    /** 按采集顺序处理一个事件。仅原owner按钮在有效目标位置UP时发布click。 */
+    /** 按采集顺序准备当前范围并分派事件，所有阶段共用本路由器的唯一手势状态。 */
     public void route(ScenePointerEvent event, SceneGeometryView geometry) {
         checkAccess();
         prepare(geometry);
-        // 交互投影更新只使paint失效，保持当前几何。
-        if (event.kind == ScenePointerEvent.Kind.CANCEL) {
-            positionKnown = false; hover.clear(); passive.clear();
-            runtime.invalidatePaint();
-        } else if (event.kind != ScenePointerEvent.Kind.ALL_BUTTONS_RELEASED) {
-            boolean changed = !positionKnown || x != event.x || y != event.y;
-            positionKnown = true;
-            x = event.x;
-            y = event.y;
-            if (changed
-                    || event.kind == ScenePointerEvent.Kind.DOWN
-                    || event.kind == ScenePointerEvent.Kind.UP) runtime.invalidatePaint();
-        }
+        updatePointerPosition(event);
         try {
-        switch (event.kind) {
-            case DOWN:
-                x = event.x;
-                y = event.y;
-                boolean idle = buttons.isEmpty();
-                if (!buttons.add(event.button)) return;
-                if (idle && event.button == 0) {
-                    SceneHitTester.Target target = hits.target(runtime, geometry, x, y);
-                    if (target != null) {
-                        runtime.focusRouter().pointerInput();
-                        SceneNode hit = target.node;
-                        Object identity = target.identity;
-                        // 只沿已命中子树寻找明确声明的 activator；没有声明时完全保留子控件优先。
-                        for (SceneNode ancestor = hit.parent(); ancestor != null; ancestor = ancestor.parent()) {
-                            if (!runtime.interactive(ancestor) || ancestor.control() == null) continue;
-                            SceneNode candidate = ancestor;
-                            Object delegated = runtime.domain().readOnly(() ->
-                                    candidate.control().pointerActivator(candidate, target.node, geometry, x, y));
-                            if (delegated != null && runtime.pointerTargetValid(candidate, delegated)) {
-                                hit = candidate; identity = delegated; break;
-                            }
-                        }
-                        ownerTarget = identity;
-                        setOwner(runtime.captureMount(hit));
-                        if (hit.control() != null && hit.control().capturesPointer()) {
-                            if (hit.clickFocus() && hit.focusable())
-                                runtime.focusRouter().request(runtime.captureMount(hit));
-                            runtime.dispatchControlPointer(hit, event, geometry);
-                        }
-                    } else {
-                        blurOutsideFocus(geometry);
-                    }
-                }
-                return;
-            case MOVE:
-                x = event.x;
-                y = event.y;
-                if (owner != null && owner.active())
-                    runtime.dispatchControlPointer(owner.node(), event, geometry);
-                return;
-            case UP:
-                x = event.x;
-                y = event.y;
-                if (!buttons.remove(event.button)) return;
-                if (event.button != 0 || owner == null) return;
-                MountHandle activation = owner;
-                Object identity = ownerTarget;
-                setOwner(null); // 在handler前结束owner；业务异常不能留下可复活的目标。
-                if (activation.active())
-                    runtime.dispatchControlPointer(activation.node(), event, geometry);
-                SceneHitTester.Target release = hits.target(runtime, geometry, x, y);
-                if (activation.active()
-                        && release != null
-                        && release.node == activation.node()
-                        && release.identity == identity)
-                    runtime.dispatchPointerTarget(activation.node(), identity);
-                return;
-            case CANCEL:
-                cancelOwner();
-                return;
-            case ALL_BUTTONS_RELEASED:
-                try { cancelOwner(); }
-                finally { buttons.clear(); }
-                return;
-            case SCROLL:
-                SceneNode scrolling = hits.hitScroll(runtime, geometry, event.x, event.y);
-                if (scrolling != null && !runtime.dispatchControlScroll(scrolling, event, geometry))
-                    runtime.dispatchScroll(scrolling, event.delta);
-                return;
-            case SYNTHETIC_ACTIVATION:
-                if (!buttons.isEmpty()) return;
-                SceneHitTester.Target target = hits.target(runtime, geometry, event.x, event.y);
-                if (target != null) runtime.dispatchPointerTarget(target.node, target.identity);
-                return;
-            default:
-                throw new AssertionError(event.kind);
+            switch (event.kind) {
+                case DOWN:
+                    routeDown(event, geometry);
+                    return;
+                case MOVE:
+                    routeMove(event, geometry);
+                    return;
+                case UP:
+                    routeUp(event, geometry);
+                    return;
+                case CANCEL:
+                    cancelOwner();
+                    return;
+                case ALL_BUTTONS_RELEASED:
+                    releasePhysicalButtons();
+                    return;
+                case SCROLL:
+                    routeScroll(event, geometry);
+                    return;
+                case SYNTHETIC_ACTIVATION:
+                    routeSyntheticActivation(event, geometry);
+                    return;
+                default:
+                    throw new AssertionError(event.kind);
+            }
+        } finally {
+            publishHover(geometry);
         }
-        } finally {publishHover(geometry);}
+    }
+
+    /** 交互投影只使绘制失效；取消丢弃位置，物理全部释放仍保留最后位置。 */
+    private void updatePointerPosition(ScenePointerEvent event) {
+        if (event.kind == ScenePointerEvent.Kind.CANCEL) {
+            positionKnown = false;
+            hover.clear();
+            passive.clear();
+            runtime.invalidatePaint();
+            return;
+        }
+        if (event.kind == ScenePointerEvent.Kind.ALL_BUTTONS_RELEASED) return;
+        boolean changed = !positionKnown || x != event.x || y != event.y;
+        positionKnown = true;
+        x = event.x;
+        y = event.y;
+        if (changed || event.kind == ScenePointerEvent.Kind.DOWN || event.kind == ScenePointerEvent.Kind.UP)
+            runtime.invalidatePaint();
+    }
+
+    /** 每次新按下都占物理位置，只有空闲时的主键能建立手势或清除外部焦点。 */
+    private void routeDown(ScenePointerEvent event, SceneGeometryView geometry) {
+        boolean idle = buttons.isEmpty();
+        if (!buttons.add(event.button)) return;
+        if (!idle || event.button != 0) return;
+        SceneHitTester.Target target = hits.target(runtime, geometry, x, y);
+        if (target == null) {
+            blurOutsideFocus(geometry);
+            return;
+        }
+        runtime.focusRouter().pointerInput();
+        SceneNode captured = capturePointerTarget(target, geometry);
+        dispatchCapturedDown(captured, event, geometry);
+    }
+
+    /** 只沿命中子树选择明确的祖先 activator；无声明时保留原子控件及其目标身份。 */
+    private SceneNode capturePointerTarget(SceneHitTester.Target target, SceneGeometryView geometry) {
+        SceneNode hit = target.node;
+        Object identity = target.identity;
+        for (SceneNode ancestor = hit.parent(); ancestor != null; ancestor = ancestor.parent()) {
+            if (!runtime.interactive(ancestor) || ancestor.control() == null) continue;
+            SceneNode candidate = ancestor;
+            Object delegated = runtime.domain().readOnly(() ->
+                    candidate.control().pointerActivator(candidate, target.node, geometry, x, y));
+            if (delegated != null && runtime.pointerTargetValid(candidate, delegated)) {
+                hit = candidate;
+                identity = delegated;
+                break;
+            }
+        }
+        ownerTarget = identity;
+        setOwner(runtime.captureMount(hit));
+        return hit;
+    }
+
+    private void dispatchCapturedDown(SceneNode captured, ScenePointerEvent event, SceneGeometryView geometry) {
+        if (captured.control() == null || !captured.control().capturesPointer()) return;
+        if (captured.clickFocus() && captured.focusable())
+            runtime.focusRouter().request(runtime.captureMount(captured));
+        runtime.dispatchControlPointer(captured, event, geometry);
+    }
+
+    private void routeMove(ScenePointerEvent event, SceneGeometryView geometry) {
+        if (owner != null && owner.active())
+            runtime.dispatchControlPointer(owner.node(), event, geometry);
+    }
+
+    /** 仅已知主键的原目标可激活；handler 前结束 owner，异常也不能留下可复活联系。 */
+    private void routeUp(ScenePointerEvent event, SceneGeometryView geometry) {
+        if (!buttons.remove(event.button)) return;
+        if (event.button != 0 || owner == null) return;
+        MountHandle activation = owner;
+        Object identity = ownerTarget;
+        setOwner(null);
+        if (activation.active())
+            runtime.dispatchControlPointer(activation.node(), event, geometry);
+        SceneHitTester.Target release = hits.target(runtime, geometry, x, y);
+        if (activation.active()
+                && release != null
+                && release.node == activation.node()
+                && release.identity == identity)
+            runtime.dispatchPointerTarget(activation.node(), identity);
+    }
+
+    private void releasePhysicalButtons() {
+        try {
+            cancelOwner();
+        } finally {
+            buttons.clear();
+        }
+    }
+
+    private void routeScroll(ScenePointerEvent event, SceneGeometryView geometry) {
+        SceneNode scrolling = hits.hitScroll(runtime, geometry, event.x, event.y);
+        if (scrolling != null && !runtime.dispatchControlScroll(scrolling, event, geometry))
+            runtime.dispatchScroll(scrolling, event.delta);
+    }
+
+    private void routeSyntheticActivation(ScenePointerEvent event, SceneGeometryView geometry) {
+        if (!buttons.isEmpty()) return;
+        SceneHitTester.Target target = hits.target(runtime, geometry, event.x, event.y);
+        if (target != null) runtime.dispatchPointerTarget(target.node, target.identity);
     }
 
     /** 仅首次主键空命中离开；保留物理占位，尾部不能激活拖入的邻控件。

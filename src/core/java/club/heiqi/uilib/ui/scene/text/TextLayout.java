@@ -3,6 +3,7 @@ package club.heiqi.uilib.ui.scene.text;
 import club.heiqi.uilib.ui.scene.text.font.FontSource;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.GlyphRasterStyle;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.InkBounds;
+import club.heiqi.uilib.ui.scene.text.math.MathAxis;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -523,6 +524,29 @@ public final class TextLayout {
         }
     }
 
+    /**
+     * 真实 MATH assembly 的整体事实，区别于完整 variant 或末部件 glyph 的数学修正。
+     * 颜色、采样密度及根号顶横局部延伸不改变其逻辑字体实例，须随结果保留。
+     */
+    public static final class MathAssemblyFacts {
+        public final FontSource source;
+        public final float logicalEm, italicCorrection;
+        public final long generation;
+        public final MathAxis axis;
+
+        public MathAssemblyFacts(
+                FontSource source, float logicalEm, long generation, MathAxis axis, float italicCorrection) {
+            this.source = Objects.requireNonNull(source, "source");
+            this.axis = Objects.requireNonNull(axis, "axis");
+            if (!Float.isFinite(logicalEm) || logicalEm <= 0 || generation <= 0
+                    || !Float.isFinite(italicCorrection))
+                throw new IllegalArgumentException("无效数学 assembly 事实");
+            this.logicalEm = logicalEm;
+            this.generation = generation;
+            this.italicCorrection = italicCorrection;
+        }
+    }
+
     public final int width, height;
     public final float advanceWidth, advanceHeight;
     public final TextStyle style;
@@ -532,6 +556,8 @@ public final class TextLayout {
 
     public final long generation;
     public final TextInput input;
+    /** 普通文字及完整 variant 为 null；assembly 的整体修正不能从末 glyph 推导。 */
+    public final MathAssemblyFacts mathAssembly;
     private final List<Line> lines;
     private final List<Diagnostic> diagnostics;
 
@@ -586,7 +612,28 @@ public final class TextLayout {
             long generation,
             List<Diagnostic> diagnostics,
             TextInput input) {
+        this(width, height, advanceWidth, advanceHeight, style, lines, logicalText, originalText,
+                generation, diagnostics, input, null);
+    }
+
+    public TextLayout(
+            int width,
+            int height,
+            float advanceWidth,
+            float advanceHeight,
+            TextStyle style,
+            List<Line> lines,
+            String logicalText,
+            String originalText,
+            long generation,
+            List<Diagnostic> diagnostics,
+            TextInput input,
+            MathAssemblyFacts mathAssembly) {
         this.input = input;
+        if (mathAssembly != null && (mathAssembly.generation != generation
+                || mathAssembly.logicalEm != style.logicalEm))
+            throw new IllegalArgumentException("数学 assembly 与布局字体实例不一致");
+        this.mathAssembly = mathAssembly;
         if (width < 0 || height < 0) throw new IllegalArgumentException("文本度量不能为负");
         this.width = width;
         this.height = height;
@@ -616,15 +663,8 @@ public final class TextLayout {
     public TextLayout withStyle(TextStyle style) {
         Objects.requireNonNull(style, "style");
         if (style.equals(this.style)) return this;
-        if (!style.sameFont(this.style)
-                || !style.effects.equals(this.style.effects)
-                || !style.decoration.equals(this.style.decoration)
-                || style.baselineShift != this.style.baselineShift
-                || style.letterSpacing != this.style.letterSpacing
-                || !style.script.equals(this.style.script)
-                || !Objects.equals(style.highlightColor, this.style.highlightColor)
-                || style.defaultHighlightColor != this.style.defaultHighlightColor)
-            throw new IllegalArgumentException("已定位计划只允许统一颜色重绑定");
+        if (!this.style.sameLayout(style))
+            throw new IllegalArgumentException("已定位计划只允许统一绘制色重绑定");
         return withColors(style, offset -> style.color);
     }
 
@@ -636,7 +676,7 @@ public final class TextLayout {
     /** 字体服务可保留本次已经解析的基础样式实例；其余定位属性必须等价。 */
     public TextLayout withColors(TextStyle baseStyle, java.util.function.IntUnaryOperator colorAt) {
         Objects.requireNonNull(baseStyle, "baseStyle");
-        if (!style.withColor(baseStyle.color).equals(baseStyle))
+        if (!style.sameLayout(baseStyle))
             throw new IllegalArgumentException("颜色绑定不能改变定位样式");
         Objects.requireNonNull(colorAt, "colorAt");
         final String colorDiagnostic = "安全簇内部颜色统一使用逻辑首样式";
@@ -704,6 +744,6 @@ public final class TextLayout {
         }
         if (!changed && sameDiagnostics) return this;
         return new TextLayout(width, height, advanceWidth, advanceHeight, baseStyle,
-                recolored, logicalText, originalText, generation, currentDiagnostics, input);
+                recolored, logicalText, originalText, generation, currentDiagnostics, input, mathAssembly);
     }
 }

@@ -22,6 +22,7 @@ import club.heiqi.uilib.ui.scene.text.font.nativefont.GlyphBitmap;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.GlyphRasterStyle;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.InkBounds;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.MathData;
+import club.heiqi.uilib.ui.scene.text.font.nativefont.ShapeContext;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.ShapeDirection;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.ShapedGlyph;
 import club.heiqi.uilib.ui.scene.text.math.MathAxis;
@@ -70,9 +71,6 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
             new LinkedHashMap<InkKey, InkBounds>(16, .75f, true);
     private final LinkedHashMap<Object, TextLayout> layouts =
             new LinkedHashMap<Object, TextLayout>(16, .75f, true);
-    // 构建结果的修正来自 assembly 而非末部件；弱键只随调用方持有的布局存活。
-    private final Map<TextLayout, Float> assemblyItalic =
-            new java.util.WeakHashMap<TextLayout, Float>();
     private final Map<String, List<FontSource>> named = new HashMap<String, List<FontSource>>();
     // 服务发布的数学正文尾链随默认资源换代；显式 register 后由调用方拥有该名称。
     private final Set<String> defaultMathTextNames = new TreeSet<>();
@@ -343,7 +341,6 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
     private void invalidate() {
         generation++;
         layouts.clear();
-        assemblyItalic.clear();
         colors.clear();
         ink.clear();
         failures.clear();
@@ -802,21 +799,20 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
             UnicodeText doc = new UnicodeText(TextInput.string(value), TextPolicy.NO_WRAP);
             doc.diagnostics.addAll(selected.diagnostics);
             styleDiagnostic(selected.source, selected.style, doc, 0, end);
-            TextLayout layout =
-                    new TextLayout(
-                            ceil(width),
-                            ceil(height),
-                            width,
-                            height,
-                            selected.style,
-                            Collections.singletonList(line),
-                            value,
-                            value,
-                            generation,
-                            doc.diagnostics,
-                            TextInput.string(value));
-            assemblyItalic.put(layout, assembly.italicCorrection);
-            return layout;
+            return new TextLayout(
+                    ceil(width),
+                    ceil(height),
+                    width,
+                    height,
+                    selected.style,
+                    Collections.singletonList(line),
+                    value,
+                    value,
+                    generation,
+                    doc.diagnostics,
+                    TextInput.string(value),
+                    new TextLayout.MathAssemblyFacts(
+                            selected.source, requested.logicalEm, generation, axis, assembly.italicCorrection));
         }
 
         public InkBounds radicalBarBounds(TextLayout layout) {
@@ -929,7 +925,8 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                     layout.originalText,
                     layout.generation,
                     layout.diagnostics(),
-                    layout.input);
+                    layout.input,
+                    layout.mathAssembly);
         }
 
         public float topAccentAttachment(TextLayout layout) {
@@ -948,7 +945,8 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                     count++;
                 }
             }
-            if (count != 1 || layout.lines().size() != 1 || assemblyItalic.containsKey(layout))
+            TextLayout.MathAssemblyFacts assembly = assemblyFacts(layout, selected);
+            if (count != 1 || layout.lines().size() != 1 || assembly != null)
                 return Float.NaN;
             float attachment = selected.face.mathTopAccentAttachment(single.glyphId);
             return Float.isNaN(attachment) ? Float.NaN : single.x + attachment;
@@ -968,10 +966,18 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                     terminal = glyph;
                 }
             }
-            Float correction = assemblyItalic.get(layout);
-            return correction != null
-                    ? correction
+            TextLayout.MathAssemblyFacts assembly = assemblyFacts(layout, selected);
+            return assembly != null
+                    ? assembly.italicCorrection
                     : terminal == null ? 0 : selected.face.mathItalicCorrection(terminal.glyphId);
+        }
+
+        private TextLayout.MathAssemblyFacts assemblyFacts(TextLayout layout, MathSelection selected) {
+            TextLayout.MathAssemblyFacts assembly = layout.mathAssembly;
+            if (assembly != null && (!assembly.source.equals(selected.source)
+                    || assembly.logicalEm != requested.logicalEm || assembly.generation != generation))
+                throw new IllegalArgumentException("数学 assembly 不是当前字体实例");
+            return assembly;
         }
     }
 
@@ -2016,6 +2022,7 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
         check();
         UnicodeText doc = new UnicodeText(request.input);
         List<TextLayout.Line> lines = new ArrayList<TextLayout.Line>();
+        boolean glyphsReplaced = false;
         for (TextLayout.Line line : layout.lines()) {
             List<TextLayout.Glyph> output = new ArrayList<TextLayout.Glyph>();
             List<TextLayout.Cluster> clusters = new ArrayList<TextLayout.Cluster>();
@@ -2025,6 +2032,7 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                 range.resolve(line, request, ci, doc);
                 if (range.replace) {
                     appendObfuscatedRange(line, range, tick, salt, doc, output, clusters);
+                    glyphsReplaced = true;
                 } else {
                     appendOriginalRange(line, range, output, clusters);
                 }
@@ -2064,7 +2072,9 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                 layout.originalText,
                 layout.generation,
                 diagnostics,
-                layout.input);
+                layout.input,
+                // 未替换字形时仍是原 assembly；真正混淆后旧部件构建事实失效。
+                glyphsReplaced ? null : layout.mathAssembly);
     }
 
     /** 本行复用的当前安全范围；先裁决完整范围，再交给输出投影，不持有跨调用状态。 */
@@ -2358,7 +2368,8 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                 layout.originalText,
                 layout.generation,
                 diagnostics,
-                layout.input);
+                layout.input,
+                layout.mathAssembly);
     }
 
     private static InkBounds extendedInk(InkBounds ink, float extra) {
@@ -2378,6 +2389,7 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
         return (int) Math.ceil(Math.max(0, value));
     }
 
+    /** 一次整形的阶段编排；行端、资源作用域与最终度量在这里闭合。 */
     private Draft shape(
             UnicodeText doc,
             UnitIndex units,
@@ -2388,179 +2400,219 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
             TextStyle style,
             TextPolicy policy,
             List<FontSource> sources) {
-        Draft draft = new Draft();
-        if (start == end) {
+        LineShaper line = new LineShaper(doc, units, start, end, style, policy, sources);
+        if (start == end) return line.emptyLine();
+        line.prepareLine(paragraphBidi, paragraphStart);
+        // 完整上下文只准备一次，各视觉 run 借用；完成后先释放，再结算字距与默认度量。
+        try (ShapeContext prepared = nativeService.prepareShapeContext(line.context)) {
+            line.appendVisualRuns(prepared);
+        }
+        return line.finish();
+    }
+
+    /**
+     * 单次行/段落整形的唯一工作状态。只在 shape 调用内存在，不持有跨调用资源或缓存。
+     * 视觉分段、无字形 advance 和真实字形投影共用 draft/pen，最终行仍独立重新整形。
+     */
+    private final class LineShaper {
+        private final UnicodeText doc;
+        private final UnitIndex units;
+        private final int start, end;
+        private final TextPolicy policy;
+        private final Draft draft = new Draft();
+        private float pen;
+        // 每个视觉 span 先更新这两项；无真实度量时使用最后处理的 span，而非段落首样式。
+        private TextStyle style;
+        private List<FontSource> sources;
+        private Bidi visualBidi;
+        private String context;
+        private boolean hyphenated;
+
+        LineShaper(
+                UnicodeText doc,
+                UnitIndex units,
+                int start,
+                int end,
+                TextStyle style,
+                TextPolicy policy,
+                List<FontSource> sources) {
+            this.doc = doc;
+            this.units = units;
+            this.start = start;
+            this.end = end;
+            this.style = style;
+            this.policy = policy;
+            this.sources = sources;
+        }
+
+        Draft emptyLine() {
             defaultMetrics(draft, style, doc, sources);
             return draft;
         }
-        Bidi lineBidi = lineBidi(doc, paragraphBidi, paragraphStart, start, end);
-        String context = doc.display.substring(start, end);
-        // 只在真正软断行的行尾将SHY投影为字体连字符；段落终点和原文永不改变。
-        boolean hyphenated = end < paragraphStart + paragraphBidi.getLength()
-                && end > start && doc.display.charAt(end - 1) == '\u00ad';
-        if (hyphenated) context = context.substring(0, context.length() - 1) + "-";
-        TreeMap<Integer, Unit> unitStarts = units.starts;
-        float pen = 0;
-        for (int r = 0; r < lineBidi.countRuns(); r++) {
-            BidiRun run = lineBidi.getVisualRun(r);
+
+        void prepareLine(Bidi paragraphBidi, int paragraphStart) {
+            visualBidi = lineBidi(doc, paragraphBidi, paragraphStart, start, end);
+            context = doc.display.substring(start, end);
+            // 仅真正软断行的 SHY 行尾投影为连字符；段落终点和原文不改变。
+            hyphenated = end < paragraphStart + paragraphBidi.getLength()
+                    && end > start && doc.display.charAt(end - 1) == '\u00ad';
+            if (hyphenated) context = context.substring(0, context.length() - 1) + "-";
+        }
+
+        void appendVisualRuns(ShapeContext prepared) {
+            for (int r = 0; r < visualBidi.countRuns(); r++)
+                appendVisualRun(visualBidi.getVisualRun(r), prepared);
+        }
+
+        private void appendVisualRun(BidiRun run, ShapeContext prepared) {
+            List<Span> spans = collectSpans(run);
+            if (run.isOddRun()) Collections.reverse(spans);
+            ShapeDirection direction = run.isOddRun() ? ShapeDirection.RTL : ShapeDirection.LTR;
+            for (Span span : spans) appendSpan(span, direction, prepared);
+        }
+
+        /** 先按本 run 的逻辑范围合并真实字体请求，再由调用方应用视觉方向。 */
+        private List<Span> collectSpans(BidiRun run) {
             int runStart = start + run.getStart(), runEnd = start + run.getLimit();
             List<Span> spans = new ArrayList<Span>();
-            int firstUnit = unitStarts.floorKey(runStart);
-            for (Unit original : unitStarts.subMap(firstUnit, true, runEnd, false).values()) {
-                Unit u = hyphenated && original.start == end - 1
-                        ? hyphen(doc, units, original, policy) : original;
-                int s = Math.max(runStart, u.start), e = Math.min(runEnd, u.end);
-                boolean special =
-                        doc.display.charAt(s) == '	'
-                                || !UnicodeText.visible(context, s - start, e - start)
-                                || u.replacement
-                                || u.inlineBox != null
-                                || u.source == null;
-                Span last = spans.isEmpty() ? null : spans.get(spans.size() - 1);
-                if (!special
-                        && last != null
-                        && !last.special
-                        && last.unit.source.equals(u.source)
-                        && last.unit.script == u.script
-                        && sameShapingFont(last.unit.shapeStyle, u.shapeStyle)
-                        && last.end == s) last.end = e;
-                else spans.add(new Span(s, e, u, special));
+            int firstUnit = units.starts.floorKey(runStart);
+            for (Unit original : units.starts.subMap(firstUnit, true, runEnd, false).values()) {
+                Unit unit = shapingUnit(original);
+                int from = Math.max(runStart, unit.start), to = Math.min(runEnd, unit.end);
+                boolean special = specialSpan(unit, from, to);
+                Span previous = spans.isEmpty() ? null : spans.get(spans.size() - 1);
+                if (canMerge(previous, unit, from, special)) previous.end = to;
+                else spans.add(new Span(from, to, unit, special));
             }
-            if (run.isOddRun()) Collections.reverse(spans);
-            for (Span span : spans) {
-                Unit u = span.unit;
-                style = u.shapeStyle;
-                sources = candidates(style);
-                int glyphBegin = draft.glyphs.size();
-                float spanPen = pen;
-                if (u.inlineBox != null) {
-                    // 中性对象参与当前视觉 run，但内部内容不进入 HB 或字体回退。
-                    InlineBox box = u.inlineBox;
-                    draft.cells.add(
-                            new Cell(
-                                    span.start,
-                                    span.end,
-                                    pen,
-                                    box.width,
-                                    u.style,
-                                    glyphBegin,
-                                    glyphBegin));
-                    // prefix 对无字形 advance 使用同一 Gap 事实，只累计一次对象宽度。
-                    draft.spaces.add(new Gap(span.start, span.end, box.width));
-                    draft.ascent = Math.max(draft.ascent, Math.max(0, box.baseline - u.style.baselineShift));
-                    draft.descent = Math.max(draft.descent,
-                            Math.max(0, box.height - box.baseline + u.style.baselineShift));
-                    draft.metricHeight = Math.max(draft.metricHeight, box.height);
-                    pen += box.width;
-                    continue;
-                }
-                if (doc.display.charAt(span.start) == '	') {
-                    float tab =
-                            policy.tabSize > 0
-                                    ? policy.tabSize
-                                    : spaceAdvance(style, doc, sources, policy) * 4;
-                    float advance = (float) ((Math.floor(pen / tab) + 1) * tab - pen);
-                    draft.cells.add(
-                            new Cell(
-                                    span.start,
-                                    span.end,
-                                    pen,
-                                    advance,
-                                    u.style,
-                                    glyphBegin,
-                                    glyphBegin));
-                    draft.spaces.add(new Gap(span.start, span.end, advance));
-                    pen += advance;
-                    continue;
-                }
-                if (!UnicodeText.visible(context, span.start - start, span.end - start)) continue;
-                if (u.source == null) {
-                    float advance = style.logicalEm;
-                    draft.cells.add(
-                            new Cell(
-                                    span.start,
-                                    span.end,
-                                    pen,
-                                    advance,
-                                    u.style,
-                                    glyphBegin,
-                                    glyphBegin));
-                    draft.spaces.add(new Gap(span.start, span.end, advance));
-                    pen += advance;
-                    continue;
-                }
-                FontFace f = face(u.source, style.logicalEm, doc);
-                if (f == null) throw new IllegalStateException("已匹配字体无法重开");
-                if (u.replacement) {
-                    // U+FFFD 不可用时使用同列表第一有效 face 的 .notdef；身份仍可真实光栅。
-                    List<ShapedGlyph> replacement =
-                            f.shape(
-                                    u.replacementId == 0 ? "\uffff" : "\ufffd",
-                                    ShapeDirection.LTR,
-                                    policy.language);
-                    ShapedGlyph g = replacement.get(0);
-                    draft.glyphs.add(
-                            new Placed(
-                                    u.source,
-                                    u.replacementId,
-                                    span.start,
-                                    span.end,
-                                    pen + g.xOffset,
-                                    -g.yOffset,
-                                    g.xAdvance,
-                                    -g.yAdvance,
-                                    false,
-                                    true));
-                    pen += g.xAdvance;
-                    pen = finishSpan(draft, units, doc, glyphBegin, spanPen, pen, u.script);
-                    continue;
-                }
-                List<ShapedGlyph> shaped =
-                        f.shape(
-                                context,
-                                span.start - start,
-                                span.end - start,
-                                run.isOddRun() ? ShapeDirection.RTL : ShapeDirection.LTR,
-                                policy.language,
-                                UScript.getShortName(u.script),
-                                span.start == start,
-                                span.end == end);
-                TreeSet<Integer> clusters = new TreeSet<Integer>();
-                clusters.add(span.end - start);
-                for (ShapedGlyph g : shaped) clusters.add(g.cluster);
-                for (ShapedGlyph g : shaped) {
-                    int c = start + g.cluster, next = start + clusters.higher(g.cluster);
-                    int clusterStart = c, clusterEnd = next;
-                    // 视觉命中始终返回完整 ICU 字素；HB 连字还可覆盖多个字素。
-                    Unit atStart = unitStarts.floorEntry(c).getValue();
-                    Unit atEnd = unitStarts.lowerEntry(next).getValue();
-                    clusterStart = atStart.start;
-                    clusterEnd = atEnd.end;
-                    boolean draw = UnicodeText.visible(context, c - start, next - start);
-                    if (draw)
-                        draft.glyphs.add(
-                                new Placed(
-                                        u.source,
-                                        g.glyphId,
-                                        clusterStart,
-                                        clusterEnd,
-                                        pen + g.xOffset,
-                                        -g.yOffset,
-                                        g.xAdvance,
-                                        -g.yAdvance,
-                                        u.source.color
-                                                && color(u.source, style.logicalEm, g.glyphId, f),
-                                        false));
-                    else if (g.xAdvance != 0)
-                        draft.spaces.add(new Gap(clusterStart, clusterEnd, g.xAdvance));
-                    pen += g.xAdvance;
-                }
-                pen = finishSpan(draft, units, doc, glyphBegin, spanPen, pen, u.script);
-            }
+            return spans;
         }
-        draft.width = applyLetterSpacing(draft, doc, pen, policy);
-        if (draft.ascent + draft.descent == 0) defaultMetrics(draft, style, doc, sources);
-        return draft;
+
+        private Unit shapingUnit(Unit original) {
+            return hyphenated && original.start == end - 1
+                    ? hyphen(doc, units, original, policy) : original;
+        }
+
+        private boolean specialSpan(Unit unit, int from, int to) {
+            return doc.display.charAt(from) == '\t'
+                    || !UnicodeText.visible(context, from - start, to - start)
+                    || unit.replacement
+                    || unit.inlineBox != null
+                    || unit.source == null;
+        }
+
+        private boolean canMerge(Span previous, Unit unit, int from, boolean special) {
+            return !special
+                    && previous != null
+                    && !previous.special
+                    && previous.unit.source.equals(unit.source)
+                    && previous.unit.script == unit.script
+                    && sameShapingFont(previous.unit.shapeStyle, unit.shapeStyle)
+                    && previous.end == from;
+        }
+
+        /** span 内容的关键裁决；所有分支都在同一个 pen/draft 上发布结果。 */
+        private void appendSpan(Span span, ShapeDirection direction, ShapeContext prepared) {
+            Unit unit = span.unit;
+            style = unit.shapeStyle;
+            sources = candidates(style);
+            if (unit.inlineBox != null) {
+                appendInlineBox(span);
+                return;
+            }
+            if (doc.display.charAt(span.start) == '\t') {
+                appendTab(span);
+                return;
+            }
+            if (!UnicodeText.visible(context, span.start - start, span.end - start)) return;
+            if (unit.source == null) {
+                appendAdvanceCell(span, style.logicalEm);
+                pen += style.logicalEm;
+                return;
+            }
+            appendGlyphSpan(span, direction, prepared);
+        }
+
+        private void appendInlineBox(Span span) {
+            Unit unit = span.unit;
+            InlineBox box = unit.inlineBox;
+            // 中性对象参与当前视觉 run，内部内容不进入 HB；prefix 与命中共用一次 advance。
+            appendAdvanceCell(span, box.width);
+            draft.ascent = Math.max(draft.ascent, Math.max(0, box.baseline - unit.style.baselineShift));
+            draft.descent = Math.max(draft.descent,
+                    Math.max(0, box.height - box.baseline + unit.style.baselineShift));
+            draft.metricHeight = Math.max(draft.metricHeight, box.height);
+            pen += box.width;
+        }
+
+        private void appendTab(Span span) {
+            float tab = policy.tabSize > 0
+                    ? policy.tabSize : spaceAdvance(style, doc, sources, policy) * 4;
+            float advance = (float) ((Math.floor(pen / tab) + 1) * tab - pen);
+            appendAdvanceCell(span, advance);
+            pen += advance;
+        }
+
+        /** 无字形的内联盒、Tab 和无源空间共享 cell/Gap，不改变各分支自己的度量裁决。 */
+        private void appendAdvanceCell(Span span, float advance) {
+            int glyphBegin = draft.glyphs.size();
+            draft.cells.add(new Cell(span.start, span.end, pen, advance, span.unit.style,
+                    glyphBegin, glyphBegin));
+            draft.spaces.add(new Gap(span.start, span.end, advance));
+        }
+
+        private void appendGlyphSpan(Span span, ShapeDirection direction, ShapeContext prepared) {
+            int glyphBegin = draft.glyphs.size();
+            float spanPen = pen;
+            FontFace font = face(span.unit.source, style.logicalEm, doc);
+            if (font == null) throw new IllegalStateException("已匹配字体无法重开");
+            if (span.unit.replacement) appendReplacement(span, font);
+            else appendShapedGlyphs(span, direction, prepared, font);
+            pen = finishSpan(draft, units, doc, glyphBegin, spanPen, pen, span.unit.script);
+        }
+
+        private void appendReplacement(Span span, FontFace font) {
+            Unit unit = span.unit;
+            // U+FFFD 不可用时使用同列表第一有效 face 的 .notdef；身份仍可真实光栅。
+            List<ShapedGlyph> replacement = font.shape(
+                    unit.replacementId == 0 ? "\uffff" : "\ufffd", ShapeDirection.LTR, policy.language);
+            ShapedGlyph glyph = replacement.get(0);
+            draft.glyphs.add(new Placed(unit.source, unit.replacementId, span.start, span.end,
+                    pen + glyph.xOffset, -glyph.yOffset, glyph.xAdvance, -glyph.yAdvance, false, true));
+            pen += glyph.xAdvance;
+        }
+
+        private void appendShapedGlyphs(
+                Span span, ShapeDirection direction, ShapeContext prepared, FontFace font) {
+            Unit unit = span.unit;
+            List<ShapedGlyph> shaped = font.shape(
+                    prepared, span.start - start, span.end - start, direction, policy.language,
+                    UScript.getShortName(unit.script), span.start == start, span.end == end);
+            TreeSet<Integer> clusters = new TreeSet<Integer>();
+            clusters.add(span.end - start);
+            for (ShapedGlyph glyph : shaped) clusters.add(glyph.cluster);
+            for (ShapedGlyph glyph : shaped)
+                appendProjectedGlyph(unit, font, glyph, clusters.higher(glyph.cluster));
+        }
+
+        /** HB cluster 索引相对完整上下文；命中扩到 ICU 字素，保留可能跨字素的连字。 */
+        private void appendProjectedGlyph(Unit unit, FontFace font, ShapedGlyph glyph, int nextCluster) {
+            int from = start + glyph.cluster, to = start + nextCluster;
+            int clusterStart = units.starts.floorEntry(from).getValue().start;
+            int clusterEnd = units.starts.lowerEntry(to).getValue().end;
+            if (UnicodeText.visible(context, from - start, to - start))
+                draft.glyphs.add(new Placed(unit.source, glyph.glyphId, clusterStart, clusterEnd,
+                        pen + glyph.xOffset, -glyph.yOffset, glyph.xAdvance, -glyph.yAdvance,
+                        unit.source.color && color(unit.source, style.logicalEm, glyph.glyphId, font), false));
+            else if (glyph.xAdvance != 0)
+                draft.spaces.add(new Gap(clusterStart, clusterEnd, glyph.xAdvance));
+            pen += glyph.xAdvance;
+        }
+
+        Draft finish() {
+            draft.width = applyLetterSpacing(draft, doc, pen, policy);
+            if (draft.ascent + draft.descent == 0) defaultMetrics(draft, style, doc, sources);
+            return draft;
+        }
     }
 
     /** SHY原为BN：L1会把行尾控制归回段落基级，但可见连字符须保留该断点的已解析方向。 */
@@ -2818,7 +2870,6 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
         if (closed) return;
         closed = true;
         layouts.clear();
-        assemblyItalic.clear();
         colors.clear();
         ink.clear();
         failures.clear();

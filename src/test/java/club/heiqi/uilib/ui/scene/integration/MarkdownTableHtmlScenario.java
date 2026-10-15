@@ -65,6 +65,7 @@ public final class MarkdownTableHtmlScenario extends TestApplication {
         runScenario("CRLF代理对转义管道代码及typed原子的原文来源", this::pipeSources, failures);
         runScenario("HTML全部内容类别及inline与block成熟Markdown边界", this::htmlSemantics, failures);
         runScenario("HTML实体有效attrs无效尺寸原value诊断不吞后文", this::htmlSources, failures);
+        runScenario("同段密集HTML code保持精确容器与管道来源", this::htmlCodeRanges, failures);
         runScenario("真实字体表格列行主题动态重排与全投影对齐", this::tableScene, failures);
         runScenario("超宽公式独立横滚裁剪链接capture尾事件与释放", this::overflowScene, failures);
         runScenario("共享图像worker完成自动更新表格cell行高并释放", this::imageScene, failures);
@@ -641,6 +642,38 @@ public final class MarkdownTableHtmlScenario extends TestApplication {
                     allText(escaped).contains("<b>literal")
                             && allText(escaped).contains("<b>*code*</b>"),
                     "转义与围栏HTML应为字面");
+        }
+    }
+
+    private void htmlCodeRanges() {
+        for (boolean tableCell : new boolean[] {false, true}) {
+            StringBuilder raw = new StringBuilder(tableCell ? "head|next\r\n---|---\r\n" : "> head ");
+            StringBuilder expected = new StringBuilder(tableCell ? "" : "head ");
+            List<Integer> original = new ArrayList<>(), logical = new ArrayList<>();
+            for (int i = 0; i < 128; i++) {
+                if (i % 16 == 0) raw.append("<code></code>");
+                raw.append("<code>");
+                original.add(raw.length());
+                logical.add(expected.length());
+                raw.append(tableCell ? "x\\|😀" : "x😀").append("</code>");
+                expected.append(tableCell ? "x|😀" : "x😀");
+            }
+            raw.append(tableCell ? "|tail" : " tail");
+            if (!tableCell) expected.append(" tail");
+            String source = raw.toString();
+            for (boolean bytes : new boolean[] {false, true}) {
+                DocumentContent doc = checked(source, bytes);
+                TextInput input = tableCell
+                        ? paragraph(table(doc).rows().get(1).cells().get(0)).resolve(BASE).text.input
+                        : find(doc.blocks(), DocumentContent.Block.Kind.PARAGRAPH).get(0)
+                                .paragraph.resolve(BASE).text.input;
+                equal(expected.toString(), input.text, "密集code内容、空片段与后文保持");
+                for (int i = 0; i < original.size(); i++) {
+                    int start = original.get(i), at = logical.get(i);
+                    exactRange(input, at, source, start, start + 1, bytes);
+                    if (tableCell) exactRange(input, at + 1, source, start + 1, start + 3, bytes);
+                }
+            }
         }
     }
 

@@ -206,85 +206,87 @@ final class MathParser {
         context = nested(context);
         int from = index;
         List<Node> body = new ArrayList<Node>();
-        boolean hadInfix = false;
-        while (true) {
-            if (context.mode.equals("math")) spaces();
-            String t = text();
-            if (t.equals("EOF")
-                    || !context.stop.isEmpty() && t.equals(context.stop)
-                    || context.cell
-                            && (t.equals("&")
-                                    || !context.singleCell && t.equals("\\\\")
-                                    || t.equals("\\end"))
-                    || context.left && t.equals("\\right")) break;
-            if (t.equals("}")) throw error(peek(), "多余的闭合分组");
-            MathCommandCatalog.Function function = MathCommandCatalog.findFunction(t);
-            if (function != null && function.infix) {
-                // infix在row提前消费，仍须执行与普通函数相同的目录模式资格。
-                if (context.mode.equals("text") ? !function.allowedInText : !function.allowedInMath)
-                    throw error(peek(), "命令不允许在 " + context.mode + " mode: " + t);
+        while (!rowBoundary(context)) {
+            if (rowInfix(context) != null) {
                 if (stopInfix) break;
-                if (hadInfix) throw error(peek(), "同一分组只能有一个 infix 分式");
-                hadInfix = true;
-                int mark = index;
-                take();
-                MathDimension size = t.equals("\\above") ? dimension(false) : null;
-                Node numerator = node(Kind.ROW, from, "", body, null, null, null, null);
-                Node denominator = row(context, true);
-                if (MathCommandCatalog.findFunction(text()) != null
-                        && MathCommandCatalog.findFunction(text()).infix)
-                    throw error(peek(), "同一分组只能有一个 infix 分式");
-                String name =
-                        t.equals("\\over")
-                                ? "frac"
-                                : t.equals("\\choose")
-                                        ? "binom"
-                                        : t.equals("\\atop")
-                                                ? "atop"
-                                                : t.equals("\\brace")
-                                                        ? "brace"
-                                                        : t.equals("\\brack") ? "brack" : "above";
-                body.clear();
-                body.add(
-                        fraction(
-                                from,
-                                name,
-                                numerator,
-                                denominator,
-                                size,
-                                null,
-                                null,
-                                "auto",
-                                false));
+                reduceInfix(context, from, body);
                 break;
             }
-            if (context.leftDepth > 0 && t.equals("\\middle")) {
-                if (context.mode.equals("text") && !function.allowedInText)
-                    throw error(peek(), "命令不允许在 text mode: " + t);
-                int mark = index;
-                take();
-                body.add(delimiter(mark, Kind.MIDDLE, "rel", 0));
-                continue;
-            }
-            // 起始prime与^/_同样允许空base，脚本参数本身仍按primitive合同拒绝apostrophe。
-            if (context.mode.equals("math") && (t.equals("^") || t.equals("_") || t.equals("'"))) {
-                body.add(
-                        postfix(
-                                context,
-                                new Node(
-                                        Kind.ROW,
-                                        peek().sourceStart,
-                                        peek().sourceStart,
-                                        "",
-                                        null,
-                                        null,
-                                        null,
-                                        null)));
-            } else
-                body.add(context.mode.equals("math") ? postfix(context, atom(context)) : atom(context));
+            if (consumeMiddle(context, body)) continue;
+            body.add(rowAtom(context));
         }
         if (context.mode.equals("text")) formLigatures(body);
         return node(Kind.ROW, from, "", body, null, null, null, null);
+    }
+
+    /** 先消费数学模式空白，再判断本行边界；终结 token 留给所属分组、环境或围合。 */
+    private boolean rowBoundary(Context context) {
+        if (context.mode.equals("math")) spaces();
+        String t = text();
+        if (t.equals("EOF")
+                || !context.stop.isEmpty() && t.equals(context.stop)
+                || context.cell && cellBoundary(context, t)
+                || context.left && t.equals("\\right")) return true;
+        if (t.equals("}")) throw error(peek(), "多余的闭合分组");
+        return false;
+    }
+
+    private boolean cellBoundary(Context context, String t) {
+        return t.equals("&") || !context.singleCell && t.equals("\\\\") || t.equals("\\end");
+    }
+
+    private MathCommandCatalog.Function rowInfix(Context context) {
+        MathCommandCatalog.Function f = MathCommandCatalog.findFunction(text());
+        if (f == null || !f.infix) return null;
+        // infix 在 row 提前消费，停止于 infix 的子行也先检查目录模式资格。
+        requireFunctionMode(context, peek(), f);
+        return f;
+    }
+
+    /** 一次归约即完成当前行；分母停在下一个 infix，仍由本行拒绝重复分式。 */
+    private void reduceInfix(Context context, int from, List<Node> body) {
+        String t = take().text;
+        MathDimension size = t.equals("\\above") ? dimension(false) : null;
+        Node numerator = node(Kind.ROW, from, "", body, null, null, null, null);
+        Node denominator = row(context, true);
+        MathCommandCatalog.Function following = MathCommandCatalog.findFunction(text());
+        if (following != null && following.infix)
+            throw error(peek(), "同一分组只能有一个 infix 分式");
+        body.clear();
+        body.add(fraction(from, infixName(t), numerator, denominator, size, null, null, "auto", false));
+    }
+
+    private String infixName(String token) {
+        switch (token) {
+            case "\\over": return "frac";
+            case "\\choose": return "binom";
+            case "\\atop": return "atop";
+            case "\\brace": return "brace";
+            case "\\brack": return "brack";
+            default: return "above";
+        }
+    }
+
+    private boolean consumeMiddle(Context context, List<Node> body) {
+        if (context.leftDepth == 0 || !text().equals("\\middle")) return false;
+        MathCommandCatalog.Function f = MathCommandCatalog.findFunction(text());
+        if (context.mode.equals("text") && !f.allowedInText)
+            throw error(peek(), "命令不允许在 text mode: " + text());
+        int from = index;
+        take();
+        body.add(delimiter(from, Kind.MIDDLE, "rel", 0));
+        return true;
+    }
+
+    private Node rowAtom(Context context) {
+        if (!context.mode.equals("math")) return atom(context);
+        String t = text();
+        // 起始 prime 与 ^/_ 同样允许空 base；脚本参数仍按 primitive 合同读取。
+        Node base = t.equals("^") || t.equals("_") || t.equals("'")
+                ? new Node(Kind.ROW, peek().sourceStart, peek().sourceStart,
+                        "", null, null, null, null)
+                : atom(context);
+        return postfix(context, base);
     }
 
     private void formLigatures(List<Node> body) {
@@ -712,90 +714,109 @@ final class MathParser {
     }
 
     private Node function(Context context, int from, Token token, MathCommandCatalog.Function f) {
-        String t = token.text,
-                name =
-                        t.startsWith("\\\\")
-                                ? t.substring(2)
-                                : t.startsWith("\\") ? t.substring(1) : t;
+        requireFunctionMode(context, token, f);
+        String name = functionName(token.text);
+        Node structure = structuralCommand(context, from, token, name, f.type);
+        if (structure != null) return structure;
+        if (scopeDeclaration(f)) return declarationScope(context, from, name, f.type);
+        List<Arg> parameters = readFunctionArguments(context, f);
+        return functionFamily(context, from, token, name, f,
+                parameters.subList(0, f.numOptionalArgs),
+                parameters.subList(f.numOptionalArgs, parameters.size()));
+    }
+
+    private void requireFunctionMode(Context context, Token token, MathCommandCatalog.Function f) {
         if (context.mode.equals("text") ? !f.allowedInText : !f.allowedInMath)
-            throw error(token, "命令不允许在 " + context.mode + " mode: " + t);
+            throw error(token, "命令不允许在 " + context.mode + " mode: " + token.text);
+    }
+
+    private String functionName(String token) {
+        if (token.startsWith("\\\\")) return token.substring(2);
+        return token.startsWith("\\") ? token.substring(1) : token;
+    }
+
+    /** 结构命令自行确定消费范围；普通目录函数返回 null 后才读取其参数。 */
+    private Node structuralCommand(Context context, int from, Token token, String name, String type) {
+        String t = token.text;
         if (t.equals("\\begin")) return environment(context, from, token);
-        if (t.equals("\\end") || f.type.equals("middle") || f.type.equals("leftright-right"))
+        if (t.equals("\\end") || type.equals("middle") || type.equals("leftright-right"))
             throw error(token, "错配结构命令: " + t);
-        if (f.type.equals("leftright")) {
-            Node l = delimiter(from, Kind.DELIMITER, "open", 0);
-            Node body = row(context.fence(), false);
-            if (!text().equals("\\right")) throw error(token, "left 缺少同组 right");
-            int r = index;
-            take();
-            Node right = delimiter(r, Kind.DELIMITER, "close", 0);
-            return node(Kind.DELIMITED, from, "", null, l, body, right, null);
-        }
-        if (f.type.equals("delimsizing")) {
-            int size =
-                    name.startsWith("Bigg")
-                            ? 4
-                            : name.startsWith("bigg") ? 3 : name.startsWith("Big") ? 2 : 1;
-            String group =
-                    name.endsWith("l")
-                            ? "open"
-                            : name.endsWith("r") ? "close" : name.endsWith("m") ? "rel" : "ord";
-            return delimiter(from, Kind.DELIMITER, group, size);
-        }
-        if (f.type.equals("internal")) {
-            if (!name.equals("relax")) throw error(token, "宏执行命令未在展开层消费: " + t);
-            return node(Kind.INTERNAL, from, name, null, null, null, null, null);
+        switch (type) {
+            case "leftright": return delimitedGroup(context, from, token);
+            case "delimsizing": return sizedDelimiter(from, name);
+            case "internal": return internalCommand(from, token, name);
+            default: break;
         }
         if (t.equals("\\hline") || t.equals("\\hdashline"))
             throw error(token, t + " valid only within array environment");
         if (t.equals("\\]") || t.equals("\\)"))
             throw error(token, "Unexpected closing math delimiter: " + t);
-        if (f.type.equals("styling")
-                || f.type.equals("sizing")
-                || f.type.equals("font") && f.numArgs == 0) {
-            Node body = row(context, true);
-            if (f.type.equals("styling"))
-                return node(
-                        Kind.STYLE,
-                        from,
-                        name,
-                        null,
-                        body,
-                        null,
-                        null,
+        return null;
+    }
+
+    private Node delimitedGroup(Context context, int from, Token left) {
+        Node opening = delimiter(from, Kind.DELIMITER, "open", 0);
+        Node body = row(context.fence(), false);
+        if (!text().equals("\\right")) throw error(left, "left 缺少同组 right");
+        int rightFrom = index;
+        take();
+        Node closing = delimiter(rightFrom, Kind.DELIMITER, "close", 0);
+        return node(Kind.DELIMITED, from, "", null, opening, body, closing, null);
+    }
+
+    private Node sizedDelimiter(int from, String name) {
+        int size = name.startsWith("Bigg") ? 4
+                : name.startsWith("bigg") ? 3 : name.startsWith("Big") ? 2 : 1;
+        String group = name.endsWith("l") ? "open"
+                : name.endsWith("r") ? "close" : name.endsWith("m") ? "rel" : "ord";
+        return delimiter(from, Kind.DELIMITER, group, size);
+    }
+
+    private Node internalCommand(int from, Token token, String name) {
+        if (!name.equals("relax"))
+            throw error(token, "宏执行命令未在展开层消费: " + token.text);
+        return node(Kind.INTERNAL, from, name, null, null, null, null, null);
+    }
+
+    private boolean scopeDeclaration(MathCommandCatalog.Function f) {
+        return f.type.equals("styling") || f.type.equals("sizing")
+                || f.type.equals("font") && f.numArgs == 0;
+    }
+
+    /** 无显式参数的声明消费至本行边界或 infix，内容仍由同一 row 读取。 */
+    private Node declarationScope(Context context, int from, String name, String type) {
+        Node body = row(context, true);
+        switch (type) {
+            case "styling":
+                return node(Kind.STYLE, from, name, null, body, null, null,
                         new StyleSpec(name.replace("style", "")));
-            if (f.type.equals("sizing"))
-                return node(
-                        Kind.SIZE,
-                        from,
-                        name,
-                        null,
-                        body,
-                        null,
-                        null,
+            case "sizing":
+                return node(Kind.SIZE, from, name, null, body, null, null,
                         new SizeSpec(sizeIndex(name)));
-            return node(
-                    Kind.FONT,
-                    from,
-                    "math" + name,
-                    null,
-                    body,
-                    null,
-                    null,
-                    new FontSpec("math" + name, context.mode));
+            default:
+                return node(Kind.FONT, from, "math" + name, null, body, null, null,
+                        new FontSpec("math" + name, context.mode));
         }
-        List<Arg> optional = new ArrayList<Arg>(), args = new ArrayList<Arg>();
+    }
+
+    /** 按目录顺序读取可选与必需参数；sqrt 的 primitive 窗口依赖已读的可选参数。 */
+    private List<Arg> readFunctionArguments(Context context, MathCommandCatalog.Function f) {
+        List<Arg> parameters = new ArrayList<Arg>();
         for (int n = 0; n < f.numArgs + f.numOptionalArgs; n++) {
-            boolean opt = n < f.numOptionalArgs;
-            String type =
-                    n < f.argTypes.size()
-                            ? f.argTypes.get(n)
-                            : f.primitive ? "primitive" : "original";
-            if (f.type.equals("sqrt") && !opt && optional.get(0).node == null) type = "primitive";
-            Arg a = arg(context, type, opt);
-            if (opt) optional.add(a);
-            else args.add(a);
+            boolean optional = n < f.numOptionalArgs;
+            String type = n < f.argTypes.size() ? f.argTypes.get(n)
+                    : f.primitive ? "primitive" : "original";
+            if (f.type.equals("sqrt") && !optional && parameters.get(0).node == null)
+                type = "primitive";
+            parameters.add(arg(context, type, optional));
         }
+        return parameters;
+    }
+
+    /** 参数已完成读取；此层只将目录 family 交给所属节点构造规则。 */
+    private Node functionFamily(Context context, int from, Token token, String name,
+            MathCommandCatalog.Function f, List<Arg> optional, List<Arg> args) {
+        String t = token.text;
         switch (f.type) {
             case "genfrac":
             case "sqrt":

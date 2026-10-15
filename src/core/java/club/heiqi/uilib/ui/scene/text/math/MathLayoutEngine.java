@@ -289,95 +289,17 @@ public final class MathLayoutEngine {
                     case INTERNAL:
                         return MathDecorations.layout(this, node, context);
                     case DELIMITER:
-                        return delimiter(
-                                node,
-                                context,
-                                fixedDelimiterTarget(node, context),
-                                node.payload instanceof MathContent.DelimiterSpec
-                                        ? atom(((MathContent.DelimiterSpec) node.payload).atomGroup)
-                                        : Atom.ORD);
+                        return fixedDelimiter(node, context);
                     case MIDDLE:
-                        // fixed middle先构造size1；被普通ROW/FRAC等wrapper包住时不再由外left重定高。
-                        MathLayoutContext sizedMiddle = context.style(MathStyle.TEXT);
-                        return delimiter(
-                                node, sizedMiddle, fixedDelimiterTarget(1, sizedMiddle), Atom.NONE);
+                        return middleDelimiter(node, context);
                     case SPACE:
-                        {
-                            font(context, node);
-                            MathBox value = new MathBox();
-                            MathContent.SpaceSpec spacing =
-                                    node.payload instanceof MathContent.SpaceSpec
-                                            ? (MathContent.SpaceSpec) node.payload
-                                            : null;
-                            value.width =
-                                    spacing != null && spacing.dimension != null
-                                            ? dimension(spacing.dimension, context, node)
-                                            : em(context) * space(node.value);
-                            value.atom = Atom.NONE;
-                            return value;
-                        }
+                        return spaceNode(node, context);
                     case EMBED:
                         return embed(node, context);
                     case TEXT:
-                        font(context, node);
-                        if (node.first != null)
-                            return box(node.first, fontContext(node, context).textMode(true));
-                        return glyph(
-                                text.layout(
-                                        node.value,
-                                        ordinaryTextStyle(context),
-                                        Integer.MAX_VALUE,
-                                        TextPolicy.NO_WRAP),
-                                node,
-                                context,
-                                false);
+                        return textNode(node, context);
                     case GLYPH:
-                        {
-                            MathContent.GlyphSpec spec =
-                                    node.payload instanceof MathContent.GlyphSpec
-                                            ? (MathContent.GlyphSpec) node.payload
-                                            : null;
-                            if (node.value.equals("")
-                                    && spec != null
-                                    && spec.originalToken.equals("\\@not"))
-                                return MathDecorations.negation(this, node, context);
-                            String intrinsic = intrinsicAlphabet(spec);
-                            if (spec != null && spec.mode.equals("text") && intrinsic == null)
-                                return glyph(
-                                        text.layout(
-                                                node.value,
-                                                ordinaryTextStyle(context),
-                                                Integer.MAX_VALUE,
-                                                TextPolicy.NO_WRAP),
-                                        node,
-                                        context,
-                                        false);
-                            String alphabet = intrinsic != null ? intrinsic : context.alphabet;
-                            if (spec != null
-                                    && intrinsic == null
-                                    && context.alphabet.equals("mathnormal")
-                                    && !spec.atomGroup.equals("mathord")) alphabet = "mathrm";
-                            MathLayoutContext glyphContext =
-                                    intrinsic == null ? context : intrinsicContext(context);
-                            String valueText =
-                                    intrinsic != null
-                                                    && spec.styledFont != null
-                                                    && spec.replacement != null
-                                            ? spec.replacement
-                                            : intrinsic != null ? spec.originalToken : node.value;
-                            MathBox value =
-                                    glyph(
-                                            font(glyphContext, node)
-                                                    .text(
-                                                            alphabet(
-                                                                    semanticSymbol(valueText),
-                                                                    alphabet)),
-                                            node,
-                                            glyphContext,
-                                            true);
-                            value.atom = spec == null ? classify(node.value) : atom(spec.atomGroup);
-                            return value;
-                        }
+                        return glyphNode(node, context);
                     case OPERATOR:
                         return operator(node, context);
                     case SCRIPTS:
@@ -398,6 +320,50 @@ public final class MathLayoutEngine {
                 // 声明的字体能力缺口整式降级，程序错误不吞掉。
                 throw new LayoutFailure("font", node, error.getMessage());
             }
+        }
+
+        /** 节点分派只选择领域阶段；尺寸、文本与符号的局部规则由各自构建步骤承担。 */
+        private MathBox fixedDelimiter(Node node, MathLayoutContext context) {
+            Atom group=node.payload instanceof MathContent.DelimiterSpec
+                    ?atom(((MathContent.DelimiterSpec)node.payload).atomGroup):Atom.ORD;
+            return delimiter(node,context,fixedDelimiterTarget(node,context),group);
+        }
+        private MathBox middleDelimiter(Node node, MathLayoutContext context) {
+            // fixed middle先构造size1；普通wrapper不由外left重新定高。
+            MathLayoutContext sized=context.style(MathStyle.TEXT);
+            return delimiter(node,sized,fixedDelimiterTarget(1,sized),Atom.NONE);
+        }
+        private MathBox spaceNode(Node node, MathLayoutContext context) {
+            font(context,node);
+            MathBox value=new MathBox();
+            MathContent.SpaceSpec spacing=node.payload instanceof MathContent.SpaceSpec
+                    ?(MathContent.SpaceSpec)node.payload:null;
+            value.width=spacing!=null&&spacing.dimension!=null
+                    ?dimension(spacing.dimension,context,node):em(context)*space(node.value);
+            value.atom=Atom.NONE;
+            return value;
+        }
+        private MathBox textNode(Node node, MathLayoutContext context) {
+            font(context,node);
+            if(node.first!=null)return box(node.first,fontContext(node,context).textMode(true));
+            return glyph(text.layout(node.value,ordinaryTextStyle(context),Integer.MAX_VALUE,TextPolicy.NO_WRAP),node,context,false);
+        }
+        private MathBox glyphNode(Node node, MathLayoutContext context) {
+            MathContent.GlyphSpec spec=node.payload instanceof MathContent.GlyphSpec
+                    ?(MathContent.GlyphSpec)node.payload:null;
+            if(node.value.equals("")&&spec!=null&&spec.originalToken.equals("\\@not"))
+                return MathDecorations.negation(this,node,context);
+            String intrinsic=intrinsicAlphabet(spec);
+            if(spec!=null&&spec.mode.equals("text")&&intrinsic==null)
+                return glyph(text.layout(node.value,ordinaryTextStyle(context),Integer.MAX_VALUE,TextPolicy.NO_WRAP),node,context,false);
+            String alphabet=intrinsic!=null?intrinsic:context.alphabet;
+            if(spec!=null&&intrinsic==null&&context.alphabet.equals("mathnormal")&&!spec.atomGroup.equals("mathord"))alphabet="mathrm";
+            MathLayoutContext glyphContext=intrinsic==null?context:intrinsicContext(context);
+            String valueText=intrinsic!=null&&spec.styledFont!=null&&spec.replacement!=null
+                    ?spec.replacement:intrinsic!=null?spec.originalToken:node.value;
+            MathBox value=glyph(font(glyphContext,node).text(alphabet(semanticSymbol(valueText),alphabet)),node,glyphContext,true);
+            value.atom=spec==null?classify(node.value):atom(spec.atomGroup);
+            return value;
         }
 
         float dimension(MathDimension value, MathLayoutContext context, Node node) {

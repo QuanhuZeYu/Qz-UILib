@@ -5,6 +5,7 @@ import club.heiqi.uilib.ui.scene.text.font.nativefont.FontMetrics;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.GlyphBitmap;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.GlyphRasterStyle;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.InkBounds;
+import club.heiqi.uilib.ui.scene.text.font.nativefont.ShapeContext;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.ShapeDirection;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.ShapeRun;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.ShapedGlyph;
@@ -318,6 +319,37 @@ public final class NativeFontFace implements FontFace {
             boolean beginningOfText,
             boolean endOfText) {
         checkOpen();
+        checkShapeRange(text, start, end, direction);
+        // 原 String 入口仍拥有调用内临时编码，可在准备上下文存在时整形短替代字形。
+        ByteBuffer utf16 = MemoryUtil.memUTF16(text, false);
+        try {
+            return shapeEncoded(utf16, start, end, direction, language, script, beginningOfText, endOfText);
+        } finally {
+            MemoryUtil.memFree(utf16);
+        }
+    }
+
+    @Override
+    public ShapeRun shape(
+            ShapeContext context,
+            int start,
+            int end,
+            ShapeDirection direction,
+            String language,
+            String script,
+            boolean beginningOfText,
+            boolean endOfText) {
+        checkOpen();
+        Objects.requireNonNull(context, "context");
+        if (!(context instanceof NativeFontService.NativeShapeContext))
+            throw new IllegalArgumentException("整形上下文不是当前 native 后端资源");
+        NativeFontService.NativeShapeContext prepared = (NativeFontService.NativeShapeContext) context;
+        ByteBuffer utf16 = prepared.utf16(owner);
+        checkShapeRange(prepared.text(), start, end, direction);
+        return shapeEncoded(utf16, start, end, direction, language, script, beginningOfText, endOfText);
+    }
+
+    private static void checkShapeRange(String text, int start, int end, ShapeDirection direction) {
         Objects.requireNonNull(text, "text");
         Objects.requireNonNull(direction, "direction");
         if (start < 0
@@ -327,17 +359,22 @@ public final class NativeFontFace implements FontFace {
                 || splitSurrogate(text, end)) {
             throw new IllegalArgumentException("Invalid UTF-16 run range");
         }
+    }
+
+    private ShapeRun shapeEncoded(
+            ByteBuffer utf16,
+            int start,
+            int end,
+            ShapeDirection direction,
+            String language,
+            String script,
+            boolean beginningOfText,
+            boolean endOfText) {
         long buffer = HarfBuzz.hb_buffer_create();
         if (buffer == 0) throw new IllegalStateException("Cannot create HarfBuzz buffer");
         try {
-            // CharSequence绑定把完整上下文放入64KiB MemoryStack；长段落即使只shape短run也会溢出。
-            // 使用独立native缓冲；HB在add时复制文字/上下文，不保留此地址。
-            ByteBuffer utf16 = MemoryUtil.memUTF16(text, false);
-            try {
-                HarfBuzz.hb_buffer_add_utf16(buffer, utf16, start, end - start);
-            } finally {
-                MemoryUtil.memFree(utf16);
-            }
+            // HB 在 add 时复制本 run 及必要前后文，不保留准备上下文的 native 地址。
+            HarfBuzz.hb_buffer_add_utf16(buffer, utf16, start, end - start);
             HarfBuzz.hb_buffer_set_direction(
                     buffer,
                     direction == ShapeDirection.LTR

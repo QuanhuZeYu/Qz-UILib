@@ -69,9 +69,9 @@ final class BatchTextMeasurer implements SceneTextMeasurer {
         Request request = new Request(text, style, width, null);
         activeRequests.add(request);
         PaintEntry cached = layouts.get(request);
-        if (cached != null) return cached.plain(style.color);
+        if (cached != null) return cached.plain(style);
         TextLayout layout = delegate.layout(text, style, width);
-        remember(request, layout, style.color);
+        remember(request, layout, style);
         return layout;
     }
 
@@ -80,9 +80,9 @@ final class BatchTextMeasurer implements SceneTextMeasurer {
         Request request = new Request(text, style, width, policy);
         activeRequests.add(request);
         PaintEntry cached = layouts.get(request);
-        if (cached != null) return cached.plain(style.color);
+        if (cached != null) return cached.plain(style);
         TextLayout layout = delegate.layout(text, style, width, policy);
-        remember(request, layout, style.color);
+        remember(request, layout, style);
         return layout;
     }
 
@@ -104,10 +104,12 @@ final class BatchTextMeasurer implements SceneTextMeasurer {
         private TextLayout layout;
         private Object declaration;
         PaintEntry(TextLayout layout,Object declaration) { this.layout=layout;this.declaration=declaration; }
-        TextLayout plain(int color) {
-            if (!(declaration instanceof Integer) || ((Integer)declaration).intValue()!=color) {
-                TextLayout updated=layout.withColors(color,offset -> color);
-                layout=updated;declaration=color;
+        TextLayout plain(TextStyle style) {
+            if(!style.equals(declaration)) {
+                // 保存字体服务已解析的实例事实，仅交接本次普通文字的绘制字段。
+                TextStyle paint=layout.style.withColor(style.color).withDefaultHighlightColor(style.defaultHighlightColor);
+                TextLayout updated=layout.withColors(paint,offset -> style.color);
+                layout=updated;declaration=style;
             }
             return layout;
         }
@@ -129,7 +131,7 @@ final class BatchTextMeasurer implements SceneTextMeasurer {
 
         Request(Object content, TextStyle style, double width, TextPolicy policy) {
             this.content = content instanceof AttributedText ? ((AttributedText) content).positionKey() : content;
-            this.style = style == null ? null : style.withColor(0);
+            this.style = style == null ? null : style.layoutStyle();
             this.width = width;
             this.policy = policy;
         }

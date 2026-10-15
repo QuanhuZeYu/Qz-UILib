@@ -26,6 +26,7 @@ public final class MathMacroScenario extends TestApplication {
         scenario("环境单元格宏作用域与行tag状态", this::environments);
         scenario("全部内置string宏可消费与参数替换", this::catalog);
         scenario("展开界限诊断来源config与Item唯一身份", this::sources);
+        scenario("有限与递归实参倍增在资源界限内定位失败", this::expansionResources);
         scenario("评审I1严格展开保留let永久快照", this::reviewProtection);
         scenario("评审I2星号matrix无scope语法头", this::reviewMatrixHeader);
         scenario("评审I3行距raw窗口顺序及relax空白边界", this::reviewRowSize);
@@ -71,6 +72,27 @@ public final class MathMacroScenario extends TestApplication {
                         && separated.get(1).text.equals("x"),
                 "展开token被合成控制词");
         expect("@def@a{@alpha}@a{}x", "@alpha{}x");
+        List<MathLexer.Token> verb = MathLexer.lex(tex("@verb|a%@def|@verb*AbA@verbatim @verb§x§"));
+        require(verb.size() == 4
+                        && verb.get(0).text.equals(tex("@verb|a%@def|"))
+                        && verb.get(1).text.equals(tex("@verb*AbA"))
+                        && verb.get(2).text.equals(tex("@verbatim"))
+                        && verb.get(3).text.equals(tex("@verb§x§")),
+                "verb定界正文、星号字母定界或普通控制词边界改变");
+        String whitespace = tex("@ \r\n \tx\n");
+        List<MathLexer.Token> spaces = MathLexer.lex(whitespace);
+        require(spaces.get(0).text.equals(tex("@ "))
+                        && spaces.get(0).sourceEnd == whitespace.indexOf('x'),
+                "控制空格未保留一次换行及相邻空白范围");
+        List<MathLexer.Token> combined = MathLexer.lex("😀\u0301x");
+        require(combined.size() == 2 && combined.get(0).text.equals("😀\u0301")
+                        && combined.get(0).sourceEnd == combined.get(1).sourceStart,
+                "Unicode标量与组合符被拆开");
+        MathContent invalidControl = MathContent.parse(tex("@😀"));
+        require(!invalidControl.diagnostics.isEmpty()
+                        && invalidControl.diagnostics.get(0).start == 0
+                        && invalidControl.diagnostics.get(0).end == tex("@😀").length(),
+                "非法补充字符控制符诊断未覆盖完整代理对");
     }
 
     private void definitions() {
@@ -309,6 +331,50 @@ public final class MathMacroScenario extends TestApplication {
                             && !r.environmentHeaders.get(0).arrayStretchFromMacro,
                     "固定常量环境错误执行arraystretch: " + name);
         }
+    }
+
+    private void expansionResources() {
+        String plain = String.join("", java.util.Collections.nCopies(16384, "x"));
+        require(good(plain).tokens.size() == plain.length(), "源长界限内的普通正文被累计工作误拒绝");
+        MathMacroExpander.Result legal = good(doublingChain(8));
+        require(legal.tokens.size() == 256, "合法有限宏展开被资源预算误拒绝");
+        for (MathLexer.Token token : legal.tokens) require(token.text.equals("x"), "合法倍增内容改变");
+        String finite = tex(doublingChain(20));
+        resourceFailure(finite, finite.lastIndexOf(tex("@auditA")));
+        String recursive = tex("@def@a#1{@a{#1#1}}@a{x}");
+        resourceFailure(recursive, recursive.lastIndexOf(tex("@a")));
+        String indirect = tex("@def@a#1{@b{#1#1}}@def@b#1{@a{#1}}@a{x}");
+        resourceFailure(indirect, indirect.lastIndexOf(tex("@a")));
+        // raw 模式也必须共享每式预算，不能因临时输入窗口重置累计量。
+        String raw = tex("@def@a#1{@a{#1#1}}@href{@a{x}}{x}");
+        resourceFailure(raw, raw.lastIndexOf(tex("@a")));
+        // 单个 verb token 的正文可能很长，少量 token 也不能逃过文本复制工作量。
+        String longToken = tex(doublingChain(8)).replace("{x}", tex("{@verb|")
+                + String.join("", java.util.Collections.nCopies(2048, "x")) + "|}");
+        resourceFailure(longToken, longToken.lastIndexOf(tex("@auditA")));
+        require(MathContent.parse("x").diagnostics.isEmpty(), "资源失败污染下一独立公式");
+    }
+
+    /** 与审计 JVM 反例使用同一有限链，期望规模直接来自每级复制两次。 */
+    private static String doublingChain(int rounds) {
+        StringBuilder source = new StringBuilder();
+        for (int i = 0; i < rounds; i++)
+            source.append("@def@audit").append((char) ('A' + i)).append("#1{@audit")
+                    .append((char) ('A' + i + 1)).append("{#1#1}}");
+        return source.append("@def@audit").append((char) ('A' + rounds))
+                .append("#1{#1}@auditA{x}").toString();
+    }
+
+    private void resourceFailure(String source, int callStart) {
+        MathMacroExpander.Result result = MathMacroExpander.expand(source);
+        require(!result.diagnostics.isEmpty(), "危险展开没有资源诊断");
+        MathMacroExpander.Diagnostic diagnostic = result.diagnostics.get(0);
+        require(diagnostic.sourceStart == callStart && diagnostic.sourceEnd > callStart,
+                "资源诊断未定位原宏调用：" + diagnostic.message);
+        MathContent content = MathContent.parse(source);
+        require(content.source.equals(source) && !content.diagnostics.isEmpty()
+                        && content.diagnostics.get(0).stage.equals("macro"),
+                "资源失败未沿 macro 阶段保留整式原文");
     }
 
     private void sources() {

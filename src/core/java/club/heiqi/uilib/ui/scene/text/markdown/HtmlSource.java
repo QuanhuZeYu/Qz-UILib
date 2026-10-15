@@ -36,12 +36,24 @@ final class HtmlSource {
     }
 
     HtmlSource sliceOriginal(int start, int end) {
-        int first = 0, last = starts.length;
-        while (first < last && ends[first] <= start) first++;
-        while (last > first && starts[last - 1] >= end) last--;
+        // 投影按原文顺序单调排列；保留与范围相交的字符，重复边界不能用任意命中代替。
+        int first = boundary(ends, start, true);
+        int last = Math.max(first, boundary(starts, end, false));
         int[] slicedStarts = Arrays.copyOfRange(starts, first, last);
         int[] slicedEnds = Arrays.copyOfRange(ends, first, last);
         return new HtmlSource(text.substring(first, last), slicedStarts, slicedEnds, start, end);
+    }
+
+    /** 查询第一个大于（exclusive）或大于等于 value 的位置。 */
+    private static int boundary(int[] positions, int value, boolean exclusive) {
+        int low = 0, high = positions.length;
+        while (low < high) {
+            int middle = low + (high - low) / 2;
+            if (positions[middle] < value || exclusive && positions[middle] == value)
+                low = middle + 1;
+            else high = middle;
+        }
+        return low;
     }
 
     List<Node> parse() {

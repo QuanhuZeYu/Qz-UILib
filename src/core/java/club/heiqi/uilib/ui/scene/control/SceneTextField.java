@@ -125,18 +125,13 @@ public final class SceneTextField {
         }
 
         @Override
-        public List<ReadableSignal<?>> measureDependencies(SceneNode node) {
-            return Collections.singletonList(theme);
-        }
-
-        @Override
         public List<ReadableSignal<?>> arrangementDependencies(SceneNode node) {
             return java.util.Arrays.asList(state.snapshot(), viewChanged);
         }
 
         @Override
         public List<ReadableSignal<?>> paintDependencies(SceneNode node) {
-            return java.util.Arrays.asList(readOnly,placeholder);
+            return java.util.Arrays.asList(theme,readOnly,placeholder);
         }
 
         private static TextPolicy bodyPolicy(SceneNode node) {

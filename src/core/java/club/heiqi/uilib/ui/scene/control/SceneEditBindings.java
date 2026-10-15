@@ -18,8 +18,11 @@ final class SceneEditBindings {
         // snapshot同时通知光标、组字与文本代际，只在正式挂载刷新中更新节点。
         node.bind(NodeBinding.value(state.snapshot(),
                 (target, value) -> target.text(SceneEditCommands.display(value))));
-        node.bind(NodeBinding.value(theme,
-                (target, value) -> target.style(value.textStyle).padding(value.padding)));
+        // 字体/字号由正式节点样式分类；配色只影响绘制，同值padding不能扩大为重新测量。
+        node.bind(NodeBinding.value(theme, (target, value) -> {
+            target.style(value.textStyle);
+            if(target.padding()!=value.padding)target.padding(value.padding);
+        }));
         node.bind(NodeBinding.value(readOnly, (target, locked) -> {
             if (locked) target.runtime().invalidateComposition(target);
         }));

@@ -134,18 +134,13 @@ public final class SceneTextArea {
         }
 
         @Override
-        public List<ReadableSignal<?>> measureDependencies(SceneNode node) {
-            return Collections.singletonList(theme);
-        }
-
-        @Override
         public List<ReadableSignal<?>> arrangementDependencies(SceneNode node) {
             return Arrays.asList(state.snapshot(), viewChanged);
         }
 
         @Override
         public List<ReadableSignal<?>> paintDependencies(SceneNode node) {
-            return Collections.singletonList(readOnly);
+            return Arrays.asList(theme,readOnly);
         }
 
         @Override

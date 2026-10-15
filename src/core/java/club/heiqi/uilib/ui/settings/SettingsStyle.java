@@ -113,12 +113,16 @@ final class SettingsStyle {
         Surface(ReadableSignal<Palette> colors,boolean primary,boolean ghost,SceneNode button,int radius,boolean muted) {
             this.colors=colors;this.primary=primary;this.ghost=ghost;this.button=button;this.radius=radius;this.muted=muted;
         }
-        public List<ReadableSignal<?>> measureDependencies(SceneNode n){return Collections.singletonList(colors);}
+        public List<ReadableSignal<?>> paintDependencies(SceneNode n){return Collections.singletonList(colors);}
         Result layout(SceneNode n,Constraints c,SceneChildMeasurer m) {
             SceneNode child=m.flowChildren().get(0);int w=Math.max(0,c.availableWidth-2),h=Math.max(0,c.availableHeight-2);
+            // 装饰只分配正文，填充仍消费Size硬边界；测量约束与最终子盒保持相同。
+            if(child.width().mode==Size.Mode.FILL)w=child.width().constrain(w);
+            if(child.height().mode==Size.Mode.FILL)h=child.height().constrain(h);
             MeasuredSize s=m.measureChild(child,new Constraints(w,h));
-            return new Result(s.width+2,s.height+2,Collections.singletonList(new ChildPlacements.Entry(child,new LayoutBox(1,1,
-                    child.width().mode==Size.Mode.FILL?w:s.width,child.height().mode==Size.Mode.FILL?h:s.height))));
+            int width=child.width().mode==Size.Mode.FILL?w:s.width;
+            int height=child.height().mode==Size.Mode.FILL?h:s.height;
+            return new Result(s.width+2,s.height+2,Collections.singletonList(new ChildPlacements.Entry(child,new LayoutBox(1,1,width,height))));
         }
         boolean enabled(){
             // 模态只阻止背页输入，不把背页变成禁用态；颜色与标准按钮沿同一声明enabled。
@@ -139,7 +143,7 @@ final class SettingsStyle {
     private static final class NavigationSurface extends Surface {
         final ReadableSignal<Boolean> selected;
         NavigationSurface(ReadableSignal<Palette> p,ReadableSignal<Boolean> selected,SceneNode button){super(p,false,true,button,8,false);this.selected=selected;}
-        public List<ReadableSignal<?>> measureDependencies(SceneNode n){return Arrays.asList(colors,selected);}
+        public List<ReadableSignal<?>> paintDependencies(SceneNode n){return Arrays.asList(colors,selected);}
         public void paint(SceneNode n,SceneGeometryView g,PaintPlanBuilder paint) {
             Palette p=colors.get();int fill=selected.get()?p.selected:hovered(g)?p.hover:p.background;
             rounded(paint,g.get(n),focused()?p.accent:fill,fill,8);
@@ -152,7 +156,7 @@ final class SettingsStyle {
     private static final class SwitchSurface extends Arrangement {
         final ReadableSignal<Palette> colors;final ReadableSignal<Boolean> checked;final SceneNode button;
         SwitchSurface(ReadableSignal<Palette> p,ReadableSignal<Boolean> checked,SceneNode button){colors=p;this.checked=checked;this.button=button;}
-        public List<ReadableSignal<?>> measureDependencies(SceneNode n){return Arrays.asList(colors,checked);}
+        public List<ReadableSignal<?>> paintDependencies(SceneNode n){return Arrays.asList(colors,checked);}
         Result layout(SceneNode n,Constraints c,SceneChildMeasurer m){m.measureChild(button,new Constraints(42,26));return new Result(44,28,Collections.singletonList(new ChildPlacements.Entry(button,new LayoutBox(1,1,42,26))));}
         public void paint(SceneNode n,SceneGeometryView g,PaintPlanBuilder paint){
             SceneGeometryView.Entry e=g.get(n);Palette p=colors.get();

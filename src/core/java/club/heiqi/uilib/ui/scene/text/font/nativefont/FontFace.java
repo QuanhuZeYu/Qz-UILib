@@ -20,6 +20,19 @@ public interface FontFace extends AutoCloseable {
             boolean beginningOfText,
             boolean endOfText);
 
+    /** 同一准备上下文供多个 run 复用；范围、cluster 与 BOT/EOT 语义和 String 入口一致。 */
+    default ShapeRun shape(
+            ShapeContext context,
+            int start,
+            int end,
+            ShapeDirection direction,
+            String language,
+            String script,
+            boolean beginningOfText,
+            boolean endOfText) {
+        return shape(context.text(), start, end, direction, language, script, beginningOfText, endOfText);
+    }
+
     default ShapeRun shape(String text, ShapeDirection direction, String language) {
         return shape(text, 0, text.length(), direction, language, null, true, true);
     }

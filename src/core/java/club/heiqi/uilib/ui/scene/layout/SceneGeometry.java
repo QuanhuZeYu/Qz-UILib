@@ -140,7 +140,10 @@ public final class SceneGeometry implements SceneGeometryView {
     public static LayoutBox revealWindow(SceneNode ancestor, SceneGeometryView geometry) {
         LayoutBox window = innerBox(geometry.get(ancestor));
         boolean movableX = false, movableY = false;
-        for (SceneNode node = ancestor.parent(); node != null; node = node.parent()) {
+        SceneNode boundary = geometry.layerBoundary(ancestor);
+        // 所属层从页面视口开始呈现；显露同样止于该层，不能重叠来源祖先的裁剪或滚动轴。
+        for (SceneNode node = ancestor == boundary ? null : ancestor.parent();
+                node != null; node = node == boundary ? null : node.parent()) {
             // 外层只能修复自身滚动轴的遮挡；正交轴仍需约束内层窗口。
             // 某轴可由外层移动后，其自身及更上层当前clip不提前卡住屏外内层。
             if (node.scrollable()) {

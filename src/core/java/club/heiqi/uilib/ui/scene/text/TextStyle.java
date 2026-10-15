@@ -155,6 +155,19 @@ public final class TextStyle {
                 && Objects.equals(candidates, s.candidates);
     }
 
+    /** 正式节点与已定位文字共用的保守布局分类；默认mark色在内容解析时消费，
+     * 已解析的实际highlightColor仍参与定位键，不在此推断富文本颜色继承。 */
+    public boolean sameLayout(TextStyle s) {
+        return sameFont(s)&&effects.equals(s.effects)&&decoration.equals(s.decoration)
+                &&Objects.equals(highlightColor,s.highlightColor);
+    }
+    /** 普通文字请求的有界缓存键；前景和默认mark色保留在当前绘制声明。 */
+    public TextStyle layoutStyle() {
+        if(color==0&&defaultHighlightColor==0)return this;
+        return new TextStyle(font,logicalEm,0,candidates,effects,decoration,fontStyle,
+                baselineShift,letterSpacing,highlightColor,0,script);
+    }
+
     @Override
     public boolean equals(Object o) {
         if (!(o instanceof TextStyle)) return false;

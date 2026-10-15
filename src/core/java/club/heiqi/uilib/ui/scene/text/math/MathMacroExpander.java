@@ -129,12 +129,12 @@ public final class MathMacroExpander {
         List<Token> output = new ArrayList<Token>(), tag = new ArrayList<Token>();
         List<Diagnostic> ds = new ArrayList<Diagnostic>();
         try {
-            if (source.length() > 16384)
+            if (source.length() > MathExpansionBudget.SOURCE_UNITS)
                 throw failure(new Token("", 0, source.length(), source), "公式超过16384个UTF-16单位");
             cursor = new Cursor(source, macros);
             cursor.expandSequence(output, null);
             Definition td = cursor.lookup("\\df@tag");
-            if (td != null) tag.addAll(cursor.expandList(td.body, false, false));
+            if (td != null) cursor.appendAll(tag, cursor.expandList(td.body, false, false), cursor.eof);
         } catch (MathLexer.Failure failure) {
             ds.add(new Diagnostic(failure.token, failure.getMessage()));
         } finally {
@@ -163,6 +163,7 @@ public final class MathMacroExpander {
 
     /** Task4 可按 parser 参数模式拉取 token，位置始终是原文范围。 */
     public static final class Cursor {
+        private final MathExpansionBudget budget = new MathExpansionBudget();
         private Deque<Token> input = new ArrayDeque<Token>();
         private MathLexer.Scanner scanner;
         private boolean urlMode;
@@ -195,22 +196,48 @@ public final class MathMacroExpander {
         public Token future() {
             if (input.isEmpty() && scanner != null) {
                 Token token = scanner.next(!urlMode);
-                if (token != null) input.addFirst(token);
+                if (token != null) pushToken(token);
             }
             return input.isEmpty() ? eof : input.peekFirst();
         }
 
         public Token popToken() {
-            future();
-            return input.isEmpty() ? eof : input.removeFirst();
+            Token token = future();
+            if (input.isEmpty()) return eof;
+            budget.work(MathExpansionBudget.weight(token), origin(token));
+            budget.release(1);
+            return input.removeFirst();
         }
 
         public void pushToken(Token token) {
+            budget.enqueue(1, origin(token));
             input.addFirst(token);
         }
 
         private void push(List<Token> tokens) {
+            budget.enqueue(tokens.size(), origin(tokens.isEmpty() ? eof : tokens.get(0)));
             for (int i = tokens.size() - 1; i >= 0; i--) input.addFirst(tokens.get(i));
+        }
+
+        private Token origin(Token token) {
+            return active == null ? token : active;
+        }
+
+        private void append(List<Token> out, Token token) {
+            budget.work(MathExpansionBudget.weight(token), origin(token));
+            out.add(token);
+        }
+
+        private void appendAll(List<Token> out, List<Token> tokens, Token call) {
+            budget.work(copyCost(tokens, call), origin(call));
+            out.addAll(tokens);
+        }
+
+        private long copyCost(List<Token> tokens, Token call) {
+            budget.work(tokens.size(), origin(call));
+            long cost = 0;
+            for (Token token : tokens) cost += MathExpansionBudget.weight(token);
+            return cost;
         }
 
         public void consumeSpaces() {
@@ -293,7 +320,7 @@ public final class MathMacroExpander {
                     throw failure(
                             active == null ? token : active,
                             "Unexpected end of input in a macro argument");
-                result.add(token);
+                append(result, token);
                 argumentEnd = token;
                 if (token.text.equals("{")) depth++;
                 else if (token.text.equals("}")) depth--;
@@ -338,20 +365,56 @@ public final class MathMacroExpander {
 
         private List<Token> substitute(Definition d, Token call) {
             List<List<Token>> values = args(d.numArgs, d.delimiters);
-            List<Token> body = new ArrayList<Token>();
+            int size = reserveSubstitution(d, values, call);
+            List<Token> body = new ArrayList<Token>(size);
             for (int i = 0; i < d.body.size(); i++) {
-                Token t = d.body.get(i);
-                if (d.numArgs > 0 && t.text.equals("#")) {
-                    if (++i == d.body.size())
-                        throw failure(t.at(call), "Incomplete placeholder at end of macro body");
-                    Token p = d.body.get(i);
-                    if (p.text.equals("#")) body.add(p.at(call));
-                    else if (p.text.matches("[1-9]") && Integer.parseInt(p.text) <= values.size())
-                        body.addAll(values.get(Integer.parseInt(p.text) - 1));
-                    else throw failure(p.at(call), "Not a valid argument number");
-                } else body.add(t.at(call));
+                Token token = d.body.get(i);
+                if (d.numArgs > 0 && token.text.equals("#")) {
+                    Token placeholder = d.body.get(++i);
+                    if (placeholder.text.equals("#")) body.add(placeholder.at(call));
+                    else body.addAll(values.get(argumentNumber(placeholder, values.size(), call)));
+                } else body.add(token.at(call));
             }
             return body;
+        }
+
+        /** 先计算引用数、文本复制成本并验证占位符；这一阶段不复制实参。 */
+        private int reserveSubstitution(Definition d, List<List<Token>> values, Token call) {
+            budget.work(d.body.size(), call);
+            long[] argumentCosts = new long[values.size()];
+            for (int i = 0; i < values.size(); i++) argumentCosts[i] = copyCost(values.get(i), call);
+            long size = 0, cost = 0;
+            for (int i = 0; i < d.body.size(); i++) {
+                Token token = d.body.get(i);
+                if (d.numArgs > 0 && token.text.equals("#")) {
+                    if (++i == d.body.size())
+                        throw failure(token.at(call), "Incomplete placeholder at end of macro body");
+                    Token placeholder = d.body.get(i);
+                    if (placeholder.text.equals("#")) {
+                        size++;
+                        cost++;
+                    } else {
+                        int index = argumentNumber(placeholder, values.size(), call);
+                        size += values.get(index).size();
+                        cost += argumentCosts[index];
+                    }
+                } else {
+                    size++;
+                    cost += MathExpansionBudget.weight(token);
+                }
+            }
+            // 替换参数可以倍增，必须先预留完整生成体，不能在 addAll 扩容后才计次数。
+            budget.generate(size, call);
+            budget.work(cost, call);
+            return (int) size;
+        }
+
+        private int argumentNumber(Token placeholder, int count, Token call) {
+            if (placeholder.text.length() == 1) {
+                int index = placeholder.text.charAt(0) - '1';
+                if (index >= 0 && index < 9 && index < count) return index;
+            }
+            throw failure(placeholder.at(call), "Not a valid argument number");
         }
 
         private boolean expandOnce(boolean strict) {
@@ -391,7 +454,12 @@ public final class MathMacroExpander {
 
         private List<Token> generated(String value, Token call) {
             List<Token> values = new ArrayList<Token>();
-            for (Token token : MathLexer.lex(value)) values.add(token.at(call));
+            MathLexer.Scanner generatedScanner = new MathLexer.Scanner(value);
+            Token token;
+            while ((token = generatedScanner.next(true)) != null) {
+                budget.generate(1, call);
+                append(values, token.at(call));
+            }
             return values;
         }
 
@@ -491,8 +559,10 @@ public final class MathMacroExpander {
                 // 固定 KaTeX 未实现第二个 [default]，继续原样消费一个 token/分组。
                 body = consumeArg();
             }
-            if (!(exists && command.equals("\\providecommand")))
+            if (!(exists && command.equals("\\providecommand"))) {
+                budget.work(body.size(), call);
                 set(name, new Definition(body, n, null, null, false), false);
+            }
         }
 
         private List<Token> character(Token call) {
@@ -631,9 +701,10 @@ public final class MathMacroExpander {
                 else delimiters.get(n).add(t.text);
             }
             List<Token> body = consumeArg();
-            if (insert != null) body.add(insert);
+            if (insert != null) append(body, insert);
             if (command.equals("\\edef") || command.equals("\\xdef"))
                 body = expandList(body, true, false);
+            budget.work(body.size(), call);
             set(
                     name,
                     new Definition(body, n, delimiters, null, false),
@@ -644,6 +715,7 @@ public final class MathMacroExpander {
             if (++expansionDepth > 64) throw failure(active == null ? eof : active, "宏递归嵌套超过64层");
             Deque<Token> saved = input;
             MathLexer.Scanner savedScanner = scanner;
+            budget.enqueue(body.size(), origin(body.isEmpty() ? eof : body.get(0)));
             input = new ArrayDeque<Token>(body);
             scanner = null;
             List<Token> out = new ArrayList<Token>();
@@ -654,12 +726,13 @@ public final class MathMacroExpander {
                         if (!expandOnce(true)) {
                             Token token = popToken();
                             // noexpand 临时保护与 let 永久快照不能混同。
-                            out.add(token.treatAsRelax ? token.flags(false, false) : token);
+                            append(out, token.treatAsRelax ? token.flags(false, false) : token);
                         }
                     count(out.size(), active == null ? eof : active);
                 } else expandSequence(out, null);
             } finally {
                 if (scope) endGroup();
+                budget.release(input.size());
                 input = saved;
                 scanner = savedScanner;
                 expansionDepth--;
@@ -675,11 +748,11 @@ public final class MathMacroExpander {
                         && token.text.equals(groupEnd)
                         && !groupEnd.equals("}")
                         && !groupEnd.equals("\\endgroup")) {
-                    out.add(token);
+                    append(out, token);
                     return;
                 }
                 if (textMode && (token.text.equals("$") || token.text.equals("\\("))) {
-                    out.add(token);
+                    append(out, token);
                     textMode = false;
                     try {
                         expandSequence(out, token.text.equals("$") ? "$" : "\\)");
@@ -691,19 +764,19 @@ public final class MathMacroExpander {
                 if (assignment(token)) continue;
                 if (token.text.equals("{") || token.text.equals("\\begingroup")) {
                     beginGroup();
-                    out.add(token);
+                    append(out, token);
                     expandSequence(out, token.text.equals("{") ? "}" : "\\endgroup");
                     continue;
                 }
                 if (token.text.equals("}") || token.text.equals("\\endgroup")) {
                     if (groupEnd == null || !token.text.equals(groupEnd))
                         throw failure(token, "分组闭合符不匹配");
-                    out.add(token);
+                    append(out, token);
                     endGroup();
                     return;
                 }
                 if (environmentBoundary(token, out)) continue;
-                out.add(token);
+                append(out, token);
                 commandArguments(this, token, out);
             }
             if (groupEnd != null)
@@ -780,11 +853,11 @@ public final class MathMacroExpander {
                 pushToken(token);
                 return;
             }
-            out.add(token);
+            append(out, token);
             do {
                 token = nextToken();
                 if (token.text.equals("EOF")) throw failure(call, "matrix可选头部未闭合");
-                out.add(token);
+                append(out, token);
             } while (!token.text.equals("]"));
         }
 
@@ -792,7 +865,7 @@ public final class MathMacroExpander {
         private boolean environmentBoundary(Token token, List<Token> out) {
             if (token.text.equals("\\begin") || token.text.equals("\\end")) {
                 int declarationAt = out.size();
-                out.add(token);
+                append(out, token);
                 int at = out.size();
                 argumentTokens("text", false, token, out);
                 String name = join(out.subList(at + 1, out.size() - 1));
@@ -837,7 +910,7 @@ public final class MathMacroExpander {
                     endGroup();
                     beginGroup();
                     if (row) {
-                        out.add(token);
+                        append(out, token);
                         if (!env.name.equals("CD")) rowSize(out, token);
                         env.endRow(token);
                         env.beginRow();
@@ -856,15 +929,17 @@ public final class MathMacroExpander {
         private List<Token> expandString(List<Token> body) {
             Deque<Token> saved = input;
             MathLexer.Scanner savedScanner = scanner;
+            budget.enqueue(body.size(), origin(body.isEmpty() ? eof : body.get(0)));
             input = new ArrayDeque<Token>(body);
             scanner = null;
             List<Token> out = new ArrayList<Token>();
             try {
                 while (!future().text.equals("EOF")) {
                     Token token = nextToken();
-                    if (!token.text.equals("EOF")) out.add(token);
+                    if (!token.text.equals("EOF")) append(out, token);
                 }
             } finally {
+                budget.release(input.size());
                 input = saved;
                 scanner = savedScanner;
             }
@@ -883,10 +958,10 @@ public final class MathMacroExpander {
                     if (token.text.equals("EOF")) throw failure(call, "缺少命令参数");
                     if (token.text.equals("{")) {
                         beginGroup();
-                        out.add(token);
+                        append(out, token);
                         expandSequence(out, "}");
                     } else {
-                        out.add(token);
+                        append(out, token);
                         commandArguments(this, token, out);
                     }
                     return true;
@@ -895,6 +970,7 @@ public final class MathMacroExpander {
                     String value = "";
                     while (true) {
                         Token token = nextToken();
+                        budget.work((long) value.length() + token.text.length(), call);
                         String candidate = value + token.text;
                         if (token.text.equals("EOF")
                                 || !candidate.matches(
@@ -903,7 +979,7 @@ public final class MathMacroExpander {
                             pushToken(token);
                             break;
                         }
-                        out.add(token);
+                        append(out, token);
                         value = candidate;
                     }
                     if (value.isEmpty()) throw failure(call, "Invalid size");
@@ -928,10 +1004,11 @@ public final class MathMacroExpander {
                                 ? body
                                 : raw ? expandString(body) : expandList(body, false, true);
                 // 无花括号的非 primitive 参数在 KaTeX 也是一个独立参数组，桥接显式其边界。
+                budget.generate(2, call);
                 Token opening = first.text(optional ? "[" : "{");
-                out.add(opening);
-                out.addAll(expanded);
-                out.add(end.text(optional ? "]" : "}"));
+                append(out, opening);
+                appendAll(out, expanded, call);
+                append(out, end.text(optional ? "]" : "}"));
                 return true;
             } finally {
                 urlMode = oldURL;
@@ -972,7 +1049,11 @@ public final class MathMacroExpander {
                     doubled = consumeArg(),
                     right = consumeArg(),
                     arg = consumeArg();
-            List<Token> body = new ArrayList<Token>(left);
+            long size = (long) left.size() + arg.size() + right.size();
+            budget.generate(size, call);
+            budget.work(copyCost(left, call) + copyCost(arg, call) + copyCost(right, call), call);
+            List<Token> body = new ArrayList<Token>((int) size);
+            body.addAll(left);
             body.addAll(arg);
             body.addAll(right);
             middles.push(new Middle(single, doubled, one));
@@ -1076,6 +1157,7 @@ public final class MathMacroExpander {
         }
         // 固定 parser 只有 color（非 textcolor）产生 current@color 宏；验证/节点仍归 Task4。
         if (token.text.equals("\\color") && out.size() > colorArgumentAt + 1) {
+            c.budget.work(out.size() - colorArgumentAt - 2, token);
             List<Token> body =
                     new ArrayList<Token>(out.subList(colorArgumentAt + 1, out.size() - 1));
             String color = join(body);

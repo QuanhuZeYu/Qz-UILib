@@ -2,9 +2,11 @@ package club.heiqi.uilib.ui.scene.integration;
 
 import club.heiqi.uilib.host.font.freetype.LwjglFontEngine;
 import club.heiqi.uilib.testing.TestApplication;
+import club.heiqi.uilib.ui.scene.text.AttributedText;
 import club.heiqi.uilib.ui.scene.text.TextDecoration;
 import club.heiqi.uilib.ui.scene.text.TextEffects;
 import club.heiqi.uilib.ui.scene.text.TextLayout;
+import club.heiqi.uilib.ui.scene.text.RasterSampling;
 import club.heiqi.uilib.ui.scene.text.TextStyle;
 import club.heiqi.uilib.ui.scene.text.font.FontSource;
 import club.heiqi.uilib.ui.scene.text.font.FontTextService;
@@ -13,6 +15,7 @@ import club.heiqi.uilib.ui.scene.text.font.glyph.GlyphKey;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.FontEngine;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.FontFace;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.FontSession;
+import club.heiqi.uilib.ui.scene.text.font.nativefont.ShapeContext;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.GlyphBitmap;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.InkBounds;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.MathData;
@@ -274,6 +277,8 @@ public final class MathFontScenario extends TestApplication {
                                 }) {
                             TextLayout layout = math.stretch(cp, target);
                             verifyAssemblyLayout(math, raw, face, expected, layout, em, cp, target);
+                            if (cp == 0x222b)
+                                verifyAssemblyTransfers(service, math, layout, expected.italicCorrection);
                         }
                     }
                     expect(
@@ -282,6 +287,54 @@ public final class MathFontScenario extends TestApplication {
                 }
             }
         }
+    }
+
+    /** 非零整体修正来自同次 raw MATH oracle；保留字形的转换不能退为末部件修正。 */
+    private static void verifyAssemblyTransfers(
+            FontTextService service, MathFont math, TextLayout layout, float expectedCorrection) {
+        require(expectedCorrection > 0, "非零 assembly 修正反例未命中");
+        TextLayout colored = layout.withStyle(layout.style.withColor(0xff336699));
+        TextLayout sampled = service.sample(colored, new RasterSampling(2, 1));
+        TextLayout rebound = sampled.withColors(0xffaa4433, offset -> 0xffaa4433);
+        TextLayout resampled = service.sample(rebound, new RasterSampling(1.5f, 2));
+        TextLayout noOp = service.obfuscate(layout, 0, 0);
+        TextLayout explicitNoOp = service.obfuscate(layout, AttributedText.plain(layout.input, layout.style), 0, 0);
+        TextLayout sampledNoOp = service.obfuscate(resampled, 0, 0);
+        for (TextLayout copy : Arrays.asList(colored, sampled, rebound, resampled, noOp, explicitNoOp, sampledNoOp)) {
+            require(copy.mathAssembly != null
+                            && copy.mathAssembly.source.equals(layout.mathAssembly.source)
+                            && copy.mathAssembly.logicalEm == layout.mathAssembly.logicalEm
+                            && copy.mathAssembly.generation == layout.mathAssembly.generation
+                            && copy.mathAssembly.axis == layout.mathAssembly.axis,
+                    "保留字形的转换丢失 assembly 构建事实");
+            near(math.italicCorrection(copy), expectedCorrection, "保留字形的转换丢失整体 assembly 修正");
+            require(Float.isNaN(math.topAccentAttachment(copy)), "assembly 被当作单字形附件点");
+            require(copy.generation == layout.generation, "保留字形的转换改变数学代际");
+            near(copy.advanceWidth, layout.advanceWidth, "颜色/采样改变数学逻辑宽度");
+            near(copy.advanceHeight, layout.advanceHeight, "颜色/采样改变数学逻辑高度");
+            List<TextLayout.Glyph> before = layout.lines().get(0).glyphs();
+            List<TextLayout.Glyph> after = copy.lines().get(0).glyphs();
+            require(before.size() == after.size(), "颜色/采样改变 assembly 部件数量");
+            for (int i = 0; i < before.size(); i++) {
+                TextLayout.Glyph a = before.get(i), b = after.get(i);
+                require(a.glyphId == b.glyphId && a.source.equals(b.source)
+                                && a.logicalEm == b.logicalEm && a.x == b.x && a.y == b.y
+                                && a.xAdvance == b.xAdvance && a.yAdvance == b.yAdvance
+                                && a.logicalStart == b.logicalStart && a.logicalEnd == b.logicalEnd,
+                        "颜色/采样改变 assembly 逻辑字体或部件定位");
+            }
+        }
+        TextStyle obfuscated = layout.style.withEffects(new TextEffects(false, false, false, false, true, 0, 0));
+        TextLayout replaced = service.obfuscate(
+                layout, AttributedText.plain(layout.input, obfuscated), 0, 0);
+        require(replaced.lines().get(0).glyphs().size() != layout.lines().get(0).glyphs().size(),
+                "真实混淆未替换 assembly 部件，失效反例未命中");
+        require(replaced.mathAssembly == null, "真正替换字形后仍继承旧 assembly 事实");
+        near(math.italicCorrection(layout), expectedCorrection, "混淆修改了原有效 assembly 事实");
+        require(colored != layout && sampled != colored && rebound != sampled, "未实际触发不可变结果交接");
+        require(sampled.lines().get(0).glyphs().get(0).size
+                        != layout.lines().get(0).glyphs().get(0).size,
+                "采样密度变化未命中真实 raster 字号");
     }
 
     /** 预期连接来自独立raw HB，按原点差反推实际overlap，不能由生产算法自证。 */
@@ -1143,6 +1196,10 @@ public final class MathFontScenario extends TestApplication {
                     GlyphKey.of(originalHorizontal.lines().get(0).glyphs().get(0));
             TextLayout originalAssembly = math.stretch(0x222b, 512);
             GlyphKey oldPartKey = GlyphKey.of(originalAssembly.lines().get(0).glyphs().get(0));
+            TextLayout transferredAssembly = service.sample(
+                    originalAssembly.withStyle(originalAssembly.style.withColor(0xff336699)),
+                    new RasterSampling(2, 1));
+            float assemblyCorrection = math.italicCorrection(originalAssembly);
             int opened = engine.opened.size();
             MathFont otherSize = service.mathFont(style(21));
             require(otherSize != null && service.cachedFaceCount() == 1, "没有触发真实face淘汰");
@@ -1157,6 +1214,7 @@ public final class MathFontScenario extends TestApplication {
                     math.italicCorrection(originalAssembly),
                     math.italicCorrection(math.stretch(0x222b, 512)),
                     "LRU后assembly修正丢失");
+            near(math.italicCorrection(transferredAssembly), assemblyCorrection, "LRU后副本修正丢失");
             near(
                     math.topAccentAttachment(originalAccent),
                     originalAttachment,
@@ -1178,6 +1236,7 @@ public final class MathFontScenario extends TestApplication {
             require(!oldKey.equals(GlyphKey.of(onlyGlyph(stretched))), "新旧source污染glyph key");
             expect(IllegalArgumentException.class, () -> math.italicCorrection(original));
             expect(IllegalArgumentException.class, () -> math.italicCorrection(originalAssembly));
+            expect(IllegalArgumentException.class, () -> math.italicCorrection(transferredAssembly));
             expect(IllegalArgumentException.class, () -> math.topAccentAttachment(originalAccent));
             expect(IllegalArgumentException.class, () -> math.italicCorrection(originalHorizontal));
             TextLayout replacedHorizontal = math.stretch(0x23de, 512, MathAxis.HORIZONTAL);
@@ -1394,6 +1453,10 @@ public final class MathFontScenario extends TestApplication {
             return new FontSession() {
                 public boolean supportsVariations() {
                     return delegate.supportsVariations();
+                }
+
+                public ShapeContext prepareShapeContext(String text) {
+                    return delegate.prepareShapeContext(text);
                 }
 
                 public FontFace openFace(ByteBuffer source, long index, float em) {

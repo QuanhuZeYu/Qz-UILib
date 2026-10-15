@@ -15,6 +15,7 @@ import club.heiqi.uilib.testing.TestResources;
 import club.heiqi.uilib.host.font.freetype.LwjglFontEngine;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.ShapedGlyph;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.ShapeDirection;
+import club.heiqi.uilib.ui.scene.text.font.nativefont.ShapeContext;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.InkBounds;
 
 import java.nio.charset.StandardCharsets;
@@ -620,13 +621,21 @@ public final class FontTextScenario extends TestApplication {
 
     /** 计数包在正式 FT/HB 边界，不以缓存字段或伪造字形作为期望值。 */
     private static final class CountingEngine implements FontEngine {
-        int shapes, rasters;
+        int shapes, rasters, preparedContexts, preparedRuns;
+        long preparedUnits;
 
         @SuppressWarnings("unchecked")
         private <T> T observe(Class<T> type, T delegate) {
             return (T) Proxy.newProxyInstance(type.getClassLoader(), new Class<?>[] {type},
                     (proxy, method, args) -> {
-                        if (method.getName().equals("shape")) shapes++;
+                        if (method.getName().equals("shape")) {
+                            shapes++;
+                            if (args[0] instanceof ShapeContext) preparedRuns++;
+                        }
+                        if (method.getName().equals("prepareShapeContext")) {
+                            preparedContexts++;
+                            preparedUnits += ((String) args[0]).length();
+                        }
                         if (method.getName().equals("rasterize")) rasters++;
                         try {
                             Object result = method.invoke(delegate, args);
@@ -639,6 +648,40 @@ public final class FontTextScenario extends TestApplication {
 
         public FontSession openSession() {
             return observe(FontSession.class, new LwjglFontEngine().openSession());
+        }
+    }
+
+    /** 交替脚本确实经过真实匹配与每个 run 的 HB 整形；只复用完整上下文准备工作。 */
+    private void alternatingScriptContexts() throws Exception {
+        CountingEngine engine = new CountingEngine();
+        List<FontSource> sources = Collections.singletonList(defaults.get(0));
+        TextStyle requested = new TextStyle("explicit", 24, -1, sources);
+        try (FontTextService fonts = new FontTextService(sources, engine, 1, 0, 0)) {
+            for (int pairs : new int[] {128, 512, 2048}) {
+                StringBuilder input = new StringBuilder();
+                for (int i = 0; i < pairs; i++) input.append("a中");
+                String text = input.toString();
+                int contexts = engine.preparedContexts, runs = engine.preparedRuns;
+                long units = engine.preparedUnits;
+                TextLayout layout = fonts.layout(text, requested, Integer.MAX_VALUE, TextPolicy.NO_WRAP);
+                facts(layout);
+                require(layout.lines().size() == 1 && layout.logicalText.equals(text), "交替脚本原文或行边界改变");
+                List<TextLayout.Glyph> actual = glyphs(layout);
+                require(actual.size() == text.length(), "交替脚本缺失真实字形");
+                for (int i = 0; i < actual.size(); i++) {
+                    TextLayout.Glyph glyph = actual.get(i);
+                    require(glyph.glyphId != 0 && !glyph.replacement && glyph.source.equals(sources.get(0))
+                                    && glyph.logicalStart == i && glyph.logicalEnd == i + 1
+                                    && glyph.sourceStart == i && glyph.sourceEnd == i + 1,
+                            "交替脚本字形、候选或 UTF-16 来源改变");
+                }
+                require(engine.preparedRuns - runs == text.length(), "交替脚本未命中逐 run 的 prepared 整形");
+                require(engine.preparedContexts - contexts == 1 && engine.preparedUnits - units == text.length(),
+                        "完整上下文准备量随 span 数重复增长");
+                System.out.println("prepared context UTF16=" + text.length()
+                        + " runs=" + (engine.preparedRuns - runs)
+                        + " preparedUnits=" + (engine.preparedUnits - units));
+            }
         }
     }
 
@@ -747,6 +790,7 @@ public final class FontTextScenario extends TestApplication {
     protected void runTests() throws Exception {
         scenario("颜色与透明度复用真实定位", this::paintOnlyColors);
         scenario("场景颜色绘制失效与禁用字体缓存", this::scenePaintOnlyColors);
+        scenario("交替脚本多run复用完整上下文", this::alternatingScriptContexts);
         scenario("混合Bidi与显式RTL", () -> bidi(service, style));
         scenario("Arabic最终行独立整形", () -> arabic(service, defaults.get(1)));
         scenario("Indic完整簇与Thai字典断行", () -> indicThai(service, defaults.get(2), defaults.get(3)));

@@ -57,7 +57,7 @@ final class SceneTextControl implements SceneControl {
                         theme,
                         (target, value) -> {
                             target.style(value.textStyle);
-                            if (button) target.padding(value.padding);
+                            if (button && target.padding()!=value.padding) target.padding(value.padding);
                         }));
         return node;
     }
