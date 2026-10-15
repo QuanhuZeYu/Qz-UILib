@@ -46,10 +46,13 @@ public final class DesktopVerification {
         DesktopWindow window = null;
         Throwable primary = null;
         try {
-            window = DesktopWindow.open(config);
+            DesktopVerificationPage[] fixture = new DesktopVerificationPage[1];
+            window = DesktopWindow.openWithServices(config, services -> fixture[0] =
+                    new DesktopVerificationPage(services.configuration(), services::reloadConfiguration));
             final DesktopWindow w = window;
             DesktopTestInput input = new DesktopTestInput(w);
-            DesktopPage view = w.samplePage;
+            DesktopVerificationPage view = fixture[0];
+            require(view.configuration == w.configuration && view.domain == w.domain, "fixture未借用同域真实配置会话");
             ScenePageSession session = w.page;
             AsyncGlyphRasterizer rasterizer = w.fonts.rasterizer();
             evidence.append("GL vendor=").append(glGetString(GL_VENDOR))

@@ -469,7 +469,7 @@ public final class MailboxScenario extends TestApplication {
             require(normal && bold && colorEmoji, "正式页面未使用真实常规/粗体及彩色emoji: " + faces);
             java.util.List<club.heiqi.uilib.ui.scene.text.font.FontSource> replacement = new java.util.ArrayList<>();
             replacement.add(club.heiqi.uilib.ui.scene.text.font.FontSource.fromResource("mail-font-reload", 2,
-                    "assets/qz_uilib/gallery/fonts/noto-sans-sc/NotoSansSC-VF.ttf", false));
+                    "assets/qz_uilib/fonts/ui/NotoSansSC-VF.ttf", false));
             replacement.addAll(FontTextService.defaultSources(getClass().getClassLoader(), 2));
             view.domain.execute(() -> view.theme.set(SceneTheme.light().withTextStyle(
                     new club.heiqi.uilib.ui.scene.text.TextStyle("default", 21, 0xff202124, replacement))));

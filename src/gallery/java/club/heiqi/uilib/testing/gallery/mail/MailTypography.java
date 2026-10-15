@@ -23,7 +23,7 @@ final class MailTypography {
             result.add(FontSource.resource("mail-google-sans", 1, loader,
                     "assets/qz_uilib/gallery/fonts/google-sans/GoogleSans-VF.ttf", false,Collections.<String>emptySet()));
             result.add(FontSource.resource("mail-noto-sans-sc", 1, loader,
-                    "assets/qz_uilib/gallery/fonts/noto-sans-sc/NotoSansSC-VF.ttf", false,
+                    "assets/qz_uilib/fonts/ui/NotoSansSC-VF.ttf", false,
                     Collections.<String>emptySet()));
             result.addAll(FontTextService.defaultSources(loader, 1));
             return Collections.unmodifiableList(result);

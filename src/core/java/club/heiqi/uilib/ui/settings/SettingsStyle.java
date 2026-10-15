@@ -1,12 +1,10 @@
 package club.heiqi.uilib.ui.settings;
 
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.scene.control.SceneButton;
-import club.heiqi.uilib.ui.scene.control.SceneControl;
 import club.heiqi.uilib.ui.scene.control.SceneLabel;
 import club.heiqi.uilib.ui.scene.control.SceneTextPolicy;
 import club.heiqi.uilib.ui.scene.control.SceneTheme;
@@ -21,277 +19,153 @@ import club.heiqi.uilib.ui.scene.layout.Size;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintShapes;
 import club.heiqi.uilib.ui.scene.paint.PaintPlanBuilder;
-import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
+import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
 import club.heiqi.uilib.ui.scene.text.TextStyle;
+import club.heiqi.uilib.ui.settings.SettingsLayout.Arrangement;
+import club.heiqi.uilib.ui.settings.SettingsLayout.Result;
 
-/** 配置工作区的局部视觉词汇；仅测量、排列与PaintPlan装饰，输入仍由标准控件处理。 */
+/** 设置页的视觉词汇；输入、选区、焦点与命中继续由标准控件和正式运行时维护。 */
 final class SettingsStyle {
     private SettingsStyle() {}
     static final class Palette {
         final boolean dark;
-        final int background, panel, text, muted, border, hover, accent, selected, primary, onPrimary, error;
+        final int background,panel,text,muted,border,hover,accent,selected,primary,onPrimary,error;
         Palette(boolean dark) {
-            this.dark = dark;
-            background = dark ? 0xff17181b : 0xffffffff;
-            panel = dark ? 0xff1d1f23 : 0xfffafafa;
-            text = dark ? 0xffe5e7eb : 0xff202124;
-            muted = dark ? 0xff969ba6 : 0xff767980;
-            border = dark ? 0xff32353c : 0xffe6e7eb;
-            hover = dark ? 0xff272a30 : 0xfff2f3f5;
-            accent = dark ? 0xff84acff : 0xff2563eb;
-            selected = dark ? 0xff253249 : 0xffeff5ff;
-            primary = dark ? 0xffe8eaf0 : 0xff24262a;
-            onPrimary = dark ? 0xff17181b : 0xffffffff;
-            error = dark ? 0xffff8b8b : 0xffc43535;
+            this.dark=dark;
+            background=dark?0xff020617:0xffffffff;
+            panel=dark?0xff0f172a:0xfff8fafc;
+            text=dark?0xfff8fafc:0xff0f172a;
+            muted=dark?0xff94a3b8:0xff64748b;
+            border=dark?0xff273044:0xffe2e8f0;
+            hover=dark?0xff172033:0xfff1f5f9;
+            accent=dark?0xff94a3b8:0xff64748b;
+            selected=dark?0xff1e293b:0xfff1f5f9;
+            primary=dark?0xffe2e8f0:0xff0f172a;
+            onPrimary=dark?0xff0f172a:0xfff8fafc;
+            error=dark?0xfff87171:0xffdc2626;
         }
-        SceneTheme theme(int em, int color, int padding, boolean transparent) {
-            return new SceneTheme(new TextStyle("default", em, color), background,
-                    transparent ? 0 : panel, transparent ? 0 : hover, transparent ? 0 : selected,
-                    transparent ? 0 : accent, transparent ? 0 : panel, muted,
-                    primary, onPrimary, padding, 8);
+        SceneTheme theme(int em,int color,int padding,boolean transparent) {
+            return theme(SettingsTypography.style(em,color,400),padding,transparent);
+        }
+        SceneTheme theme(TextStyle style,int padding,boolean transparent) {
+            return new SceneTheme(style,transparent?0:background,transparent?0:border,
+                    transparent?0:selected,transparent?0:selected,transparent?0:accent,
+                    transparent?0:panel,muted,primary,onPrimary,padding,8);
         }
     }
-    static SceneNode column(int gap) { return new SceneNode().size(Size.fill(1), Size.natural()).gap(gap); }
-    static SceneNode row(int gap) { return new SceneNode().axis(SceneNode.Axis.ROW).size(Size.fill(1), Size.natural()).gap(gap); }
-    static SceneNode label(ScenePageContext ctx, ReadableSignal<String> text, ReadableSignal<Palette> p, int em, boolean muted) {
-        return SceneLabel.create(ctx, text, () -> p.get().theme(em, muted ? p.get().muted : p.get().text, 0, false));
+    static SceneNode column(int gap){return new SceneNode().size(Size.fill(1),Size.natural()).gap(gap);}
+    static SceneNode row(int gap){return column(gap).axis(SceneNode.Axis.ROW);}
+    static SceneNode label(ScenePageContext ctx,ReadableSignal<String> text,ReadableSignal<Palette> p,int em,boolean muted) {
+        return SceneLabel.create(ctx,text,() -> p.get().theme(em,muted?p.get().muted:p.get().text,0,true));
+    }
+    static SceneNode heading(ScenePageContext ctx,ReadableSignal<String> text,ReadableSignal<Palette> p,int em) {
+        return SceneLabel.create(ctx,text,() -> p.get().theme(SettingsTypography.style(em,p.get().text,600),0,true));
     }
     static final class Button {
-        final SceneNode view, target;
-        Button(SceneNode view, SceneNode target) { this.view=view; this.target=target; }
+        final SceneNode view,target;Button(SceneNode view,SceneNode target){this.view=view;this.target=target;}
     }
-    static Button button(ScenePageContext ctx, ReadableSignal<String> text, ReadableSignal<Palette> p,
-                            Runnable action, boolean primary, boolean ghost) {
-        SceneNode control = SceneButton.create(ctx, text,
-                () -> p.get().theme(13, primary ? p.get().onPrimary : p.get().text, 9, true), action,
-                SceneTextPolicy.WRAP).size(Size.natural(), Size.natural());
-        SceneNode view = new SceneNode().size(Size.natural(), Size.natural()).control(new Surface(p, primary, ghost, control, 7)).add(control);
-        return new Button(view, control);
+    static Button button(ScenePageContext ctx,ReadableSignal<String> text,ReadableSignal<Palette> p,
+            Runnable action,boolean primary,boolean ghost) {
+        SceneNode control=SceneButton.create(ctx,text,
+                () -> p.get().theme(SettingsTypography.style(14,primary?p.get().onPrimary:p.get().text,500),8,true),
+                action,SceneTextPolicy.WRAP).size(Size.natural(),Size.natural());
+        return new Button(column(0).size(Size.natural(),Size.natural())
+                .control(new Surface(p,primary,ghost,control,8,false)).add(control),control);
     }
-    static SceneNode navigationButton(ScenePageContext ctx,ReadableSignal<String> text,ReadableSignal<Boolean> selected,ReadableSignal<Palette> p,Runnable action) {
-        SceneNode control=SceneButton.create(ctx,text,() -> p.get().theme(14,selected.get()?p.get().accent:p.get().text,10,true),action)
-                .size(Size.natural(),Size.natural());
-        return new SceneNode().size(Size.fill(1),Size.natural()).control(new NavigationSurface(p,selected,control)).add(control);
+    static SceneNode navigationButton(ScenePageContext ctx,ReadableSignal<String> text,ReadableSignal<Boolean> selected,
+            ReadableSignal<Palette> p,Runnable action) {
+        SceneNode button=SceneButton.create(ctx,text,() -> p.get().theme(
+                SettingsTypography.style(14,p.get().text,selected.get()?600:400),9,true),action)
+                .size(Size.fill(1),Size.natural());
+        return column(0).control(new NavigationSurface(p,selected,button)).add(button);
     }
-    static SceneNode toggle(ScenePageContext ctx, ReadableSignal<Boolean> checked, ReadableSignal<Palette> p,Runnable action) {
-        SceneNode control=SceneButton.create(ctx,() -> checked.get()?"   ●":"●   ",
-                () -> p.get().theme(14,checked.get()?p.get().onPrimary:p.get().text,5,true),action)
-                .size(Size.fixed(42),Size.fixed(26));
-        return new SceneNode().size(Size.fixed(44),Size.fixed(28))
-                .control(new SwitchSurface(p,checked,control)).add(control);
+    static SceneNode toggle(ScenePageContext ctx,ReadableSignal<Boolean> checked,ReadableSignal<Palette> p,Runnable action) {
+        SceneNode button=SceneButton.create(ctx,() -> checked.get()?"关闭接管原版文字绘制":"开启接管原版文字绘制",
+                () -> p.get().theme(14,0,0,true),action).size(Size.fixed(42),Size.fixed(26));
+        return column(0).size(Size.fixed(44),Size.fixed(28)).control(new SwitchSurface(p,checked,button)).add(button);
     }
-    static SceneNode surface(SceneNode content, ReadableSignal<Palette> p, boolean muted) {
-        return new SceneNode().size(Size.fill(1), Size.natural()).control(new Surface(p, false, false, null, 12, muted)).add(content);
+    static SceneNode surface(SceneNode content,ReadableSignal<Palette> p,boolean muted) {
+        return column(0).control(new Surface(p,false,false,null,8,muted)).add(content);
     }
-    static SceneNode card(SceneNode content, ReadableSignal<Palette> p) { return surface(content.padding(20), p, false); }
-    static SceneNode line(ReadableSignal<Palette> p) {
-        return new SceneNode().size(Size.fill(1), Size.fixed(1))
-                .bind(club.heiqi.uilib.ui.scene.runtime.NodeBinding.value(p, (n,v) -> n.background(v.border)));
+    static SceneNode field(SceneNode editor,ReadableSignal<Palette> p) {
+        return column(0).control(new Surface(p,false,false,editor,8,false)).add(editor);
     }
-    private static final class LayoutResult {
-        final MeasuredSize size;
-        final ChildPlacements children;
-        LayoutResult(int width, int height, List<ChildPlacements.Entry> children) {
-            size = new MeasuredSize(Math.max(0, width), Math.max(0, height));
-            this.children = new ChildPlacements(children);
-        }
-    }
-    /** 最终宽度下重新消费正式子测量；不读取宿主尺寸，也不布局后回写节点声明。 */
-    private abstract static class Arrangement implements SceneControl {
-        abstract LayoutResult layout(SceneNode node, Constraints limits, SceneChildMeasurer children);
-        @Override public MeasuredSize measure(SceneNode n, Constraints c, SceneTextMeasurer t) { return new MeasuredSize(0,0); }
-        @Override public MeasuredSize measure(SceneNode n, Constraints c, SceneTextMeasurer t, SceneChildMeasurer m) { return layout(n,c,m).size; }
-        @Override public ChildPlacements arrange(SceneNode n, LayoutBox b, SceneChildMeasurer m) {
-            int padding = n.padding();
-            LayoutResult result = layout(n, new Constraints(
-                    Math.max(0, b.width - padding * 2), Math.max(0, b.height - padding * 2)), m);
-            if (padding == 0) return result.children;
-            List<ChildPlacements.Entry> placed = new ArrayList<>();
-            for (ChildPlacements.Entry entry : result.children.entries()) {
-                LayoutBox box = entry.relativeBox;
-                placed.add(new ChildPlacements.Entry(entry.child, new LayoutBox(
-                        padding + box.x, padding + box.y, box.width, box.height)));
-            }
-            return new ChildPlacements(placed);
-        }
-        @Override public void paint(SceneNode n, SceneGeometryView g, PaintPlanBuilder p) {}
-        static void place(List<ChildPlacements.Entry> e, SceneNode n, int x, int y, int w, int h) {
-            e.add(new ChildPlacements.Entry(n,new LayoutBox(x,y,Math.max(0,w),Math.max(0,h))));
-        }
+    static SceneNode card(SceneNode content,ReadableSignal<Palette> p){return surface(content.padding(24),p,false);}
+    static SceneNode line(ReadableSignal<Palette> p){return column(0).size(Size.fill(1),Size.fixed(1)).bind(NodeBinding.value(p,(n,v) -> n.background(v.border)));}
+    static SceneNode themeChoice(ScenePageContext ctx,String label,boolean dark,ReadableSignal<Boolean> selected,
+            ReadableSignal<Palette> p,Runnable action) {
+        SceneNode button=SceneButton.create(ctx,() -> label,() -> p.get().theme(14,p.get().text,12,true),action)
+                .size(Size.fill(1),Size.natural());
+        SceneNode preview=column(0).size(Size.fill(1),Size.fixed(112)).control(new ThemePreview(dark,p,selected));
+        // 只扩展标准按钮的内容与装饰；整张选项仍只有一个动作与键盘焦点。
+        return button.control(new NavigationSurface(p,selected,button))
+                .add(column(8).add(preview).add(label(ctx,() -> label,p,14,false)));
     }
     private static class Surface extends Arrangement {
-        final ReadableSignal<Palette> colors;
-        final boolean primary, ghost, muted;
-        final SceneNode button;
-        final int radius;
-        Surface(ReadableSignal<Palette> p, boolean primary, boolean ghost, SceneNode button, int radius) { this(p,primary,ghost,button,radius,false); }
-        Surface(ReadableSignal<Palette> p, boolean primary, boolean ghost, SceneNode button, int radius, boolean muted) {
-            colors=p;this.primary=primary;this.ghost=ghost;this.button=button;this.radius=radius;this.muted=muted;
+        final ReadableSignal<Palette> colors;final boolean primary,ghost,muted;
+        final SceneNode button;final int radius;
+        Surface(ReadableSignal<Palette> colors,boolean primary,boolean ghost,SceneNode button,int radius,boolean muted) {
+            this.colors=colors;this.primary=primary;this.ghost=ghost;this.button=button;this.radius=radius;this.muted=muted;
         }
-        @Override public List<ReadableSignal<?>> measureDependencies(SceneNode n) { return Collections.singletonList(colors); }
-        @Override LayoutResult layout(SceneNode n, Constraints c, SceneChildMeasurer m) {
-            SceneNode child=m.flowChildren().get(0); int w=Math.max(0,c.availableWidth-2), h=Math.max(0,c.availableHeight-2);
-            MeasuredSize size=m.measureChild(child,new Constraints(w,h));
-            int cw=child.width().mode==Size.Mode.FILL?w:size.width;
-            int ch=child.height().mode==Size.Mode.FILL?h:size.height;
-            return new LayoutResult(size.width+2,size.height+2,Collections.singletonList(new ChildPlacements.Entry(child,new LayoutBox(1,1,cw,ch))));
+        public List<ReadableSignal<?>> measureDependencies(SceneNode n){return Collections.singletonList(colors);}
+        Result layout(SceneNode n,Constraints c,SceneChildMeasurer m) {
+            SceneNode child=m.flowChildren().get(0);int w=Math.max(0,c.availableWidth-2),h=Math.max(0,c.availableHeight-2);
+            MeasuredSize s=m.measureChild(child,new Constraints(w,h));
+            return new Result(s.width+2,s.height+2,Collections.singletonList(new ChildPlacements.Entry(child,new LayoutBox(1,1,
+                    child.width().mode==Size.Mode.FILL?w:s.width,child.height().mode==Size.Mode.FILL?h:s.height))));
         }
-        @Override public void paint(SceneNode n, SceneGeometryView g, PaintPlanBuilder paint) {
-            SceneGeometryView.Entry entry=g.get(n); Palette p=colors.get();
-            boolean enabled=true,hovered=false,pressed=false,focus=false;
-            if(button!=null) {
-                for(SceneNode cursor=button;cursor!=null;cursor=cursor.parent()) enabled &= cursor.enabled();
-                hovered=enabled && button.runtime()!=null && button.runtime().pointerRouter().hovered(g)==button;
-                pressed=enabled && button.runtime()!=null && button.runtime().pointerRouter().pressed(button);
-                focus=enabled && button.runtime()!=null && button.runtime().focusRouter().focused().get()==button;
-            }
-            int fill=primary?p.primary:(muted?p.panel:p.background);
-            if(button!=null && (hovered||pressed)) fill=primary?p.primary:p.hover;
-            if(button!=null && !enabled) fill=p.panel;
-            if(ghost && button!=null && !hovered && !pressed) fill=p.background;
-            int edge=focus?p.accent:primary?fill:ghost?fill:p.border;
-            ScenePaintShapes.rounded(paint,entry.box,entry.clip,edge,radius);
-            ScenePaintShapes.rounded(paint,new LayoutBox(entry.box.x+1,entry.box.y+1,Math.max(0,entry.box.width-2),Math.max(0,entry.box.height-2)),entry.clip,fill,Math.max(0,radius-1));
+        boolean enabled(){return button==null||button.runtime()==null||button.runtime().interactive(button);}
+        boolean focused(){return button!=null&&button.runtime()!=null&&button.runtime().focusRouter().focused().get()==button;}
+        boolean hovered(SceneGeometryView g){return button!=null&&button.runtime()!=null&&button.runtime().pointerRouter().hovered(g)==button;}
+        public void paint(SceneNode n,SceneGeometryView g,PaintPlanBuilder paint) {
+            SceneGeometryView.Entry e=g.get(n);Palette p=colors.get();
+            int fill=primary?p.primary:muted?p.panel:p.background;
+            if(hovered(g)&&enabled())fill=primary?(p.dark?0xffcbd5e1:0xff263247):p.hover;
+            if(!enabled())fill=p.panel;
+            int edge=focused()?p.accent:primary?fill:ghost?fill:p.border;
+            rounded(paint,e,edge,fill,radius);
         }
     }
     private static final class NavigationSurface extends Surface {
         final ReadableSignal<Boolean> selected;
-        NavigationSurface(ReadableSignal<Palette> colors,ReadableSignal<Boolean> selected,SceneNode button){super(colors,false,true,button,7);this.selected=selected;}
-        @Override public List<ReadableSignal<?>> measureDependencies(SceneNode n){return Arrays.asList(colors,selected);}
-        @Override public void paint(SceneNode n,SceneGeometryView g,PaintPlanBuilder paint){
-            SceneGeometryView.Entry e=g.get(n);Palette p=colors.get();
-            boolean focus=button.runtime()!=null&&button.runtime().focusRouter().focused().get()==button;
-            boolean hover=button.runtime()!=null&&button.runtime().pointerRouter().hovered(g)==button;
-            int fill=selected.get()?p.selected:hover?p.hover:p.panel;
-            ScenePaintShapes.rounded(paint,e.box,e.clip,focus?p.accent:fill,7);
-            ScenePaintShapes.rounded(paint,new LayoutBox(e.box.x+1,e.box.y+1,Math.max(0,e.box.width-2),Math.max(0,e.box.height-2)),e.clip,fill,6);
+        NavigationSurface(ReadableSignal<Palette> p,ReadableSignal<Boolean> selected,SceneNode button){super(p,false,true,button,8,false);this.selected=selected;}
+        public List<ReadableSignal<?>> measureDependencies(SceneNode n){return Arrays.asList(colors,selected);}
+        public void paint(SceneNode n,SceneGeometryView g,PaintPlanBuilder paint) {
+            Palette p=colors.get();int fill=selected.get()?p.selected:hovered(g)?p.hover:p.background;
+            rounded(paint,g.get(n),focused()?p.accent:fill,fill,8);
         }
+    }
+    private static void rounded(PaintPlanBuilder p,SceneGeometryView.Entry e,int edge,int fill,int radius) {
+        ScenePaintShapes.rounded(p,e.box,e.clip,edge,radius);
+        ScenePaintShapes.rounded(p,new LayoutBox(e.box.x+1,e.box.y+1,Math.max(0,e.box.width-2),Math.max(0,e.box.height-2)),e.clip,fill,Math.max(0,radius-1));
     }
     private static final class SwitchSurface extends Arrangement {
         final ReadableSignal<Palette> colors;final ReadableSignal<Boolean> checked;final SceneNode button;
-        SwitchSurface(ReadableSignal<Palette> colors,ReadableSignal<Boolean> checked,SceneNode button){this.colors=colors;this.checked=checked;this.button=button;}
-        @Override public List<ReadableSignal<?>> measureDependencies(SceneNode n){return Arrays.asList(colors,checked);}
-        @Override LayoutResult layout(SceneNode n,Constraints c,SceneChildMeasurer m){m.measureChild(button,new Constraints(42,26));return new LayoutResult(44,28,Collections.singletonList(new ChildPlacements.Entry(button,new LayoutBox(1,1,42,26))));}
-        @Override public void paint(SceneNode n,SceneGeometryView g,PaintPlanBuilder paint){
+        SwitchSurface(ReadableSignal<Palette> p,ReadableSignal<Boolean> checked,SceneNode button){colors=p;this.checked=checked;this.button=button;}
+        public List<ReadableSignal<?>> measureDependencies(SceneNode n){return Arrays.asList(colors,checked);}
+        Result layout(SceneNode n,Constraints c,SceneChildMeasurer m){m.measureChild(button,new Constraints(42,26));return new Result(44,28,Collections.singletonList(new ChildPlacements.Entry(button,new LayoutBox(1,1,42,26))));}
+        public void paint(SceneNode n,SceneGeometryView g,PaintPlanBuilder paint){
             SceneGeometryView.Entry e=g.get(n);Palette p=colors.get();
             boolean focus=button.runtime()!=null&&button.runtime().focusRouter().focused().get()==button;
-            ScenePaintShapes.rounded(paint,e.box,e.clip,focus?p.accent:checked.get()?p.primary:p.border,14);
-            ScenePaintShapes.rounded(paint,new LayoutBox(e.box.x+1,e.box.y+1,Math.max(0,e.box.width-2),Math.max(0,e.box.height-2)),e.clip,checked.get()?p.primary:p.hover,13);
+            rounded(paint,e,focus?p.accent:checked.get()?p.primary:p.border,checked.get()?p.primary:p.hover,14);
+            ScenePaintShapes.rounded(paint,new LayoutBox(e.box.x+(checked.get()?22:4),e.box.y+4,20,20),e.clip,checked.get()?p.onPrimary:p.muted,10);
         }
     }
-    static final class Columns extends Arrangement {
-        @Override LayoutResult layout(SceneNode n,Constraints c,SceneChildMeasurer m) {
-            int gap=20, width=c.availableWidth, height=0;
-            List<ChildPlacements.Entry> e=new ArrayList<>();
-            if(m.flowChildren().size()==2 && width>=780) {
-                int right=Math.min(340,Math.max(280,width/3)); int left=Math.max(0,width-gap-right);
-                MeasuredSize a=m.measureChild(m.flowChildren().get(0),new Constraints(left,c.availableHeight));
-                MeasuredSize b=m.measureChild(m.flowChildren().get(1),new Constraints(right,c.availableHeight));
-                place(e,m.flowChildren().get(0),0,0,left,a.height);place(e,m.flowChildren().get(1),left+gap,0,right,b.height);height=Math.max(a.height,b.height);
-            } else for(SceneNode child:m.flowChildren()) if(child.visible()) {
-                MeasuredSize s=m.measureChild(child,new Constraints(width,c.availableHeight));place(e,child,0,height,width,s.height);height+=s.height+gap;
-            }
-            if(e.size()>0 && !(m.flowChildren().size()==2 && width>=780))height-=gap;
-            return new LayoutResult(width,height,e);
-        }
-    }
-    /** 本次布局的局部模式；由Workspace选择，子布局明确消费，不以子宽猜测。
-     * 仅保存布局准备事实，不写业务Signal；视口变化沿正式测量失效路径重算。 */
-    static final class NavigationLayout {
-        static final int BREAKPOINT=760, SIDEBAR_WIDTH=210, HORIZONTAL_PADDING=12;
-        boolean sidebar;
-    }
-    static final class Workspace extends Arrangement {
-        final NavigationLayout navigation;
-        Workspace(NavigationLayout navigation) { this.navigation=navigation; }
-        @Override LayoutResult layout(SceneNode n,Constraints c,SceneChildMeasurer m) {
-            List<ChildPlacements.Entry> e=new ArrayList<>();SceneNode nav=m.flowChildren().get(0),body=m.flowChildren().get(1);
-            navigation.sidebar=c.availableWidth>=NavigationLayout.BREAKPOINT;
-            if(navigation.sidebar) {
-                int sidebar=NavigationLayout.SIDEBAR_WIDTH,bodyWidth=Math.max(0,c.availableWidth-sidebar);
-                m.measureChild(nav,new Constraints(sidebar,c.availableHeight));m.measureChild(body,new Constraints(bodyWidth,c.availableHeight));
-                place(e,nav,0,0,sidebar,c.availableHeight);place(e,body,sidebar,0,bodyWidth,c.availableHeight);
-            } else {
-                MeasuredSize ns=m.measureChild(nav,new Constraints(c.availableWidth,c.availableHeight));int nh=Math.min(ns.height,c.availableHeight);
-                m.measureChild(body,new Constraints(c.availableWidth,Math.max(0,c.availableHeight-nh)));
-                place(e,nav,0,0,c.availableWidth,nh);place(e,body,0,nh,c.availableWidth,Math.max(0,c.availableHeight-nh));
-            }
-            return new LayoutResult(c.availableWidth,c.availableHeight,e);
-        }
-    }
-    static final class Navigation extends Arrangement {
-        final NavigationLayout navigation;
-        Navigation(NavigationLayout navigation) { this.navigation=navigation; }
-        @Override LayoutResult layout(SceneNode n,Constraints c,SceneChildMeasurer m) {
-            List<ChildPlacements.Entry> e=new ArrayList<>();int width=c.availableWidth;
-            SceneNode brand=m.flowChildren().get(0),buttons=m.flowChildren().get(1),info=m.flowChildren().get(2);
-            if(navigation.sidebar) {
-                MeasuredSize bs=m.measureChild(brand,new Constraints(Math.max(0,width-32),c.availableHeight));
-                MeasuredSize ns=m.measureChild(buttons,new Constraints(Math.max(0,width-NavigationLayout.HORIZONTAL_PADDING*2),c.availableHeight));
-                MeasuredSize is=m.measureChild(info,new Constraints(Math.max(0,width-32),c.availableHeight));
-                place(e,brand,16,16,width-32,bs.height);place(e,buttons,NavigationLayout.HORIZONTAL_PADDING,bs.height+40,width-NavigationLayout.HORIZONTAL_PADDING*2,ns.height);
-                place(e,info,16,Math.max(bs.height+ns.height+64,c.availableHeight-is.height-18),width-32,is.height);
-                return new LayoutResult(width,c.availableHeight,e);
-            }
-            // 窄工作区只展示分类导航；同一分类按钮仍由原逻辑树持有。
-            m.measureChild(brand,new Constraints(0,0));m.measureChild(info,new Constraints(0,0));
-            MeasuredSize ns=m.measureChild(buttons,new Constraints(Math.max(0,width-NavigationLayout.HORIZONTAL_PADDING*2),c.availableHeight));
-            place(e,brand,0,0,0,0);place(e,buttons,NavigationLayout.HORIZONTAL_PADDING,10,width-NavigationLayout.HORIZONTAL_PADDING*2,ns.height);place(e,info,0,0,0,0);
-            return new LayoutResult(width,ns.height+20,e);
-        }
-    }
-    static final class NavigationButtons extends Arrangement {
-        final NavigationLayout navigation;
-        NavigationButtons(NavigationLayout navigation) { this.navigation=navigation; }
-        @Override LayoutResult layout(SceneNode n,Constraints c,SceneChildMeasurer m) {
-            if(!navigation.sidebar)return new WrapRow(8).layout(n,c,m);
-            List<ChildPlacements.Entry> e=new ArrayList<>();int y=0;
-            for(SceneNode child:m.flowChildren())if(child.visible()){
-                MeasuredSize s=m.measureChild(child,c);place(e,child,0,y,c.availableWidth,s.height);y+=s.height+8;
-            }
-            return new LayoutResult(c.availableWidth,Math.max(0,y-8),e);
-        }
-    }
-    static final class WrapRow extends Arrangement {
-        final int gap;
-        WrapRow(int gap) { this.gap=gap; }
-        @Override LayoutResult layout(SceneNode n,Constraints c,SceneChildMeasurer m) {
-            List<ChildPlacements.Entry> e=new ArrayList<>();int x=0,y=0,line=0,maxWidth=0;
-            for(SceneNode child:m.flowChildren()) if(child.visible()) {
-                MeasuredSize s=m.measureChild(child,new Constraints(c.availableWidth,c.availableHeight));int w=Math.min(c.availableWidth,s.width);
-                if(x>0 && x+w>c.availableWidth){x=0;y+=line+gap;line=0;}
-                place(e,child,x,y,w,s.height);x+=w+gap;maxWidth=Math.max(maxWidth,x-gap);line=Math.max(line,s.height);
-            }
-            return new LayoutResult(maxWidth,y+line,e);
-        }
-    }
-    static final class Footer extends Arrangement {
-        @Override LayoutResult layout(SceneNode n,Constraints c,SceneChildMeasurer m) {
-            List<ChildPlacements.Entry> e=new ArrayList<>();SceneNode status=m.flowChildren().get(0),buttons=m.flowChildren().get(1);
-            MeasuredSize bs=m.measureChild(buttons,new Constraints(c.availableWidth,c.availableHeight));
-            if(c.availableWidth>=740) {
-                int left=Math.max(0,c.availableWidth-bs.width-24);MeasuredSize ss=m.measureChild(status,new Constraints(left,c.availableHeight));
-                place(e,status,0,0,left,ss.height);place(e,buttons,c.availableWidth-bs.width,0,bs.width,bs.height);
-                return new LayoutResult(c.availableWidth,Math.max(ss.height,bs.height),e);
-            }
-            MeasuredSize ss=m.measureChild(status,c);place(e,status,0,0,c.availableWidth,ss.height);
-            place(e,buttons,Math.max(0,c.availableWidth-bs.width),ss.height+10,bs.width,bs.height);
-            return new LayoutResult(c.availableWidth,ss.height+10+bs.height,e);
-        }
-    }
-    static final class Layers extends Arrangement {
-        final boolean centered;
-        Layers(boolean centered) { this.centered=centered; }
-        @Override LayoutResult layout(SceneNode n,Constraints c,SceneChildMeasurer m) {
-            List<ChildPlacements.Entry> e=new ArrayList<>();
-            for(SceneNode child:m.flowChildren()) if(child.visible()) {
-                int maxWidth=centered?Math.max(0,Math.min(480,c.availableWidth-32)):c.availableWidth;
-                MeasuredSize s=m.measureChild(child,new Constraints(maxWidth,c.availableHeight));
-                int w=child.width().mode==Size.Mode.FILL?maxWidth:Math.min(maxWidth,s.width);
-                int h=child.height().mode==Size.Mode.FILL?c.availableHeight:Math.min(c.availableHeight,s.height);
-                place(e,child,centered?(c.availableWidth-w)/2:0,centered?(c.availableHeight-h)/2:0,w,h);
-            }
-            return new LayoutResult(c.availableWidth,c.availableHeight,e);
+    private static final class ThemePreview extends Arrangement {
+        final boolean dark;final ReadableSignal<Palette> colors;final ReadableSignal<Boolean> selected;
+        ThemePreview(boolean dark,ReadableSignal<Palette> p,ReadableSignal<Boolean> selected){this.dark=dark;colors=p;this.selected=selected;}
+        public List<ReadableSignal<?>> paintDependencies(SceneNode n){return Arrays.asList(colors,selected);}
+        Result layout(SceneNode n,Constraints c,SceneChildMeasurer m){return new Result(c.availableWidth,112,Collections.emptyList());}
+        public void paint(SceneNode n,SceneGeometryView g,PaintPlanBuilder p){
+            SceneGeometryView.Entry e=g.get(n);Palette c=new Palette(dark);LayoutBox b=e.box;
+            ScenePaintShapes.rounded(p,b,e.clip,selected.get()?colors.get().text:colors.get().border,8);
+            LayoutBox inside=new LayoutBox(b.x+3,b.y+3,Math.max(0,b.width-6),Math.max(0,b.height-6));
+            ScenePaintShapes.rounded(p,inside,e.clip,c.background,6);
+            ScenePaintShapes.rounded(p,new LayoutBox(b.x+12,b.y+14,36,84),e.clip,c.panel,4);
+            int x=b.x+60,w=Math.max(0,b.width-76);
+            ScenePaintShapes.rounded(p,new LayoutBox(x,b.y+18,w,12),e.clip,c.selected,3);
+            ScenePaintShapes.rounded(p,new LayoutBox(x,b.y+40,w,22),e.clip,c.border,4);
+            ScenePaintShapes.rounded(p,new LayoutBox(x,b.y+72,Math.max(0,w/2),12),e.clip,c.primary,3);
         }
     }
 }

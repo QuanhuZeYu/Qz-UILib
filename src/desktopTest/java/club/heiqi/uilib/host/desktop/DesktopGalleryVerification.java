@@ -37,7 +37,7 @@ final class DesktopGalleryVerification extends TestApplication {
 
     @Override protected void setup() throws Exception {
         Files.deleteIfExists(configuration);
-        window=own(DesktopWindow.openWithImages(configuration, images -> new TestGallery(() -> images)));
+        window=own(DesktopWindow.openWithServices(configuration, services -> DesktopGallery.createGallery(services,TestGallery.Page.HOME)));
         glfwSetWindowSize(window.handle(),1400,1100);
         window.frame();
         input=new DesktopTestInput(window);
@@ -45,10 +45,11 @@ final class DesktopGalleryVerification extends TestApplication {
 
     @Override protected void runTests() throws Exception {
         scenario("共享广场旅程与邮箱真实像素和过渡帧",this::sharedJourney);
-        scenario("本地图像真实像素与资源换代",this::imageReload);
+        scenario("广场正式配置加载资源失败与显式恢复",this::settingsResources);
         scenario("主题发布不重建页面也不隐式写盘",this::themePublication);
-        scenario("宽窄空间的内容与数学页面取证",this::pageEvidence);
-        System.out.println("GALLERY host=desktop sharedDeclaration=true sharedJourney=true imagePixels=true resourceReload=true renderer="
+        scenario("新版配置宽窄空间与精简目录取证",this::pageEvidence);
+        scenario("广场配置原生关闭与快捷重载确认",this::nativeSettingsIntents);
+        System.out.println("GALLERY host=desktop sharedDeclaration=true sharedJourney=true realReferencesOnly=true settingsShared=true renderer="
                 +glGetString(GL_RENDERER));
     }
 
@@ -134,30 +135,21 @@ final class DesktopGalleryVerification extends TestApplication {
                 });
     }
 
-    private void imageReload() throws Exception {
-        // 固定本地样本的等待上限只属于验收，不替生产增加重试；每次检查实际绘制载荷。
-        PaintCommand image = image(window);
-        long deadline = System.nanoTime() + 5000000000L;
-        while (image == null && System.nanoTime() < deadline) {
-            window.frame();
-            image = image(window);
-        }
-        if (image == null) throw new AssertionError("资源图像未ready");
-        settle(window);
-        screenshot(window, output.resolve("gallery-desktop.png"), 0xfffafafa);
-        verifyImage(window, image);
-        Object generation = image.image.content;
-        window.reloadConfiguration();
-        image = image(window);
-        deadline = System.nanoTime() + 5000000000L;
-        while ((image == null || image.image.content == generation)
-                && System.nanoTime() < deadline) {
-            window.frame();
-            image = image(window);
-        }
-        if (image == null || image.image.content == generation)
-            throw new AssertionError("资源重载未换代");
-        verifyImage(window, image);
+    private void settingsResources() throws Exception {
+        input.click("打开配置");input.click("配置文件");settle(window);
+        byte[] saved=Files.readAllBytes(configuration);
+        String invalid=new String(saved,java.nio.charset.StandardCharsets.UTF_8).replace("builtin:unifont","file:C:/nonexistent/uilib-gallery-settings.ttf");
+        if(invalid.equals(new String(saved,java.nio.charset.StandardCharsets.UTF_8)))throw new AssertionError("未找到真实字体配置声明");
+        Files.write(configuration,invalid.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        input.click("从文件重新加载");settle(window);
+        if(window.shouldClose()||!window.lastPlan.commands().stream().anyMatch(c -> c.kind==PaintCommand.Kind.TEXT
+                &&c.text.logicalText.contains("字体资源更新失败：")))throw new AssertionError("广场资源失败未保留正式配置页与错误事实");
+        screenshot(window,output.resolve("gallery-settings-resource-error.png"),0xffffffff);
+        Files.write(configuration,saved);input.click("从文件重新加载");settle(window);
+        if(window.lastPlan.commands().stream().anyMatch(c -> c.kind==PaintCommand.Kind.TEXT
+                &&c.text.logicalText.contains("字体资源更新失败：")))throw new AssertionError("恢复文件并显式加载未清除资源错误");
+        input.click("返回");settle(window);
+        System.out.println("GALLERY_SETTINGS actualConfig=true resourceFailureVisible=true publishedValuesRetained=true explicitReloadRecovery=true");
     }
 
     private void themePublication() throws Exception {
@@ -181,41 +173,34 @@ final class DesktopGalleryVerification extends TestApplication {
         screenshot(window, output.resolve("gallery-dark.png"), 0xff09090b);
     }
 
+    private void nativeSettingsIntents() throws Exception {
+        byte[] saved=Files.readAllBytes(configuration);
+        input.click("打开配置");input.click("外观");input.click("深色外观");settle(window);
+        input.key.invoke(window.handle(),GLFW_KEY_R,0,GLFW_PRESS,GLFW_MOD_CONTROL);
+        input.key.invoke(window.handle(),GLFW_KEY_R,0,GLFW_RELEASE,GLFW_MOD_CONTROL);settle(window);
+        if(window.shouldClose()||!hasText("从文件重新加载？"))throw new AssertionError("广场Ctrl+R绕过配置确认");
+        input.click("继续编辑");settle(window);
+        glfwSetWindowShouldClose(window.handle(),true);input.close.invoke(window.handle());settle(window);
+        if(window.shouldClose()||!hasText("离开配置工作区？"))throw new AssertionError("广场原生关闭绕过草稿确认");
+        input.click("继续编辑");input.click("应用全部更改");settle(window);
+        if(!hasText("已应用，未保存"))throw new AssertionError("原生关闭取消后丢失主题草稿");
+        glfwSetWindowShouldClose(window.handle(),true);input.close.invoke(window.handle());settle(window);
+        if(window.shouldClose()||!hasText("离开配置工作区？"))throw new AssertionError("广场原生关闭绕过已应用未保存确认");
+        input.click("不保存并离开");
+        if(!window.shouldClose()||!java.util.Arrays.equals(saved,Files.readAllBytes(configuration)))
+            throw new AssertionError("确认退出未关闭窗口或隐式保存文件");
+        System.out.println("GALLERY_SETTINGS nativeCloseConfirmation=true shortcutReloadConfirmation=true appliedUnsavedGuard=true noImplicitSave=true");
+    }
+    private boolean hasText(String text){return window.lastPlan.commands().stream().anyMatch(c -> c.kind==PaintCommand.Kind.TEXT&&text.equals(c.text.logicalText));}
+
     private void pageEvidence() throws Exception {
-        glfwSetWindowSize(window.handle(), 640, 900);
-        settle(window);
-        screenshot(window, output.resolve("gallery-narrow.png"), 0xff09090b);
-        input.click("打开知识库");
-        settle(window);
-        screenshot(window, output.resolve("gallery-markdown-narrow.png"), 0xff09090b);
-        glfwSetWindowSize(window.handle(), 1100, 900);
-        settle(window);
-        screenshot(window, output.resolve("gallery-markdown-wide.png"), 0xff09090b);
-        input.click("排产核对");
-        settle(window);
-        screenshot(window, output.resolve("gallery-checklist-wide.png"), 0xff09090b);
-        glfwSetWindowSize(window.handle(), 640, 900);
-        settle(window);
-        screenshot(window, output.resolve("gallery-checklist-narrow.png"), 0xff09090b);
-        glfwSetWindowSize(window.handle(), 1100, 900);
-        settle(window);
-        input.click("交接备忘");
-        settle(window);
-        screenshot(window, output.resolve("gallery-handover.png"), 0xff09090b);
-        input.click("场景概览");
-        input.click("打开生产计划");
-        settle(window);
-        screenshot(window, output.resolve("gallery-production.png"), 0xff09090b);
-        scrollPage(window, input, -20);
-        settle(window);
-        screenshot(window, output.resolve("gallery-production-math.png"), 0xff09090b);
-        input.click("场景概览");
-        input.click("打开数据报告");
-        settle(window);
-        screenshot(window, output.resolve("gallery-report.png"), 0xff09090b);
-        scrollPage(window, input, -20);
-        settle(window);
-        screenshot(window, output.resolve("gallery-report-math.png"), 0xff09090b);
-        input.click("场景概览");
+        input.click("场景概览");input.click("预览浅色");
+        input.click("打开配置");settle(window);
+        screenshot(window,output.resolve("gallery-settings-wide.png"),0xffffffff);
+        glfwSetWindowSize(window.handle(),480,900);settle(window);
+        screenshot(window,output.resolve("gallery-settings-narrow.png"),0xffffffff);
+        input.click("返回");settle(window);
+        screenshot(window,output.resolve("gallery-reference-directory.png"),0xfffafafa);
+        glfwSetWindowSize(window.handle(),1400,900);settle(window);
     }
 }

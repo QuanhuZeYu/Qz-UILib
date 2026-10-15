@@ -54,7 +54,6 @@ import club.heiqi.uilib.ui.scene.text.font.FontTextService;
 public final class DesktopWindow implements SceneHost, AutoCloseable {
     final DesktopApplicationConfiguration applicationConfiguration;
     final ReactiveDomain domain;
-    final DesktopPage samplePage;
     final Path configPath;
     private final Thread thread = Thread.currentThread();
     private final Deque<AutoCloseable> resources = new ArrayDeque<>();
@@ -67,6 +66,7 @@ public final class DesktopWindow implements SceneHost, AutoCloseable {
     private ThemeConfiguration themeConfiguration;
     private SettingsPage settingsPage;
     private boolean pendingSettingsClose, pendingSettingsReload;
+    private DesktopPageServices pageServices;
     ConfigSession configuration;
     ConfigKey<List<String>> fontCandidates;
     ClientFontServices fonts;
@@ -76,32 +76,34 @@ public final class DesktopWindow implements SceneHost, AutoCloseable {
     PaintPlan lastPlan;
     int resizeCallbacks;
 
-    private DesktopWindow(Path path, boolean sample) {
+    private DesktopWindow(Path path) {
         applicationConfiguration = new DesktopApplicationConfiguration(path);
         domain = applicationConfiguration.domain;
         configPath = applicationConfiguration.path;
-        samplePage = sample ? new DesktopPage() : null;
     }
+    /** 默认打开正式设置页；配置应用、保存和关闭确认由共享页面负责。 */
     public static DesktopWindow open(Path configuration) throws IOException {
-        return open(configuration, null);
+        return openSettings(configuration);
     }
     /** 业务页面直接接入既有ScenePage/ScenePageContext，无第二套页面抽象。 */
     public static DesktopWindow open(Path configuration, ScenePage content) throws IOException {
-        return open(configuration, content, null);
+        return content == null ? open(configuration) : open(configuration, content, null, false);
     }
     /** 图像owner就绪后声明业务页面；服务归窗口，页面订阅仍归页面作用域。 */
     public static DesktopWindow openWithImages(Path configuration, Function<ImageService, ScenePage> content) throws IOException {
-        return open(configuration, null, Objects.requireNonNull(content, "content"));
+        Objects.requireNonNull(content, "content");
+        return openWithServices(configuration, services -> content.apply(services.images()));
+    }
+    /** 配置与图像服务就绪后声明业务页面；借用同一宿主会话，状态操作在页面域内执行。 */
+    public static DesktopWindow openWithServices(Path configuration, Function<DesktopPageServices, ScenePage> content) throws IOException {
+        return open(configuration, null, Objects.requireNonNull(content, "content"), false);
     }
     /** 与普通页面共用窗口、字体服务和配置域；关闭确认归共享配置页。 */
     public static DesktopWindow openSettings(Path configuration) throws IOException {
         return open(configuration, null, null, true);
     }
-    private static DesktopWindow open(Path configuration, ScenePage content, Function<ImageService, ScenePage> factory) throws IOException {
-        return open(configuration, content, factory, false);
-    }
-    private static DesktopWindow open(Path configuration, ScenePage content, Function<ImageService, ScenePage> factory, boolean settings) throws IOException {
-        DesktopWindow result = new DesktopWindow(configuration, !settings && content == null && factory == null);
+    private static DesktopWindow open(Path configuration, ScenePage content, Function<DesktopPageServices, ScenePage> factory, boolean settings) throws IOException {
+        DesktopWindow result = new DesktopWindow(configuration);
         try {
             result.initialize(content, factory, settings);
             return result;
@@ -115,7 +117,7 @@ public final class DesktopWindow implements SceneHost, AutoCloseable {
         }
     }
     private <T extends AutoCloseable> T own(T resource) { resources.push(resource); return resource; }
-    private void initialize(ScenePage supplied, Function<ImageService, ScenePage> factory, boolean settings) throws IOException {
+    private void initialize(ScenePage supplied, Function<DesktopPageServices, ScenePage> factory, boolean settings) throws IOException {
         GLFWErrorCallback errors = GLFWErrorCallback.createPrint(System.err);
         errors.set();
         own(() -> { glfwSetErrorCallback(null); errors.free(); });
@@ -171,17 +173,17 @@ public final class DesktopWindow implements SceneHost, AutoCloseable {
                     try { applyFonts(declarations); }
                     catch (IOException failure) { throw new UncheckedIOException(failure); }
                 };
-                if (settings) settingsConfiguration.updateResources(update);
-                else update.run();
+                // 资源错误属于应用配置事实，与当前打开的页面类型无关。
+                settingsConfiguration.updateResources(update);
             });
         });
-        ScenePage content = factory == null ? supplied : Objects.requireNonNull(factory.apply(images.images()), "content page");
+        pageServices=new DesktopPageServices(images.images(),settingsConfiguration,configuration,this::reloadImmediatelyUnchecked);
+        ScenePage content=factory==null?supplied:Objects.requireNonNull(factory.apply(pageServices),"content page");
         if (settings) {
             settingsPage = new SettingsPage(settingsConfiguration, this::leaveSettings);
             content = settingsPage;
         }
-        page = own(ScenePageSession.open(domain, this, fonts,
-                content == null ? ctx -> samplePage.build(ctx, configuration, this::reloadUnchecked) : content));
+        page = own(ScenePageSession.open(domain, this, fonts, content));
         installCallbacks();
         glfwShowWindow(window);
     }
@@ -238,13 +240,19 @@ public final class DesktopWindow implements SceneHost, AutoCloseable {
     }
     public void reloadConfiguration() throws IOException {
         check();
-        if (settingsPage != null) { pendingSettingsReload = true; return; }
+        if (settingsPage!=null||pageServices.handlesReload()){pendingSettingsReload=true;return;}
+        reloadImmediately();
+    }
+    private void reloadImmediately() throws IOException {
         try {
             domain.execute(() -> {
                 try { applicationConfiguration.reload(); }
                 catch (IOException failure) { throw new UncheckedIOException(failure); }
             });
         } catch (UncheckedIOException failure) { throw failure.getCause(); }
+    }
+    private void reloadImmediatelyUnchecked(){
+        try{reloadImmediately();}catch(IOException failure){throw new UncheckedIOException(failure);}
     }
     private void reloadUnchecked() {
         try { reloadConfiguration(); }
@@ -262,7 +270,7 @@ public final class DesktopWindow implements SceneHost, AutoCloseable {
         glfwSetWindowContentScaleCallback(window, (w, x, y) -> { revision++; updateDimensions(); });
         glfwSetWindowCloseCallback(window, w -> {
             // GLFW已置关闭标记；确认期间必须继续帧循环，只有leave才真正置true。
-            if (settingsPage != null) glfwSetWindowShouldClose(w, false);
+            if(settingsPage!=null||pageServices.handlesClose())glfwSetWindowShouldClose(w,false);
             requestClose();
         });
         double[] x = new double[1], y = new double[1];
@@ -402,8 +410,11 @@ public final class DesktopWindow implements SceneHost, AutoCloseable {
             boolean close = pendingSettingsClose;
             pendingSettingsClose = pendingSettingsReload = false;
             if (!shouldClose()) {
-                if (close) settingsPage.requestClose();
-                else settingsPage.requestReload();
+                if(close){
+                    if(settingsPage!=null)settingsPage.requestClose();else pageServices.closeRequested(this::leaveSettings);
+                } else {
+                    if(settingsPage!=null)settingsPage.requestReload();else pageServices.reloadRequested();
+                }
             }
         }
         glfwSwapBuffers(window);
@@ -413,7 +424,7 @@ public final class DesktopWindow implements SceneHost, AutoCloseable {
     public void requestClose() {
         check();
         page.pointer(ScenePointerEvent.cancel());
-        if (settingsPage != null) pendingSettingsClose = true;
+        if(settingsPage!=null||pageServices.handlesClose())pendingSettingsClose=true;
         else glfwSetWindowShouldClose(window, true);
     }
     private void leaveSettings() {
@@ -427,6 +438,7 @@ public final class DesktopWindow implements SceneHost, AutoCloseable {
         if (closed) return;
         if (Thread.currentThread() != thread) throw new IllegalStateException("桌面窗口必须在创建线程关闭");
         closed = true;
+        if(pageServices!=null)pageServices.releaseRequests();
         Throwable failure = null;
         while (!resources.isEmpty()) {
             try { resources.pop().close(); }

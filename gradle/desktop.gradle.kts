@@ -171,7 +171,7 @@ val desktopMailboxPerformance = desktopApplication("desktopMailboxPerformance", 
         providers.gradleProperty("performanceScale").getOrElse("200"), providers.gradleProperty("performanceWarmup").getOrElse("30"),
         providers.gradleProperty("performanceFrames").getOrElse("120"))
 } }
-val desktopGalleryVerify = desktopApplication("desktopGalleryVerify", "真实桌面运行共享广场旅程与图像像素重载释放", true).apply { configure {
+val desktopGalleryVerify = desktopApplication("desktopGalleryVerify", "真实桌面运行收件箱与正式配置页共享旅程", true).apply { configure {
     mainClass.set("club.heiqi.uilib.host.desktop.DesktopGallery")
     args("--verify", layout.buildDirectory.dir("reports/gallery-desktop").get().asFile.absolutePath)
     mustRunAfter(desktopVerify)

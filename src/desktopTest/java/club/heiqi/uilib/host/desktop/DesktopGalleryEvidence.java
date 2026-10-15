@@ -6,7 +6,6 @@ import static club.heiqi.uilib.host.desktop.DesktopTestFrames.settle;
 
 import club.heiqi.uilib.ui.scene.layout.SceneGeometryView;
 import club.heiqi.uilib.ui.scene.paint.PaintCommand;
-import club.heiqi.uilib.ui.scene.paint.PaintPlanBuilder;
 import java.awt.image.BufferedImage;
 import java.nio.ByteBuffer;
 import java.nio.file.Files;
@@ -16,49 +15,6 @@ import javax.imageio.ImageIO;
 /** 宿主证据消费正式几何与真实GPU回放；连续raw采样先于PNG编码。 */
 final class DesktopGalleryEvidence {
     private DesktopGalleryEvidence() {}
-    static void scrollPage(
-            DesktopWindow window,
-            DesktopTestInput input,
-            int delta) {
-        int[] width = {0}, height = {0};
-        glfwGetWindowSize(window.handle(), width, height);
-        // 页面右侧留白仍属正式滚动根，避开文档中的局部横滚视口。
-        input.cursor.invoke(window.handle(), width[0] - 32, height[0] / 2.0);
-        input.scroll.invoke(window.handle(), 0, delta);
-        window.frame();
-    }
-
-    static PaintCommand image(DesktopWindow window) {
-        return window.lastPlan.commands().stream()
-                .filter(
-                        c ->
-                                c.kind == PaintCommand.Kind.IMAGE
-                                        && c.image.content.width == 16
-                                        && c.image.content.height == 16)
-                .findFirst()
-                .orElse(null);
-    }
-
-    static void verifyImage(DesktopWindow window, PaintCommand image) {
-        glClearColor(0, 0, 0, 1);
-        glClear(GL_COLOR_BUFFER_BIT);
-        PaintPlanBuilder builder = new PaintPlanBuilder();
-        builder.add(image);
-        window.fonts.beginPresentation(1000000);
-        try {
-            window.replay(builder.build());
-        } finally {
-            window.fonts.endPresentation();
-        }
-        glFinish();
-        ByteBuffer pixel = ByteBuffer.allocateDirect(4);
-        int x = (int) (image.image.x + image.image.width / 2),
-                y = (int) (image.image.y + image.image.height / 2);
-        glReadPixels(x, window.height() - 1 - y, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, pixel);
-        if (glGetError() != GL_NO_ERROR || (pixel.get(2) & 255) < 150)
-            throw new AssertionError("PNG纹理没有真实蓝色像素");
-    }
-
     /** 实际GLFW hover序列与GPU像素取证，端点通道范围可捕获透明插值暗闪。 */
     static void navigationMotion(DesktopWindow window,DesktopTestInput input,Path output) throws Exception {
         SceneGeometryView.Entry[] item={null};
@@ -144,8 +100,9 @@ final class DesktopGalleryEvidence {
                         .filter(
                                 c ->
                                         c.kind == PaintCommand.Kind.TEXT
-                                                && (c.text.originalText==null?c.text.logicalText:c.text.originalText)
-                                                        .startsWith(target.getFileName().toString().startsWith("mailbox-")?"QZ Mail":"QZ / 场景工作台"))
+                                                && (c.text.logicalText.equals("QZ Mail")
+                                                        ||c.text.logicalText.equals("QZ / 场景工作台")
+                                                        ||c.text.logicalText.equals("QZ  /  UILib 设置")))
                         .findFirst()
                         .orElseThrow(() -> new AssertionError("广场标题缺失"));
         int ink = 0;

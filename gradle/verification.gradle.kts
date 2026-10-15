@@ -124,8 +124,7 @@ val coreSceneApplications = coreSceneDeclarations.associate { (taskName, summary
         dependsOn(compileCoreSceneScenario)
         classpath = files(coreSceneClasses) + coreSources.output + coreContentRuntime
         if (taskName == "localizationResourceScenario") {
-            dependsOn("galleryClasses")
-            classpath += sourceSets.getByName("gallery").output + files("src/test/resources")
+            classpath += files("src/test/resources")
         }
     }
 }

@@ -3,7 +3,7 @@ package club.heiqi.uilib.host.desktop;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
-/** 独立生产入口；默认展示标准控件页面，业务可使用DesktopWindow.open(Path, ScenePage)。 */
+/** 独立生产入口；默认打开正式设置页，业务可使用DesktopWindow.open(Path, ScenePage)。 */
 public final class DesktopApplication {
     private DesktopApplication() {}
     public static void main(String[] args) throws Exception {

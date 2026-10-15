@@ -32,13 +32,20 @@ public final class DesktopSettingsVerification {
             screenshot(w,output.resolve("settings-light.png"));
             require(currentTheme(w)==ThemeMode.LIGHT,"新配置全局主题不是默认浅色");
             int lightInk=titleInk(w);
-            input.click("深色模式");settle(w);
+            input.click("外观");settle(w);
+            require(hasText(w,"界面主题")&&hasText(w,"浅色外观")&&hasText(w,"深色外观"),"外观分类缺少实际主题选项");
+            screenshot(w,output.resolve("settings-appearance-light.png"));
+            input.click("深色外观");settle(w);
+            screenshot(w,output.resolve("settings-appearance-dark.png"));
             require(currentTheme(w)==ThemeMode.LIGHT&&hasText(w,"有待应用修改"),"主题切换没有保留草稿阶段");
             require(titleInk(w)!=lightInk,"主题草稿没有可见预览");
             require(java.util.Arrays.equals(before,Files.readAllBytes(path)),"主题草稿误写文件");
             input.click("放弃编辑");settle(w);
-            require(currentTheme(w)==ThemeMode.LIGHT&&hasText(w,"已保存")&&hasText(w,"深色模式")&&titleInk(w)==lightInk,"丢弃未恢复当前浅色主题");
+            screenshot(w,output.resolve("settings-after-discard.png"));
+            require(currentTheme(w)==ThemeMode.LIGHT&&hasText(w,"已保存")&&hasText(w,"深色模式")&&titleInk(w)==lightInk,
+                    "丢弃未恢复当前浅色主题 theme="+currentTheme(w)+" saved="+hasText(w,"已保存")+" action="+hasText(w,"深色模式")+" ink="+titleInk(w)+" initial="+lightInk);
             input.click("深色模式");
+            input.click("字体与排版");
             input.click("下移");require(current(w).equals(original),"排序草稿提前发布");require(hasText(w,"有待应用修改"),"排序未标记草稿");
             input.click("配置文件");require(hasText(w,"有待应用修改"),"切分类丢草稿");input.click("字体与排版");
             input.click("应用全部更改");settle(w);List<String> applied=current(w);
@@ -73,7 +80,16 @@ public final class DesktopSettingsVerification {
             clickField(w,input);"C:/nonexistent/uilib-settings-test.ttf".codePoints().forEach(cp -> input.character.invoke(w.handle(),cp));w.frame();input.click("添加到末尾");require(hasText(w,"添加字体来源"),"读取来源失败丢失模态");
             input.key.invoke(w.handle(),GLFW_KEY_ESCAPE,0,GLFW_PRESS,0);input.key.invoke(w.handle(),GLFW_KEY_ESCAPE,0,GLFW_RELEASE,0);w.frame();require(!hasText(w,"添加字体来源"),"ESC未关闭添加模态");
             glfwSetWindowSize(w.handle(),1024,768);settle(w);screenshot(w,output.resolve("settings-medium.png"));require(visible(w,"应用全部更改"),"中窗口footer不可达");
-            glfwSetWindowSize(w.handle(),480,900);settle(w);screenshot(w,output.resolve("settings-narrow.png"));require(visible(w,"应用全部更改")&&visible(w,"配置文件"),"窄窗口操作或分类不可达");
+            glfwSetWindowSize(w.handle(),480,900);settle(w);screenshot(w,output.resolve("settings-narrow.png"));
+            require(visible(w,"应用全部更改")&&visible(w,"字体与排版 · 切换分类"),"窄窗口操作或分类入口不可达");
+            input.click("字体与排版 · 切换分类");settle(w);screenshot(w,output.resolve("settings-narrow-navigation.png"));
+            input.key.invoke(w.handle(),GLFW_KEY_ESCAPE,0,GLFW_PRESS,0);input.key.invoke(w.handle(),GLFW_KEY_ESCAPE,0,GLFW_RELEASE,0);w.frame();
+            require(!visible(w,"关闭分类"),"ESC没有关闭窄窗分类层");
+            w.domain.execute(() -> require(w.page.runtime().focusRouter().focused().get()!=null
+                    && w.page.runtime().focusRouter().focused().get().text().equals("字体与排版 · 切换分类"),"分类关闭没有恢复触发点焦点"));
+            input.click("字体与排版 · 切换分类");input.click("配置文件");settle(w);
+            require(visible(w,"配置文件 · 切换分类")&&hasText(w,"文件路径"),"窄窗分类选择未切换正文");
+            input.click("配置文件 · 切换分类");input.click("字体与排版");settle(w);
             glfwSetWindowSize(w.handle(),1440,1000);settle(w);input.enqueueClick("下移");input.close.invoke(w.handle());w.frame();
             require(!w.shouldClose()&&hasText(w,"离开配置工作区？"),"原生关闭绕过草稿确认");input.click("继续编辑");require(hasText(w,"有待应用修改"),"关闭取消丢草稿");
             input.click("浅色模式");input.click("应用全部更改");settle(w);
@@ -89,33 +105,38 @@ public final class DesktopSettingsVerification {
             screenshot(reopened,output.resolve("settings-reopened-dark.png"));
             reopened.requestClose();reopened.frame();require(reopened.shouldClose(),"无修改不能正常关闭");
         }
-        // 同一配置的普通sample页面也使用宿主全局主题，旧windowProfile.dark不决定配色。
-        try(DesktopWindow sample=DesktopWindow.open(path)){
-            settle(sample);require(currentTheme(sample)==ThemeMode.DARK,"另一桌面sample未读取已保存主题");
-            sample.domain.execute(() -> require(sample.samplePage.root.background()==SceneTheme.dark().panel,"sample未显示已保存深色主题"));
+        // 显式宿主回归fixture使用全局主题，旧windowProfile.dark不决定配色。
+        DesktopVerificationPage[] fixture = new DesktopVerificationPage[1];
+        try(DesktopWindow sample=DesktopWindow.openWithServices(path, services -> fixture[0] =
+                new DesktopVerificationPage(services.configuration(), services::reloadConfiguration))){
+            DesktopVerificationPage view=fixture[0];
+            require(view.configuration==sample.configuration&&view.domain==sample.domain,"fixture未借用同域真实配置会话");
+            settle(sample);require(currentTheme(sample)==ThemeMode.DARK,"另一桌面fixture未读取已保存主题");
+            sample.domain.execute(() -> require(view.root.background()==SceneTheme.dark().panel,"fixture未显示已保存深色主题"));
             byte[] saved=Files.readAllBytes(path);
             sample.domain.execute(() -> sample.configuration.set(ThemeConfiguration.KEY,ThemeMode.LIGHT));settle(sample);
             sample.domain.execute(() -> {
                 require(sample.configuration.get(DesktopWindowConfiguration.PROFILE).dark,"兼容旧示例dark字段丢失");
-                require(sample.samplePage.root.background()==SceneTheme.light().panel,"sample未动态跟随全局浅色，或旧dark字段覆盖主题");
-                require(sample.samplePage.builds==1,"全局主题更新重建sample页面");
+                require(view.root.background()==SceneTheme.light().panel,"fixture未动态跟随全局浅色，或旧dark字段覆盖主题");
+                require(view.builds==1,"全局主题更新重建fixture页面");
             });
-            require(java.util.Arrays.equals(saved,Files.readAllBytes(path)),"sample内存主题发布隐式写盘");
+            require(java.util.Arrays.equals(saved,Files.readAllBytes(path)),"fixture内存主题发布隐式写盘");
             sample.requestClose();
         }
         System.out.println("SETTINGS themeDraftDiscard=true themeApplyWithoutSave=true themePersistedReopen=true sampleThemeFollow=true");
     }
     private static List<String> current(DesktopWindow w){final List<String>[] result=new List[1];w.domain.execute(() -> result[0]=new ArrayList<>(w.configuration.get(w.fontCandidates)));return result[0];}
     private static ThemeMode currentTheme(DesktopWindow w){final ThemeMode[] result={null};w.domain.execute(() -> result[0]=w.configuration.get(ThemeConfiguration.KEY));return result[0];}
-    private static int titleInk(DesktopWindow w){return w.lastPlan.commands().stream().filter(c -> c.kind==PaintCommand.Kind.TEXT&&c.text.originalText.equals("QZ  /  UILib 设置")).findFirst().orElseThrow(() -> new AssertionError("正式设置标题缺失")).color;}
-    private static boolean hasText(DesktopWindow w,String text){return geometry(w).ordered().stream().anyMatch(e -> e.text!=null&&e.text.originalText.equals(text));}
-    private static boolean hasTextContaining(DesktopWindow w,String text){return geometry(w).ordered().stream().anyMatch(e -> e.text!=null&&e.text.originalText.contains(text)&&hit(e).width>0&&hit(e).height>0);}
-    private static boolean visible(DesktopWindow w,String text){return geometry(w).ordered().stream().anyMatch(e -> e.text!=null&&e.text.originalText.equals(text)&&hit(e).width>0&&hit(e).height>0);}
+    private static int titleInk(DesktopWindow w){return w.lastPlan.commands().stream().filter(c -> c.kind==PaintCommand.Kind.TEXT&&"QZ  /  UILib 设置".equals(c.text.logicalText)).findFirst().orElseThrow(() -> new AssertionError("正式设置标题缺失")).color;}
+    // 断言呈现的逻辑内容；TextInput 入口允许 originalText 为空，不能把可选原串当显示文字。
+    private static boolean hasText(DesktopWindow w,String text){return geometry(w).ordered().stream().anyMatch(e -> e.text!=null&&text.equals(e.text.logicalText));}
+    private static boolean hasTextContaining(DesktopWindow w,String text){return geometry(w).ordered().stream().anyMatch(e -> e.text!=null&&e.text.logicalText.contains(text)&&hit(e).width>0&&hit(e).height>0);}
+    private static boolean visible(DesktopWindow w,String text){return geometry(w).ordered().stream().anyMatch(e -> e.text!=null&&text.equals(e.text.logicalText)&&hit(e).width>0&&hit(e).height>0);}
     private static void require(boolean value,String message){if(!value)throw new AssertionError(message);}
     private static void screenshot(DesktopWindow w,Path path) throws Exception {
         w.fonts.beginPresentation(1000000);try{w.replay(w.lastPlan);}finally{w.fonts.endPresentation();}
         BufferedImage image=DesktopTestReadback.readBack(w);
-        PaintCommand title=w.lastPlan.commands().stream().filter(c -> c.kind==PaintCommand.Kind.TEXT&&c.text.originalText.equals("QZ  /  UILib 设置")).findFirst().orElseThrow(() -> new AssertionError("正式设置标题缺失"));
+        PaintCommand title=w.lastPlan.commands().stream().filter(c -> c.kind==PaintCommand.Kind.TEXT&&"QZ  /  UILib 设置".equals(c.text.logicalText)).findFirst().orElseThrow(() -> new AssertionError("正式设置标题缺失"));
         int ink=0,background=image.getRGB(Math.min(w.width()-1,title.box.x),Math.min(w.height()-1,title.box.y));
         for(int y=Math.max(0,title.box.y);y<Math.min(w.height(),title.box.y+title.box.height);y++)for(int x=Math.max(0,title.box.x);x<Math.min(w.width(),title.box.x+title.box.width);x++)if(image.getRGB(x,y)!=background)ink++;
         require(ink>0&&glGetError()==GL_NO_ERROR,"设置标题无真实GL字形像素");ImageIO.write(image,"png",path.toFile());

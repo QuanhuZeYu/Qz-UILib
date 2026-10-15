@@ -45,7 +45,19 @@ public final class GalleryScenario extends TestApplication {
             scenario("共享旅程与运行隔离#"+number, () -> {
                 ReactiveDomain domain = ReactiveDomain.direct();
                 Host host = new Host(images);
-                try (ScenePageSession session = ScenePageSession.open(domain, host, fonts, new TestGallery(() -> images))) {
+                java.nio.file.Path path=java.nio.file.Files.createTempDirectory("uilib-reference-gallery-").resolve("settings.yaml");
+                java.util.List<club.heiqi.uilib.ui.scene.text.font.FontSource> builtins=FontTextService.defaultSources(loader,1);
+                club.heiqi.uilib.ui.config.ConfigKey<java.util.List<String>> fontKey=
+                        club.heiqi.uilib.ui.scene.text.font.FontCandidateConfiguration.key(builtins);
+                final club.heiqi.uilib.ui.config.ConfigSession[] sessions={null};
+                domain.execute(() -> sessions[0]=new club.heiqi.uilib.ui.config.ConfigSession(domain,
+                        club.heiqi.uilib.ui.config.ConfigSchema.of(fontKey,club.heiqi.uilib.ui.scene.control.ThemeConfiguration.KEY)));
+                club.heiqi.uilib.ui.config.ConfigSession config=sessions[0];
+                domain.execute(() -> {try{config.save(path);}catch(java.io.IOException failure){throw new java.io.UncheckedIOException(failure);}});
+                final club.heiqi.uilib.ui.settings.SettingsConfiguration[] settings={null};
+                domain.execute(() -> settings[0]=new club.heiqi.uilib.ui.settings.SettingsConfiguration(domain,config,fontKey,null,path,
+                        club.heiqi.uilib.ui.scene.text.font.FontCandidateConfiguration.defaults(builtins),values -> {}));
+                try (ScenePageSession session = ScenePageSession.open(domain, host, fonts, new TestGallery(() -> settings[0]))) {
                     GalleryJourney.run(new GalleryJourney.Driver() {
                         public void frame() { session.frame(); }
                         public SceneNode focused() { final SceneNode[] value = {null}; domain.execute(() -> value[0] = session.runtime().focusRouter().focused().get()); return value[0]; }
@@ -58,8 +70,8 @@ public final class GalleryScenario extends TestApplication {
                         public void typeText(String value) { session.edit(SceneEditEvent.text(value)); }
                         public void escape() { session.escape(() -> { throw new AssertionError("共享旅程意外关闭页面"); }); }
                     });
-                    System.out.println("GALLERY host=automatic run="+number+" sharedDeclaration=true sharedJourney=true");
-                }
+                    System.out.println("GALLERY host=automatic run="+number+" sharedDeclaration=true sharedJourney=true realReferencesOnly=true");
+                } finally { java.nio.file.Files.deleteIfExists(path);java.nio.file.Files.deleteIfExists(path.getParent()); }
             });
         }
     }

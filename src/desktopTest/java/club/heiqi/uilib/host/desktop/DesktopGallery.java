@@ -21,8 +21,8 @@ public final class DesktopGallery {
         boolean smoke=args.length>0&&"--mailbox-smoke".equals(args[0]);
         boolean mailbox=smoke||args.length>0&&"--mailbox".equals(args[0]);
         Files.createDirectories(output);
-        try(DesktopWindow window=DesktopWindow.openWithImages(output.resolve("gallery.yaml"),
-                images -> new TestGallery(() -> images,mailbox?TestGallery.Page.MAILBOX:TestGallery.Page.HOME))) {
+        try(DesktopWindow window=DesktopWindow.openWithServices(output.resolve("gallery.yaml"),
+                services -> createGallery(services,mailbox?TestGallery.Page.MAILBOX:TestGallery.Page.HOME))) {
             if(smoke) {
                 glfwSetWindowSize(window.handle(),1400,900);
                 settle(window);
@@ -35,5 +35,10 @@ public final class DesktopGallery {
             }
             while(!window.shouldClose())window.frame();
         }
+    }
+    static TestGallery createGallery(DesktopPageServices services,TestGallery.Page initial){
+        TestGallery gallery=new TestGallery(services::settings,initial);
+        services.onCloseRequested(gallery::requestClose);services.onReloadRequested(gallery::requestReload);
+        return gallery;
     }
 }

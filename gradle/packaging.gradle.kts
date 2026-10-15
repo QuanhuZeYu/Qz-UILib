@@ -49,13 +49,14 @@ val manualTestJar by tasks.registering(ReobfuscatedJar::class) {
             check(zip.getEntry("club/heiqi/uilib/manualtest/ManualTestMod.class") != null) { "人工测试入口缺失" }
             check(zip.getEntry("club/heiqi/uilib/internal/devtools/CoreLoopScreen.class") != null) { "人工测试面板缺失" }
             check(zip.getEntry("club/heiqi/uilib/testing/gallery/TestGallery.class") != null) { "共享测试广场缺失" }
-            check(zip.getEntry("club/heiqi/uilib/testing/gallery/ProjectSettings.class") != null) { "新项目设置场景缺失" }
+            check(zip.getEntry("club/heiqi/uilib/testing/gallery/mail/MailboxPage.class") != null) { "收件箱参考案例缺失" }
             check(zip.getEntry("club/heiqi/uilib/testing/gallery/PerformanceGallery.class") != null) { "专用性能广场缺失" }
             check(zip.getEntry("club/heiqi/uilib/internal/devtools/PerformanceScreen.class") != null) { "MC性能宿主入口缺失" }
-            val removedPages = listOf("CoreLoopPage", "CoreLocalizationPage", "CoreRichTextPage", "CoreImagePage", "CoreMathPage", "CoreDocumentPage")
+            val removedPages = listOf("CoreLoopPage", "CoreLocalizationPage", "CoreRichTextPage", "CoreImagePage", "CoreMathPage", "CoreDocumentPage",
+                "UsageScenarios", "ProjectSettings", "TextScenarios", "MediaScenarios", "InteractionScenarios", "ResourceScenarios", "GallerySamples")
             check(zip.entries().asSequence().none { entry -> removedPages.any { entry.name.startsWith("club/heiqi/uilib/testing/gallery/$it") } }) { "附加包残留旧测试页面" }
-            check(zip.getEntry("assets/qz_uilib_test/textures/sample.png") != null) { "共享图像样本缺失" }
-            check(zip.getEntry("uilib/localization/core-loop/zh_CN.properties") != null) { "共享语言样本缺失" }
+            check(zip.getEntry("assets/qz_uilib_test/textures/sample.png") == null) { "附加包残留旧广场图片" }
+            check(zip.getEntry("uilib/localization/core-loop/zh_CN.properties") == null) { "附加包残留旧广场语言样本" }
             check(zip.getEntry("club/heiqi/uilib/ui/reactive/Signal.class") == null) { "附加包不能重复打入核心类" }
         }
     }
@@ -120,7 +121,7 @@ val verifyDevToolsNotPackaged by tasks.registering {
                     val entry = entries.nextElement()
                     if (entry.isDirectory) continue
                     val entryName = entry.name
-                    if (entryName.startsWith(forbidden) || entryName.startsWith("club/heiqi/uilib/testing/") || entryName.startsWith("assets/qz_uilib_test/") || entryName.startsWith("uilib/localization/")) {
+                    if (entryName.startsWith(forbidden) || entryName.startsWith("club/heiqi/uilib/testing/") || (entryName.startsWith("assets/qz_uilib_test/") || entryName.startsWith("assets/qz_uilib/gallery/")) || entryName.startsWith("uilib/localization/")) {
                         hit = entryName
                         break
                     }

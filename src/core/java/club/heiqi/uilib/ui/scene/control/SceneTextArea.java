@@ -76,6 +76,13 @@ public final class SceneTextArea {
             Consumer<Submission> onSubmit,
             SubmitPolicy policy,
             ReadableSignal<TabMode> tabMode) {
+        return create(context,state,theme,readOnly,onSubmit,policy,tabMode,true);
+    }
+
+    /** 外层表面负责装饰时关闭本体边框；编辑、选择、组字与滚动语义不变。 */
+    public static SceneNode create(ScenePageContext context,SceneEditState state,
+            ReadableSignal<SceneTheme> theme,ReadableSignal<Boolean> readOnly,Consumer<Submission> onSubmit,
+            SubmitPolicy policy,ReadableSignal<TabMode> tabMode,boolean framed) {
         Objects.requireNonNull(context, "context").domain().checkWrite();
         Objects.requireNonNull(state, "state");
         if (context.domain() != state.domain()) throw new IllegalArgumentException("字段与编辑状态必须同域");
@@ -88,7 +95,7 @@ public final class SceneTextArea {
                         Objects.requireNonNull(readOnly, "readOnly"),
                         Objects.requireNonNull(onSubmit, "onSubmit"),
                         Objects.requireNonNull(policy, "policy"),
-                        Objects.requireNonNull(tabMode, "tabMode"));
+                        Objects.requireNonNull(tabMode, "tabMode"),framed);
         return SceneEditBindings.create(control, state, theme, readOnly, TextPolicy.NORMAL);
     }
 
@@ -97,6 +104,7 @@ public final class SceneTextArea {
         private final ReadableSignal<SceneTheme> theme;
         private final ReadableSignal<Boolean> readOnly;
         private final ReadableSignal<TabMode> tabMode;
+        private final boolean framed;
         private final SceneEditCommands commands;
         // 只通知呈现归属变化；不保存草稿、选区、会话或焦点权威。
         private final Signal<Boolean> viewChanged;
@@ -116,8 +124,8 @@ public final class SceneTextArea {
                 ReadableSignal<Boolean> readOnly,
                 Consumer<Submission> onSubmit,
                 SubmitPolicy policy,
-                ReadableSignal<TabMode> tabMode) {
-            this.tabMode = tabMode;
+                ReadableSignal<TabMode> tabMode,boolean framed) {
+            this.tabMode = tabMode;this.framed=framed;
             this.state = state;
             this.theme = theme;
             this.readOnly = readOnly;
@@ -445,10 +453,10 @@ public final class SceneTextArea {
                     enabled
                             && node.runtime() != null
                             && node.runtime().focusRouter().focused().get() == node;
-            target.add(
-                    PaintCommand.rect(
-                            entry.box, entry.clip, enabled ? colors.panel : colors.disabled));
-            border(target, entry.box, entry.clip, focused ? colors.focus : colors.button);
+            if(framed) {
+                target.add(PaintCommand.rect(entry.box,entry.clip,enabled?colors.panel:colors.disabled));
+                border(target,entry.box,entry.clip,focused?colors.focus:colors.button);
+            }
             LayoutBox inner = inner(entry.box, node.padding());
             LayoutBox clip = entry.clip == null ? inner : entry.clip.intersect(inner);
             Snapshot value = presentation;
