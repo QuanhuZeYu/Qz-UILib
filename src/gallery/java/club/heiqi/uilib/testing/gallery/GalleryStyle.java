@@ -21,6 +21,7 @@ import club.heiqi.uilib.ui.scene.layout.Size;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintShapes;
 import club.heiqi.uilib.ui.scene.paint.PaintPlanBuilder;
+import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
 import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
 import club.heiqi.uilib.ui.scene.text.TextStyle;
 
@@ -55,6 +56,38 @@ final class GalleryStyle {
             return new SceneGrid.Policy((int) Math.ceil(current.textStyle.logicalEm * 22), current.gap + 4, current.gap + 4);
         });
         return SceneGrid.create(context, policy).own(scope);
+    }
+    static SceneNode dragGrip(ReadableSignal<SceneTheme> theme) {
+        return new SceneNode().size(Size.natural(), Size.natural()).control(new DragGrip(theme))
+                .bind(NodeBinding.value(() -> theme.get().textStyle.withEm(20), SceneNode::style));
+    }
+    /** 把手是几何图标；冒号的墨迹偏离行盒中心，不能用字体基线充当图标对齐。 */
+    private static final class DragGrip implements SceneControl {
+        private final ReadableSignal<SceneTheme> theme;
+        DragGrip(ReadableSignal<SceneTheme> theme) { this.theme = theme; }
+        @Override public MeasuredSize measure(SceneNode node, Constraints limits, SceneTextMeasurer text) {
+            float em = node.style().logicalEm;
+            return new MeasuredSize((int) Math.ceil(em / 2), (int) Math.ceil(em * 1.5));
+        }
+        @Override public ChildPlacements arrange(SceneNode node, LayoutBox box, SceneChildMeasurer children) {
+            return new ChildPlacements(Collections.emptyList());
+        }
+        @Override public List<ReadableSignal<?>> paintDependencies(SceneNode node) { return Collections.singletonList(theme); }
+        @Override public void paint(SceneNode node, SceneGeometryView geometry, PaintPlanBuilder paint) {
+            SceneGeometryView.Entry entry = geometry.get(node);
+            if (entry == null) return;
+            int dot = Math.max(1, Math.round(node.style().logicalEm / 10));
+            int gap = Math.max(1, Math.round(node.style().logicalEm * .15f));
+            int side = dot * 2 + gap;
+            int x = entry.box.x + (entry.box.width - side) / 2;
+            int y = entry.box.y + (entry.box.height - side) / 2;
+            boolean enabled = true;
+            for (SceneNode at = node; at != null; at = at.parent()) enabled &= at.enabled();
+            int color = enabled ? node.style().color : theme.get().disabledText;
+            for (int row = 0; row < 2; row++) for (int column = 0; column < 2; column++)
+                ScenePaintShapes.rounded(paint, new LayoutBox(x + column * (dot + gap),
+                        y + row * (dot + gap), dot, dot), entry.clip, color, dot / 2);
+        }
     }
     static SceneNode centeredRow() {
         return new SceneNode().axis(SceneNode.Axis.ROW).control(new CenteredRow());

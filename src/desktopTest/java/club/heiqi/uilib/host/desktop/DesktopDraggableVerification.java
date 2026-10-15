@@ -124,6 +124,7 @@ public final class DesktopDraggableVerification {
                     .findFirst().orElseThrow(() -> new AssertionError("圆角像素目标未完整显露"));
             roundedPixels(variants,box(w,variantSurface),idle,idleFrame,"variant-idle");
             centeredLabels(w,variants);
+            verifyGraphicGrips(w,input);
             System.out.println("DRAGGABLE roundedPixels=true idle=true focus=true drag=true variant=true outsideBackground=true");
             input.point(1000,600);input.scroll.invoke(w.handle(),0,100);w.frame();
             glfwSetWindowSize(w.handle(),600,900);settle(w);
@@ -139,7 +140,7 @@ public final class DesktopDraggableVerification {
     }
     // 正式几何与真实墨迹共同验收，不能用字形Y补偿冒充行内居中。
     private static void centeredLabels(DesktopWindow w,BufferedImage image) {
-        int measured=0,visible=0;
+        int measured=0,visible=0,grips=0;
         for(club.heiqi.uilib.ui.scene.layout.SceneGeometryView.Entry entry:DesktopTestInput.geometry(w).ordered()) {
             if(entry.text==null||!"拾起我".equals(entry.text.logicalText))continue;
             LayoutBox outer=box(w,entry.node.parent().parent()),label=entry.box;
@@ -151,9 +152,46 @@ public final class DesktopDraggableVerification {
                 if(colorDistance(image.getRGB(x,y),background)>48){top=Math.min(top,y);bottom=Math.max(bottom,y);}
             require(bottom>=top,"文字居中像素探针未命中实际墨迹");
             require(Math.abs((top+bottom+1)/2.0-center)<=1,"拾起我可见文字偏离组件中心");visible++;
+            for(SceneNode sibling:entry.node.parent().children()) if(sibling!=entry.node) {
+                club.heiqi.uilib.ui.scene.layout.SceneGeometryView.Entry grip=DesktopTestInput.geometry(w,sibling);
+                if(!same(DesktopTestInput.hit(grip),grip.box))continue;
+                centeredGrip(image,grip.box,outer);grips++;
+            }
         }
         require(measured>0,"未找到混合字号行");
-        System.out.println("DRAGGABLE verticalCenter=true labels="+measured+" visibleInk="+visible);
+        System.out.println("DRAGGABLE verticalCenter=true labels="+measured+" visibleInk="+visible+" centeredGripInk="+grips);
+    }
+    private static void centeredGrip(BufferedImage image,LayoutBox grip,LayoutBox surface) {
+        int background=image.getRGB(grip.x,grip.y),left=image.getWidth(),right=-1,top=image.getHeight(),bottom=-1;
+        for(int y=grip.y;y<grip.y+grip.height;y++)for(int x=grip.x;x<grip.x+grip.width;x++)
+            if(colorDistance(image.getRGB(x,y),background)>48) {
+                left=Math.min(left,x);right=Math.max(right,x);top=Math.min(top,y);bottom=Math.max(bottom,y);
+            }
+        require(right>=left&&bottom>=top,"把手像素探针未命中点阵");
+        require(Math.abs((left+right+1)/2.0-(grip.x+grip.width/2.0))<=0.5,"点阵没有水平居中");
+        require(Math.abs((top+bottom+1)/2.0-(surface.y+surface.height/2.0))<=0.5,"把手可见点阵偏离组件垂直中心");
+    }
+    private static void verifyGraphicGrips(DesktopWindow w,DesktopTestInput input) {
+        SceneNode dual=DesktopTestInput.geometry(w).ordered().stream()
+                .filter(e -> e.text!=null&&"拾起我".equals(e.text.logicalText)&&e.node.parent().children().size()==3)
+                .map(e -> e.node.parent().parent())
+                .filter(n -> same(DesktopTestInput.hit(DesktopTestInput.geometry(w,n)),box(w,n)))
+                .findFirst().orElseThrow(() -> new AssertionError("双把手验证目标未完整显露"));
+        SceneNode body=dual.children().get(0);
+        for(SceneNode grip:new SceneNode[]{body.children().get(0),body.children().get(2)}) {
+            LayoutBox start=box(w,dual),b=box(w,grip);int x=b.x+b.width/2,y=b.y+b.height/2;
+            down(w,input,x,y);move(w,input,x+25,y+16);
+            require(box(w,dual).x==start.x+25&&box(w,dual).y==start.y+16,
+                    "图形把手未跟随指针 actual="+box(w,dual).x+","+box(w,dual).y+" start="+start.x+","+start.y);
+            key(w,input,GLFW_KEY_ESCAPE);up(w,input,x+25,y+16);
+            // 焦点显露可滚动祖先；取消要回到当前正式占位，不能拿旧屏幕坐标当槽位。
+            require(same(box(w,dual),box(w,dual.parent())),"图形把手取消未回当前槽");
+        }
+        LayoutBox label=box(w,body.children().get(1));int x=label.x+label.width/2,y=label.y+label.height/2;
+        down(w,input,x,y);move(w,input,x+25,y+16);
+        require(same(box(w,dual),box(w,dual.parent())),"改用图形把手后正文误起拖");
+        up(w,input,x+25,y+16);
+        System.out.println("DRAGGABLE graphicGrips=true dualHit=true escapeCancel=true bodyNotActivator=true");
     }
     private static boolean visibleText(DesktopWindow w,String text){return DesktopTestInput.geometry(w).ordered().stream().anyMatch(e -> e.text!=null&&text.equals(e.text.logicalText)&&DesktopTestInput.hit(e).height>0);}
     // LayoutBox是不可变区域但没有值相等实现；这里比较实际共同几何，不能比较对象身份。
