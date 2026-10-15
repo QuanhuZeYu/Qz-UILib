@@ -1,7 +1,11 @@
 package club.heiqi.uilib.ui.scene.integration;
 
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.nio.ByteBuffer;
 import java.util.Collections;
+import org.lwjgl.input.Keyboard;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiScreen;
 import club.heiqi.uilib.testing.DisplayTestEnvironment;
@@ -46,12 +50,181 @@ public final class MinecraftScreenSwitchScenario extends TestApplication {
         constructor.setAccessible(true);
         Object inputs = constructor.newInstance(screen, session);
         field(MinecraftSceneScreen.class, screen, "inputs", inputs);
+        Method initialize = type.getDeclaredMethod("initialize");
+        initialize.setAccessible(true);
+        initialize.invoke(inputs);
         return (AutoCloseable) inputs;
+    }
+
+    private static sun.misc.Unsafe unsafe() throws Exception {
+        Field access = sun.misc.Unsafe.class.getDeclaredField("theUnsafe");
+        access.setAccessible(true);
+        return (sun.misc.Unsafe) access.get(null);
+    }
+
+    /** 只固定窗口可用性；真实Display、LWJGL事件消费者和生产Inputs保持原路径。 */
+    private static final class ActiveWindow implements AutoCloseable {
+        final sun.misc.Unsafe access = unsafe();
+        final Field field = org.lwjgl.opengl.Display.class.getDeclaredField("display_impl");
+        final Object base, original;
+        final long offset;
+        ActiveWindow() throws Exception {
+            field.setAccessible(true);
+            original = field.get(null);
+            base = access.staticFieldBase(field);
+            offset = access.staticFieldOffset(field);
+            Object active = java.lang.reflect.Proxy.newProxyInstance(original.getClass().getClassLoader(),
+                    new Class<?>[] {field.getType()}, (proxy, method, arguments) -> {
+                        if (method.getName().equals("isActive")) return true;
+                        method.setAccessible(true);
+                        return method.invoke(original, arguments);
+                    });
+            access.putObjectVolatile(base, offset, active);
+        }
+        public void close() { access.putObjectVolatile(base, offset, original); }
+    }
+
+    /** 沿已有LWJGL2原生载荷回归的方式借用历史；字节由真正WindowsKeyboard生成。 */
+    private static final class NativeCharacters implements AutoCloseable {
+        final Field buffer = keyboardField("readBuffer"), current = keyboardField("current_event"),
+                scratch = keyboardField("tmp_event");
+        final Object oldBuffer, oldCurrent, oldScratch;
+        NativeCharacters() throws Exception {
+            if (!Keyboard.isCreated()) throw new AssertionError("场景需要实际LWJGL2 Keyboard");
+            oldBuffer = buffer.get(null); oldCurrent = current.get(null); oldScratch = scratch.get(null);
+            Constructor<?> event = current.getType().getDeclaredConstructor();
+            event.setAccessible(true);
+            current.set(null, event.newInstance()); scratch.set(null, event.newInstance());
+            buffer.set(null, ByteBuffer.allocate(0));
+        }
+        static Field keyboardField(String name) throws Exception {
+            Field result = Keyboard.class.getDeclaredField(name);
+            result.setAccessible(true);
+            return result;
+        }
+        void load(char... text) throws Exception {
+            Class<?> type = Class.forName("org.lwjgl.opengl.WindowsKeyboard");
+            Constructor<?> constructor = type.getDeclaredConstructor();
+            constructor.setAccessible(true);
+            Object producer = constructor.newInstance();
+            Method character = type.getDeclaredMethod("handleChar", int.class, long.class, boolean.class);
+            Method read = type.getDeclaredMethod("read", ByteBuffer.class);
+            character.setAccessible(true); read.setAccessible(true);
+            for (int i = 0; i < text.length; i++) character.invoke(producer, (int) text[i], (long) i + 1, false);
+            ByteBuffer payload = ByteBuffer.allocate(Keyboard.EVENT_SIZE * text.length);
+            read.invoke(producer, payload); payload.flip();
+            buffer.set(null, payload);
+        }
+        public void close() throws Exception {
+            buffer.set(null, oldBuffer); current.set(null, oldCurrent); scratch.set(null, oldScratch);
+        }
+    }
+
+    private static final class InputScreen extends MinecraftSceneScreen {
+        int nativeEvents;
+        Runnable afterKey;
+        InputScreen() { super(context -> {}); }
+        @Override public void handleKeyboardInput() {
+            nativeEvents++;
+            super.handleKeyboardInput();
+            Runnable action = afterKey;
+            afterKey = null;
+            if (action != null) action.run();
+        }
+    }
+
+    private final class NativeField implements AutoCloseable {
+        final ReactiveDomain domain = ReactiveDomain.direct();
+        final Host host = new Host();
+        final InputScreen screen = new InputScreen();
+        final club.heiqi.uilib.ui.scene.text.font.FontTextService text =
+                new club.heiqi.uilib.ui.scene.text.font.FontTextService(club.heiqi.uilib.host.font.IsolatedFontEngine.shared());
+        final club.heiqi.uilib.ui.scene.edit.SceneEditState[] state = {null};
+        final SceneNode[] node = {null};
+        final ScenePageSession page;
+        NativeField(Minecraft mc) throws Exception {
+            field(GuiScreen.class, screen, "mc", mc);
+            page = ScenePageSession.open(domain, host, text, context -> {
+                state[0] = new club.heiqi.uilib.ui.scene.edit.SceneEditState(domain, "");
+                node[0] = club.heiqi.uilib.ui.scene.control.SceneTextField.create(context, state[0],
+                        domain.signal(club.heiqi.uilib.ui.scene.control.SceneTheme.light()), domain.signal(false), ignored -> {});
+                context.mount(node[0].background(0xff112233));
+            });
+            installSession(screen, page);
+        }
+        void activate(Minecraft mc) {
+            mc.currentScreen = screen;
+            screen.drawScreen(0, 0, 0);
+            focus();
+        }
+        void focus() { domain.execute(() -> require(page.runtime().focusRouter().request(
+                page.runtime().captureMount(node[0])), "真实文本控件未取得焦点")); }
+        String draft() {
+            String[] value = {null};
+            domain.execute(() -> value[0] = state[0].snapshot().get().text);
+            return value[0];
+        }
+        public void close() { try { screen.onGuiClosed(); } finally { text.close(); } }
+    }
+
+    private void nativeRenderCadence() throws Exception {
+        Minecraft mc = (Minecraft) unsafe().allocateInstance(Minecraft.class);
+        try (ActiveWindow active = new ActiveWindow(); NativeCharacters history = new NativeCharacters();
+                NativeField input = new NativeField(mc)) {
+            input.activate(mc);
+            input.screen.handleInput(); // 第一个逻辑tick；随后中间render没有tick采集。
+            int renderHz = 120, tickHz = 20, renderPerTick = renderHz / tickHz;
+            for (int frame = 1; frame < renderPerTick; frame++) {
+                history.load('中');
+                input.screen.drawScreen(0, 0, 0);
+                require(input.draft().equals(String.join("", Collections.nCopies(frame, "中"))),
+                        "中间render仍在等待下一20Hz tick采集，frame=" + frame);
+            }
+            String beforeTick = input.draft();
+            input.screen.handleInput(); // 下一逻辑tick不能重放render已耗尽的历史。
+            input.screen.drawScreen(0, 0, 0);
+            require(input.draft().equals(beforeTick) && input.screen.nativeEvents == renderPerTick - 1,
+                    "tick或空render重复递交已消费原生字符");
+            System.out.println("MC_NATIVE_RENDER_INPUT simulatedRenderHz=" + renderHz + " simulatedTickHz=" + tickHz
+                    + " nativeEvents=" + input.screen.nativeEvents + " nextTickReplay=false");
+        }
+    }
+
+    private void closeWhileCollecting(boolean switchPage) throws Exception {
+        Minecraft mc = (Minecraft) unsafe().allocateInstance(Minecraft.class);
+        try (ActiveWindow active = new ActiveWindow(); NativeCharacters history = new NativeCharacters();
+                NativeField old = new NativeField(mc); NativeField next = new NativeField(mc)) {
+            old.activate(mc);
+            int oldFrames = old.host.frames;
+            old.screen.afterKey = () -> {
+                old.screen.onGuiClosed();
+                mc.currentScreen = switchPage ? next.screen : null;
+            };
+            history.load('旧', '尾');
+            old.screen.drawScreen(0, 0, 0);
+            require(old.page.ended() && old.host.frames == oldFrames && old.draft().isEmpty(),
+                    "采集中关闭后仍访问旧会话或结算旧输入");
+            require(old.screen.nativeEvents == 2 && next.screen.nativeEvents == 0 && next.draft().isEmpty(),
+                    "旧原生历史未耗尽或被转投新页面");
+            if (switchPage) {
+                require(next.host.frames == 1, "采集中切页当帧没有呈现新页");
+                next.focus();
+                history.load('新');
+                next.screen.drawScreen(0, 0, 0);
+                require(next.draft().equals("新"), "切页后新的原生输入不能继续进入正式控件");
+            } else {
+                old.screen.drawScreen(0, 0, 0);
+                require(mc.currentScreen == null && old.host.frames == oldFrames, "关闭后的迟到draw仍访问旧会话");
+            }
+        }
     }
 
     @Override
     protected void runTests() throws Exception {
         own(new DisplayTestEnvironment(80, 60, "UILib MC screen same-frame switch"));
+        scenario("中间render采集原生字符且后续tick不重放", this::nativeRenderCadence);
+        scenario("原生采集中关闭不访问旧会话", () -> closeWhileCollecting(false));
+        scenario("原生采集中切页隔离历史尾部", () -> closeWhileCollecting(true));
         scenario("点击切页当帧提交新页且旧输入不转投", () -> {
             // MC构造会启动完整游戏基础设施；环境只供currentScreen身份，生产screen正常构造。
             Field access = sun.misc.Unsafe.class.getDeclaredField("theUnsafe");
@@ -72,7 +245,7 @@ public final class MinecraftScreenSwitchScenario extends TestApplication {
                     context.mount(new SceneNode().size(Size.fill(1), Size.fill(1)).background(0xff112233)
                             .onClick(() -> {
                                 clicks[0]++;
-                                previous[0].close();
+                                first.onGuiClosed();
                                 mc.currentScreen = second;
                             }))));
             own(installSession(first, previous[0]));

@@ -82,15 +82,17 @@ public final class DraggablePage {
             case "overlay":options=options.overlay(GalleryStyle.frame(GalleryStyle.label(context,() -> "拾起我 · 预览",theme,15,false).padding(14),theme).size(Size.natural(),Size.natural()));break;
             default:throw new AssertionError(kind);
         }
-        SceneNode node=SceneDraggable.create(context,GalleryStyle.frame(body,theme).size(Size.natural(),Size.natural()),state,options);
-        body.bind(club.heiqi.uilib.ui.scene.runtime.NodeBinding.value(() -> state.snapshot().get().active?theme.get().hover:
+        SceneNode surface=GalleryStyle.frame(body,theme).size(Size.natural(),Size.natural());
+        SceneNode node=SceneDraggable.create(context,surface,state,options);
+        surface.bind(club.heiqi.uilib.ui.scene.runtime.NodeBinding.value(() -> state.snapshot().get().active?theme.get().hover:
                 context.runtime().focusRouter().focused().get()==node?theme.get().pressed:theme.get().panel,SceneNode::background));
         stage.add(node);card.add(stage);return GalleryStyle.frame(card,theme);
     }
     private static SceneNode draggable(ScenePageContext context,SceneNode body,ReadableSignal<SceneTheme> theme,SceneDraggable.State state) {
-        SceneNode node=SceneDraggable.create(context,GalleryStyle.frame(body,theme).size(Size.natural(),Size.natural()),state);
+        SceneNode surface=GalleryStyle.frame(body,theme).size(Size.natural(),Size.natural());
+        SceneNode node=SceneDraggable.create(context,surface,state);
         // 视觉跟随正式焦点信号；不建立页面级键盘监听或另一套目标身份。
-        body.bind(club.heiqi.uilib.ui.scene.runtime.NodeBinding.value(() -> {
+        surface.bind(club.heiqi.uilib.ui.scene.runtime.NodeBinding.value(() -> {
             boolean dark=theme.get().panel==GalleryStyle.DARK_BACKGROUND;
             return state.snapshot().get().active?(dark?0xff172554:0xffdbeafe)
                     :body.runtime()!=null&&body.runtime().focusRouter().focused().get()==node?(dark?0xff1e293b:0xffeef2ff):0x00000000;

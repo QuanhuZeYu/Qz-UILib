@@ -70,12 +70,19 @@ public class MinecraftSceneScreen extends GuiScreen {
         }
     }
 
-    /** MC可在没有runTick时绘制；这里只观测失焦并取消，绝不能用物理快照提前放行历史事件。 */
+    /** MC可在没有runTick时绘制；呈现前采集同一原生历史，失焦取消仍不能借物理快照提前放行旧事件。 */
     @Override
     public void drawScreen(int mouseX, int mouseY, float partialTicks) {
         if (session == null) return;
-        inputs.syncInputAvailability();
-        session.frame();
+        ScenePageSession opened = session;
+        Inputs collecting = inputs;
+        if (mc.currentScreen == this) {
+            collecting.syncInputAvailability();
+            // 原版只在20Hz runTick采集输入；呈现前沿同一历史队列消费，拖动不必等下一tick。
+            // tick入口仍可调用，Mouse.next/Keyboard.next已经取走的事件不会重复。
+            handleInput();
+            if (mc.currentScreen == this && session == opened && inputs == collecting) opened.frame();
+        }
         // 按钮在本次 frame 内换页时旧会话已结束，不能回放旧计划。
         // MC 此次仍调用旧 screen；交给当前 UILib screen 完成本次绘制，避免先 present 游戏世界。
         GuiScreen active = mc.currentScreen;
@@ -83,13 +90,14 @@ public class MinecraftSceneScreen extends GuiScreen {
             if (active instanceof MinecraftSceneScreen) active.drawScreen(mouseX, mouseY, partialTicks);
             return;
         }
-        if (inputs != null) inputs.syncNativeTextFocus();
+        if (session == opened && inputs == collecting) collecting.syncNativeTextFocus();
     }
 
     @Override
     public void handleInput() {
+        Inputs collecting = inputs;
         super.handleInput();
-        if (inputs != null) inputs.historyDrained();
+        if (collecting != null && inputs == collecting) collecting.historyDrained();
     }
 
     @Override

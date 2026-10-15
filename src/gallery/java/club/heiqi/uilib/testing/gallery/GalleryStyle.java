@@ -78,7 +78,9 @@ final class GalleryStyle {
             LayoutBox box = entry.box;
             int border = theme.get().panel == 0xffffffff ? 0xffe4e4e7 : 0xff27272a;
             ScenePaintShapes.rounded(paint, box, entry.clip, border, 8);
-            ScenePaintShapes.rounded(paint, new LayoutBox(box.x + 1, box.y + 1, Math.max(0, box.width - 2), Math.max(0, box.height - 2)), entry.clip, theme.get().panel, 7);
+            // 动态填色归同一圆角表面；正文整盒背景会在随后绘制时盖掉边框圆弧。
+            int fill = (node.background() >>> 24) == 0 ? theme.get().panel : node.background();
+            ScenePaintShapes.rounded(paint, new LayoutBox(box.x + 1, box.y + 1, Math.max(0, box.width - 2), Math.max(0, box.height - 2)), entry.clip, fill, 7);
         }
     }
 }

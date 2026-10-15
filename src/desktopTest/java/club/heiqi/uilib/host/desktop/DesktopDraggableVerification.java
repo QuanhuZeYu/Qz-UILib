@@ -6,6 +6,7 @@ import static club.heiqi.uilib.host.desktop.DesktopTestFrames.settle;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.awt.image.BufferedImage;
 import javax.imageio.ImageIO;
 import club.heiqi.uilib.testing.gallery.TestGallery;
 import club.heiqi.uilib.ui.reactive.Signal;
@@ -100,14 +101,29 @@ public final class DesktopDraggableVerification {
             for(String name:new String[]{"拖动我","元素 A","元素 B","元素 C"})
                 require(DesktopTestInput.geometry(w).ordered().stream().anyMatch(e -> e.text!=null&&name.equals(e.text.logicalText)
                         &&e.box.intersect(e.clip).width==e.box.width),"示例元素溢出视口："+name);
-            save(w,output.resolve("draggable-idle.png"));
+            BufferedImage idle=save(w,output.resolve("draggable-idle.png"));
+            SceneNode surface=DesktopTestInput.geometry(w).ordered().stream().filter(e -> e.text!=null&&"拖动我".equals(e.text.logicalText)).findFirst().get().node.parent().parent();
+            LayoutBox idleFrame=box(w,surface);roundedPixels(idle,idleFrame,idle,idleFrame,"idle");
             LayoutBox label=DesktopTestInput.geometry(w).ordered().stream().filter(e -> e.text!=null&&"拖动我".equals(e.text.logicalText)).findFirst().get().box;
-            down(w,input,label.x+8,label.y+8);move(w,input,label.x+128,label.y+88);save(w,output.resolve("draggable-active.png"));
-            up(w,input,label.x+128,label.y+88);save(w,output.resolve("draggable-released.png"));
+            down(w,input,label.x+8,label.y+8);move(w,input,label.x+128,label.y+88);
+            BufferedImage active=save(w,output.resolve("draggable-active.png"));LayoutBox activeFrame=box(w,surface);
+            roundedPixels(active,activeFrame,idle,idleFrame,"drag");
+            require(colorDistance(active.getRGB(activeFrame.x+12,activeFrame.y+12),idle.getRGB(idleFrame.x+12,idleFrame.y+12))>2,"拖动填色未更新");
+            up(w,input,label.x+128,label.y+88);
+            BufferedImage focused=save(w,output.resolve("draggable-released.png"));LayoutBox focusedFrame=box(w,surface);
+            roundedPixels(focused,focusedFrame,idle,idleFrame,"focus");
+            require(colorDistance(focused.getRGB(focusedFrame.x+12,focusedFrame.y+12),idle.getRGB(idleFrame.x+12,idleFrame.y+12))>2
+                    &&colorDistance(focused.getRGB(focusedFrame.x+12,focusedFrame.y+12),active.getRGB(activeFrame.x+12,activeFrame.y+12))>2,"聚焦填色未更新");
             for(String title:new String[]{"独立把手","双启动把手","拖动预览","只沿横轴","只沿纵轴","网格吸附","容器边界","窗口边界","距离激活","延时激活"})
                 require(DesktopTestInput.geometry(w).ordered().stream().anyMatch(e -> e.text!=null&&title.equals(e.text.logicalText)),"参考扩展示例缺失："+title);
             for(int step=0;step<12&&!visibleText(w,"拖动预览");step++){input.point(1000,700);input.scroll.invoke(w.handle(),0,-4);w.frame();}
-            require(visibleText(w,"拖动预览")&&visibleText(w,"独立把手"),"更多参考交互无法在真实示例页显露");save(w,output.resolve("draggable-variants.png"));
+            require(visibleText(w,"拖动预览")&&visibleText(w,"独立把手"),"更多参考交互无法在真实示例页显露");
+            BufferedImage variants=save(w,output.resolve("draggable-variants.png"));
+            SceneNode variantSurface=DesktopTestInput.geometry(w).ordered().stream().filter(e -> e.text!=null&&"拾起我".equals(e.text.logicalText))
+                    .map(e -> e.node.parent().parent()).filter(n -> same(DesktopTestInput.hit(DesktopTestInput.geometry(w,n)),box(w,n)))
+                    .findFirst().orElseThrow(() -> new AssertionError("圆角像素目标未完整显露"));
+            roundedPixels(variants,box(w,variantSurface),idle,idleFrame,"variant-idle");
+            System.out.println("DRAGGABLE roundedPixels=true idle=true focus=true drag=true variant=true outsideBackground=true");
             input.point(1000,600);input.scroll.invoke(w.handle(),0,100);w.frame();
             glfwSetWindowSize(w.handle(),600,900);settle(w);
             for(String name:new String[]{"元素 A","元素 B","元素 C"})
@@ -129,6 +145,26 @@ public final class DesktopDraggableVerification {
     private static void move(DesktopWindow w,DesktopTestInput i,int x,int y){i.point(x,y);w.frame();}
     private static void up(DesktopWindow w,DesktopTestInput i,int x,int y){i.point(x,y);i.mouse.invoke(w.handle(),0,GLFW_RELEASE,0);w.frame();}
     private static void key(DesktopWindow w,DesktopTestInput i,int key){i.key.invoke(w.handle(),key,0,GLFW_PRESS,0);i.key.invoke(w.handle(),key,0,GLFW_RELEASE,0);w.frame();}
-    private static void save(DesktopWindow w,Path path) throws Exception {settle(w);w.fonts.beginPresentation(1000000);try{w.replay(w.lastPlan);}finally{w.fonts.endPresentation();}ImageIO.write(DesktopTestReadback.readBack(w),"png",path.toFile());}
+    // 未聚焦卡片是同一视觉样式的健康参照；动态填色不能擦掉外圆弧，也不能填进角外。
+    private static void roundedPixels(BufferedImage actual,LayoutBox frame,BufferedImage reference,LayoutBox original,String state) {
+        for(int corner=0;corner<4;corner++) {
+            boolean right=(corner&1)!=0,bottom=(corner&2)!=0;
+            int outside=actual.getRGB(frame.x+(right?frame.width:-1),frame.y+(bottom?frame.height:-1));
+            require(colorDistance(cornerPixel(actual,frame,right,bottom,1,1),outside)<=2,state+"圆角外被矩形填色覆盖");
+            for(int[] point:new int[][]{{1,3},{2,2},{3,1}}) {
+                int expected=cornerPixel(reference,original,right,bottom,point[0],point[1]);
+                int referenceOutside=reference.getRGB(original.x+(right?original.width:-1),original.y+(bottom?original.height:-1));
+                require(colorDistance(expected,referenceOutside)>2,"健康参照缺少可辨认圆弧");
+                require(colorDistance(cornerPixel(actual,frame,right,bottom,point[0],point[1]),expected)<=2,state+"圆弧边框断开");
+            }
+        }
+    }
+    private static int cornerPixel(BufferedImage image,LayoutBox frame,boolean right,boolean bottom,int x,int y) {
+        return image.getRGB(frame.x+(right?frame.width-1-x:x),frame.y+(bottom?frame.height-1-y:y));
+    }
+    private static int colorDistance(int left,int right) {
+        int difference=0;for(int shift:new int[]{0,8,16})difference=Math.max(difference,Math.abs((left>>>shift&255)-(right>>>shift&255)));return difference;
+    }
+    private static BufferedImage save(DesktopWindow w,Path path) throws Exception {settle(w);w.fonts.beginPresentation(1000000);try{w.replay(w.lastPlan);}finally{w.fonts.endPresentation();}BufferedImage image=DesktopTestReadback.readBack(w);ImageIO.write(image,"png",path.toFile());return image;}
     private static void require(boolean value,String reason){if(!value)throw new AssertionError(reason);}
 }
