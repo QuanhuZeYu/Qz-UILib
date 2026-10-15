@@ -797,6 +797,54 @@ public final class MathArrayScenario extends TestApplication {
             }
             require(rejected, "无效起始编号未在入口校验");
         }
+        // 插入项虽每行呈现，编号只先测一次；嵌套 cell 的编号必须先于所属行 tag。
+        String[] equations = {
+            "@begin{equation}i@end{equation}",
+            "@begin{equation}a@end{equation}",
+            "@begin{equation}b@end{equation}",
+            "@begin{equation}c@end{equation}"
+        };
+        String nestedSource =
+                tex("@begin{align}@begin{darray}{c#{"
+                        + equations[0]
+                        + "}}"
+                        + equations[1]
+                        + "@@"
+                        + equations[2]
+                        + "@end{darray}&=x@@"
+                        + equations[3]
+                        + "&=y@end{align}");
+        MathLayout nested =
+                engine.layout(
+                        MathContent.parse(nestedSource),
+                        style(32.3f), MathStyle.DISPLAY, text, items(), 7);
+        healthy(nested);
+        require(nested.nextEquationNumber == 13, "嵌套cell或插入列重复消费编号");
+        int[] numbers = {7, 8, 9, 11}, appearances = {2, 1, 1, 1};
+        for (int i = 0; i < equations.length; i++) {
+            String equation = tex(equations[i]);
+            int start = nestedSource.indexOf(equation), count = 0;
+            for (MathLayout.TextPiece piece : nested.pieces)
+                if (piece.sourceStart == start && piece.text.originalText.startsWith("(")) {
+                    require(
+                            piece.text.originalText.equals("(" + numbers[i] + ")")
+                                    && piece.sourceEnd == start + equation.length(),
+                            "嵌套编号顺序或来源失真: " + equation);
+                    count++;
+                }
+            require(count == appearances[i], "插入列或cell编号呈现次数错误");
+        }
+        int[] rowNumbers = {10, 12};
+        int rowTag = 0;
+        for (MathLayout.TextPiece piece : nested.pieces)
+            if (piece.sourceStart == 0 && piece.text.originalText.startsWith("(")) {
+                require(
+                        rowTag < rowNumbers.length
+                                && piece.text.originalText.equals("(" + rowNumbers[rowTag] + ")"),
+                        "外层行tag先于嵌套cell求值或全部移到末尾");
+                rowTag++;
+            }
+        require(rowTag == rowNumbers.length, "外层自动行tag丢失");
     }
 
     private static float[] ink(MathLayout.TextPiece piece) {

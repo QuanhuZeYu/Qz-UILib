@@ -1868,74 +1868,33 @@ final class MathParser {
         return n.payload instanceof GlyphSpec ? ((GlyphSpec) n.payload).originalToken : n.value;
     }
 
+    /** 一个局部CD语法单元及其消费终点；外层行游标只在完整归约后推进。 */
+    private static final class CdPart {
+        final Node node;
+        final int next;
+
+        CdPart(Node node, int next) {
+            this.node = node;
+            this.next = next;
+        }
+    }
+
     private List<Node> cdCells(Node body, int row, Token start) {
         List<Node> cells = new ArrayList<Node>(), current = new ArrayList<Node>();
         List<Node> parts = body.children;
-        for (int n = 0; n < parts.size(); n++) {
-            Node part = parts.get(n);
+        int next = 0;
+        while (next < parts.size()) {
+            Node part = parts.get(next);
             if (!original(part).equals("@")) {
                 current.add(part);
+                next++;
                 continue;
             }
             cells.add(new Node(Kind.ROW, body.start, body.end, "", current, null, null, null));
             current = new ArrayList<Node>();
-            if (++n == parts.size()) throw error(start, "CD箭头缺少方向");
-            String direction = original(parts.get(n));
-            if (direction.length() != 1 || "<>AV=|.".indexOf(direction) < 0)
-                throw error(start, "Expected one of <>AV=|. after @");
-            Node[] labels = new Node[2];
-            if ("<>AV".contains(direction)) {
-                for (int label = 0; label < 2; label++) {
-                    List<Node> values = new ArrayList<Node>();
-                    boolean closed = false;
-                    while (++n < parts.size()) {
-                        Node v = parts.get(n);
-                        if (original(v).equals(direction)) {
-                            closed = true;
-                            break;
-                        }
-                        if (original(v).equals("@"))
-                            throw error(start, "CD label缺少结束 " + direction);
-                        values.add(v);
-                    }
-                    if (!closed) throw error(start, "CD label缺少结束 " + direction);
-                    labels[label] =
-                            new Node(
-                                    Kind.ROW,
-                                    part.start,
-                                    parts.get(n).end,
-                                    "",
-                                    values,
-                                    null,
-                                    null,
-                                    null);
-                }
-            }
-            String command =
-                    direction.equals(">")
-                            ? "cdrightarrow"
-                            : direction.equals("<")
-                                    ? "cdleftarrow"
-                                    : direction.equals("A")
-                                            ? "cduparrow"
-                                            : direction.equals("V")
-                                                    ? "cddownarrow"
-                                                    : direction.equals("=")
-                                                            ? "cdequal"
-                                                            : direction.equals("|")
-                                                                    ? "cdparallel"
-                                                                    : "cdnone";
-            cells.add(
-                    new Node(
-                            Kind.XARROW,
-                            part.start,
-                            parts.get(n).end,
-                            command,
-                            null,
-                            labels[0],
-                            labels[1],
-                            null,
-                            new DecorationSpec(command, false, true, false)));
+            CdPart arrow = cdArrow(parts, next, start);
+            cells.add(arrow.node);
+            next = arrow.next;
         }
         cells.add(new Node(Kind.ROW, body.start, body.end, "", current, null, null, null));
         // 固定CD交替行：对象行保留末端cell，箭头行不产生两边对象cell。
@@ -1944,5 +1903,52 @@ final class MathParser {
             if (!cells.isEmpty()) cells.remove(cells.size() - 1);
         }
         return cells;
+    }
+
+    private CdPart cdArrow(List<Node> parts, int at, Token start) {
+        int next = at + 1;
+        if (next == parts.size()) throw error(start, "CD箭头缺少方向");
+        String direction = original(parts.get(next));
+        if (direction.length() != 1 || "<>AV=|.".indexOf(direction) < 0)
+            throw error(start, "Expected one of <>AV=|. after @");
+        Node marker = parts.get(at), first = null, second = null;
+        next++;
+        if ("<>AV".contains(direction)) {
+            CdPart label = cdLabel(parts, next, marker.start, direction, start);
+            first = label.node;
+            label = cdLabel(parts, label.next, marker.start, direction, start);
+            second = label.node;
+            next = label.next;
+        }
+        String command = cdCommand(direction);
+        Node arrow = new Node(Kind.XARROW, marker.start, parts.get(next - 1).end, command,
+                null, first, second, null, new DecorationSpec(command, false, true, false));
+        return new CdPart(arrow, next);
+    }
+
+    /** 标签的来源仍从@开始，到各自闭合方向符结束，不把后续对象吞入标签。 */
+    private CdPart cdLabel(List<Node> parts, int next, int sourceStart, String direction, Token start) {
+        List<Node> values = new ArrayList<Node>();
+        while (next < parts.size()) {
+            Node part = parts.get(next++);
+            if (original(part).equals(direction))
+                return new CdPart(new Node(Kind.ROW, sourceStart, part.end, "", values,
+                        null, null, null), next);
+            if (original(part).equals("@")) throw error(start, "CD label缺少结束 " + direction);
+            values.add(part);
+        }
+        throw error(start, "CD label缺少结束 " + direction);
+    }
+
+    private static String cdCommand(String direction) {
+        switch (direction) {
+            case ">": return "cdrightarrow";
+            case "<": return "cdleftarrow";
+            case "A": return "cduparrow";
+            case "V": return "cddownarrow";
+            case "=": return "cdequal";
+            case "|": return "cdparallel";
+            default: return "cdnone";
+        }
     }
 }

@@ -13,7 +13,7 @@ import club.heiqi.uilib.ui.scene.text.math.MathContent.RowSpec;
 import java.util.ArrayList;
 import java.util.List;
 
-/** typed 行列事实一次求盒，随后立即扁平化为同一有序绘制流。 */
+/** 本次测量事实先定位行列，再扁平化为同一有序绘制流。 */
 final class MathArrayLayout {
     static MathBox layout(MathLayoutEngine.Session session, Node node, MathLayoutContext context) {
         ArraySpec spec = (ArraySpec) node.payload;
@@ -26,6 +26,20 @@ final class MathArrayLayout {
                 spec.cellStyle == null
                         ? context
                         : context.declaredStyle(MathLayoutEngine.style(spec.cellStyle));
+        Measurement measured = measure(session, node, context, cellsContext, spec);
+        RowCoordinates rows = positionRows(session, node, context, spec, measured);
+        ColumnCoordinates columns = positionColumns(context, cellsContext, spec, measured);
+        return compose(session, node, context, spec, measured, rows, columns);
+    }
+
+    // 测量持有原数组；插入项先求盒，每行的 cell（含嵌套编号）之后立即求该行 tag。
+    // 自动编号在此消费一次，坐标和合成阶段只消费这些盒与包络。
+    private static Measurement measure(
+            MathLayoutEngine.Session session,
+            Node node,
+            MathLayoutContext context,
+            MathLayoutContext cellsContext,
+            ArraySpec spec) {
         int columns = 0;
         for (RowSpec row : spec.rows) columns = Math.max(columns, row.cellCount);
         List<ColumnSpec> descriptions = new ArrayList<ColumnSpec>(spec.columns);
@@ -41,11 +55,8 @@ final class MathArrayLayout {
         MathBox[][] cells = new MathBox[rows][columns];
         MathBox[] inserts = new MathBox[descriptions.size()];
         MathBox[] tags = new MathBox[rows];
-        float[] widths = new float[columns],
-                heights = new float[rows],
-                depths = new float[rows],
-                baselines = new float[rows];
-        float em = context.em, rule = .04f * em;
+        float[] widths = new float[columns], heights = new float[rows], depths = new float[rows];
+        float em = context.em;
         float baselineSkip =
                 spec.separation.equals("CD") ? 3 * session.xHeight(context, node) : 1.2f * em;
         float strutHeight = (float) (.7 * spec.stretch * baselineSkip),
@@ -91,6 +102,18 @@ final class MathArrayLayout {
             // fixed array 的负 gap 直接改变下一基线；允许用户显式重叠，实际墨迹仍由 MathBox.add 合入包络。
             if (gap < 0) depths[r] += gap;
         }
+        return new Measurement(descriptions, cells, inserts, tags, widths, heights, depths, tagWidth);
+    }
+
+    private static RowCoordinates positionRows(
+            MathLayoutEngine.Session session,
+            Node node,
+            MathLayoutContext context,
+            ArraySpec spec,
+            Measurement measured) {
+        int rows = measured.cells.length;
+        float em = context.em, rule = .04f * em;
+        float[] baselines = new float[rows];
         List<Float> horizontalY = new ArrayList<Float>();
         List<Boolean> horizontalDashed = new ArrayList<Boolean>();
         float total = 0;
@@ -106,12 +129,23 @@ final class MathArrayLayout {
                     first = false;
                 }
             if (r < rows) {
-                total += heights[r];
+                total += measured.heights[r];
                 baselines[r] = total;
-                total += depths[r];
+                total += measured.depths[r];
             }
         }
         float offset = total / 2 + session.c(context, node, AXIS_HEIGHT);
+        return new RowCoordinates(baselines, horizontalY, horizontalDashed, total, offset);
+    }
+
+    private static ColumnCoordinates positionColumns(
+            MathLayoutContext context,
+            MathLayoutContext cellsContext,
+            ArraySpec spec,
+            Measurement measured) {
+        int columns = measured.widths.length;
+        List<ColumnSpec> descriptions = measured.descriptions;
+        float em = context.em;
         float defaultGap =
                 spec.separation.equals("small")
                         ? .2778f * cellsContext.em
@@ -135,65 +169,81 @@ final class MathArrayLayout {
             if (col.type == ColumnSpec.Type.INSERT) {
                 cursor += gap(col.preGap, 0, em);
                 insertX[d] = cursor;
-                cursor += inserts[d].width + gap(col.postGap, 0, em);
+                cursor += measured.inserts[d].width + gap(col.postGap, 0, em);
                 continue;
             }
             if (c > 0 || spec.outerSpacing) cursor += gap(col.preGap, defaultGap, em);
             columnX[c] = cursor;
-            cursor += widths[c];
+            cursor += measured.widths[c];
             if (c < columns - 1 || spec.outerSpacing) cursor += gap(col.postGap, defaultGap, em);
             c++;
         }
+        return new ColumnCoordinates(columnX, insertX, verticalX, verticalDashed, cursor);
+    }
+
+    private static MathBox compose(
+            MathLayoutEngine.Session session,
+            Node node,
+            MathLayoutContext context,
+            ArraySpec spec,
+            Measurement measured,
+            RowCoordinates rows,
+            ColumnCoordinates columns) {
+        float em = context.em, rule = .04f * em;
+        float offset = rows.offset, total = rows.total;
         MathBox result = new MathBox();
         result.ascent = Math.max(0, offset);
         result.descent = Math.max(0, total - offset);
-        for (int r = 0; r < rows; r++) {
-            c = 0;
-            for (int d = 0; d < descriptions.size(); d++) {
-                ColumnSpec col = descriptions.get(d);
+        for (int r = 0; r < measured.cells.length; r++) {
+            int c = 0;
+            for (int d = 0; d < measured.descriptions.size(); d++) {
+                ColumnSpec col = measured.descriptions.get(d);
                 if (col.type == ColumnSpec.Type.INSERT)
-                    result.add(inserts[d], insertX[d], baselines[r] - offset);
+                    result.add(measured.inserts[d], columns.insertX[d], rows.baselines[r] - offset);
                 else if (col.type == ColumnSpec.Type.ALIGN) {
-                    MathBox cell = cells[r][c];
-                    float extra = widths[c] - cell.width;
+                    MathBox cell = measured.cells[r][c];
+                    float extra = measured.widths[c] - cell.width;
                     float shift =
                             "l".equals(col.align) ? 0 : "r".equals(col.align) ? extra : extra / 2;
-                    result.add(cell, columnX[c] + shift, baselines[r] - offset);
+                    result.add(cell, columns.columnX[c] + shift, rows.baselines[r] - offset);
                     c++;
                 }
             }
-            if (tags[r] != null)
-                result.add(tags[r], cursor + em + tagWidth - tags[r].width, baselines[r] - offset);
+            if (measured.tags[r] != null)
+                result.add(
+                        measured.tags[r],
+                        columns.contentWidth + em + measured.tagWidth - measured.tags[r].width,
+                        rows.baselines[r] - offset);
         }
-        for (int i = 0; i < verticalX.size(); i++)
+        for (int i = 0; i < columns.verticalX.size(); i++)
             line(
                     result,
-                    verticalX.get(i),
+                    columns.verticalX.get(i),
                     -offset,
-                    verticalX.get(i),
+                    columns.verticalX.get(i),
                     total - offset,
                     rule,
-                    verticalDashed.get(i),
+                    columns.verticalDashed.get(i),
                     em,
                     context,
                     node);
-        for (int i = 0; i < horizontalY.size(); i++)
+        for (int i = 0; i < rows.horizontalY.size(); i++)
             line(
                     result,
                     0,
-                    horizontalY.get(i) - offset,
-                    cursor,
-                    horizontalY.get(i) - offset,
+                    rows.horizontalY.get(i) - offset,
+                    columns.contentWidth,
+                    rows.horizontalY.get(i) - offset,
                     rule,
-                    horizontalDashed.get(i),
+                    rows.horizontalDashed.get(i),
                     em,
                     context,
                     node);
-        result.width = cursor + (tagWidth > 0 ? em + tagWidth : 0);
+        result.width = columns.contentWidth + (measured.tagWidth > 0 ? em + measured.tagWidth : 0);
         result.atom = Atom.ORD;
-        if (!verticalX.isEmpty()) {
+        if (!columns.verticalX.isEmpty()) {
             float left = 0, right = result.width;
-            for (float x : verticalX) {
+            for (float x : columns.verticalX) {
                 left = Math.min(left, x - rule / 2);
                 right = Math.max(right, x + rule / 2);
             }
@@ -212,6 +262,76 @@ final class MathArrayLayout {
             result = enclosed;
         }
         return result;
+    }
+
+    /** 只在本次求盒内交接原有测量数组，不保存 Session 或增加测量入口。 */
+    private static final class Measurement {
+        final List<ColumnSpec> descriptions;
+        final MathBox[][] cells;
+        final MathBox[] inserts, tags;
+        final float[] widths, heights, depths;
+        final float tagWidth;
+
+        Measurement(
+                List<ColumnSpec> descriptions,
+                MathBox[][] cells,
+                MathBox[] inserts,
+                MathBox[] tags,
+                float[] widths,
+                float[] heights,
+                float[] depths,
+                float tagWidth) {
+            this.descriptions = descriptions;
+            this.cells = cells;
+            this.inserts = inserts;
+            this.tags = tags;
+            this.widths = widths;
+            this.heights = heights;
+            this.depths = depths;
+            this.tagWidth = tagWidth;
+        }
+    }
+
+    /** 含横线净空的基线坐标；offset 将顶部坐标移到本盒基线。 */
+    private static final class RowCoordinates {
+        final float[] baselines;
+        final List<Float> horizontalY;
+        final List<Boolean> horizontalDashed;
+        final float total, offset;
+
+        RowCoordinates(
+                float[] baselines,
+                List<Float> horizontalY,
+                List<Boolean> horizontalDashed,
+                float total,
+                float offset) {
+            this.baselines = baselines;
+            this.horizontalY = horizontalY;
+            this.horizontalDashed = horizontalDashed;
+            this.total = total;
+            this.offset = offset;
+        }
+    }
+
+    /** 列、插入项和竖线共享横坐标，contentWidth 尚不含行标签与外侧定界符。 */
+    private static final class ColumnCoordinates {
+        final float[] columnX, insertX;
+        final List<Float> verticalX;
+        final List<Boolean> verticalDashed;
+        final float contentWidth;
+
+        ColumnCoordinates(
+                float[] columnX,
+                float[] insertX,
+                List<Float> verticalX,
+                List<Boolean> verticalDashed,
+                float contentWidth) {
+            this.columnX = columnX;
+            this.insertX = insertX;
+            this.verticalX = verticalX;
+            this.verticalDashed = verticalDashed;
+            this.contentWidth = contentWidth;
+        }
     }
 
     private static float gap(double value, float fallback, float em) {

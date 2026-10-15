@@ -2019,175 +2019,16 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
         for (TextLayout.Line line : layout.lines()) {
             List<TextLayout.Glyph> output = new ArrayList<TextLayout.Glyph>();
             List<TextLayout.Cluster> clusters = new ArrayList<TextLayout.Cluster>();
-            List<TextLayout.Cluster> original = line.clusters();
+            ObfuscationRange range = new ObfuscationRange();
             int glyphCursor = 0;
-            for (int ci = 0; ci < original.size(); ) {
-                TextLayout.Cluster cell = original.get(ci);
-                int end = ci + 1;
-                boolean replace = request.styleAt(cell.logicalStart).effects.obfuscated;
-                boolean complex =
-                        cell.glyphIndexEnd > cell.glyphIndexStart
-                                && !line.glyphs()
-                                        .get(cell.glyphIndexStart)
-                                        .source
-                                        .supportedScripts()
-                                        .isEmpty();
-                if (complex) {
-                    FontSource source = line.glyphs().get(cell.glyphIndexStart).source;
-                    while (end < original.size()) {
-                        TextLayout.Cluster next = original.get(end);
-                        if (next.glyphIndexStart == next.glyphIndexEnd
-                                || line.glyphs().get(next.glyphIndexStart).source != source) break;
-                        end++;
-                    }
-                }
-                int glyphEnd = original.get(end - 1).glyphIndexEnd;
-                if (complex) {
-                    TextLayout.Cluster leading = cell;
-                    for (int j = ci + 1; j < end; j++)
-                        if (original.get(j).logicalStart < leading.logicalStart)
-                            leading = original.get(j);
-                    replace = request.styleAt(leading.logicalStart).effects.obfuscated;
-                    cell = leading;
-                    int rangeEnd = leading.sourceEnd;
-                    for (int j = ci; j < end; j++)
-                        rangeEnd = Math.max(rangeEnd, original.get(j).sourceEnd);
-                    for (int j = ci; j < end; j++)
-                        if (request.styleAt(original.get(j).logicalStart).effects.obfuscated
-                                != replace) {
-                            doc.diagnostics.add(
-                                    new Diagnostic(
-                                            Diagnostic.Kind.STYLE_COALESCED,
-                                            leading.sourceStart,
-                                            rangeEnd,
-                                            "复杂脚本必要范围混淆状态使用逻辑首样式"));
-                            break;
-                        }
-                }
-                if (replace && cell.advance > 0 && cell.glyphIndexStart < cell.glyphIndexEnd) {
-                    float width = 0;
-                    int logicalStart = Integer.MAX_VALUE,
-                            logicalEnd = 0,
-                            sourceStart = Integer.MAX_VALUE,
-                            sourceEnd = 0;
-                    float x = cell.x;
-                    for (int j = ci; j < end; j++) {
-                        TextLayout.Cluster c = original.get(j);
-                        width += c.advance;
-                        logicalStart = Math.min(logicalStart, c.logicalStart);
-                        logicalEnd = Math.max(logicalEnd, c.logicalEnd);
-                        sourceStart = Math.min(sourceStart, c.sourceStart);
-                        sourceEnd = Math.max(sourceEnd, c.sourceEnd);
-                        x = Math.min(x, c.x);
-                    }
-                    TextLayout.Glyph first = line.glyphs().get(cell.glyphIndexStart);
-                    List<ObfuscatedGlyph>
-                            pool =
-                                    obfuscationPool(
-                                            first.source, cell.style.logicalEm, doc, cell.style),
-                            equal = new ArrayList<ObfuscatedGlyph>();
-                    float target = width;
-                    for (ObfuscatedGlyph candidate : pool)
-                        if (candidate.advance == target) equal.add(candidate);
-                    List<ObfuscatedGlyph> selection = equal.isEmpty() ? pool : equal;
-                    long seed = tick * 0x9e3779b97f4a7c15L + salt + logicalStart * 31L + logicalEnd;
-                    seed ^= seed >>> 33;
-                    ObfuscatedGlyph chosen =
-                            selection.get((int) Math.floorMod(seed, (long) selection.size()));
-                    float fit = Math.min(1, width / (chosen.advance));
-                    float ratio = fit;
-                    GlyphRasterStyle variant = variant(cell.style, ratio);
-                    InkBounds raw =
-                            inkBounds(chosen.source, cell.style.logicalEm, chosen.id, variant, doc);
-                    InkBounds mapped =
-                            raw.known
-                                    ? new InkBounds(
-                                            true,
-                                            raw.left * ratio,
-                                            raw.top * ratio,
-                                            raw.right * ratio,
-                                            raw.bottom * ratio)
-                                    : InkBounds.UNKNOWN;
-                    int begin = output.size();
-                    output.add(
-                            new TextLayout.Glyph(
-                                    chosen.source,
-                                    cell.style.logicalEm,
-                                    chosen.id,
-                                    logicalStart,
-                                    logicalEnd,
-                                    sourceStart,
-                                    sourceEnd,
-                                    x + (width - (chosen.advance) * fit) / 2,
-                                    line.baseline + cell.style.baselineShift,
-                                    width,
-                                    0,
-                                    false,
-                                    false,
-                                    mapped,
-                                    cell.style.logicalEm * fit,
-                                    ratio,
-                                    variant,
-                                    cell.style,
-                                    clusters.size()));
-                    clusters.add(
-                            new TextLayout.Cluster(
-                                    logicalStart,
-                                    logicalEnd,
-                                    sourceStart,
-                                    sourceEnd,
-                                    begin,
-                                    output.size(),
-                                    x,
-                                    width,
-                                    cell.style,
-                                    cell.rtl));
+            for (int ci = 0; ci < line.clusters().size(); ci = range.visualEnd) {
+                range.resolve(line, request, ci, doc);
+                if (range.replace) {
+                    appendObfuscatedRange(line, range, tick, salt, doc, output, clusters);
                 } else {
-                    for (int j = ci; j < end; j++) {
-                        TextLayout.Cluster c = original.get(j);
-                        int begin = output.size();
-                        for (int g = c.glyphIndexStart; g < c.glyphIndexEnd; g++) {
-                            TextLayout.Glyph a = line.glyphs().get(g);
-                            output.add(
-                                    new TextLayout.Glyph(
-                                            a.source,
-                                            a.size,
-                                            a.glyphId,
-                                            a.logicalStart,
-                                            a.logicalEnd,
-                                            a.sourceStart,
-                                            a.sourceEnd,
-                                            a.x,
-                                            a.y,
-                                            a.xAdvance,
-                                            a.yAdvance,
-                                            a.color,
-                                            a.replacement,
-                                            a.inkBounds,
-                                            a.logicalEm,
-                                            a.rasterToLayout,
-                                            a.rasterStyle,
-                                            a.resolvedStyle,
-                                            clusters.size(),
-                                            a.paintClip,
-                                            a.xExtension));
-                        }
-                        clusters.add(
-                                new TextLayout.Cluster(
-                                        c.logicalStart,
-                                        c.logicalEnd,
-                                        c.sourceStart,
-                                        c.sourceEnd,
-                                        begin,
-                                        output.size(),
-                                        c.x,
-                                        c.advance,
-                                        c.style,
-                                        c.rtl));
-                    }
+                    appendOriginalRange(line, range, output, clusters);
                 }
-                glyphCursor = glyphEnd;
-                ci = end;
+                glyphCursor = range.glyphEnd;
             }
             if (glyphCursor != line.glyphs().size())
                 throw new IllegalStateException("混淆簇未覆盖全部glyph");
@@ -2224,6 +2065,201 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                 layout.generation,
                 diagnostics,
                 layout.input);
+    }
+
+    /** 本行复用的当前安全范围；先裁决完整范围，再交给输出投影，不持有跨调用状态。 */
+    private static final class ObfuscationRange {
+        int visualStart, visualEnd, glyphEnd;
+        TextLayout.Cluster logicalLeading;
+        boolean replace;
+        // 仅替代分支消费包络；保留分支仍逐簇复制原有来源与几何。
+        int logicalStart, logicalEnd, sourceStart, sourceEnd;
+        float x, advance;
+
+        void resolve(TextLayout.Line line, AttributedText request, int start, UnicodeText doc) {
+            List<TextLayout.Cluster> original = line.clusters();
+            TextLayout.Cluster visualFirst = original.get(start);
+            visualStart = start;
+            visualEnd = start + 1;
+            logicalLeading = visualFirst;
+            replace = request.styleAt(visualFirst.logicalStart).effects.obfuscated;
+            boolean complex =
+                    visualFirst.glyphIndexEnd > visualFirst.glyphIndexStart
+                            && !line.glyphs()
+                                    .get(visualFirst.glyphIndexStart)
+                                    .source
+                                    .supportedScripts()
+                                    .isEmpty();
+            if (complex) {
+                FontSource source = line.glyphs().get(visualFirst.glyphIndexStart).source;
+                while (visualEnd < original.size()) {
+                    TextLayout.Cluster next = original.get(visualEnd);
+                    if (next.glyphIndexStart == next.glyphIndexEnd
+                            || line.glyphs().get(next.glyphIndexStart).source != source) break;
+                    visualEnd++;
+                }
+            }
+            glyphEnd = original.get(visualEnd - 1).glyphIndexEnd;
+            if (complex) {
+                for (int j = start + 1; j < visualEnd; j++)
+                    if (original.get(j).logicalStart < logicalLeading.logicalStart)
+                        logicalLeading = original.get(j);
+                replace = request.styleAt(logicalLeading.logicalStart).effects.obfuscated;
+                int rangeEnd = logicalLeading.sourceEnd;
+                for (int j = start; j < visualEnd; j++)
+                    rangeEnd = Math.max(rangeEnd, original.get(j).sourceEnd);
+                for (int j = start; j < visualEnd; j++)
+                    if (request.styleAt(original.get(j).logicalStart).effects.obfuscated != replace) {
+                        doc.diagnostics.add(
+                                new Diagnostic(
+                                        Diagnostic.Kind.STYLE_COALESCED,
+                                        logicalLeading.sourceStart,
+                                        rangeEnd,
+                                        "复杂脚本必要范围混淆状态使用逻辑首样式"));
+                        break;
+                    }
+            }
+            replace =
+                    replace
+                            && logicalLeading.advance > 0
+                            && logicalLeading.glyphIndexStart < logicalLeading.glyphIndexEnd;
+            if (replace) {
+                advance = 0;
+                logicalStart = Integer.MAX_VALUE;
+                logicalEnd = 0;
+                sourceStart = Integer.MAX_VALUE;
+                sourceEnd = 0;
+                x = logicalLeading.x;
+                for (int j = start; j < visualEnd; j++) {
+                    TextLayout.Cluster c = original.get(j);
+                    advance += c.advance;
+                    logicalStart = Math.min(logicalStart, c.logicalStart);
+                    logicalEnd = Math.max(logicalEnd, c.logicalEnd);
+                    sourceStart = Math.min(sourceStart, c.sourceStart);
+                    sourceEnd = Math.max(sourceEnd, c.sourceEnd);
+                    x = Math.min(x, c.x);
+                }
+            }
+        }
+    }
+
+    private void appendObfuscatedRange(
+            TextLayout.Line line,
+            ObfuscationRange range,
+            long tick,
+            long salt,
+            UnicodeText doc,
+            List<TextLayout.Glyph> output,
+            List<TextLayout.Cluster> clusters) {
+        TextLayout.Cluster leading = range.logicalLeading;
+        TextLayout.Glyph first = line.glyphs().get(leading.glyphIndexStart);
+        List<ObfuscatedGlyph>
+                pool = obfuscationPool(first.source, leading.style.logicalEm, doc, leading.style),
+                equal = new ArrayList<ObfuscatedGlyph>();
+        for (ObfuscatedGlyph candidate : pool)
+            if (candidate.advance == range.advance) equal.add(candidate);
+        List<ObfuscatedGlyph> selection = equal.isEmpty() ? pool : equal;
+        long seed = tick * 0x9e3779b97f4a7c15L + salt + range.logicalStart * 31L + range.logicalEnd;
+        seed ^= seed >>> 33;
+        ObfuscatedGlyph chosen =
+                selection.get((int) Math.floorMod(seed, (long) selection.size()));
+        float fit = Math.min(1, range.advance / (chosen.advance));
+        float ratio = fit;
+        GlyphRasterStyle variant = variant(leading.style, ratio);
+        InkBounds raw =
+                inkBounds(chosen.source, leading.style.logicalEm, chosen.id, variant, doc);
+        InkBounds mapped =
+                raw.known
+                        ? new InkBounds(
+                                true,
+                                raw.left * ratio,
+                                raw.top * ratio,
+                                raw.right * ratio,
+                                raw.bottom * ratio)
+                        : InkBounds.UNKNOWN;
+        int begin = output.size();
+        output.add(
+                new TextLayout.Glyph(
+                        chosen.source,
+                        leading.style.logicalEm,
+                        chosen.id,
+                        range.logicalStart,
+                        range.logicalEnd,
+                        range.sourceStart,
+                        range.sourceEnd,
+                        range.x + (range.advance - (chosen.advance) * fit) / 2,
+                        line.baseline + leading.style.baselineShift,
+                        range.advance,
+                        0,
+                        false,
+                        false,
+                        mapped,
+                        leading.style.logicalEm * fit,
+                        ratio,
+                        variant,
+                        leading.style,
+                        clusters.size()));
+        clusters.add(
+                new TextLayout.Cluster(
+                        range.logicalStart,
+                        range.logicalEnd,
+                        range.sourceStart,
+                        range.sourceEnd,
+                        begin,
+                        output.size(),
+                        range.x,
+                        range.advance,
+                        leading.style,
+                        leading.rtl));
+    }
+
+    private static void appendOriginalRange(
+            TextLayout.Line line,
+            ObfuscationRange range,
+            List<TextLayout.Glyph> output,
+            List<TextLayout.Cluster> clusters) {
+        for (int j = range.visualStart; j < range.visualEnd; j++) {
+            TextLayout.Cluster c = line.clusters().get(j);
+            int begin = output.size();
+            for (int g = c.glyphIndexStart; g < c.glyphIndexEnd; g++) {
+                TextLayout.Glyph a = line.glyphs().get(g);
+                output.add(
+                        new TextLayout.Glyph(
+                                a.source,
+                                a.size,
+                                a.glyphId,
+                                a.logicalStart,
+                                a.logicalEnd,
+                                a.sourceStart,
+                                a.sourceEnd,
+                                a.x,
+                                a.y,
+                                a.xAdvance,
+                                a.yAdvance,
+                                a.color,
+                                a.replacement,
+                                a.inkBounds,
+                                a.logicalEm,
+                                a.rasterToLayout,
+                                a.rasterStyle,
+                                a.resolvedStyle,
+                                clusters.size(),
+                                a.paintClip,
+                                a.xExtension));
+            }
+            clusters.add(
+                    new TextLayout.Cluster(
+                            c.logicalStart,
+                            c.logicalEnd,
+                            c.sourceStart,
+                            c.sourceEnd,
+                            begin,
+                            output.size(),
+                            c.x,
+                            c.advance,
+                            c.style,
+                            c.rtl));
+        }
     }
 
     private static GlyphRasterStyle variant(TextStyle style, float ratio) {

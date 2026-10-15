@@ -17,6 +17,7 @@ public final class MathStructureScenario extends TestApplication {
     protected void runTests() throws Exception {
         scenario("二维空cell嵌套行线与行距", this::arrays);
         scenario("全部33环境结构及模式资格", this::environments);
+        scenario("CD方向双标签消费终点与原文来源", this::cdConsumption);
         scenario("广义分式infix尺寸及显式style", this::fractions);
         scenario("atomgroup算子primes后覆limits及literalstyled", this::symbols);
         scenario("字体文本数学模式与primitive参数", this::fonts);
@@ -259,6 +260,49 @@ public final class MathStructureScenario extends TestApplication {
                         .inlineAutoDisplay,
                 "插件equation自动display资格丢失");
         bad("\\begin{multline}x\\end{multline}");
+    }
+
+    private void cdConsumption() {
+        String[][] arrows = {
+            {">", "cdrightarrow"}, {"<", "cdleftarrow"}, {"A", "cduparrow"},
+            {"V", "cddownarrow"}, {"=", "cdequal"}, {"|", "cdparallel"}, {".", "cdnone"}
+        };
+        for (String[] entry : arrows) {
+            String direction = entry[0];
+            boolean labeled = "<>AV".contains(direction);
+            String source = "\\begin{CD}L@" + direction
+                    + (labeled ? "u" + direction + "v" + direction : "") + "R\\end{CD}";
+            Node array = find(parse(source).root, Kind.ARRAY);
+            List<Node> found = all(array, Kind.XARROW);
+            require(found.size() == 1, "CD箭头边界吞入后续对象或重复生成");
+            Node arrow = found.get(0);
+            require(arrow.value.equals(entry[1]) && arrow.start == source.indexOf('@')
+                            && arrow.end == source.indexOf('R'),
+                    "CD方向或完整箭头来源错误: " + direction);
+            require(((ArraySpec) array.payload).rows.get(0).cellCount == 3
+                            && array.children.get(2).children.get(0).value.equals("R"),
+                    "CD标签闭合后未恢复独立对象cell: " + direction);
+            if (labeled) {
+                require(arrow.first.children.get(0).value.equals("u")
+                                && arrow.second.children.get(0).value.equals("v")
+                                && arrow.first.start == arrow.start && arrow.second.start == arrow.start
+                                && arrow.first.end == source.indexOf('u') + 2
+                                && arrow.second.end == arrow.end,
+                        "CD双标签内容或各自闭合来源错误: " + direction);
+            } else require(arrow.first == null && arrow.second == null, "无标签CD方向生成了草稿标签");
+        }
+        String[][] malformed = {
+            {"L@", "CD箭头缺少方向"}, {"L@qR", "Expected one of <>AV=|. after @"},
+            {"L@>u>v", "CD label缺少结束 >"}, {"L@>u@=R", "CD label缺少结束 >"}
+        };
+        for (String[] entry : malformed) {
+            String source = "\\begin{CD}" + entry[0] + "\\end{CD}";
+            MathContent failed = MathContent.parse(source);
+            require(failed.root == null && !failed.diagnostics.isEmpty()
+                            && failed.diagnostics.get(0).message.contains(entry[1])
+                            && failed.source.equals(source),
+                    "CD未闭合标签或非法方向丢失原失败: " + entry[0]);
+        }
     }
 
     private void fractions() {
