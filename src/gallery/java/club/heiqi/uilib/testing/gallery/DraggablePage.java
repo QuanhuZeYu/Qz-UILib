@@ -63,7 +63,7 @@ public final class DraggablePage {
         card.add(GalleryStyle.label(context,() -> title,theme,18,false));
         card.add(GalleryStyle.label(context,() -> help,theme,13,true));
         SceneNode stage=new SceneNode().size(Size.fill(1),Size.fill(1)).padding(12);
-        SceneNode body=new SceneNode().axis(SceneNode.Axis.ROW).size(Size.natural(),Size.natural()).padding(14).gap(10);
+        SceneNode body=GalleryStyle.centeredRow().size(Size.natural(),Size.natural()).padding(14).gap(10);
         SceneNode handle=GalleryStyle.label(context,() -> "::",theme,20,false);
         body.add(handle).add(GalleryStyle.label(context,() -> "拾起我",theme,15,false));
         SceneNode second=GalleryStyle.label(context,() -> "::",theme,20,false);if(kind.equals("dual"))body.add(second);

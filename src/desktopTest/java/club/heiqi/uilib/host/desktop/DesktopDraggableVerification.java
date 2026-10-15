@@ -123,17 +123,37 @@ public final class DesktopDraggableVerification {
                     .map(e -> e.node.parent().parent()).filter(n -> same(DesktopTestInput.hit(DesktopTestInput.geometry(w,n)),box(w,n)))
                     .findFirst().orElseThrow(() -> new AssertionError("圆角像素目标未完整显露"));
             roundedPixels(variants,box(w,variantSurface),idle,idleFrame,"variant-idle");
+            centeredLabels(w,variants);
             System.out.println("DRAGGABLE roundedPixels=true idle=true focus=true drag=true variant=true outsideBackground=true");
             input.point(1000,600);input.scroll.invoke(w.handle(),0,100);w.frame();
             glfwSetWindowSize(w.handle(),600,900);settle(w);
             for(String name:new String[]{"元素 A","元素 B","元素 C"})
                 require(DesktopTestInput.geometry(w).ordered().stream().anyMatch(e -> e.text!=null&&name.equals(e.text.logicalText)
                         &&e.box.intersect(e.clip).width==e.box.width),"窄窗示例被裁掉："+name);
-            save(w,output.resolve("draggable-narrow.png"));
+            BufferedImage narrow=save(w,output.resolve("draggable-narrow.png"));
+            centeredLabels(w,narrow);
             input.click("返回场景概览");input.click("打开拖拽");settle(w);
             require(DesktopTestInput.geometry(w).ordered().stream().anyMatch(e -> e.text!=null&&"Draggable".equals(e.text.logicalText)),"真实目录重入失效");
             System.out.println("DRAGGABLE gallery=true actualGpu=true normalEntry=true");
         }
+    }
+    // 正式几何与真实墨迹共同验收，不能用字形Y补偿冒充行内居中。
+    private static void centeredLabels(DesktopWindow w,BufferedImage image) {
+        int measured=0,visible=0;
+        for(club.heiqi.uilib.ui.scene.layout.SceneGeometryView.Entry entry:DesktopTestInput.geometry(w).ordered()) {
+            if(entry.text==null||!"拾起我".equals(entry.text.logicalText))continue;
+            LayoutBox outer=box(w,entry.node.parent().parent()),label=entry.box;
+            double center=outer.y+outer.height/2.0;
+            require(Math.abs(label.y+label.height/2.0-center)<=0.5,"混合字号的标签行盒没有垂直居中");measured++;
+            if(!same(DesktopTestInput.hit(entry),label))continue;
+            int background=image.getRGB(label.x-2,label.y+1),top=image.getHeight(),bottom=-1;
+            for(int y=label.y;y<label.y+label.height;y++)for(int x=label.x;x<label.x+label.width;x++)
+                if(colorDistance(image.getRGB(x,y),background)>48){top=Math.min(top,y);bottom=Math.max(bottom,y);}
+            require(bottom>=top,"文字居中像素探针未命中实际墨迹");
+            require(Math.abs((top+bottom+1)/2.0-center)<=1,"拾起我可见文字偏离组件中心");visible++;
+        }
+        require(measured>0,"未找到混合字号行");
+        System.out.println("DRAGGABLE verticalCenter=true labels="+measured+" visibleInk="+visible);
     }
     private static boolean visibleText(DesktopWindow w,String text){return DesktopTestInput.geometry(w).ordered().stream().anyMatch(e -> e.text!=null&&text.equals(e.text.logicalText)&&DesktopTestInput.hit(e).height>0);}
     // LayoutBox是不可变区域但没有值相等实现；这里比较实际共同几何，不能比较对象身份。

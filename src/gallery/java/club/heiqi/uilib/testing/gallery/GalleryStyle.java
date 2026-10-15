@@ -1,5 +1,6 @@
 package club.heiqi.uilib.testing.gallery;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
@@ -15,6 +16,7 @@ import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.MeasuredSize;
 import club.heiqi.uilib.ui.scene.layout.SceneChildMeasurer;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometryView;
+import club.heiqi.uilib.ui.scene.layout.SceneFlowLayout;
 import club.heiqi.uilib.ui.scene.layout.Size;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintShapes;
@@ -53,6 +55,29 @@ final class GalleryStyle {
             return new SceneGrid.Policy((int) Math.ceil(current.textStyle.logicalEm * 22), current.gap + 4, current.gap + 4);
         });
         return SceneGrid.create(context, policy).own(scope);
+    }
+    static SceneNode centeredRow() {
+        return new SceneNode().axis(SceneNode.Axis.ROW).control(new CenteredRow());
+    }
+    /** 混合字号按同批自然行盒居中；位置归正式排列，不给字形或宿主基线加补偿。 */
+    private static final class CenteredRow implements SceneControl {
+        @Override public void paint(SceneNode node, SceneGeometryView geometry, PaintPlanBuilder paint) {}
+        @Override public MeasuredSize measure(SceneNode node, Constraints limits, SceneTextMeasurer text) {
+            return new MeasuredSize(0, 0);
+        }
+        @Override public MeasuredSize measure(SceneNode node, Constraints limits, SceneTextMeasurer text, SceneChildMeasurer children) {
+            return SceneFlowLayout.measure(node, limits, children);
+        }
+        @Override public ChildPlacements arrange(SceneNode node, LayoutBox allocated, SceneChildMeasurer children) {
+            int height = Math.max(0, allocated.height - node.padding() * 2);
+            List<ChildPlacements.Entry> centered = new ArrayList<>();
+            for (ChildPlacements.Entry entry : SceneFlowLayout.arrange(node, allocated, children).entries()) {
+                LayoutBox box = entry.relativeBox;
+                centered.add(new ChildPlacements.Entry(entry.child, new LayoutBox(box.x,
+                        node.padding() + Math.max(0, height - box.height) / 2, box.width, box.height)));
+            }
+            return new ChildPlacements(centered);
+        }
     }
     private static final class Frame implements SceneControl {
         private final ReadableSignal<SceneTheme> theme;
