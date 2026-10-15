@@ -9,6 +9,28 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 /** 拖动控件共用的纯资格/几何及有界滚动计算；不持有第二套场景几何。 */
 final class SceneDragSupport {
     private SceneDragSupport() {}
+
+    /** 作用域只观察正式拖动；normalDrop 返回清理后的业务动作，cancel 永不提交。 */
+    interface Observer {
+        boolean same(Observer other);
+        /** 同一来源身份的当前配置刷新；same 只比较，不修改挂载或会话状态。 */
+        default void configure(SceneNode node, Observer next) {}
+        void attach(SceneRuntime runtime, SceneNode node, Runnable cancel);
+        void detach(SceneNode node);
+        void cancel(SceneNode node);
+        void update(SceneNode node, SceneGeometryView geometry, boolean keyboard, LayoutBox box, int x, int y);
+        Runnable normalDrop(SceneNode node, SceneGeometryView geometry, boolean keyboard, LayoutBox box, int x, int y);
+        LayoutBox keyboardTarget(SceneNode node, SceneGeometryView geometry, SceneEditEvent.Command direction);
+        SceneNode scrollSource(SceneNode node, SceneGeometryView geometry);
+    }
+
+    static LayoutBox visibleBox(SceneGeometryView geometry, SceneGeometryView.Entry entry) {
+        if (entry == null) return null;
+        LayoutBox box = entry.box.intersect(geometry.viewport());
+        return entry.clip == null ? box : box.intersect(entry.clip);
+    }
+    static int centerX(LayoutBox box) { return integer((long) box.x + box.width / 2); }
+    static int centerY(LayoutBox box) { return integer((long) box.y + box.height / 2); }
     static boolean within(SceneNode child, SceneNode parent) {
         for (SceneNode cursor = child; cursor != null; cursor = cursor.parent()) if (cursor == parent) return true;
         return false;
@@ -78,10 +100,18 @@ final class SceneDragSupport {
         }
         Shift advance(SceneRuntime runtime, SceneNode source, SceneGeometryView geometry,
                 int x, int y, long now, boolean allowX, boolean allowY) {
+            return advance(runtime, source, geometry, x, y, now, allowX, allowY, 1.0);
+        }
+        Shift advance(SceneRuntime runtime, SceneNode source, SceneGeometryView geometry,
+                int x, int y, long now, boolean allowX, boolean allowY, double speed) {
             long elapsed = sampled ? Math.max(0L, Math.min(50_000_000L, now - last)) : 0;
             sampled = true; last = now;
+            if (source == null || !runtime.interactive(source) || speed == 0) {
+                remainder = 0; previous = null; direction = 0; return Shift.NONE;
+            }
             SceneNode boundary = geometry.layerBoundary(source);
             for (SceneNode ancestor = source; ancestor != null; ancestor = ancestor == boundary ? null : ancestor.parent()) {
+                if (!runtime.interactive(ancestor)) return Shift.NONE;
                 if (!ancestor.scrollable()) continue;
                 boolean horizontal = ancestor.axis() == SceneNode.Axis.ROW;
                 if (horizontal ? !allowX : !allowY) continue;
@@ -102,7 +132,7 @@ final class SceneDragSupport {
                 if (ancestor != previous || sign != direction) remainder = 0;
                 previous = ancestor; direction = sign;
                 if (sign == 0) return Shift.NONE;
-                double pixels = remainder + strength * 720.0 * elapsed / 1_000_000_000.0;
+                double pixels = remainder + strength * 720.0 * speed * elapsed / 1_000_000_000.0;
                 int whole = (int) pixels;
                 remainder = pixels - whole;
                 int actual = runtime.scrollByPixels(ancestor, whole);

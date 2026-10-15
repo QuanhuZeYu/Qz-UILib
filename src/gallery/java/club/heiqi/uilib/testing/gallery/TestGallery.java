@@ -30,10 +30,20 @@ public final class TestGallery implements ScenePage {
         HOME("场景概览","选择一个真实参考案例"),
         MAILBOX("收件箱","查找、阅读和整理团队邮件"),
         SETTINGS("配置","管理字体、外观与当前宿主配置"),
-        DRAGGABLE("拖拽","拾取、移动与释放普通内容");
+        DRAGGABLE("拖拽","拾取、移动与释放普通内容"),
+        DROPPABLE("接收区","选择有效目标并放下内容"),
+        SORTABLE("排序","重排列表、网格与跨容器内容");
         public final String title,purpose;
         Page(String title,String purpose){this.title=title;this.purpose=purpose;}
-        String reference(){return this==MAILBOX?"参考：Gmail":this==DRAGGABLE?"参考：dnd-kit / Draggable":"参考：Shadcn Admin / Settings";}
+        String reference(){
+            switch(this){
+                case MAILBOX:return "参考：Gmail";
+                case DRAGGABLE:return "参考：dnd-kit / Draggable";
+                case DROPPABLE:return "参考：dnd-kit / Droppable";
+                case SORTABLE:return "参考：dnd-kit / Sortable";
+                default:return "参考：Shadcn Admin / Settings";
+            }
+        }
     }
     private final GalleryEnvironment environment;
     private final Page initial;
@@ -65,10 +75,17 @@ public final class TestGallery implements ScenePage {
         header.add(actions);shell.add(header);
         SceneNode deck=new SceneNode().size(Size.fill(1),Size.fill(1)).control(new Layers());
         for(Page id:Page.values()) {
-            SceneNode page=id==Page.HOME?directory(context,theme,navigate):id==Page.SETTINGS
-                    ?settingsPage.create(context):id==Page.DRAGGABLE?DraggablePage.create(context,theme,() -> navigate.accept(Page.HOME))
-                    :club.heiqi.uilib.testing.gallery.mail.MailboxPage.create(context,theme,mode,
-                            () -> navigate.accept(Page.HOME),() -> preview.set(dark.get()?ThemeMode.LIGHT:ThemeMode.DARK));
+            SceneNode page;
+            switch(id){
+                case HOME:page=directory(context,theme,navigate);break;
+                case SETTINGS:page=settingsPage.create(context);break;
+                case DRAGGABLE:page=DraggablePage.create(context,theme,() -> navigate.accept(Page.HOME));break;
+                case DROPPABLE:page=DroppablePage.create(context,theme,() -> navigate.accept(Page.HOME));break;
+                case SORTABLE:page=SortablePage.create(context,theme,() -> navigate.accept(Page.HOME));break;
+                case MAILBOX:page=club.heiqi.uilib.testing.gallery.mail.MailboxPage.create(context,theme,mode,
+                        () -> navigate.accept(Page.HOME),() -> preview.set(dark.get()?ThemeMode.LIGHT:ThemeMode.DARK));break;
+                default:throw new AssertionError(id);
+            }
             context.own(page::destroy);
             SceneNode layer=new SceneNode().size(Size.fill(1),Size.fill(1)).control(new Layers());
             layer.bind(NodeBinding.children(() -> selected.get()==id?Collections.singletonList(page):Collections.emptyList()));

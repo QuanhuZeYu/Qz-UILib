@@ -45,7 +45,7 @@ public final class DraggablePage {
         Signal<String> result=context.domain().signal("正常放下会更新此处；取消不会提交。");
         root.add(GalleryStyle.label(context,result,theme,14,true));
         SceneNode variants=GalleryStyle.grid(context,theme);
-        variants.add(variant(context,theme,"独立把手","只拖动 :: 把手，正文保持原交互。","handle",result));
+        variants.add(variant(context,theme,"独立把手","只拖动四点把手，正文保持原交互。","handle",result));
         variants.add(variant(context,theme,"双启动把手","左右两个把手都能拾取同一元素。","dual",result));
         variants.add(variant(context,theme,"拖动预览","原槽保持，独立预览沿当前输入范围显示。","overlay",result));
         variants.add(variant(context,theme,"只沿横轴","指针与键盘都只改变横向位置。","horizontal",result));

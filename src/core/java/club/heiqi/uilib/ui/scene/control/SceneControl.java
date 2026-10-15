@@ -30,6 +30,10 @@ public interface SceneControl {
     /** 有效几何后、绘制前每宿主批次至多一次；可发布交互呈现状态，不在 measure/paint 推进。 */
     default void inputFrame(SceneNode node, SceneGeometryView geometry, long now) {}
 
+    /** 本批活动输入使共同几何改变后同步交互呈现；可随重排结算多次。
+     * 与 inputFrame 分离：只消费新几何，不推进时间、激活等待或再次滚动。 */
+    default void inputGeometryChanged(SceneNode node, SceneGeometryView geometry) {}
+
     /** 本批活动输入或后续 Effect 失败时，只结束本批实际参与控件的临时输入状态。
      * 与指针捕获丢失分别通知，不能补发业务提交或重复 captureLost。 */
     default void inputFrameCancelled(SceneNode node) {}

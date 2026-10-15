@@ -389,6 +389,20 @@ public final class SceneRuntime implements AutoCloseable {
         }
     }
 
+    /** 重排后只同步本批实际推进且仍同挂载的控件，不重新扫描输入集合或推进时间。
+     * 复用原参与记录；同步失败仍由原批次 cancelInputFrame 清理并保留异常。 */
+    public void refreshInputFrameGeometry(SceneGeometryView geometry, InputFrame frame) {
+        command();
+        if (frame.cancelled) return;
+        for (MountHandle target : frame.participants) {
+            if (!target.active() || target.node().control() == null) continue;
+            boolean previous = routing;
+            routing = true;
+            try { target.node().control().inputGeometryChanged(target.node(), geometry); }
+            finally { routing = previous; }
+        }
+    }
+
     /** 原失败边界只通知本批仍同挂载的参与者；错误清理不能把取消变成全局重置。 */
     public void cancelInputFrame(InputFrame frame) {
         domain.checkWrite();

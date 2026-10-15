@@ -166,6 +166,18 @@ val desktopMailbox = galleryApplication("desktopMailbox", "直接打开与MC共�
 val desktopDraggable = galleryApplication("desktopDraggable", "打开用户参考的原生Draggable案例").apply { configure {
     args("--draggable")
 } }
+val desktopDroppable = galleryApplication("desktopDroppable", "打开原生Droppable接收区案例").apply { configure {
+    args("--droppable")
+} }
+val desktopSortable = galleryApplication("desktopSortable", "打开原生Sortable多布局排序案例").apply { configure {
+    args("--sortable")
+} }
+val desktopDropSortVerify = desktopApplication("desktopDropSortVerify", "隐藏真实回调验收接收区与多布局排序", true).apply { configure {
+    mainClass.set("club.heiqi.uilib.host.desktop.DesktopDropSortVerification")
+    args(layout.buildDirectory.dir("reports/drop-sort-desktop").get().asFile.absolutePath)
+    mustRunAfter("desktopDraggableDeepVerify")
+} }
+tasks.named("check") { dependsOn(desktopDropSortVerify) }
 val desktopMailboxPerformance = desktopApplication("desktopMailboxPerformance", "完整收件箱真实桌面计时", true).apply { configure {
     mainClass.set("club.heiqi.uilib.host.desktop.DesktopMailboxPerformance")
     systemProperty("uilib.version", project.version.toString())

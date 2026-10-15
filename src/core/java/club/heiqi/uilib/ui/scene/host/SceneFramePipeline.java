@@ -389,6 +389,10 @@ public final class SceneFramePipeline implements AutoCloseable {
     private ScenePresentation prepare(long frameNanos) { return prepare(frameNanos, null); }
 
     private ScenePresentation prepare(long frameNanos, SceneRuntime.InputFrame activeInput) {
+        return prepare(frameNanos, activeInput, true);
+    }
+
+    private ScenePresentation prepare(long frameNanos, SceneRuntime.InputFrame activeInput, boolean advanceInput) {
         preparedNanos = frameNanos;
         int w = host.width(), h = host.height();
         runtime.prepareViewport(w, h);
@@ -429,9 +433,13 @@ public final class SceneFramePipeline implements AutoCloseable {
         }
         if (activeInput != null) {
             long beforeInput = runtime.revision();
-            runtime.advanceInputFrame(prepared, frameNanos, activeInput);
-            // 活动输入只推进一次；发生呈现变化时才重新结算，不增加静止列表工作量。
-            if (beforeInput != runtime.revision()) return prepare(frameNanos, null);
+            if (advanceInput) runtime.advanceInputFrame(prepared, frameNanos, activeInput);
+            else runtime.refreshInputFrameGeometry(prepared, activeInput);
+            // 普通 value 绑定只登记 dirtyBindings，先结算才能判断命中样式是否使几何/绘制失效。
+            runtime.preparePresentation(frameNanos);
+            // 时间及滚动只推进一次；后续重排仅同步本批参与者，使候选与最终画面同代。
+            // 同步产生的呈现依赖仍沿原结算入口收敛，失败复用同一 activeInput 取消记录。
+            if (beforeInput != runtime.revision()) return prepare(frameNanos, activeInput, false);
         }
         final SceneGeometry geometry = prepared;
         if (presentation == null

@@ -23,7 +23,9 @@ public final class DesktopGallery {
         Files.createDirectories(output);
         try(DesktopWindow window=DesktopWindow.openWithServices(output.resolve("gallery.yaml"),
                 services -> createGallery(services,mailbox?TestGallery.Page.MAILBOX:args.length>0&&"--draggable".equals(args[0])
-                        ?TestGallery.Page.DRAGGABLE:TestGallery.Page.HOME))) {
+                        ?TestGallery.Page.DRAGGABLE:args.length>0&&"--droppable".equals(args[0])
+                                 ?TestGallery.Page.DROPPABLE:args.length>0&&"--sortable".equals(args[0])
+                                         ?TestGallery.Page.SORTABLE:TestGallery.Page.HOME))) {
             if(smoke) {
                 glfwSetWindowSize(window.handle(),1400,900);
                 settle(window);
