@@ -1291,6 +1291,12 @@ public final class ImageGlScenario extends TestApplication {
         }
     }
 
+    /** 主图集的单色为R8覆盖率、彩色为RGBA；预算按实际格式计字节，不能沿用CPU RGBA载荷。 */
+    private static long premultRowBytes(
+            club.heiqi.uilib.ui.scene.text.font.nativefont.GlyphBitmap bitmap) {
+        return (bitmap.color ? 4L : 1L) * (bitmap.width + 2);
+    }
+
     private void cachedGlyphPriority() throws Exception {
         TextLayout primary = fonts.layout("Y", new TextStyle("default", 24, 0xff101010), 100),
                 backup = fonts.layout("X", new TextStyle("default", 24, 0xff101010), 100);
@@ -1375,8 +1381,8 @@ public final class ImageGlScenario extends TestApplication {
         club.heiqi.uilib.ui.scene.text.font.nativefont.GlyphBitmap
                 largeBitmap = fonts.rasterizer().peek(largeKey),
                 smallBitmap = fonts.rasterizer().peek(smallKey);
-        long largeRow = 4L * (largeBitmap.width + 2),
-                smallBytes = 4L * (smallBitmap.width + 2) * (smallBitmap.height + 2);
+        long largeRow = premultRowBytes(largeBitmap),
+                smallBytes = premultRowBytes(smallBitmap) * (smallBitmap.height + 2);
         require(smallBytes < largeRow, "未制造备用行无法完成但主字形可以完成的真实预算");
         try (club.heiqi.uilib.host.client.gl.GlGlyphAtlas atlas =
                         new club.heiqi.uilib.host.client.gl.GlGlyphAtlas(
@@ -1514,7 +1520,7 @@ public final class ImageGlScenario extends TestApplication {
                                 backup.lines().get(0).glyphs().get(0));
         club.heiqi.uilib.ui.scene.text.font.nativefont.GlyphBitmap bitmap =
                 fonts.rasterizer().peek(yKey);
-        long firstBytes = 4L * (bitmap.width + 2) * (bitmap.height + 2);
+        long firstBytes = premultRowBytes(bitmap) * (bitmap.height + 2);
         try (club.heiqi.uilib.host.client.gl.GlGlyphAtlas atlas =
                         new club.heiqi.uilib.host.client.gl.GlGlyphAtlas(
                                 new Lwjgl3GlApi(),
@@ -1535,6 +1541,11 @@ public final class ImageGlScenario extends TestApplication {
                     new club.heiqi.uilib.host.client.gl.GlGlyphAtlas.UploadBudget(
                             firstBytes, 1000000000, 1));
             frame.freeze();
+            System.out.println("LAYER_BUDGET expectedBytes=" + firstBytes
+                    + " actualBytes=" + atlas.stats().uploadedBytes + " calls=" + atlas.stats().uploadCalls
+                    + " primaryReady=" + (frame.lookup(yKey) != null)
+                    + " backupReady=" + (frame.lookup(xKey) != null)
+                    + " color=" + bitmap.color + " bitmap=" + bitmap.width + "x" + bitmap.height);
             require(
                     frame.lookup(yKey) != null
                             && frame.lookup(xKey) == null
@@ -1578,7 +1589,7 @@ public final class ImageGlScenario extends TestApplication {
         }
         club.heiqi.uilib.ui.scene.text.font.nativefont.GlyphBitmap parentBitmap =
                 fonts.rasterizer().peek(big.get(0));
-        long oneRow = 4L * (parentBitmap.width + 2);
+        long oneRow = premultRowBytes(parentBitmap);
         for (boolean capacity : new boolean[] {true, false}) {
             java.util.List<club.heiqi.uilib.ui.scene.text.font.glyph.GlyphKey> children =
                     capacity ? little : big.subList(1, 3);

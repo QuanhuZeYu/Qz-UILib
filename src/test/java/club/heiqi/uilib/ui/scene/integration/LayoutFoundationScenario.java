@@ -57,6 +57,8 @@ public final class LayoutFoundationScenario extends TestApplication {
     protected void runTests() throws Exception {
         scenario("非文字Frame在带权最终分配中重测真实按钮并保持绘制命中", this::allocatedFrame);
         scenario("普通排列不能突破fixed与min且沿既有定位诊断", this::invalidSizes);
+        scenario("缺少扩展测量或排列结果时指出实际规则", this::missingExtensionResults);
+        scenario("扩展主动失败保持原始异常", this::extensionFailure);
         scenario("公共网格真实卡片换列内容策略和编辑身份连续", this::responsiveCards);
         scenario("公共网格自然槽宽行高硬尺寸与padding", this::naturalGrid);
     }
@@ -237,6 +239,56 @@ public final class LayoutFoundationScenario extends TestApplication {
                                 && message.contains("actual=40") && message.contains("declared=" + declared.mode),
                         "没有沿用既有非法尺寸定位诊断：" + message);
                 System.out.println("LAYOUT expectedDiagnostic=" + message);
+            }
+        }
+    }
+
+    private static SceneControl resultControl(String missing, RuntimeException failure) {
+        return new SceneControl() {
+            public MeasuredSize measure(SceneNode node, Constraints body, SceneTextMeasurer text) {
+                if (failure != null) throw failure;
+                return "measure".equals(missing) ? null : new MeasuredSize(10, 10);
+            }
+            public ChildPlacements arrange(SceneNode node, LayoutBox allocated, SceneChildMeasurer children) {
+                return "arrange".equals(missing) ? null : new ChildPlacements(Collections.emptyList());
+            }
+            public void paint(SceneNode node, SceneGeometryView geometry, PaintPlanBuilder target) {}
+        };
+    }
+
+    private void missingExtensionResults() {
+        for (String rule : new String[] {"measure", "arrange"}) {
+            ReactiveDomain domain = ReactiveDomain.direct();
+            SceneControl control = resultControl(rule, null);
+            SceneNode node = new SceneNode().size(Size.natural(), Size.natural()).control(control);
+            try (ScenePageSession page = ScenePageSession.open(domain, new Host(), fonts,
+                    context -> context.mount(node))) {
+                try {
+                    page.frame();
+                    throw new AssertionError("扩展缺少" + rule + "结果却发布了布局");
+                } catch (IllegalArgumentException expected) {
+                    String message = expected.getMessage();
+                    require(message.contains(node.id().toString())
+                                    && message.contains(control.getClass().getName()) && message.contains(rule),
+                            "扩展结果错误没有指出产生它的控件或规则：" + message);
+                    System.out.println("LAYOUT missingResult=" + message);
+                }
+            }
+        }
+    }
+
+    private void extensionFailure() {
+        ReactiveDomain domain = ReactiveDomain.direct();
+        RuntimeException original = new IllegalStateException("自定义规则主动失败");
+        SceneNode node = new SceneNode().size(Size.natural(), Size.natural())
+                .control(resultControl(null, original));
+        try (ScenePageSession page = ScenePageSession.open(domain, new Host(), fonts,
+                context -> context.mount(node))) {
+            try {
+                page.frame();
+                throw new AssertionError("主动失败的扩展规则却完成布局");
+            } catch (RuntimeException observed) {
+                require(observed == original, "扩展主动失败被其他异常或包装替换");
             }
         }
     }

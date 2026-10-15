@@ -109,99 +109,112 @@ public final class GlImageResources implements GlQuadRenderer.ResourceProvider, 
             throw new IllegalStateException("图像纹理owner已关闭或不在GL线程");
     }
 
+    /** 仅记录本次prepare的成功上传消耗，所有资源层共用，不随Frame保留。 */
+    private static final class UploadBudget {
+        long uploaded;
+        int calls;
+    }
+
     public Frame prepare(PaintPlan plan) {
         check();
         if (active != null) throw new IllegalStateException("先关闭图像Frame");
         Frame frame = new Frame();
         active = frame;
-        // 共享PaintPlan主命令/成功覆盖层→备用层权威，逐层pin再upload，不另行解释分支深度。
         Set<Long> seen = new HashSet<>();
         try {
-            long uploaded = 0;
-            int calls = 0;
+            UploadBudget budget = new UploadBudget();
+            // 共享PaintPlan主命令/成功覆盖层→备用层权威，不另行解释分支深度。
             for (java.util.List<PaintCommand> layer : plan.resourceLayers()) {
-                LinkedHashMap<Long, ImageContent> demand = new LinkedHashMap<>();
-                for (PaintCommand command : layer)
-                    if (command.kind == PaintCommand.Kind.IMAGE
-                            && seen.add(command.image.content.identity))
-                        demand.put(command.image.content.identity, command.image.content);
-                for (ImageContent content : demand.values()) {
-                    Resident resident = cache.get(content.identity);
-                    if (resident != null) {
-                        frame.residents.put(content.identity, resident);
-                        listener.presentation(content.identity, false, null);
-                    }
-                }
+                LinkedHashMap<Long, ImageContent> demand = collectLayerDemand(layer, seen);
+                // 必须先固定本层全部resident，新图才可淘汰未使用的缓存。
+                pinResidents(demand.values(), frame);
                 for (ImageContent content : demand.values())
-                    if (!frame.residents.containsKey(content.identity)) {
-                        try {
-                            if (content.kind == ImageContent.Kind.HOST_ITEM) {
-                                if (hostItems == null || !hostItems.supports(content))
-                                    throw new UnsupportedOperationException("缺少宿主物品绘制适配");
-                                frame.host.add(content.identity);
-                                continue;
-                            }
-                            if (content.bytes() > uploadBytes)
-                                throw new IllegalArgumentException("单张图像超过上传字节预算");
-                            if (content.width > gl.glGetInteger(GL_MAX_TEXTURE_SIZE)
-                                    || content.height > gl.glGetInteger(GL_MAX_TEXTURE_SIZE)
-                                    || content.bytes() > maxBytes)
-                                throw new IllegalArgumentException(
-                                        "图像超出GL尺寸/字节预算: " + content.identity);
-                            if (calls >= uploadCalls || uploaded + content.bytes() > uploadBytes) {
-                                listener.presentation(content.identity, true, null);
-                                continue;
-                            }
-                            boolean room = true;
-                            while (cache.size() >= maxTextures
-                                    || bytes + content.bytes() > maxBytes) {
-                                boolean evicted = false;
-                                Iterator<Resident> it = cache.values().iterator();
-                                while (it.hasNext()) {
-                                    Resident r = it.next();
-                                    if (!frame.residents.containsKey(r.content.identity)
-                                            && !bound(r.texture)) {
-                                        gl.glDeleteTextures(r.texture);
-                                        bytes -= r.content.bytes();
-                                        it.remove();
-                                        evicted = true;
-                                        break;
-                                    }
-                                }
-                                if (!evicted) {
-                                    room = false;
-                                    break;
-                                }
-                            }
-                            // 当前Frame或宿主绑定造成的容量压力是暂时未就绪，不是内容上传失败。
-                            if (!room) {
-                                listener.presentation(content.identity, true, null);
-                                continue;
-                            }
-                            Resident resident = upload(content);
-                            cache.put(content.identity, resident);
-                            bytes += content.bytes();
-                            frame.residents.put(content.identity, resident);
-                            uploaded += content.bytes();
-                            calls++;
-                            listener.presentation(content.identity, false, null);
-                        } catch (RuntimeException failure) {
-                            frame.failed.add(content.identity);
-                            listener.failure(
-                                    content.identity,
-                                    content.kind == ImageContent.Kind.HOST_ITEM
-                                            ? "item-adapter"
-                                            : "upload",
-                                    failure instanceof UnsupportedOperationException,
-                                    failure.toString());
-                        }
-                    }
+                    if (!frame.residents.containsKey(content.identity)) admit(content, frame, budget);
             }
             return frame;
         } catch (RuntimeException | Error failure) {
             frame.close();
             throw failure;
         }
+    }
+
+    private LinkedHashMap<Long, ImageContent> collectLayerDemand(
+            java.util.List<PaintCommand> layer, Set<Long> seen) {
+        LinkedHashMap<Long, ImageContent> demand = new LinkedHashMap<>();
+        for (PaintCommand command : layer)
+            if (command.kind == PaintCommand.Kind.IMAGE && seen.add(command.image.content.identity))
+                demand.put(command.image.content.identity, command.image.content);
+        return demand;
+    }
+
+    private void pinResidents(Iterable<ImageContent> demand, Frame frame) {
+        for (ImageContent content : demand) {
+            Resident resident = cache.get(content.identity);
+            if (resident != null) {
+                frame.residents.put(content.identity, resident);
+                listener.presentation(content.identity, false, null);
+            }
+        }
+    }
+
+    private void admit(ImageContent content, Frame frame, UploadBudget budget) {
+        try {
+            if (content.kind == ImageContent.Kind.HOST_ITEM) {
+                if (hostItems == null || !hostItems.supports(content))
+                    throw new UnsupportedOperationException("缺少宿主物品绘制适配");
+                frame.host.add(content.identity);
+                return;
+            }
+            if (content.bytes() > uploadBytes)
+                throw new IllegalArgumentException("单张图像超过上传字节预算");
+            if (content.width > gl.glGetInteger(GL_MAX_TEXTURE_SIZE)
+                    || content.height > gl.glGetInteger(GL_MAX_TEXTURE_SIZE)
+                    || content.bytes() > maxBytes)
+                throw new IllegalArgumentException("图像超出GL尺寸/字节预算: " + content.identity);
+            if (budget.calls >= uploadCalls || budget.uploaded + content.bytes() > uploadBytes) {
+                listener.presentation(content.identity, true, null);
+                return;
+            }
+            // 当前Frame或宿主绑定造成的容量压力是暂时未就绪，不是内容上传失败。
+            if (!makeRoom(content, frame)) {
+                listener.presentation(content.identity, true, null);
+                return;
+            }
+            Resident resident = upload(content);
+            cache.put(content.identity, resident);
+            bytes += content.bytes();
+            frame.residents.put(content.identity, resident);
+            budget.uploaded += content.bytes();
+            budget.calls++;
+            listener.presentation(content.identity, false, null);
+        } catch (RuntimeException failure) {
+            frame.failed.add(content.identity);
+            listener.failure(
+                    content.identity,
+                    content.kind == ImageContent.Kind.HOST_ITEM ? "item-adapter" : "upload",
+                    failure instanceof UnsupportedOperationException,
+                    failure.toString());
+        }
+    }
+
+    private boolean makeRoom(ImageContent content, Frame frame) {
+        while (cache.size() >= maxTextures || bytes + content.bytes() > maxBytes)
+            if (!evictUnused(frame)) return false;
+        return true;
+    }
+
+    private boolean evictUnused(Frame frame) {
+        Iterator<Resident> it = cache.values().iterator();
+        while (it.hasNext()) {
+            Resident resident = it.next();
+            if (!frame.residents.containsKey(resident.content.identity) && !bound(resident.texture)) {
+                gl.glDeleteTextures(resident.texture);
+                bytes -= resident.content.bytes();
+                it.remove();
+                return true;
+            }
+        }
+        return false;
     }
 
     private boolean bound(int texture) {

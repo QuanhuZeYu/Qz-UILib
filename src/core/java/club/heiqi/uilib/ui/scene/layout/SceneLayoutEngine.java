@@ -308,13 +308,9 @@ public final class SceneLayoutEngine {
                         ? Integer.MAX_VALUE
                         : Math.max(0, measuredHeight - node.padding() * 2);
         if (node.control() != null) {
-            MeasuredSize custom =
-                    node.control()
-                            .measure(
-                                    node,
-                                    new Constraints(contentWidth, contentHeight),
-                                    textFor(node),
-                                    childrenFor(node));
+            MeasuredSize custom = requireControlResult(node, "measure",
+                    node.control().measure(node, new Constraints(contentWidth, contentHeight),
+                            textFor(node), childrenFor(node)));
             return new int[] {
                 node.width()
                         .constrain(
@@ -398,8 +394,9 @@ public final class SceneLayoutEngine {
         java.util.Set<SceneNode> placed = java.util.Collections.newSetFromMap(new IdentityHashMap<SceneNode, Boolean>());
         boolean builtin = node.control() == null;
         boolean flow = builtin || layerPolicy(node) != null;
-        List<ChildPlacements.Entry> placements = (builtin ? SceneFlowLayout.arrange(node, box, childrenFor(node))
-                : node.control().arrange(node, box, childrenFor(node))).entries();
+        ChildPlacements arrangement = builtin ? SceneFlowLayout.arrange(node, box, childrenFor(node))
+                : requireControlResult(node, "arrange", node.control().arrange(node, box, childrenFor(node)));
+        List<ChildPlacements.Entry> placements = arrangement.entries();
         boolean row = node.axis() == SceneNode.Axis.ROW;
         long extent = 0;
         for (ChildPlacements.Entry child : placements) {
@@ -424,6 +421,14 @@ public final class SceneLayoutEngine {
             arrange(child.child, new LayoutBox(box.x + relative.x - (row ? scroll : 0),
                     box.y + relative.y - (row ? 0 : scroll), relative.width, relative.height), clip, entries);
         }
+    }
+
+    /** 回调返回后其栈帧已退出；在消费边界定位非法结果，主动抛出的原异常不经包装。 */
+    private static <T> T requireControlResult(SceneNode node, String rule, T result) {
+        if (result == null)
+            throw new IllegalArgumentException("控件布局规则返回null: node=" + node.id()
+                    + " control=" + node.control().getClass().getName() + " rule=" + rule);
+        return result;
     }
 
     private static void validatePlacement(

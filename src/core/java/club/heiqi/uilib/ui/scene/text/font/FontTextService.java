@@ -1203,170 +1203,184 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
         while (cache.size() > limit) cache.remove(cache.keySet().iterator().next());
     }
 
+    /** 区间决定字体分段；匹配只发布实际来源或稳定替代，不改写 Unit 的整形样式。 */
     private void match(
             UnicodeText doc,
             List<Unit> units,
             Bidi bidi,
             int paragraphStart,
-            TextStyle style,
-            TextPolicy policy,
-            List<FontSource> sources) {
+            TextPolicy policy) {
         Map<MatchKey, FontSource> independent = new HashMap<MatchKey, FontSource>();
         for (int i = 0; i < units.size(); ) {
-            Unit first = units.get(i);
-            if (first.inlineBox != null) {
+            if (units.get(i).inlineBox != null) {
                 i++;
                 continue;
             }
-            int j = i + 1;
-            if (UnicodeText.complex(first.script)) {
-                while (j < units.size()
-                        && units.get(j).inlineBox == null
-                        && units.get(j).script == first.script
-                        && !units.get(j).emoji
-                        && bidi.getLevelAt(units.get(j).start - paragraphStart)
-                                == bidi.getLevelAt(first.start - paragraphStart)
-                        && sameShapingFont(units.get(j).shapeStyle, first.shapeStyle)) j++;
+            MatchingRange range = matchingRange(units, i, bidi, paragraphStart);
+            List<FontSource> sources = resolvedCandidates(range.first.shapeStyle, doc);
+            if (UnicodeText.visible(doc.display, range.first.start, range.end)
+                    && doc.display.charAt(range.first.start) != '\t') {
+                FontSelection selected = selectFont(doc, range, policy, sources, independent);
+                publishMatch(doc, units, range, selected);
             }
-            int start = first.start, end = units.get(j - 1).end;
-            TextStyle leading = first.shapeStyle;
-            for (int k = i; k < j; k++) {
-                Unit unit = units.get(k);
-                if (!sameShapingFont(unit.shapeStyle, leading)) {
-                    doc.diagnostics.add(
-                            new Diagnostic(
-                                    Diagnostic.Kind.STYLE_COALESCED,
-                                    doc.source(start),
-                                    doc.sourceEnd(end),
-                                    "必要连接范围字体/字号统一使用逻辑首样式"));
-                    unit.shapeStyle = leading;
-                }
-            }
-            style = leading;
-            sources = resolvedCandidates(leading, doc);
-            if (!UnicodeText.visible(doc.display, start, end) || doc.display.charAt(start) == '	') {
-                i = j;
+            i = range.unitEnd;
+        }
+    }
+
+    /** 同脚本、方向和字体样式的复杂文字保留完整上下文；真实字体/字号变化仍分段。 */
+    private static MatchingRange matchingRange(
+            List<Unit> units, int from, Bidi bidi, int paragraphStart) {
+        Unit first = units.get(from);
+        boolean contextual = UnicodeText.complex(first.script);
+        int level = bidi.getLevelAt(first.start - paragraphStart);
+        int to = from + 1;
+        if (contextual) {
+            while (to < units.size()
+                    && units.get(to).inlineBox == null
+                    && units.get(to).script == first.script
+                    && !units.get(to).emoji
+                    && bidi.getLevelAt(units.get(to).start - paragraphStart) == level
+                    && sameShapingFont(units.get(to).shapeStyle, first.shapeStyle)) to++;
+        }
+        return new MatchingRange(
+                from, to, first, units.get(to - 1).end, contextual,
+                (level & 1) == 0 ? ShapeDirection.LTR : ShapeDirection.RTL);
+    }
+
+    /** 只缓存独立字素的成功匹配；复杂脚本必须继续以原段落为 HB 上下文。 */
+    private FontSelection selectFont(
+            UnicodeText doc,
+            MatchingRange range,
+            TextPolicy policy,
+            List<FontSource> sources,
+            Map<MatchKey, FontSource> independent) {
+        Unit first = range.first;
+        TextStyle style = first.shapeStyle;
+        String matchText = range.contextual ? null : doc.display.substring(first.start, range.end);
+        MatchKey key = matchText == null ? null
+                : new MatchKey(sources, style.fontStyle, style.logicalEm, first.script,
+                        first.emoji, range.direction, matchText);
+        FontSource cached = key == null ? null : independent.get(key);
+        if (cached != null) return new FontSelection(cached, false, 0);
+        for (FontSource candidate : sources) {
+            if (!candidateMatches(doc, range, policy, matchText, candidate)) continue;
+            if (key != null) independent.put(key, candidate);
+            return new FontSelection(candidate, false, 0);
+        }
+        return stableReplacement(doc, range, sources);
+    }
+
+    /** 来源的脚本/color 标记只用于预筛，资格由完整范围的实际 shape/彩色像素决定。 */
+    private boolean candidateMatches(
+            UnicodeText doc,
+            MatchingRange range,
+            TextPolicy policy,
+            String matchText,
+            FontSource candidate) {
+        Unit first = range.first;
+        String script = UScript.getShortName(first.script);
+        if (range.contextual && !candidate.supportsScript(script)) return false;
+        if (first.emoji && !candidate.color) return false;
+        float em = first.shapeStyle.logicalEm;
+        FontFace face = face(candidate, em, doc);
+        if (face == null) return false;
+        String context = range.contextual ? doc.display : matchText;
+        int from = range.contextual ? first.start : 0;
+        int limit = range.contextual ? range.end : matchText.length();
+        List<ShapedGlyph> shaped = face.shape(
+                context, from, limit, range.direction, policy.language, script,
+                !range.contextual, !range.contextual);
+        if (shaped.isEmpty()) return false;
+        TreeSet<Integer> clusters = new TreeSet<Integer>();
+        clusters.add(limit);
+        for (ShapedGlyph glyph : shaped) clusters.add(glyph.cluster);
+        int visible = 0;
+        for (ShapedGlyph glyph : shaped) {
+            if (glyph.cluster >= limit
+                    || !UnicodeText.visible(context, glyph.cluster, clusters.higher(glyph.cluster)))
                 continue;
+            visible++;
+            if (glyph.glyphId == 0) return false;
+            // Emoji 默认/VS16必须实际彩色；VS15或默认文字不能输出彩色 bitmap。
+            if ((first.emoji || first.emojiLike || candidate.color)
+                    && color(candidate, em, glyph.glyphId, face) != first.emoji) return false;
+        }
+        // 一个 emoji 字素必须形成一个真实彩色序列，不把散开的码点宣称正确生成。
+        return !first.emoji || visible == 1;
+    }
+
+    /** 有效候选均无法生成时，依原顺序先选 U+FFFD，再选单色 .notdef；不追加来源。 */
+    private FontSelection stableReplacement(
+            UnicodeText doc, MatchingRange range, List<FontSource> sources) {
+        doc.diagnostics.add(
+                new Diagnostic(
+                        Diagnostic.Kind.MISSING_GLYPH,
+                        doc.source(range.first.start),
+                        doc.source(range.end),
+                        "候选列表无法正确生成 "
+                                + UScript.getShortName(range.first.script)
+                                + " 范围；使用列表内稳定替代"));
+        float em = range.first.shapeStyle.logicalEm;
+        for (FontSource candidate : sources) {
+            FontFace face = face(candidate, em, doc);
+            if (face == null) continue;
+            int id = face.glyphIndex(0xfffd);
+            if (id != 0 && !color(candidate, em, id, face))
+                return new FontSelection(candidate, true, id);
+        }
+        for (FontSource candidate : sources) {
+            FontFace face = face(candidate, em, doc);
+            if (face != null && !color(candidate, em, 0, face))
+                return new FontSelection(candidate, true, 0);
+        }
+        StringBuilder failure =
+                new StringBuilder("候选列表无有效文字字体，不能生成稳定替代: ").append(sources);
+        for (Diagnostic diagnostic : doc.diagnostics)
+            failure.append("\n").append(diagnostic.kind).append(": ").append(diagnostic.message);
+        throw new IllegalStateException(failure.toString());
+    }
+
+    private void publishMatch(
+            UnicodeText doc, List<Unit> units, MatchingRange range, FontSelection selected) {
+        styleDiagnostic(selected.source, range.first.shapeStyle, doc, range.first.start, range.end);
+        for (int k = range.unitStart; k < range.unitEnd; k++) {
+            Unit unit = units.get(k);
+            unit.source = selected.source;
+            if (selected.replacement) {
+                unit.replacement = true;
+                unit.replacementId = selected.replacementId;
             }
-            ShapeDirection direction =
-                    (bidi.getLevelAt(start - paragraphStart) & 1) == 0
-                            ? ShapeDirection.LTR
-                            : ShapeDirection.RTL;
-            // 独立字素的匹配没有跨字素连接上下文，当前layout内相同字素复用候选结果。
-            String matchText =
-                    UnicodeText.complex(first.script) ? null : doc.display.substring(start, end);
-            MatchKey matchKey =
-                    matchText == null
-                            ? null
-                            : new MatchKey(
-                                    sources,
-                                    style.fontStyle,
-                                    style.logicalEm,
-                                    first.script,
-                                    first.emoji,
-                                    direction,
-                                    matchText);
-            FontSource selected = matchKey == null ? null : independent.get(matchKey);
-            if (selected != null) {
-                styleDiagnostic(selected, style, doc, start, end);
-                for (int k = i; k < j; k++) units.get(k).source = selected;
-                i = j;
-                continue;
-            }
-            for (FontSource candidate : sources) {
-                if (UnicodeText.complex(first.script)
-                        && !candidate.supportsScript(UScript.getShortName(first.script))) continue;
-                if (first.emoji && !candidate.color) continue;
-                FontFace f = face(candidate, style.logicalEm, doc);
-                if (f == null) continue;
-                String context = matchText == null ? doc.display : matchText;
-                int from = matchText == null ? start : 0,
-                        limit = matchText == null ? end : matchText.length();
-                List<ShapedGlyph> shaped =
-                        f.shape(
-                                context,
-                                from,
-                                limit,
-                                direction,
-                                policy.language,
-                                UScript.getShortName(first.script),
-                                matchText != null,
-                                matchText != null);
-                boolean ok = !shaped.isEmpty();
-                int visible = 0;
-                TreeSet<Integer> clusters = new TreeSet<Integer>();
-                clusters.add(limit);
-                for (ShapedGlyph g : shaped) clusters.add(g.cluster);
-                for (ShapedGlyph g : shaped) {
-                    if (g.cluster >= limit
-                            || !UnicodeText.visible(context, g.cluster, clusters.higher(g.cluster)))
-                        continue;
-                    visible++;
-                    if (g.glyphId == 0) {
-                        ok = false;
-                        break;
-                    }
-                    // Emoji 默认/VS16必须实际彩色；VS15或默认文字必须不能输出彩色 bitmap。
-                    if ((first.emoji || first.emojiLike || candidate.color)
-                            && color(candidate, style.logicalEm, g.glyphId, f) != first.emoji) {
-                        ok = false;
-                        break;
-                    }
-                }
-                // 一个 emoji 字素必须形成一个真实彩色序列，不把散开的码点宣称正确生成。
-                if (first.emoji && visible != 1) ok = false;
-                if (ok) {
-                    selected = candidate;
-                    if (matchKey != null) independent.put(matchKey, selected);
-                    break;
-                }
-            }
-            if (selected == null) {
-                doc.diagnostics.add(
-                        new Diagnostic(
-                                Diagnostic.Kind.MISSING_GLYPH,
-                                doc.source(start),
-                                doc.source(end),
-                                "候选列表无法正确生成 "
-                                        + UScript.getShortName(first.script)
-                                        + " 范围；使用列表内稳定替代"));
-                int replacement = 0;
-                for (FontSource candidate : sources) {
-                    FontFace f = face(candidate, style.logicalEm, doc);
-                    if (f == null) continue;
-                    int id = f.glyphIndex(0xfffd);
-                    if (id != 0 && !color(candidate, style.logicalEm, id, f)) {
-                        selected = candidate;
-                        replacement = id;
-                        break;
-                    }
-                }
-                if (selected == null)
-                    for (FontSource candidate : sources) {
-                        FontFace f = face(candidate, style.logicalEm, doc);
-                        if (f != null && !color(candidate, style.logicalEm, 0, f)) {
-                            selected = candidate;
-                            break;
-                        }
-                    }
-                if (selected == null) {
-                    StringBuilder failure =
-                            new StringBuilder("候选列表无有效文字字体，不能生成稳定替代: ").append(sources);
-                    for (Diagnostic diagnostic : doc.diagnostics)
-                        failure.append("\n")
-                                .append(diagnostic.kind)
-                                .append(": ")
-                                .append(diagnostic.message);
-                    throw new IllegalStateException(failure.toString());
-                }
-                for (int k = i; k < j; k++) {
-                    units.get(k).replacement = true;
-                    units.get(k).replacementId = replacement;
-                }
-            }
-            styleDiagnostic(selected, style, doc, start, end);
-            for (int k = i; k < j; k++) units.get(k).source = selected;
-            i = j;
+        }
+    }
+
+    /** 只在一次 match 内传递区间事实，first 的 Unicode/样式事实在匹配期间不变。 */
+    private static final class MatchingRange {
+        final int unitStart, unitEnd, end;
+        final Unit first;
+        final boolean contextual;
+        final ShapeDirection direction;
+
+        MatchingRange(int unitStart, int unitEnd, Unit first, int end,
+                boolean contextual, ShapeDirection direction) {
+            this.unitStart = unitStart;
+            this.unitEnd = unitEnd;
+            this.first = first;
+            this.end = end;
+            this.contextual = contextual;
+            this.direction = direction;
+        }
+    }
+
+    /** 实际来源与替代字形一起发布，候选校验不写入 Unit 的部分结果。 */
+    private static final class FontSelection {
+        final FontSource source;
+        final boolean replacement;
+        final int replacementId;
+
+        FontSelection(FontSource source, boolean replacement, int replacementId) {
+            this.source = source;
+            this.replacement = replacement;
+            this.replacementId = replacementId;
         }
     }
 
@@ -1651,7 +1665,7 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                     break;
                 }
         }
-        match(doc, units, bidi, start, style, policy, sources);
+        match(doc, units, bidi, start, policy);
         TreeSet<Integer> safe = new TreeSet<Integer>();
         safe.add(start);
         safe.add(end);
@@ -2536,7 +2550,7 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
         local.style = original.style;
         local.shapeStyle = original.shapeStyle;
         Bidi bidi = new Bidi("-", Bidi.DIRECTION_LEFT_TO_RIGHT);
-        match(projection, units, bidi, 0, local.shapeStyle, policy, candidates(local.shapeStyle));
+        match(projection, units, bidi, 0, policy);
         List<Diagnostic> diagnostics = new ArrayList<>();
         for (Diagnostic diagnostic : projection.diagnostics)
             diagnostics.add(new Diagnostic(diagnostic.kind,

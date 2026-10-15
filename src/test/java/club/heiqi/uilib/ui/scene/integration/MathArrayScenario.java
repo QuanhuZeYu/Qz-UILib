@@ -277,6 +277,32 @@ public final class MathArrayScenario extends TestApplication {
                         MathStyle.TEXT);
         healthy(shortRows);
         require(shortRows.embeds.size() == 4, "短行/空cell丢失内容");
+        // 完整行交接必须区分内部整空行与环境末尾整空行，不能统一按空内容丢弃。
+        String adjacentRows = "@begin{matrix}@embed{a}@@@embed{b}";
+        MathLayout adjacent = layout(adjacentRows + "@end{matrix}", em, MathStyle.TEXT);
+        MathLayout trailing = layout(adjacentRows + "@@@end{matrix}", em, MathStyle.TEXT);
+        MathLayout internal =
+                layout(
+                        "@begin{matrix}@embed{a}@@@@@embed{b}@end{matrix}",
+                        em,
+                        MathStyle.TEXT);
+        healthy(adjacent);
+        healthy(trailing);
+        healthy(internal);
+        near(trailing.width, adjacent.width, "末尾整空行改变列宽");
+        near(trailing.height, adjacent.height, "末尾整空行产生额外行高");
+        near(trailing.baseline, adjacent.baseline, "末尾整空行改变公式基线");
+        float adjacentGap =
+                item(adjacent, "b").y
+                        + item(adjacent, "b").baseline
+                        - item(adjacent, "a").y
+                        - item(adjacent, "a").baseline;
+        float internalGap =
+                item(internal, "b").y
+                        + item(internal, "b").baseline
+                        - item(internal, "a").y
+                        - item(internal, "a").baseline;
+        require(internalGap > adjacentGap, "内部整空行未保留Item基线间距");
         MathLayout lines =
                 layout(
                         "@begin{array}{|l:r|}@hline@embed{a}&@embed{b}@@@hdashline@embed{c}&@embed{d}@@@hline@end{array}",

@@ -29,16 +29,23 @@ public final class MailboxScenario extends TestApplication {
     private final class View implements AutoCloseable, SceneHost {
         int width = 1400, height = 850;
         PaintPlan plan;
-        final ReactiveDomain domain = ReactiveDomain.direct();
+        final ReactiveDomain domain;
         MailboxModel model;
         Signal<SceneTheme> theme;
         final ScenePageSession session;
         View() { this(24,null); }
         View(club.heiqi.uilib.ui.scene.localization.MutableLocalizationSource resources) { this(24,resources); }
         View(int scale, club.heiqi.uilib.ui.scene.localization.MutableLocalizationSource resources) {
+            this(ReactiveDomain.direct(), null, scale, resources);
+        }
+        View(ReactiveDomain domain, MailboxModel shared) { this(domain, shared, 0, null); }
+        private View(ReactiveDomain domain, MailboxModel shared, int scale,
+                club.heiqi.uilib.ui.scene.localization.MutableLocalizationSource resources) {
+            this.domain = domain;
             session = ScenePageSession.open(domain, this, fonts, context -> {
                 require(context.viewportWidth().get() == width, "初次声明没有宿主空间事实");
-                model = new MailboxModel(domain, MailSamples.messages(scale)); context.own(model);
+                model = shared == null ? new MailboxModel(domain, MailSamples.messages(scale)) : shared;
+                if(shared == null) context.own(model);
                 if(resources != null) {
                     club.heiqi.uilib.ui.scene.localization.LocalizationBinding translation=
                         new club.heiqi.uilib.ui.scene.localization.LocalizationBinding(domain,context.scope(),resources);
@@ -114,6 +121,7 @@ public final class MailboxScenario extends TestApplication {
         @Override public void close() { session.close(); }
     }
     @Override protected void runTests() throws Exception {
+        scenario("外部模型跨页面重建与两棵独立树接收",this::sharedReceive);
         scenario("点击保留唯一逻辑焦点且键盘导航显示线索",this::focusCues);
         scenario("有限搜索过渡仅重绘且结束复用计划",this::finiteTransition);
         scenario("真实分类切换跨分类搜索归档与动态计数",this::categories);
@@ -158,6 +166,53 @@ public final class MailboxScenario extends TestApplication {
                 require(view.painted("邮件已不存在"), "主题变化丢失业务状态");
             }
         });
+    }
+    private void sharedReceive() {
+        ReactiveDomain domain=ReactiveDomain.direct();
+        MailboxModel[] retained={null};
+        domain.execute(() -> retained[0]=new MailboxModel(domain,MailSamples.messages(2)));
+        MailboxModel model=retained[0];
+        try {
+            try(View first=new View(domain,model)) { first.click("接收示例邮件"); }
+            try(View rebuilt=new View(domain,model);View second=new View(domain,model)) {
+                rebuilt.click("接收示例邮件");
+                second.click("接收示例邮件");
+                rebuilt.frame();
+                domain.execute(() -> require(model.count(MailboxModel.Folder.ALL)==5
+                        &&model.count(MailboxModel.Folder.INBOX)==5&&model.unread(MailboxModel.Category.PRIMARY)==4,
+                        "共享模型接收后的结果、收件箱计数或分类未读不是同一来源"));
+                require(rebuilt.painted("1–5 / 5")&&second.painted("1–5 / 5"),"两棵树未呈现全部新消息");
+                second.click("新的交接消息 3");rebuilt.frame();
+                domain.execute(() -> require(model.opened.get().subject.equals("新的交接消息 3")&&model.opened.get().read,
+                        "第二棵树阅读没有更新当前共享对象"));
+                require(rebuilt.painted("这是刚刚收到的交接记录"),"另一棵树未读取当前共享阅读对象");
+                domain.execute(() -> {
+                    MailboxModel.Message duplicate=model.opened.get();
+                    try { model.receive(duplicate);throw new AssertionError("重复外部业务id被接受"); }
+                    catch(IllegalArgumentException expected) {
+                        require(expected.getMessage().equals("消息id重复: "+duplicate.id),"重复业务id的拒绝原因被改写");
+                    }
+                    require(model.count(MailboxModel.Folder.ALL)==5,"重复外部id改变了消息数");
+                });
+            }
+            try(View independent=new View(0,null)) {
+                independent.click("接收示例邮件");
+                independent.domain.execute(() -> require(independent.model.results.get().size()==1
+                        &&independent.model.results.get().get(0).value.get().subject.equals("新的交接消息 1"),
+                        "独立模型继承了其他模型的样本序号"));
+            }
+        } finally { domain.execute(model::close); }
+        // 外部来源可以占用原有样本id；分配新身份不能改写该对象或把拒绝变成吞并。
+        domain.execute(() -> retained[0]=new MailboxModel(domain,java.util.Collections.singletonList(
+                new MailboxModel.Message("received-1","外部来源","预存消息","既有内容","预存正文","昨天",false,false,true))));
+        MailboxModel preloaded=retained[0];
+        try(View view=new View(domain,preloaded)) {
+            view.click("接收示例邮件");
+            domain.execute(() -> require(preloaded.results.get().size()==2
+                    &&preloaded.results.get().stream().anyMatch(item -> item.value.get().subject.equals("预存消息"))
+                    &&preloaded.results.get().stream().anyMatch(item -> item.value.get().subject.startsWith("新的交接消息")),
+                    "分配样本身份与预存外部消息冲突或覆盖原内容"));
+        } finally { domain.execute(preloaded::close); }
     }
     private void focusCues() {
         try(View view=new View()) {

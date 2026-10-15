@@ -52,10 +52,7 @@ public final class MailboxPage {
         SceneNode search=MailSearch.create(p,theme,palette,model);
         root.add(MailChrome.header(p,theme,mode,search,onBack,onThemePreview,collapsed,() -> collapsed.set(!collapsed.get()),
                 () -> fontScale.get()==1f?"放大文字":"标准文字",() -> fontScale.set(fontScale.get()==1f?1.25f:1f)));
-        Signal<Integer> sequence=p.domain().signal(0);
-        Runnable receive=() -> {int next=sequence.get()+1;sequence.set(next);
-            model.receive(new MailboxModel.Message("received-"+next,"协作小组","新的交接消息 "+next,
-                    "新消息已经进入收件箱。","你好，\n\n这是刚刚收到的交接记录。请在需要时将它加星，或归档到所有邮件。","刚刚",false,false,true));};
+        Runnable receive=model::receiveSample;
         SceneNode body=new SceneNode().size(Size.fill(1),Size.fill(1));
         body.bind(NodeBinding.value(wide,(n,v) -> n.axis(v?SceneNode.Axis.ROW:SceneNode.Axis.COLUMN)));
         body.add(MailChrome.navigation(p,theme,palette,model,wide,collapsed,receive));

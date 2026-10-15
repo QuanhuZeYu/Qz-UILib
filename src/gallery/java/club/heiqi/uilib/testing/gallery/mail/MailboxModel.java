@@ -48,6 +48,7 @@ public final class MailboxModel implements AutoCloseable {
     private final Owner owner;
     private final Map<String, Item> byId = new LinkedHashMap<>();
     private final Signal<List<Item>> source;
+    private long sampleSequence;
     public final Signal<String> query, openedId, feedback;
     public final Signal<Boolean> reading;
     public final Signal<Folder> folder;
@@ -169,6 +170,15 @@ public final class MailboxModel implements AutoCloseable {
     public void readChecked(boolean value) {
         for (Item item : new ArrayList<>(results.get())) if (checked.get().contains(item.id)) setRead(item.id, value);
         checked.set(Collections.emptySet());
+    }
+    /** 样本身份随业务模型存活；页面只发布意图，候选分配不重复提交receive。 */
+    public void receiveSample() {
+        domain.checkWrite();
+        String id;
+        do { id="received-"+(sampleSequence=Math.incrementExact(sampleSequence)); }
+        while(byId.containsKey(id));
+        receive(new Message(id,"协作小组","新的交接消息 "+sampleSequence,
+                "新消息已经进入收件箱。","你好，\n\n这是刚刚收到的交接记录。请在需要时将它加星，或归档到所有邮件。","刚刚",false,false,true));
     }
     public void receive(Message message) {
         domain.checkWrite(); if (byId.containsKey(message.id)) throw new IllegalArgumentException("消息id重复: " + message.id);

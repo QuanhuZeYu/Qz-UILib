@@ -1447,7 +1447,105 @@ final class MathParser {
         return node(kind, from, value, null, null, null, null, new DelimiterSpec(raw, group, size));
     }
 
-    // 二维环境的实现集中在本 parser；MathEnvironmentSpec 只记录模式和布局语义。
+    /** 本次环境的语法与默认策略；不保存读列、读行或索引回填的可变状态。 */
+    private static final class EnvironmentPolicy {
+        final String name;
+        final MathEnvironmentSpec spec;
+        final boolean columnDeclaration,
+                subarray,
+                matrixAlignment,
+                alignatCount,
+                pairedColumns,
+                casesColumns,
+                cd,
+                keepEmptyRow,
+                fixedStretch;
+
+        EnvironmentPolicy(String name, MathEnvironmentSpec spec) {
+            this.name = name;
+            this.spec = spec;
+            String base = name.replace("*", "");
+            subarray = base.equals("subarray");
+            columnDeclaration = base.equals("array") || base.equals("darray") || subarray;
+            matrixAlignment = name.endsWith("*") && base.endsWith("matrix");
+            alignatCount = base.equals("alignat") || base.equals("alignedat");
+            pairedColumns = spec.separation.equals("align") || spec.separation.equals("alignat");
+            casesColumns = spec.separation.equals("cases");
+            cd = base.equals("CD");
+            keepEmptyRow =
+                    spec.tags
+                            || base.equals("split")
+                            || base.equals("aligned")
+                            || base.equals("alignedat")
+                            || base.equals("gathered");
+            fixedStretch =
+                    spec.separation.equals("small")
+                            || spec.separation.equals("subarray")
+                            || casesColumns
+                            || cd;
+        }
+    }
+
+    /** 列声明阶段的输出；插入项此时使用局部索引，最终发布时才换成 flat 索引。 */
+    private static final class EnvironmentColumns {
+        final List<ColumnSpec> columns;
+        final List<Node> inserts;
+        final String alignment;
+        final int limit, declared;
+        final boolean constrained;
+
+        EnvironmentColumns(
+                List<ColumnSpec> columns,
+                List<Node> inserts,
+                String alignment,
+                int limit,
+                int declared,
+                boolean constrained) {
+            this.columns = columns;
+            this.inserts = inserts;
+            this.alignment = alignment;
+            this.limit = limit;
+            this.declared = declared;
+            this.constrained = constrained;
+        }
+    }
+
+    /** 一个完整语法行；当前单元格计数和终结符消费不越过读行阶段。 */
+    private static final class EnvironmentRow {
+        final List<Node> cells;
+        final MathDimension gapAfter;
+        final boolean ended;
+
+        EnvironmentRow(List<Node> cells, MathDimension gapAfter, boolean ended) {
+            this.cells = cells;
+            this.gapAfter = gapAfter;
+            this.ended = ended;
+        }
+
+        boolean empty() {
+            return cells.size() == 1
+                    && cells.get(0).kind == Kind.ROW
+                    && cells.get(0).children.isEmpty();
+        }
+    }
+
+    /** 已提交的行与横线；flat 中目前仅有单元格，尚未追加插入项和标签。 */
+    private static final class EnvironmentBody {
+        final List<Node> flat;
+        final List<RowSpec> rows;
+        final List<LineSpec> lines;
+        final int maxColumns;
+
+        EnvironmentBody(
+                List<Node> flat, List<RowSpec> rows, List<LineSpec> lines, int maxColumns) {
+            this.flat = flat;
+            this.rows = rows;
+            this.lines = lines;
+            this.maxColumns = maxColumns;
+        }
+    }
+
+    // 二维环境沿同一 token 来源读取；布局语义仍由 MathEnvironmentSpec 交给 ArraySpec。
     private Node environment(Context context, int from, Token begin) {
         String name = literal(false);
         MathCommandCatalog.Environment registration = MathCommandCatalog.findEnvironment(name);
@@ -1464,154 +1562,173 @@ final class MathParser {
                                     ? registration.argTypes.get(n)
                                     : "original",
                             n < registration.numOptionalArgs));
-        String base = name.replace("*", ""), alignment = "c";
+        EnvironmentPolicy policy = new EnvironmentPolicy(name, spec);
+        EnvironmentColumns declaration = readEnvironmentColumns(policy, parameters, begin);
+        EnvironmentBody body =
+                readEnvironmentBody(context.cell(spec.singleRow), policy, declaration, begin);
+        List<ColumnSpec> columns = defaultEnvironmentColumns(policy, declaration, body.maxColumns);
+        return finishEnvironment(from, begin, policy, declaration, body, columns);
+    }
+
+    private EnvironmentColumns readEnvironmentColumns(
+            EnvironmentPolicy policy, List<Arg> parameters, Token begin) {
         List<ColumnSpec> columns = new ArrayList<ColumnSpec>();
         List<Node> inserts = new ArrayList<Node>();
-        int columnLimit = spec.maxColumns, declaredColumns = 0;
-        boolean constrainedColumns = columnLimit > 0;
-        if (base.equals("array") || base.equals("darray") || base.equals("subarray")) {
-            Node declaration = parameters.get(0).node;
-            List<Node> parts =
-                    declaration.kind == Kind.ROW
-                            ? declaration.children
-                            : Collections.singletonList(declaration);
-            for (int n = 0; n < parts.size(); n++) {
-                Node part = parts.get(n);
-                String ch = original(part);
-                if (ch.equals("@") && !base.equals("subarray")) {
-                    if (n + 1 >= parts.size() || parts.get(n + 1).kind != Kind.ROW)
-                        throw error(begin, "@ 列插入需要分组");
-                    inserts.add(parts.get(++n));
-                    columns.add(
-                            new ColumnSpec(ColumnSpec.Type.INSERT, null, 0, 0, inserts.size() - 1));
-                } else if ((base.equals("subarray") ? "lc" : "lcr").contains(ch)
-                        && ch.length() == 1)
-                    columns.add(
-                            new ColumnSpec(ColumnSpec.Type.ALIGN, ch, Double.NaN, Double.NaN, -1));
-                else if (!base.equals("subarray") && (ch.equals("|") || ch.equals(":")))
-                    columns.add(
-                            new ColumnSpec(
-                                    ch.equals("|") ? ColumnSpec.Type.SOLID : ColumnSpec.Type.DASHED,
-                                    null,
-                                    0,
-                                    0,
-                                    -1));
-                else throw error(begin, "Unknown column alignment: " + ch);
-            }
-            if (base.equals("subarray") && columns.size() > 1)
-                throw error(begin, "subarray can contain only one column");
-        } else if (name.endsWith("*") && base.endsWith("matrix")) {
+        String alignment = "c";
+        if (policy.columnDeclaration) {
+            readColumnDeclaration(policy, parameters.get(0).node, begin, columns, inserts);
+        } else if (policy.matrixAlignment) {
             String opt = literal(true);
             if (opt != null) {
                 alignment = opt.trim();
                 if (!alignment.matches("[lcr]")) throw error(begin, "Expected l or c or r");
             }
         }
-        if (base.equals("alignat") || base.equals("alignedat")) {
-            Node parameter = parameters.get(0).node;
-            for (Node part : parameter.children)
-                if (!(part.payload instanceof GlyphSpec)
-                        || !((GlyphSpec) part.payload).atomGroup.equals("textord"))
-                    throw error(begin, "Expected textord in alignat column count");
-            String v = plain(parameter).trim();
-            double pairs;
-            try {
-                pairs = v.isEmpty() ? 0 : Double.parseDouble(v);
-            } catch (NumberFormatException ex) {
-                pairs = 0;
-            }
-            if (Double.isNaN(pairs)) pairs = 0;
-            if (Double.isInfinite(pairs) || pairs * 2 > 16384)
-                throw error(begin, "Invalid alignat column count: " + v);
-            declaredColumns = (int) Math.ceil(pairs * 2);
-            columnLimit = (int) Math.floor(pairs * 2);
-            // 非零小数的floor可为0，但仍有硬约束；只有Number0选择动态aligned。
-            constrainedColumns = pairs != 0;
+        int limit = policy.spec.maxColumns, declared = 0;
+        boolean constrained = limit > 0;
+        if (policy.alignatCount) {
+            double pairs = alignatPairs(parameters.get(0).node, begin);
+            declared = (int) Math.ceil(pairs * 2);
+            limit = (int) Math.floor(pairs * 2);
+            // 非零小数的 floor 可为 0，但仍有硬约束；只有 Number 0 选择动态 aligned。
+            constrained = pairs != 0;
         }
+        return new EnvironmentColumns(columns, inserts, alignment, limit, declared, constrained);
+    }
+
+    private void readColumnDeclaration(
+            EnvironmentPolicy policy,
+            Node declaration,
+            Token begin,
+            List<ColumnSpec> columns,
+            List<Node> inserts) {
+        List<Node> parts =
+                declaration.kind == Kind.ROW
+                        ? declaration.children
+                        : Collections.singletonList(declaration);
+        for (int n = 0; n < parts.size(); n++) {
+            String ch = original(parts.get(n));
+            if (ch.equals("@") && !policy.subarray) {
+                if (n + 1 >= parts.size() || parts.get(n + 1).kind != Kind.ROW)
+                    throw error(begin, "@ 列插入需要分组");
+                inserts.add(parts.get(++n));
+                columns.add(new ColumnSpec(ColumnSpec.Type.INSERT, null, 0, 0, inserts.size() - 1));
+            } else if ((policy.subarray ? "lc" : "lcr").contains(ch) && ch.length() == 1)
+                columns.add(new ColumnSpec(ColumnSpec.Type.ALIGN, ch, Double.NaN, Double.NaN, -1));
+            else if (!policy.subarray && (ch.equals("|") || ch.equals(":")))
+                columns.add(
+                        new ColumnSpec(
+                                ch.equals("|") ? ColumnSpec.Type.SOLID : ColumnSpec.Type.DASHED,
+                                null,
+                                0,
+                                0,
+                                -1));
+            else throw error(begin, "Unknown column alignment: " + ch);
+        }
+        if (policy.subarray && columns.size() > 1)
+            throw error(begin, "subarray can contain only one column");
+    }
+
+    private double alignatPairs(Node parameter, Token begin) {
+        for (Node part : parameter.children)
+            if (!(part.payload instanceof GlyphSpec)
+                    || !((GlyphSpec) part.payload).atomGroup.equals("textord"))
+                throw error(begin, "Expected textord in alignat column count");
+        String value = plain(parameter).trim();
+        double pairs;
+        try {
+            pairs = value.isEmpty() ? 0 : Double.parseDouble(value);
+        } catch (NumberFormatException ex) {
+            pairs = 0;
+        }
+        if (Double.isNaN(pairs)) pairs = 0;
+        if (Double.isInfinite(pairs) || pairs * 2 > 16384)
+            throw error(begin, "Invalid alignat column count: " + value);
+        return pairs;
+    }
+
+    private EnvironmentBody readEnvironmentBody(
+            Context cellContext,
+            EnvironmentPolicy policy,
+            EnvironmentColumns declaration,
+            Token begin) {
         List<Node> flat = new ArrayList<Node>();
         List<RowSpec> rows = new ArrayList<RowSpec>();
         List<LineSpec> lines = new ArrayList<LineSpec>();
-        Context cellContext = context.cell(spec.singleRow);
-        int maxColumns = 0, firstCell = 0, count = 0;
-        horizontalLines(lines, 0, base.equals("CD"));
+        int maxColumns = 0;
+        horizontalLines(lines, 0, policy.cd);
+        while (true) {
+            EnvironmentRow current =
+                    readEnvironmentRow(cellContext, policy, declaration, rows.size(), begin);
+            // 只舍弃环境末尾的空行；首个空行是否保留仍由本次环境策略决定。
+            if (!current.ended || !current.empty() || rows.isEmpty() && policy.keepEmptyRow) {
+                int firstCell = flat.size();
+                flat.addAll(current.cells);
+                rows.add(
+                        new RowSpec(
+                                firstCell,
+                                current.cells.size(),
+                                current.gapAfter,
+                                -1,
+                                policy.spec.automaticTags));
+                maxColumns = Math.max(maxColumns, current.cells.size());
+            }
+            if (current.ended) return new EnvironmentBody(flat, rows, lines, maxColumns);
+            horizontalLines(lines, rows.size(), policy.cd);
+        }
+    }
+
+    private EnvironmentRow readEnvironmentRow(
+            Context cellContext,
+            EnvironmentPolicy policy,
+            EnvironmentColumns declaration,
+            int rowIndex,
+            Token begin) {
+        List<Node> cells = new ArrayList<Node>();
         while (true) {
             Node content = row(cellContext, false);
-            if (base.equals("CD")) {
-                List<Node> cd = cdCells(content, rows.size(), begin);
-                flat.addAll(cd);
-                count += cd.size();
-            } else {
-                if ((spec.separation.equals("align") || spec.separation.equals("alignat"))
-                        && count % 2 == 1) {
-                    List<Node> prefixed = new ArrayList<Node>();
-                    prefixed.add(
-                            new Node(
-                                    Kind.ROW,
-                                    content.start,
-                                    content.start,
-                                    "",
-                                    null,
-                                    null,
-                                    null,
-                                    null));
-                    prefixed.addAll(content.children);
-                    content =
-                            new Node(
-                                    Kind.ROW,
-                                    content.start,
-                                    content.end,
-                                    "",
-                                    prefixed,
-                                    null,
-                                    null,
-                                    null);
-                }
-                flat.add(content);
-                count++;
+            if (policy.cd) cells.addAll(cdCells(content, rowIndex, begin));
+            else {
+                if (policy.pairedColumns && cells.size() % 2 == 1)
+                    content = prefixAlignmentCell(content);
+                cells.add(content);
             }
-            if (constrainedColumns && count > columnLimit)
-                throw error(begin, "Too many columns in " + name);
+            if (declaration.constrained && cells.size() > declaration.limit)
+                throw error(begin, "Too many columns in " + policy.name);
             if (text().equals("&")) {
                 take();
                 continue;
             }
-            if (text().equals("\\\\") && !spec.singleRow) {
+            if (text().equals("\\\\") && !policy.spec.singleRow) {
                 take();
                 MathDimension gap = text().equals("[") ? dimension(true) : null;
-                rows.add(new RowSpec(firstCell, count, gap, -1, spec.automaticTags));
-                maxColumns = Math.max(maxColumns, count);
-                firstCell = flat.size();
-                count = 0;
-                horizontalLines(lines, rows.size(), base.equals("CD"));
-                continue;
+                return new EnvironmentRow(cells, gap, false);
             }
             if (text().equals("\\end")) {
                 take();
                 String endName = literal(false);
-                if (!endName.equals(name)) throw error(begin, "环境不匹配: " + name + " / " + endName);
-                boolean empty =
-                        count == 1
-                                && flat.get(firstCell).kind == Kind.ROW
-                                && flat.get(firstCell).children.isEmpty();
-                boolean keepEmpty =
-                        spec.tags
-                                || base.equals("split")
-                                || base.equals("aligned")
-                                || base.equals("alignedat")
-                                || base.equals("gathered");
-                if (empty && (!rows.isEmpty() || !keepEmpty)) flat.remove(flat.size() - 1);
-                else {
-                    rows.add(new RowSpec(firstCell, count, null, -1, spec.automaticTags));
-                    maxColumns = Math.max(maxColumns, count);
-                }
-                break;
+                if (!endName.equals(policy.name))
+                    throw error(begin, "环境不匹配: " + policy.name + " / " + endName);
+                return new EnvironmentRow(cells, null, true);
             }
-            throw error(peek(), "Expected & or \\\\ or \\end in " + name);
+            throw error(peek(), "Expected & or \\\\ or \\end in " + policy.name);
         }
-        if (columns.isEmpty()
-                && (spec.separation.equals("align") || spec.separation.equals("alignat"))) {
-            boolean aligned = !constrainedColumns;
-            maxColumns = Math.max(maxColumns, declaredColumns);
+    }
+
+    private Node prefixAlignmentCell(Node content) {
+        List<Node> prefixed = new ArrayList<Node>();
+        prefixed.add(new Node(Kind.ROW, content.start, content.start, "", null, null, null, null));
+        prefixed.addAll(content.children);
+        return new Node(Kind.ROW, content.start, content.end, "", prefixed, null, null, null);
+    }
+
+    private List<ColumnSpec> defaultEnvironmentColumns(
+            EnvironmentPolicy policy, EnvironmentColumns declaration, int maxColumns) {
+        List<ColumnSpec> columns = new ArrayList<ColumnSpec>(declaration.columns);
+        if (!columns.isEmpty()) return columns;
+        if (policy.pairedColumns) {
+            boolean aligned = !declaration.constrained;
+            maxColumns = Math.max(maxColumns, declaration.declared);
             for (int n = 0; n < maxColumns; n++)
                 columns.add(
                         new ColumnSpec(
@@ -1620,38 +1737,79 @@ final class MathParser {
                                 n > 0 && n % 2 == 0 && aligned ? 1 : 0,
                                 0,
                                 -1));
-        } else if (columns.isEmpty() && spec.separation.equals("cases")) {
+        } else if (policy.casesColumns) {
             columns.add(new ColumnSpec(ColumnSpec.Type.ALIGN, "l", 0, 1, -1));
             columns.add(new ColumnSpec(ColumnSpec.Type.ALIGN, "l", 0, 0, -1));
-        } else if (columns.isEmpty()) {
+        } else {
             for (int n = 0; n < maxColumns; n++)
                 columns.add(
                         new ColumnSpec(
                                 ColumnSpec.Type.ALIGN,
-                                alignment,
-                                base.equals("CD") ? .25 : Double.NaN,
-                                base.equals("CD") ? .25 : Double.NaN,
+                                declaration.alignment,
+                                policy.cd ? .25 : Double.NaN,
+                                policy.cd ? .25 : Double.NaN,
                                 -1));
         }
-        // cell树仅存于flat，不在payload重复；列插入和tag追加并保存整数索引。
+        return columns;
+    }
+
+    private Node finishEnvironment(
+            int from,
+            Token begin,
+            EnvironmentPolicy policy,
+            EnvironmentColumns declaration,
+            EnvironmentBody body,
+            List<ColumnSpec> columns) {
+        // cell 树仅存于 flat；先追加列插入，再关联宏标签，payload 最终只保存整数索引。
         for (int n = 0; n < columns.size(); n++) {
-            ColumnSpec c = columns.get(n);
-            if (c.type == ColumnSpec.Type.INSERT) {
-                int child = flat.size();
-                flat.add(inserts.get(c.insertChild));
-                columns.set(n, new ColumnSpec(c.type, c.align, c.preGap, c.postGap, child));
+            ColumnSpec column = columns.get(n);
+            if (column.type == ColumnSpec.Type.INSERT) {
+                int child = body.flat.size();
+                body.flat.add(declaration.inserts.get(column.insertChild));
+                columns.set(
+                        n,
+                        new ColumnSpec(
+                                column.type, column.align, column.preGap, column.postGap, child));
             }
         }
+        attachEnvironmentTags(begin, policy.name, body);
+        MathEnvironmentSpec spec = policy.spec;
+        return node(
+                Kind.ARRAY,
+                from,
+                policy.name,
+                body.flat,
+                null,
+                null,
+                null,
+                new ArraySpec(
+                        policy.name,
+                        spec.style,
+                        !declaration.constrained && policy.alignatCount ? "align" : spec.separation,
+                        spec.left,
+                        spec.right,
+                        body.rows,
+                        columns,
+                        body.lines,
+                        arrayStretch(begin, policy),
+                        spec.displayRequired,
+                        spec.inlineAutoDisplay,
+                        spec.addJot,
+                        spec.outerSpacing,
+                        spec.singleRow));
+    }
+
+    private void attachEnvironmentTags(Token begin, String name, EnvironmentBody body) {
         for (MathMacroExpander.RowTag tag : rowTags) {
             if (tag.environmentOrdinal != begin.environmentOrdinal || !tag.environment.equals(name))
                 continue;
-            if (tag.row >= rows.size()) continue;
-            RowSpec previous = rows.get(tag.row);
+            if (tag.row >= body.rows.size()) continue;
+            RowSpec previous = body.rows.get(tag.row);
             int child = -1;
             if (!tag.tokens.isEmpty()) {
                 Node tagBody = subparse(tag.tokens);
-                child = flat.size();
-                flat.add(
+                child = body.flat.size();
+                body.flat.add(
                         new Node(
                                 Kind.TAG,
                                 tag.sourceStart,
@@ -1663,7 +1821,7 @@ final class MathParser {
                                 null,
                                 new TagSpec(true, false)));
             }
-            rows.set(
+            body.rows.set(
                     tag.row,
                     new RowSpec(
                             previous.firstCell,
@@ -1672,38 +1830,11 @@ final class MathParser {
                             child,
                             tag.automatic));
         }
-        return node(
-                Kind.ARRAY,
-                from,
-                name,
-                flat,
-                null,
-                null,
-                null,
-                new ArraySpec(
-                        name,
-                        spec.style,
-                        !constrainedColumns && spec.separation.equals("alignat")
-                                ? "align"
-                                : spec.separation,
-                        spec.left,
-                        spec.right,
-                        rows,
-                        columns,
-                        lines,
-                        arrayStretch(begin, spec),
-                        spec.displayRequired,
-                        spec.inlineAutoDisplay,
-                        spec.addJot,
-                        spec.outerSpacing,
-                        spec.singleRow));
     }
 
-    private double arrayStretch(Token begin, MathEnvironmentSpec spec) {
-        if (spec.separation.equals("small")
-                || spec.separation.equals("subarray")
-                || spec.separation.equals("cases")
-                || spec.separation.equals("CD")) return spec.stretch;
+    private double arrayStretch(Token begin, EnvironmentPolicy policy) {
+        MathEnvironmentSpec spec = policy.spec;
+        if (policy.fixedStretch) return spec.stretch;
         for (MathMacroExpander.EnvironmentHeader header : environmentHeaders) {
             if (header.environmentOrdinal != begin.environmentOrdinal) continue;
             if (!header.arrayStretchFromMacro) return 1;

@@ -179,10 +179,13 @@ public final class AttributedTextScenario extends TestApplication {
                         "بـب",
                         style,
                         Arrays.asList(new StyleSpan(0, 1, style), new StyleSpan(1, 3, big)));
-        TextLayout unified = service.layout(arabicFonts, 1000, TextPolicy.SINGLE_LINE);
+        TextLayout segmented = service.layout(arabicFonts, 1000, TextPolicy.SINGLE_LINE);
+        List<TextLayout.Glyph> arabicGlyphs = glyphs(segmented);
+        // 字素内部统一样式与跨字素字体分段不同；两侧声明的字号都应进入真实整形结果。
         require(
-                glyphs(unified).stream().anyMatch(g -> g.logicalEm == big.logicalEm),
-                "连接范围字体/字号变化缺leading裁决诊断");
+                arabicGlyphs.stream().anyMatch(g -> g.logicalStart == 0 && g.logicalEm == style.logicalEm)
+                        && arabicGlyphs.stream().anyMatch(g -> g.logicalStart >= 1 && g.logicalEm == big.logicalEm),
+                "阿拉伯文字跨字素字号分段被统一或丢失");
         TextPolicy wrap =
                 new TextPolicy(TextPolicy.Direction.AUTO, TextPolicy.Wrap.EMERGENCY, "und", 0, 0);
         TextLayout wrapped = service.layout(parse("§labc §cאבג §nبـب 👩‍💻", style), 18, wrap);

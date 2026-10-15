@@ -104,12 +104,14 @@ val desktopDist by tasks.registering(Zip::class) {
     }
 }
 // 自动点击、像素验收与关闭检查属于独立测试应用，正式发行不携带测试代码。
+// verification脚本随后创建testSupport；延迟取得输出，只接到测试消费者。
+val testApplicationOutput = files(provider { sourceSets.getByName("testSupport").output })
 val desktopTestSources = sourceSets.create("desktopTest") {
-    compileClasspath = sourceSets.getByName("gallery").output + desktopSources.output + glRendererSources.output + lwjgl3Sources.output + coreSources.output + fontAdapterSources.output + fontBindings + coreContentRuntime
+    compileClasspath = testApplicationOutput + sourceSets.getByName("gallery").output + desktopSources.output + glRendererSources.output + lwjgl3Sources.output + coreSources.output + fontAdapterSources.output + fontBindings + coreContentRuntime
     runtimeClasspath = output + desktopArtifacts
 }
 tasks.named<JavaCompile>(desktopTestSources.compileJavaTaskName) {
-    dependsOn(tasks.named(desktopSources.classesTaskName))
+    dependsOn(tasks.named(desktopSources.classesTaskName), "testSupportClasses")
     sourceCompatibility = "1.8"
     targetCompatibility = "1.8"
     options.release.set(8)
@@ -121,6 +123,7 @@ val desktopTestJar by tasks.registering(ShadowJar::class) {
     description = "生成独立桌面验收消费者，仅测试定义，不嵌入任何生产依赖"
     archiveClassifier.set("desktop-test")
     from(desktopTestSources.output)
+    from(testApplicationOutput)
     from(sourceSets.getByName("gallery").output)
     configurations.set(emptyList())
     minimizeJar.set(false)
@@ -173,6 +176,10 @@ val desktopGalleryVerify = desktopApplication("desktopGalleryVerify", "真实桌
     mustRunAfter(desktopVerify)
 }
 }
+val desktopGalleryResultScenario = desktopApplication("desktopGalleryResultScenario", "真实测试应用复用结果目录的失败与清理反例", true).apply { configure {
+    mainClass.set("club.heiqi.uilib.host.desktop.DesktopGalleryResultScenario")
+    args(layout.buildDirectory.dir("reports/gallery-result").get().asFile.absolutePath)
+} }
 val desktopSettingsVerify = desktopApplication("desktopSettingsVerify", "真实桌面验收共享配置页编辑、应用、保存、重载与关闭", true).apply { configure {
     mainClass.set("club.heiqi.uilib.host.desktop.DesktopSettingsVerification")
     args(layout.buildDirectory.dir("reports/settings-desktop").get().asFile.absolutePath)
@@ -190,5 +197,5 @@ listOf("desktopPerformance", "desktopPerformanceBenchmark").forEach { taskName -
             providers.gradleProperty("performanceFrames").getOrElse("120"))
     }
 }
-tasks.named("check") { dependsOn(desktopVerify, desktopGalleryVerify, desktopSettingsVerify) }
+tasks.named("check") { dependsOn(desktopVerify, desktopGalleryVerify, desktopGalleryResultScenario, desktopSettingsVerify) }
 tasks.named("assemble") { dependsOn(desktopJar, desktopDist) }

@@ -1,5 +1,6 @@
 package club.heiqi.uilib.ui.scene.host;
 
+import club.heiqi.uilib.ui.scene.input.SceneEditEvent;
 import club.heiqi.uilib.ui.scene.input.SceneNavigationEvent;
 import club.heiqi.uilib.ui.scene.input.ScenePointerEvent;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
@@ -23,33 +24,87 @@ public final class SceneFramePipeline implements AutoCloseable {
     private final SceneLayoutEngine layout;
     private final ScenePaintCollector paint;
 
-    private static final class QueuedInput {
-        final ScenePointerEvent pointer;
-        final SceneNavigationEvent navigation;
-        final Runnable fallback;
-        club.heiqi.uilib.ui.scene.input.SceneEditEvent edit;
-        SceneNavigationEvent navigationFallback;
-        boolean consumed, focusLost;
+    private enum InputKind { POINTER, NAVIGATION, EDIT, FOCUS_LOST, ESCAPE }
 
-        QueuedInput(ScenePointerEvent pointer, SceneNavigationEvent navigation) {
-            this(pointer, navigation, null);
+    /** 后续动作在当前事件及其Effect结算后执行；对象本身不承担输入路由。 */
+    private static final class FollowUp {
+        enum Kind { HOST, NAVIGATION }
+        final Kind kind;
+        final Runnable host;
+        final SceneNavigationEvent navigation;
+
+        private FollowUp(Kind kind, Runnable host, SceneNavigationEvent navigation) {
+            this.kind = kind;
+            this.host = host;
+            this.navigation = navigation;
         }
 
-        QueuedInput(ScenePointerEvent pointer, SceneNavigationEvent navigation, Runnable fallback) {
+        static FollowUp host(Runnable action) {
+            return new FollowUp(Kind.HOST, Objects.requireNonNull(action, "fallback"), null);
+        }
+
+        static FollowUp navigation(SceneNavigationEvent event) {
+            return new FollowUp(Kind.NAVIGATION, null, Objects.requireNonNull(event, "fallback"));
+        }
+    }
+
+    private static final class QueuedInput {
+        final InputKind kind;
+        final ScenePointerEvent pointer;
+        final SceneNavigationEvent navigation;
+        final SceneEditEvent edit;
+        final FollowUp followUp;
+        boolean consumed;
+
+        private QueuedInput(InputKind kind, ScenePointerEvent pointer, SceneNavigationEvent navigation,
+                            SceneEditEvent edit, FollowUp followUp) {
+            this.kind = kind;
             this.pointer = pointer;
             this.navigation = navigation;
-            this.fallback = fallback;
+            this.edit = edit;
+            this.followUp = followUp;
+        }
+
+        static QueuedInput pointer(ScenePointerEvent event) {
+            return new QueuedInput(InputKind.POINTER, Objects.requireNonNull(event, "event"), null, null, null);
+        }
+
+        static QueuedInput navigation(SceneNavigationEvent event) {
+            return new QueuedInput(InputKind.NAVIGATION, null, Objects.requireNonNull(event, "event"), null, null);
+        }
+
+        static QueuedInput edit(SceneEditEvent event, FollowUp followUp) {
+            return new QueuedInput(InputKind.EDIT, null, null, Objects.requireNonNull(event, "event"), followUp);
+        }
+
+        static QueuedInput focusLost() {
+            return new QueuedInput(InputKind.FOCUS_LOST, null, null, null, null);
+        }
+
+        static QueuedInput escape(Runnable fallback) {
+            return new QueuedInput(InputKind.ESCAPE, null, null, null, FollowUp.host(fallback));
+        }
+
+        boolean requiresTopLevelSettlement() {
+            return followUp != null;
         }
 
         void discard(ScenePointerRouter router) {
-            if (pointer != null) router.discardAfterFailure(pointer);
+            if (kind == InputKind.POINTER) router.discardAfterFailure(pointer);
         }
     }
 
     private final ArrayDeque<QueuedInput> inputs = new ArrayDeque<>();
 
     private static final class InputBatch {
+        final List<QueuedInput> events;
+        final boolean independent;
         boolean failed, released;
+
+        InputBatch(List<QueuedInput> events, boolean independent) {
+            this.events = events;
+            this.independent = independent;
+        }
     }
 
     private int pendingIndependent;
@@ -79,7 +134,7 @@ public final class SceneFramePipeline implements AutoCloseable {
     public void pointer(ScenePointerEvent event) {
         synchronized (inputs) {
             checkOpen();
-            inputs.add(new QueuedInput(Objects.requireNonNull(event, "event"), null));
+            inputs.add(QueuedInput.pointer(event));
         }
     }
 
@@ -87,9 +142,7 @@ public final class SceneFramePipeline implements AutoCloseable {
     public void focusLost() {
         synchronized (inputs) {
             checkOpen();
-            QueuedInput event = new QueuedInput(null, null);
-            event.focusLost = true;
-            inputs.add(event);
+            inputs.add(QueuedInput.focusLost());
         }
     }
 
@@ -97,7 +150,7 @@ public final class SceneFramePipeline implements AutoCloseable {
     public void navigation(SceneNavigationEvent event) {
         synchronized (inputs) {
             checkOpen();
-            inputs.add(new QueuedInput(null, Objects.requireNonNull(event, "event")));
+            inputs.add(QueuedInput.navigation(event));
         }
     }
 
@@ -105,9 +158,7 @@ public final class SceneFramePipeline implements AutoCloseable {
     public void edit(club.heiqi.uilib.ui.scene.input.SceneEditEvent event, Runnable fallback) {
         synchronized (inputs) {
             checkOpen();
-            QueuedInput input = new QueuedInput(null, null, fallback);
-            input.edit = Objects.requireNonNull(event, "event");
-            inputs.add(input);
+            inputs.add(QueuedInput.edit(event, fallback == null ? null : FollowUp.host(fallback)));
         }
     }
 
@@ -116,10 +167,7 @@ public final class SceneFramePipeline implements AutoCloseable {
             club.heiqi.uilib.ui.scene.input.SceneEditEvent event, SceneNavigationEvent fallback) {
         synchronized (inputs) {
             checkOpen();
-            QueuedInput input = new QueuedInput(null, null, () -> {});
-            input.edit = Objects.requireNonNull(event, "event");
-            input.navigationFallback = Objects.requireNonNull(fallback, "fallback");
-            inputs.add(input);
+            inputs.add(QueuedInput.edit(event, FollowUp.navigation(fallback)));
         }
     }
 
@@ -127,7 +175,7 @@ public final class SceneFramePipeline implements AutoCloseable {
     public void escape(Runnable fallback) {
         synchronized (inputs) {
             checkOpen();
-            inputs.add(new QueuedInput(null, null, Objects.requireNonNull(fallback, "fallback")));
+            inputs.add(QueuedInput.escape(fallback));
         }
     }
 
@@ -150,95 +198,97 @@ public final class SceneFramePipeline implements AutoCloseable {
             checkOpen();
         }
         host.prepareResources();
+        InputBatch batch = takeBatch();
+        for (int i = 0; i < batch.events.size(); i++) {
+            final int index = i;
+            QueuedInput event = batch.events.get(index);
+            // 路由失败仍须记录当前物理事件；后续动作失败时当前事件已结算。
+            submit(batch.independent, () -> route(batch, event), failure -> failBatch(batch, index));
+            if (event.followUp != null)
+                submit(batch.independent, () -> followUp(batch, event), failure -> failBatch(batch, index + 1));
+        }
+        Runnable replay = () -> replay(batch);
+        if (batch.independent) runtime.domain().enqueue(replay);
+        else runtime.domain().execute(replay);
+    }
+
+    private InputBatch takeBatch() {
         List<QueuedInput> events = new ArrayList<>();
         synchronized (inputs) {
             checkOpen();
             while (!inputs.isEmpty()) events.add(inputs.remove());
         }
-        // ESC批次需要顶层结算后结果；旧纯pointer/nav批次保留域内同步frame语义。
-        boolean independent;
+        // 有后续动作的事件需要顶层Effect结算；已排队的独立批次也不能被同步批次越过。
         synchronized (inputs) {
-            independent =
-                    pendingIndependent > 0
-                            || events.stream().anyMatch(event -> event.fallback != null);
+            boolean independent = pendingIndependent > 0
+                    || events.stream().anyMatch(QueuedInput::requiresTopLevelSettlement);
             if (independent) pendingIndependent++;
+            return new InputBatch(events, independent);
         }
-        InputBatch batch = new InputBatch();
-        for (int i = 0; i < events.size(); i++) {
-            final int index = i;
-            submit(
-                    independent,
-                    () -> {
-                        if (batch.failed) return;
-                        ScenePointerRouter router = runtime.pointerRouter();
-                        QueuedInput event = events.get(index);
-                        if (isClosed() || !runtime.alive()) {
-                            event.discard(router);
-                            return;
-                        }
-                        SceneGeometryView geometry = prepare().geometry;
-                        if (event.focusLost) {
-                            try { router.route(ScenePointerEvent.cancel(), geometry); }
-                            finally { runtime.focusRouter().clear(); }
-                        }
-                        else if (event.edit != null) event.consumed = runtime.dispatchEdit(event.edit);
-                        else if (event.pointer != null) router.route(event.pointer, geometry);
-                        else if (event.navigation == SceneNavigationEvent.ACTIVATE)
-                            runtime.focusRouter().activate();
-                        else if (event.navigation != null)
-                            runtime.focusRouter()
-                                    .navigate(event.navigation == SceneNavigationEvent.PREVIOUS);
-                        else event.consumed = runtime.dispatchEscape();
-                    },
-                    failure -> {
-                        batch.failed = true;
-                        if (independent) release(batch);
-                        ScenePointerRouter router = runtime.pointerRouter();
-                        // 导航后的业务Effect也可能失败；即使剩余只有导航，旧物理owner仍必须取消。
-                        router.discardAfterFailure(ScenePointerEvent.cancel());
-                        for (int tail = index; tail < events.size(); tail++)
-                            events.get(tail).discard(router);
-                    });
-            QueuedInput event = events.get(index);
-            if (event.fallback != null)
-                submit(
-                        independent,
-                        () -> {
-                            if (!batch.failed
-                                    && !isClosed()
-                                    && runtime.alive()
-                                    && !event.consumed) {
-                                // 导航/按钮fallback沿本事件结算，不能重新排入下一帧越过后续已采集文字。
-                                if (event.navigationFallback == SceneNavigationEvent.ACTIVATE)
-                                    runtime.focusRouter().activate();
-                                else if (event.navigationFallback != null)
-                                    runtime.focusRouter()
-                                            .navigate(
-                                                    event.navigationFallback
-                                                            == SceneNavigationEvent.PREVIOUS);
-                                else event.fallback.run();
-                            }
-                        },
-                        failure -> {
-                            batch.failed = true;
-                            if (independent) release(batch);
-                            ScenePointerRouter router = runtime.pointerRouter();
-                            router.discardAfterFailure(ScenePointerEvent.cancel());
-                            for (int tail = index + 1; tail < events.size(); tail++)
-                                events.get(tail).discard(router);
-                        });
+    }
+
+    private void route(InputBatch batch, QueuedInput event) {
+        if (batch.failed) return;
+        ScenePointerRouter router = runtime.pointerRouter();
+        if (isClosed() || !runtime.alive()) {
+            event.discard(router);
+            return;
         }
-        Runnable replay =
-                () -> {
-                    try {
-                        if (!batch.failed && !isClosed() && runtime.alive())
-                            host.replay(prepare().paint);
-                    } finally {
-                        if (independent) release(batch);
-                    }
-                };
-        if (independent) runtime.domain().enqueue(replay);
-        else runtime.domain().execute(replay);
+        SceneGeometryView geometry = prepare().geometry;
+        switch (event.kind) {
+            case FOCUS_LOST:
+                try { router.route(ScenePointerEvent.cancel(), geometry); }
+                finally { runtime.focusRouter().clear(); }
+                break;
+            case EDIT:
+                event.consumed = runtime.dispatchEdit(event.edit);
+                break;
+            case POINTER:
+                router.route(event.pointer, geometry);
+                break;
+            case NAVIGATION:
+                navigate(event.navigation);
+                break;
+            case ESCAPE:
+                event.consumed = runtime.dispatchEscape();
+                break;
+        }
+    }
+
+    private void followUp(InputBatch batch, QueuedInput event) {
+        if (batch.failed || isClosed() || !runtime.alive() || event.consumed) return;
+        // 沿当前事件结算，不能重新排到下一帧而越过已采集的文字。
+        switch (event.followUp.kind) {
+            case HOST:
+                event.followUp.host.run();
+                break;
+            case NAVIGATION:
+                navigate(event.followUp.navigation);
+                break;
+        }
+    }
+
+    private void navigate(SceneNavigationEvent event) {
+        if (event == SceneNavigationEvent.ACTIVATE) runtime.focusRouter().activate();
+        else runtime.focusRouter().navigate(event == SceneNavigationEvent.PREVIOUS);
+    }
+
+    private void failBatch(InputBatch batch, int firstDiscard) {
+        batch.failed = true;
+        if (batch.independent) release(batch);
+        ScenePointerRouter router = runtime.pointerRouter();
+        // 导航后的Effect也可能失败；即使剩余只有导航，旧物理owner仍必须取消。
+        router.discardAfterFailure(ScenePointerEvent.cancel());
+        for (int tail = firstDiscard; tail < batch.events.size(); tail++)
+            batch.events.get(tail).discard(router);
+    }
+
+    private void replay(InputBatch batch) {
+        try {
+            if (!batch.failed && !isClosed() && runtime.alive()) host.replay(prepare().paint);
+        } finally {
+            if (batch.independent) release(batch);
+        }
     }
 
     private void submit(
