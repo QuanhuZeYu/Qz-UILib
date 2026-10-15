@@ -104,6 +104,11 @@ public final class DesktopDraggableVerification {
             LayoutBox label=DesktopTestInput.geometry(w).ordered().stream().filter(e -> e.text!=null&&"拖动我".equals(e.text.logicalText)).findFirst().get().box;
             down(w,input,label.x+8,label.y+8);move(w,input,label.x+128,label.y+88);save(w,output.resolve("draggable-active.png"));
             up(w,input,label.x+128,label.y+88);save(w,output.resolve("draggable-released.png"));
+            for(String title:new String[]{"独立把手","双启动把手","拖动预览","只沿横轴","只沿纵轴","网格吸附","容器边界","窗口边界","距离激活","延时激活"})
+                require(DesktopTestInput.geometry(w).ordered().stream().anyMatch(e -> e.text!=null&&title.equals(e.text.logicalText)),"参考扩展示例缺失："+title);
+            for(int step=0;step<12&&!visibleText(w,"拖动预览");step++){input.point(1000,700);input.scroll.invoke(w.handle(),0,-4);w.frame();}
+            require(visibleText(w,"拖动预览")&&visibleText(w,"独立把手"),"更多参考交互无法在真实示例页显露");save(w,output.resolve("draggable-variants.png"));
+            input.point(1000,600);input.scroll.invoke(w.handle(),0,100);w.frame();
             glfwSetWindowSize(w.handle(),600,900);settle(w);
             for(String name:new String[]{"元素 A","元素 B","元素 C"})
                 require(DesktopTestInput.geometry(w).ordered().stream().anyMatch(e -> e.text!=null&&name.equals(e.text.logicalText)
@@ -114,6 +119,7 @@ public final class DesktopDraggableVerification {
             System.out.println("DRAGGABLE gallery=true actualGpu=true normalEntry=true");
         }
     }
+    private static boolean visibleText(DesktopWindow w,String text){return DesktopTestInput.geometry(w).ordered().stream().anyMatch(e -> e.text!=null&&text.equals(e.text.logicalText)&&DesktopTestInput.hit(e).height>0);}
     // LayoutBox是不可变区域但没有值相等实现；这里比较实际共同几何，不能比较对象身份。
     private static boolean same(LayoutBox a,LayoutBox b){return a.x==b.x&&a.y==b.y&&a.width==b.width&&a.height==b.height;}
     private static LayoutBox box(DesktopWindow w,SceneNode n){return DesktopTestInput.geometry(w,n).box;}

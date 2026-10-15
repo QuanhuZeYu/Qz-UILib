@@ -194,8 +194,10 @@ public final class SettingsPage implements ScenePage {
             return sources.size()==1?first:first+"，以及其他 "+(sources.size()-1)+" 个来源";
         }
         SceneNode fontsDialog() {
-            SceneNode list=SettingsStyle.column(0).size(Size.fill(1),Size.fixed(320)).scrollable(true).clip(true);
-            list.bind(NodeBinding.repeat(model.sources(),SettingsModel.Source::identity,this::sourceRow));
+            SceneNode list=club.heiqi.uilib.ui.scene.control.SceneSortableList.create(ctx,model.sources(),SettingsModel.Source::identity,
+                    this::sortableSource,this::sourcePreview,move -> model.moveBefore(move.key,move.beforeKey))
+                    .size(Size.fill(1),Size.fixed(320)).scrollable(true).clip(true);
+            list.bind(NodeBinding.value(() -> SettingsTypography.style(14,palette.get().accent,400),SceneNode::style));
             // 空态隐藏整个表面，避免仍参与布局的容器失去唯一可见正文。
             SceneNode sourceList=SettingsStyle.surface(list,palette,false)
                     .bind(NodeBinding.value(model.sources(),(n,items) -> n.visible(!items.isEmpty())));
@@ -203,7 +205,8 @@ public final class SettingsPage implements ScenePage {
             empty.bind(NodeBinding.value(model.sources(),(n,items) -> n.visible(items.isEmpty())));
             SettingsStyle.Button done=SettingsStyle.button(ctx,() -> "完成字体编辑",palette,() -> dialog.set(Dialog.NONE),true,false);
             SceneNode content=SettingsStyle.column(16).add(SettingsStyle.heading(ctx,() -> "管理字体来源",palette,20))
-                    .add(text("从上到下依次匹配。编辑后仍需在设置页应用。",14,true))
+                    .add(text("从上到下依次匹配。拖动把手调整顺序，松手只更新草稿。",14,true))
+                    .add(text("也可用上移/下移，或聚焦后按空格拾取、方向键排序、Enter 确认、Esc 取消。",12,true))
                     .add(empty).add(sourceList).add(error(model.fontError()))
                     .add(actions(button("+ 添加来源",() -> {path.reset("");fileSource.set(false);dialog.set(Dialog.ADD);}),
                             button(() -> "恢复默认",model::resetFonts,false,true)))
@@ -212,6 +215,16 @@ public final class SettingsPage implements ScenePage {
             return SettingsStyle.column(0).size(Size.fill(1),Size.fill(1)).control(new SettingsLayout.Layers(true,720))
                     .background(0x66000000).modal(true).onEscape(() -> {cancelDialog();return true;})
                     .add(SettingsStyle.card(content,palette)).initialFocus(done.target);
+        }
+        club.heiqi.uilib.ui.scene.control.SceneSortableList.Row sortableSource(ReadableSignal<SettingsModel.Source> source) {
+            SceneNode handle=text("::",20,true).size(Size.fixed(28),Size.natural()).padding(4);
+            SceneNode row=SettingsStyle.row(4).add(handle).add(sourceRow(source).size(Size.fill(1),Size.natural()));
+            return new club.heiqi.uilib.ui.scene.control.SceneSortableList.Row(row,handle);
+        }
+        SceneNode sourcePreview(ReadableSignal<SettingsModel.Source> source) {
+            SceneNode info=SettingsStyle.column(4).padding(12).add(text(() -> sourceName(source.get().declaration()),14,false))
+                    .add(text(() -> source.get().declaration(),12,true));
+            return SettingsStyle.surface(info,palette,false).size(Size.fill(1).bounds(0,560),Size.natural());
         }
         SceneNode sourceRow(ReadableSignal<SettingsModel.Source> source) {
             SceneNode info=SettingsStyle.column(4).add(text(() -> String.format(java.util.Locale.ROOT,"%02d",model.sources().get().indexOf(source.get())+1)

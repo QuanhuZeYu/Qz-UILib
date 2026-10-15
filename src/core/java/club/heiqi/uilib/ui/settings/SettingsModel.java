@@ -163,6 +163,19 @@ public final class SettingsModel {
         sources.set(Collections.unmodifiableList(next));
     }
 
+    /** 只在排序正常结束时变更草稿；来源身份独立于声明值，重复字体也不会串行。 */
+    public void moveBefore(Object sourceKey, Object beforeKey) {
+        write();
+        List<Source> current=sources.get();
+        Source source=null,before=null;
+        for(Source item:current){if(item.identity()==sourceKey)source=item;if(item.identity()==beforeKey)before=item;}
+        if(source==null||source==before||beforeKey!=null&&before==null)return;
+        List<Source> next=new ArrayList<>(current);next.remove(source);
+        next.add(before==null?next.size():next.indexOf(before),source);
+        if(next.equals(current))return;
+        clearFeedback();sources.set(Collections.unmodifiableList(next));
+    }
+
     public void setReplace(boolean value) {
         write();
         if (!configuration.hasMinecraft() || replace.get() == value) return;

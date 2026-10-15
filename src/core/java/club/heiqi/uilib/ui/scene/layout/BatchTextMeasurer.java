@@ -16,7 +16,7 @@ import java.util.Set;
 final class BatchTextMeasurer implements SceneTextMeasurer {
     private final SceneTextMeasurer delegate;
     private static final int MAX_REQUESTS = 16;
-    private final Map<Request, TextLayout> layouts = new LinkedHashMap<>(16, 0.75f, true);
+    private final Map<Request, PaintEntry> layouts = new LinkedHashMap<>(16, 0.75f, true);
     private boolean revisionKnown;
     private long measureRevision;
     private final Set<Request> activeRequests = new HashSet<>();
@@ -31,8 +31,8 @@ final class BatchTextMeasurer implements SceneTextMeasurer {
         measureRevision = revision;
     }
 
-    private void remember(Request request, TextLayout layout) {
-        layouts.put(request, layout);
+    private void remember(Request request, TextLayout layout, Object paintDeclaration) {
+        layouts.put(request, new PaintEntry(layout, paintDeclaration));
         // 活跃集合也随淘汰收缩，控件在一批内发出许多约束时不能旁路容量边界。
         while (layouts.size() > MAX_REQUESTS) {
             Request eldest = layouts.keySet().iterator().next();
@@ -68,10 +68,10 @@ final class BatchTextMeasurer implements SceneTextMeasurer {
     public TextLayout layout(String text, TextStyle style, int width) {
         Request request = new Request(text, style, width, null);
         activeRequests.add(request);
-        TextLayout cached = layouts.get(request);
-        if (cached != null) return cached.withColors(style.color, offset -> style.color);
+        PaintEntry cached = layouts.get(request);
+        if (cached != null) return cached.plain(style.color);
         TextLayout layout = delegate.layout(text, style, width);
-        remember(request, layout);
+        remember(request, layout, style.color);
         return layout;
     }
 
@@ -79,10 +79,10 @@ final class BatchTextMeasurer implements SceneTextMeasurer {
     public TextLayout layout(String text, TextStyle style, int width, TextPolicy policy) {
         Request request = new Request(text, style, width, policy);
         activeRequests.add(request);
-        TextLayout cached = layouts.get(request);
-        if (cached != null) return cached.withColors(style.color, offset -> style.color);
+        PaintEntry cached = layouts.get(request);
+        if (cached != null) return cached.plain(style.color);
         TextLayout layout = delegate.layout(text, style, width, policy);
-        remember(request, layout);
+        remember(request, layout, style.color);
         return layout;
     }
 
@@ -90,11 +90,35 @@ final class BatchTextMeasurer implements SceneTextMeasurer {
     public TextLayout layout(AttributedText text, float width, TextPolicy policy) {
         Request request = new Request(text, null, width, policy);
         activeRequests.add(request);
-        TextLayout cached = layouts.get(request);
-        if (cached != null) return cached.withColors(text.baseStyle.color, offset -> text.styleAt(offset).color);
+        PaintEntry cached = layouts.get(request);
+        if (cached != null) return cached.attributed(text);
         TextLayout layout = delegate.layout(text, width, policy);
-        remember(request, layout);
+        remember(request, layout, text);
         return layout;
+    }
+
+    /** 与原定位缓存共用16项边界和失效。显式记录本次颜色声明，不能从旧glyph颜色猜测继承。
+     * 拖动只改变排列时文字声明不变，避免每帧重新走全部安全簇并创建临时Line/列表。
+     */
+    private static final class PaintEntry {
+        private TextLayout layout;
+        private Object declaration;
+        PaintEntry(TextLayout layout,Object declaration) { this.layout=layout;this.declaration=declaration; }
+        TextLayout plain(int color) {
+            if (!(declaration instanceof Integer) || ((Integer)declaration).intValue()!=color) {
+                TextLayout updated=layout.withColors(color,offset -> color);
+                layout=updated;declaration=color;
+            }
+            return layout;
+        }
+        TextLayout attributed(AttributedText text) {
+            // 属性文本不可变；只复用同一完整声明，新的同定位声明仍走原安全簇颜色规则。
+            if (declaration!=text) {
+                TextLayout updated=layout.withColors(text.baseStyle.color,offset -> text.styleAt(offset).color);
+                layout=updated;declaration=text;
+            }
+            return layout;
+        }
     }
 
     private static final class Request {

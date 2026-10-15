@@ -147,7 +147,18 @@ public final class ScenePointerRouter implements AutoCloseable {
                     if (target != null) {
                         runtime.focusRouter().pointerInput();
                         SceneNode hit = target.node;
-                        ownerTarget = target.identity;
+                        Object identity = target.identity;
+                        // 只沿已命中子树寻找明确声明的 activator；没有声明时完全保留子控件优先。
+                        for (SceneNode ancestor = hit.parent(); ancestor != null; ancestor = ancestor.parent()) {
+                            if (!runtime.interactive(ancestor) || ancestor.control() == null) continue;
+                            SceneNode candidate = ancestor;
+                            Object delegated = runtime.domain().readOnly(() ->
+                                    candidate.control().pointerActivator(candidate, target.node, geometry, x, y));
+                            if (delegated != null && runtime.pointerTargetValid(candidate, delegated)) {
+                                hit = candidate; identity = delegated; break;
+                            }
+                        }
+                        ownerTarget = identity;
                         setOwner(runtime.captureMount(hit));
                         if (hit.control() != null && hit.control().capturesPointer()) {
                             if (hit.clickFocus() && hit.focusable())

@@ -325,6 +325,33 @@ public final class PointerInputScenario extends TestApplication {
                     p.tap();
                     p.expect(2, "异常收尾后下一完整物理点击正常到达");
                 });
+        for(boolean effectFailure:new boolean[]{false,true}) scenario(
+                "静止输入帧"+(effectFailure?"Effect":"handler")+"异常清理捕获且保留原异常",
+                () -> {
+                    Page p=new Page();RuntimeException original=new RuntimeException("输入帧失败A"),cleanup=new RuntimeException("输入帧清理失败C");
+                    int[] pointers={0},cancels={0};Signal<Boolean>[] active=new Signal[1],fail=new Signal[1];Signal<Integer>[] tick=new Signal[1];
+                    p.domain.execute(() -> p.children.set(Collections.emptyList()));p.session.frame();
+                    p.domain.execute(() -> {
+                        active[0]=p.domain.signal(false);fail[0]=p.domain.signal(false);tick[0]=p.domain.signal(0);
+                        p.domain.effect(p.context.scope(),() -> {if(effectFailure&&tick[0].get()>0)throw original;});
+                        p.button.control(new SceneControl(){
+                            @Override public MeasuredSize measure(SceneNode n,Constraints c,SceneTextMeasurer text){return new MeasuredSize(40,20);}
+                            @Override public ChildPlacements arrange(SceneNode n,LayoutBox box,SceneChildMeasurer children){return new ChildPlacements(Collections.emptyList());}
+                            @Override public void paint(SceneNode n,SceneGeometryView geometry,PaintPlanBuilder paint){}
+                            @Override public boolean capturesPointer(){return true;}
+                            @Override public void pointer(SceneNode n,ScenePointerEvent event,SceneGeometryView geometry){pointers[0]++;if(event.kind==ScenePointerEvent.Kind.DOWN)active[0].set(true);}
+                            @Override public long nextInputNanos(SceneNode n){return active[0].get()?0:Long.MAX_VALUE;}
+                            @Override public void inputFrame(SceneNode n,SceneGeometryView geometry,long now){if(fail[0].get()){if(effectFailure)tick[0].set(1);else throw original;}}
+                            @Override public void captureLost(SceneNode n){cancels[0]++;active[0].set(false);throw cleanup;}
+                        });p.children.set(Collections.singletonList(p.button));
+                    });p.session.frame();p.down();p.domain.execute(() -> fail[0].set(true));
+                    try{p.session.frame();throw new AssertionError("静止inputFrame原异常须外抛");}
+                    catch(RuntimeException actual){require(actual==original,"输入帧必须保留A身份");require(Arrays.asList(actual.getSuppressed()).contains(cleanup),"输入帧清理C须direct suppressed到A");}
+                    require(cancels[0]==1&&pointers[0]==1,"输入帧失败未清唯一owner或误派handler");
+                    p.events(ScenePointerEvent.move(6,5),ScenePointerEvent.down(1,6,5),ScenePointerEvent.up(0,6,5),ScenePointerEvent.syntheticActivation(5,5));
+                    p.expect(0,"失败后迟到MOVE/UP及第二DOWN尾部不得激活");require(pointers[0]==1,"旧控件收到失败尾部");
+                    p.events(ScenePointerEvent.up(1,6,5),ScenePointerEvent.syntheticActivation(5,5));p.expect(1,"完整物理尾部结束后允许新激活");
+                });
         scenario(
                 "外部executor的Effect结算异常保留尾部",
                 () -> {

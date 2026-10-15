@@ -18,6 +18,30 @@ import java.util.List;
 public interface SceneControl {
     /** null 表示普通流；所属层策略不得返回 null。 */
     default SceneLayer.Policy layerPolicy(SceneNode node) { return null; }
+
+    /** 所属层只声明位置；null 沿默认锚定，尺寸仍由正式测量决定，裁剪与范围仍归核心。 */
+    default LayoutBox placeLayer(SceneNode node, LayoutBox sourceBox, LayoutBox viewport, MeasuredSize size) {
+        return null;
+    }
+
+    /** 只读输入时间需求；MAX 表示静止。实际读取的 Signal 随挂载订阅，不逐帧扫描控件树。 */
+    default long nextInputNanos(SceneNode node) { return Long.MAX_VALUE; }
+
+    /** 有效几何后、绘制前每宿主批次至多一次；可发布交互呈现状态，不在 measure/paint 推进。 */
+    default void inputFrame(SceneNode node, SceneGeometryView geometry, long now) {}
+
+    /** 本批活动输入或后续 Effect 失败时，只结束本批实际参与控件的临时输入状态。
+     * 与指针捕获丢失分别通知，不能补发业务提交或重复 captureLost。 */
+    default void inputFrameCancelled(SceneNode node) {}
+
+    /** 只有显式声明的子 activator 可把其命中交给祖先；普通子按钮仍优先。 */
+    default Object pointerActivator(SceneNode node, SceneNode hit, SceneGeometryView geometry, int x, int y) {
+        return null;
+    }
+
+    /** 显式子 activator 的键盘委派，不建立通用编辑冒泡。 */
+    default boolean editActivator(SceneNode node, SceneNode focused,
+            club.heiqi.uilib.ui.scene.input.SceneEditEvent event) { return false; }
     /** 声明测量使用的响应来源；框架在挂载期订阅，变更重新测量。 */
     default List<ReadableSignal<?>> measureDependencies(SceneNode node) {
         return Collections.emptyList();
@@ -132,6 +156,10 @@ public interface SceneControl {
     default boolean edit(SceneNode node, club.heiqi.uilib.ui.scene.input.SceneEditEvent event) {
         return false;
     }
+
+    /** 键盘几何与指针消费同一事实；既有控件保持原 edit 接口。 */
+    default boolean edit(SceneNode node, club.heiqi.uilib.ui.scene.input.SceneEditEvent event,
+            SceneGeometryView geometry) { return edit(node, event); }
 
     /** 只有需要DOWN定位的控件申请；普通按钮仍在UP聚焦。 */
     default boolean capturesPointer() {

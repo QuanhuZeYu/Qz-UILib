@@ -87,7 +87,7 @@ public final class DesktopWindow implements SceneHost, AutoCloseable {
     }
     /** 业务页面直接接入既有ScenePage/ScenePageContext，无第二套页面抽象。 */
     public static DesktopWindow open(Path configuration, ScenePage content) throws IOException {
-        return content == null ? open(configuration) : open(configuration, content, null, false);
+        return content == null ? open(configuration) : open(configuration, content, null, false, defaultVisible());
     }
     /** 图像owner就绪后声明业务页面；服务归窗口，页面订阅仍归页面作用域。 */
     public static DesktopWindow openWithImages(Path configuration, Function<ImageService, ScenePage> content) throws IOException {
@@ -96,16 +96,21 @@ public final class DesktopWindow implements SceneHost, AutoCloseable {
     }
     /** 配置与图像服务就绪后声明业务页面；借用同一宿主会话，状态操作在页面域内执行。 */
     public static DesktopWindow openWithServices(Path configuration, Function<DesktopPageServices, ScenePage> content) throws IOException {
-        return open(configuration, null, Objects.requireNonNull(content, "content"), false);
+        return openWithServices(configuration, defaultVisible(), content);
+    }
+    /** 创建时选择原生窗口可见性；隐藏窗口仍拥有完整的GL上下文、输入回调和帧生命周期。 */
+    public static DesktopWindow openWithServices(Path configuration, boolean visible, Function<DesktopPageServices, ScenePage> content) throws IOException {
+        return open(configuration, null, Objects.requireNonNull(content, "content"), false, visible);
     }
     /** 与普通页面共用窗口、字体服务和配置域；关闭确认归共享配置页。 */
     public static DesktopWindow openSettings(Path configuration) throws IOException {
-        return open(configuration, null, null, true);
+        return open(configuration, null, null, true, defaultVisible());
     }
-    private static DesktopWindow open(Path configuration, ScenePage content, Function<DesktopPageServices, ScenePage> factory, boolean settings) throws IOException {
+    private static boolean defaultVisible() { return Boolean.parseBoolean(System.getProperty("uilib.desktop.visible", "true")); }
+    private static DesktopWindow open(Path configuration, ScenePage content, Function<DesktopPageServices, ScenePage> factory, boolean settings, boolean visible) throws IOException {
         DesktopWindow result = new DesktopWindow(configuration);
         try {
-            result.initialize(content, factory, settings);
+            result.initialize(content, factory, settings, visible);
             return result;
         } catch (Throwable failure) {
             try { result.close(); } catch (Throwable cleanup) { failure.addSuppressed(cleanup); }
@@ -117,7 +122,7 @@ public final class DesktopWindow implements SceneHost, AutoCloseable {
         }
     }
     private <T extends AutoCloseable> T own(T resource) { resources.push(resource); return resource; }
-    private void initialize(ScenePage supplied, Function<DesktopPageServices, ScenePage> factory, boolean settings) throws IOException {
+    private void initialize(ScenePage supplied, Function<DesktopPageServices, ScenePage> factory, boolean settings, boolean visible) throws IOException {
         GLFWErrorCallback errors = GLFWErrorCallback.createPrint(System.err);
         errors.set();
         own(() -> { glfwSetErrorCallback(null); errors.free(); });
@@ -127,7 +132,7 @@ public final class DesktopWindow implements SceneHost, AutoCloseable {
         glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
         glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
         glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-        glfwWindowHint(GLFW_VISIBLE, GLFW_TRUE);
+        glfwWindowHint(GLFW_VISIBLE, visible ? GLFW_TRUE : GLFW_FALSE);
         window = glfwCreateWindow(800, 600, "UILib Desktop", 0, 0);
         if (window == 0) throw new IllegalStateException("桌面GL窗口创建失败");
         own(() -> { Callbacks.glfwFreeCallbacks(window); glfwMakeContextCurrent(0); glfwDestroyWindow(window); window = 0; });
@@ -185,7 +190,7 @@ public final class DesktopWindow implements SceneHost, AutoCloseable {
         }
         page = own(ScenePageSession.open(domain, this, fonts, content));
         installCallbacks();
-        glfwShowWindow(window);
+        if (visible) glfwShowWindow(window);
     }
     private Signal<Long> reloadRevision;
     private void resourcesReloaded() {

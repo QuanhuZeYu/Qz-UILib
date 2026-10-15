@@ -53,6 +53,10 @@ public final class SceneRuntime implements AutoCloseable {
     private final Map<SceneNode, Mount> mounts = new IdentityHashMap<>();
     private final List<SceneNode> roots = new ArrayList<>();
     private final Set<SceneNode> dirtyBindings = new LinkedHashSet<>();
+    private final Set<SceneNode> inputFrames = new LinkedHashSet<>();
+    private MountHandle inputReveal;
+    private boolean inputSampled;
+    private long inputNanos;
     private boolean mutation;
     private boolean routing;
     private boolean disposed;
@@ -332,6 +336,14 @@ public final class SceneRuntime implements AutoCloseable {
             observeControl(node, mount, () -> node.control().measureDependencies(node), () -> invalidate(node));
             observeControl(node, mount, () -> node.control().arrangementDependencies(node), this::invalidateArrangement);
             observeControl(node, mount, () -> node.control().paintDependencies(node), this::invalidatePaint);
+            Observation input = domain.observe(mount.owner, () -> {
+                if (node.control().nextInputNanos(node) == Long.MAX_VALUE) inputFrames.remove(node);
+                else inputFrames.add(node);
+            }, () -> invalidateBinding(node));
+            mount.bindings.add(new BindingActivation() {
+                public void refresh() { input.refresh(); }
+                public void close() { inputFrames.remove(node); input.close(); }
+            });
         }
         dirtyBindings.add(node);
         for (SceneNode child : node.children()) mountSubtree(child, mount.owner);
@@ -346,6 +358,56 @@ public final class SceneRuntime implements AutoCloseable {
             public void refresh() { dependencies.refresh(); }
             public void close() { dependencies.close(); }
         });
+    }
+
+    /** 与过渡和物理输入共享的帧采样时刻。 */
+    public long inputNanos() { domain.checkAccess(); return transitions.now(); }
+
+    /** 宿主批次拥有的有限参与记录；成功批次随自身释放，不在 runtime 留存旧手势。 */
+    public static final class InputFrame {
+        private final List<MountHandle> participants = new ArrayList<>();
+        private boolean cancelled;
+    }
+
+    /** 唯一宿主批次推进活动输入；current/prepare 只结算，不在同批重复计时或滚动。 */
+    public void advanceInputFrame(SceneGeometryView geometry, long now, InputFrame frame) {
+        command();
+        if (inputSampled && now - inputNanos <= 0) return;
+        inputSampled = true;
+        inputNanos = now;
+        if (inputFrames.isEmpty()) return;
+        for (SceneNode node : new ArrayList<>(inputFrames)) {
+            if (!inputFrames.contains(node) || !mounts.containsKey(node) || node.control() == null) continue;
+            long next = domain.readOnly(() -> node.control().nextInputNanos(node));
+            if (next == Long.MAX_VALUE || next - now > 0) continue;
+            // 先登记再调用，handler 自身和域结算 Effect 失败都能清理无 pointer owner 的键盘手势。
+            frame.participants.add(captureMount(node));
+            boolean previous = routing;
+            routing = true;
+            try { node.control().inputFrame(node, geometry, now); }
+            finally { routing = previous; }
+        }
+    }
+
+    /** 原失败边界只通知本批仍同挂载的参与者；错误清理不能把取消变成全局重置。 */
+    public void cancelInputFrame(InputFrame frame) {
+        domain.checkWrite();
+        if (frame.cancelled) return;
+        frame.cancelled = true;
+        Throwable failure = null;
+        for (MountHandle target : frame.participants) {
+            if (!target.active() || target.node().control() == null) continue;
+            boolean previous = routing;
+            routing = true;
+            try { target.node().control().inputFrameCancelled(target.node()); }
+            catch (RuntimeException | Error next) {
+                if (failure == null) failure = next;
+                else if (next != failure && !java.util.Arrays.asList(failure.getSuppressed()).contains(next)) failure.addSuppressed(next);
+            } finally { routing = previous; }
+        }
+        frame.participants.clear();
+        if (failure instanceof Error) throw (Error) failure;
+        if (failure instanceof RuntimeException) throw (RuntimeException) failure;
     }
 
     public void preparePresentation() {
@@ -416,6 +478,7 @@ public final class SceneRuntime implements AutoCloseable {
         mounts.remove(node);
         clearLogicalModal();
         scrolling.remove(node);
+        inputFrames.remove(node);
         dirtyBindings.remove(node);
         node.frameworkRuntime(this, false);
     }
@@ -724,7 +787,19 @@ public final class SceneRuntime implements AutoCloseable {
             } else if (event.compositionSource != compositionSource) return true;
             node = compositionMount.node();
         }
-        if (node == null || !interactive(node) || node.control() == null) return false;
+        if (node == null || !interactive(node)) return false;
+        if (event.compositionSource == null) {
+            SceneNode focused = node;
+            for (SceneNode ancestor = focused.parent(); ancestor != null; ancestor = ancestor.parent()) {
+                SceneNode candidate = ancestor;
+                if (interactive(candidate) && candidate.control() != null
+                        && domain.readOnly(() -> candidate.control().editActivator(candidate, focused, event))) {
+                    node = candidate;
+                    break;
+                }
+            }
+        }
+        if (node.control() == null) return false;
         focusRouter.keyboardInput();
         boolean previous = routing;
         routing = true;
@@ -734,7 +809,7 @@ public final class SceneRuntime implements AutoCloseable {
                     || event.compositionPhase
                         == club.heiqi.uilib.ui.scene.input.SceneEditEvent.CompositionPhase.CANCEL);
         try {
-            boolean consumed = node.control().edit(node, event);
+            boolean consumed = node.control().edit(node, event, inputGeometry);
             if (event.command
                     == club.heiqi.uilib.ui.scene.input.SceneEditEvent.Command.ESCAPE && consumed)
                 invalidateComposition(null);
@@ -909,13 +984,35 @@ public final class SceneRuntime implements AutoCloseable {
         }
     }
 
+    /** 控件的主动显露意图保持当前焦点；后续结算复用正式祖先显露和同一滚动位置。 */
+    public void requestInputReveal(SceneNode node) {
+        domain.checkWrite(); checkAlive();
+        if (interactive(node)) inputReveal = captureMount(node);
+    }
+
+    /** 按像素改变唯一视图位置；不是 wheel，不调用业务 onScroll。返回实际生效量。 */
+    public int scrollByPixels(SceneNode node, int pixels) {
+        domain.checkWrite(); checkAlive();
+        if (!node.scrollable() || !interactive(node)) return 0;
+        ScrollPosition position = scrolling.get(node);
+        if (position == null) return 0;
+        int next = (int) Math.max(0L, Math.min(position.maximum, (long) position.value + pixels));
+        int applied = next - position.value;
+        if (applied != 0) { position.value = next; invalidateArrangement(); }
+        return applied;
+    }
+
     /** spec6.2：在最终布局后消费一次导航意图；重排由管线提供，不递归结算声明。 每个祖先至多处理一次，滚动沿用唯一ScrollPosition，不持有第二套几何或滚动权威。 */
     public SceneGeometry revealNavigation(
             SceneGeometry geometry, Supplier<SceneGeometry> relayout) {
         domain.checkWrite();
         command();
         MountHandle target = focusRouter.takeReveal();
-        if (target == null) return geometry;
+        boolean focusIntent = target != null;
+        if (target == null) target = inputReveal;
+        inputReveal = null;
+        if (target == null || !target.active() || !interactive(target.node())) return geometry;
+        final MountHandle revealTarget = target;
         // 内部视口先消费同一次Tab意图；随后只读事实才能用于逐层祖先显露。
         if (target.node().control() != null
                 && target.node().control().prepareNavigation(target.node(), geometry)) {
@@ -926,14 +1023,14 @@ public final class SceneRuntime implements AutoCloseable {
         for (SceneNode ancestor = target.node() == boundary ? null : target.node().parent();
                 ancestor != null;
                 ancestor = ancestor == boundary ? null : ancestor.parent()) {
-            if (!focusRouter.owns(target)) break;
+            if (focusIntent ? !focusRouter.owns(target) : !target.active() || !interactive(target.node())) break;
             if (ancestor == boundary && !ancestor.scrollable()) break;
             if (!ancestor.scrollable()) continue;
             SceneGeometryView.Entry entry = geometry.get(ancestor);
             SceneGeometry current = geometry;
             SceneNode container = ancestor;
             LayoutBox region = domain.readOnly(
-                    () -> SceneGeometry.revealRegion(target.node(), container, current));
+                    () -> SceneGeometry.revealRegion(revealTarget.node(), container, current));
             if (entry == null || region == null || region.width == 0 || region.height == 0)
                 continue;
             LayoutBox window = SceneGeometry.revealWindow(ancestor, geometry);
@@ -1061,6 +1158,8 @@ public final class SceneRuntime implements AutoCloseable {
             clearLogicalModal();
             inputGeometry = null;
             inputGeometryReady = false;
+            inputReveal = null;
+            inputFrames.clear();
             disposed = true;
         }
         if (failure instanceof Error) throw (Error) failure;

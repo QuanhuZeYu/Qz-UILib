@@ -97,6 +97,7 @@ public final class SceneFramePipeline implements AutoCloseable {
     private final ArrayDeque<QueuedInput> inputs = new ArrayDeque<>();
 
     private static final class InputBatch {
+        final SceneRuntime.InputFrame activeInput = new SceneRuntime.InputFrame();
         final List<QueuedInput> events;
         final boolean independent;
         final long frameNanos = System.nanoTime();
@@ -210,8 +211,7 @@ public final class SceneFramePipeline implements AutoCloseable {
                 submit(batch.independent, () -> followUp(batch, event), failure -> failBatch(batch, index + 1));
         }
         Runnable replay = () -> replay(batch);
-        if (batch.independent) runtime.domain().enqueue(replay);
-        else runtime.domain().execute(replay);
+        submit(batch.independent, replay, failure -> failBatch(batch, batch.events.size()));
     }
 
     private InputBatch takeBatch() {
@@ -271,7 +271,10 @@ public final class SceneFramePipeline implements AutoCloseable {
     }
 
     private void navigate(SceneNavigationEvent event) {
-        if (event == SceneNavigationEvent.ACTIVATE) runtime.focusRouter().activate();
+        if (event == SceneNavigationEvent.ACTIVATE) {
+            if (!runtime.dispatchEdit(SceneEditEvent.command(SceneEditEvent.Command.ACTIVATE_ONLY, false, null)))
+                runtime.focusRouter().activate();
+        }
         else runtime.focusRouter().navigate(event == SceneNavigationEvent.PREVIOUS);
     }
 
@@ -285,6 +288,13 @@ public final class SceneFramePipeline implements AutoCloseable {
             router.discardAfterFailure(ScenePointerEvent.cancel());
         } catch (RuntimeException | Error failure) {
             cleanupFailure = failure;
+        }
+        try {
+            runtime.cancelInputFrame(batch.activeInput);
+        } catch (RuntimeException | Error failure) {
+            if (cleanupFailure == null) cleanupFailure = failure;
+            else if (failure != cleanupFailure && !java.util.Arrays.asList(cleanupFailure.getSuppressed()).contains(failure))
+                cleanupFailure.addSuppressed(failure);
         }
         // captureLost 扩展可能失败；仍须登记完整物理尾部，避免丢 UP 或第二 DOWN。
         for (int tail = firstDiscard; tail < batch.events.size(); tail++) {
@@ -302,7 +312,7 @@ public final class SceneFramePipeline implements AutoCloseable {
 
     private void replay(InputBatch batch) {
         try {
-            if (!batch.failed && !isClosed() && runtime.alive()) host.replay(prepare(batch.frameNanos).paint);
+            if (!batch.failed && !isClosed() && runtime.alive()) host.replay(prepare(batch.frameNanos, batch.activeInput).paint);
         } finally {
             if (batch.independent) release(batch);
         }
@@ -376,7 +386,9 @@ public final class SceneFramePipeline implements AutoCloseable {
         return geometry;
     }
 
-    private ScenePresentation prepare(long frameNanos) {
+    private ScenePresentation prepare(long frameNanos) { return prepare(frameNanos, null); }
+
+    private ScenePresentation prepare(long frameNanos, SceneRuntime.InputFrame activeInput) {
         preparedNanos = frameNanos;
         int w = host.width(), h = host.height();
         runtime.prepareViewport(w, h);
@@ -414,6 +426,12 @@ public final class SceneFramePipeline implements AutoCloseable {
             SceneGeometry located = prepared;
             prepared = runtime.domain().readOnly(() -> layout.refreshTextStyles(located));
             runtime.prepareInputGeometry(prepared);
+        }
+        if (activeInput != null) {
+            long beforeInput = runtime.revision();
+            runtime.advanceInputFrame(prepared, frameNanos, activeInput);
+            // 活动输入只推进一次；发生呈现变化时才重新结算，不增加静止列表工作量。
+            if (beforeInput != runtime.revision()) return prepare(frameNanos, null);
         }
         final SceneGeometry geometry = prepared;
         if (presentation == null

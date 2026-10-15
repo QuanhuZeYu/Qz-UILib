@@ -222,8 +222,12 @@ public final class SceneLayoutEngine {
                 int w = cross(child.width(), desired[0], viewport.width), h = cross(child.height(), desired[1], viewport.height);
                 int x = anchored(source.box.x, w, viewport.x, viewport.width);
                 int y = anchored((long) source.box.y + source.box.height + policy.gap, h, viewport.y, viewport.height);
+                LayoutBox placed = child.control().placeLayer(child, source.box, viewport, new MeasuredSize(w, h));
+                if (placed == null) placed = new LayoutBox(x, y, w, h);
+                if (placed.width != w || placed.height != h)
+                    throw new IllegalArgumentException("所属层定位不能替换测量尺寸: node=" + child.id());
                 int begin = entries.size();
-                arrange(child, new LayoutBox(x, y, w, h), viewport, entries);
+                arrange(child, placed, viewport, entries);
                 for (int i = begin; i < entries.size(); i++) index.put(entries.get(i).node, entries.get(i));
             }
             if (index.containsKey(child)) projectLayers(child, viewport, entries, index, sources);

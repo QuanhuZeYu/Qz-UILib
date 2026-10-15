@@ -144,6 +144,7 @@ fun desktopApplication(name: String, summary: String, verify: Boolean) = tasks.r
     if (verify) dependsOn(desktopTestJar)
     javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(8)) })
     jvmArgs("-Dfile.encoding=UTF-8", "-Xmx1g")
+    if (providers.gradleProperty("desktopHidden").isPresent) systemProperty("uilib.desktop.visible", "false")
     if (mac) jvmArgs("-XstartOnFirstThread")
     workingDir(layout.buildDirectory.dir("install/desktop"))
 }
@@ -195,7 +196,12 @@ val desktopDraggableVerify = desktopApplication("desktopDraggableVerify", "真�
     args(layout.buildDirectory.dir("reports/draggable-desktop").get().asFile.absolutePath)
     mustRunAfter(desktopSettingsVerify)
 } }
-tasks.named("check") { dependsOn(desktopDraggableVerify) }
+val desktopDraggableDeepVerify = desktopApplication("desktopDraggableDeepVerify", "隐藏真实GLFW验收深入拖拽与变高行排序", true).apply { configure {
+    mainClass.set("club.heiqi.uilib.host.desktop.DesktopDraggableDeepVerification")
+    args(layout.buildDirectory.dir("reports/desktop-draggable-deep").get().asFile.absolutePath)
+    mustRunAfter(desktopDraggableVerify)
+} }
+tasks.named("check") { dependsOn(desktopDraggableVerify,desktopDraggableDeepVerify) }
 listOf("desktopPerformance", "desktopPerformanceBenchmark").forEach { taskName ->
     desktopApplication(taskName, "独立性能压测广场与有限真实Desktop基线", true).configure {
         mainClass.set("club.heiqi.uilib.host.desktop.DesktopPerformance")
@@ -208,4 +214,14 @@ listOf("desktopPerformance", "desktopPerformanceBenchmark").forEach { taskName -
     }
 }
 tasks.named("check") { dependsOn(desktopVerify, desktopGalleryVerify, desktopGalleryResultScenario, desktopSettingsVerify) }
+val desktopDraggableBenchmark = desktopApplication("desktopDraggableBenchmark", "隐藏真实GL窗口有限拖拽压测", true).apply { configure {
+    mainClass.set("club.heiqi.uilib.host.desktop.DesktopDraggablePerformance")
+    systemProperty("uilib.version", project.version.toString())
+    systemProperty("drag.revision", providers.gradleProperty("dragRevision").getOrElse("unknown"))
+    if (providers.gradleProperty("dragProfile").getOrElse("false").toBoolean()) jvmArgs("-Xprof")
+    args(file(providers.gradleProperty("dragOutput").getOrElse(layout.buildDirectory.dir("reports/draggable-performance").get().asFile.absolutePath)).absolutePath,
+        providers.gradleProperty("dragScale").getOrElse("50,200,1000"),
+        providers.gradleProperty("dragWarmup").getOrElse("30"), providers.gradleProperty("dragFrames").getOrElse("120"),
+        providers.gradleProperty("dragLoads").getOrElse("plain,sort"), providers.gradleProperty("dragEdgeFrames").getOrElse("0"))
+} }
 tasks.named("assemble") { dependsOn(desktopJar, desktopDist) }

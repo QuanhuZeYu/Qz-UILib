@@ -41,7 +41,51 @@ public final class DraggablePage {
         content.add(GalleryStyle.button(context,() -> "普通按钮 · "+clicks.get(),theme,() -> clicks.set(clicks.get()+1)));
         root.add(GalleryStyle.label(context,() -> "交互内容",theme,18,false));
         root.add(draggable(context,content,theme,state));
+        root.add(GalleryStyle.label(context,() -> "更多参考交互",theme,22,false));
+        Signal<String> result=context.domain().signal("正常放下会更新此处；取消不会提交。");
+        root.add(GalleryStyle.label(context,result,theme,14,true));
+        SceneNode variants=GalleryStyle.grid(context,theme);
+        variants.add(variant(context,theme,"独立把手","只拖动 :: 把手，正文保持原交互。","handle",result));
+        variants.add(variant(context,theme,"双启动把手","左右两个把手都能拾取同一元素。","dual",result));
+        variants.add(variant(context,theme,"拖动预览","原槽保持，独立预览沿当前输入范围显示。","overlay",result));
+        variants.add(variant(context,theme,"只沿横轴","指针与键盘都只改变横向位置。","horizontal",result));
+        variants.add(variant(context,theme,"只沿纵轴","指针与键盘都只改变纵向位置。","vertical",result));
+        variants.add(variant(context,theme,"网格吸附","按 24 像素网格移动。","grid",result));
+        variants.add(variant(context,theme,"容器边界","卡片保持在当前示例容器内。","parent",result));
+        variants.add(variant(context,theme,"窗口边界","拖动不能越过当前窗口视口。","viewport",result));
+        variants.add(variant(context,theme,"距离激活","移动超过 8 像素才开始，轻点不算放下。","distance",result));
+        variants.add(variant(context,theme,"延时激活","按住 250 毫秒且移动不超过 5 像素开始。","delay",result));
+        root.add(variants);
         return root;
+    }
+    private static SceneNode variant(ScenePageContext context,ReadableSignal<SceneTheme> theme,String title,String help,String kind,Signal<String> result) {
+        SceneNode card=GalleryStyle.card(theme).size(Size.fill(1),Size.fixed(230));
+        card.add(GalleryStyle.label(context,() -> title,theme,18,false));
+        card.add(GalleryStyle.label(context,() -> help,theme,13,true));
+        SceneNode stage=new SceneNode().size(Size.fill(1),Size.fill(1)).padding(12);
+        SceneNode body=new SceneNode().axis(SceneNode.Axis.ROW).size(Size.natural(),Size.natural()).padding(14).gap(10);
+        SceneNode handle=GalleryStyle.label(context,() -> "::",theme,20,false);
+        body.add(handle).add(GalleryStyle.label(context,() -> "拾起我",theme,15,false));
+        SceneNode second=GalleryStyle.label(context,() -> "::",theme,20,false);if(kind.equals("dual"))body.add(second);
+        SceneDraggable.State state=SceneDraggable.state(context.domain());
+        SceneDraggable.Options options=new SceneDraggable.Options().onDrop(drop -> result.set(title+"：已放下（"+drop.deltaX+", "+drop.deltaY+"）"));
+        switch(kind) {
+            case "handle":options=options.handles(handle);break;
+            case "dual":options=options.handles(handle,second);break;
+            case "horizontal":options=options.axis(SceneDraggable.Axis.X);break;
+            case "vertical":options=options.axis(SceneDraggable.Axis.Y);break;
+            case "grid":options=options.grid(24,24);break;
+            case "parent":options=options.bounds(SceneDraggable.Bounds.PARENT);break;
+            case "viewport":options=options.bounds(SceneDraggable.Bounds.VIEWPORT);break;
+            case "distance":options=options.activation(8,0,0);break;
+            case "delay":options=options.activation(0,250,5);break;
+            case "overlay":options=options.overlay(GalleryStyle.frame(GalleryStyle.label(context,() -> "拾起我 · 预览",theme,15,false).padding(14),theme).size(Size.natural(),Size.natural()));break;
+            default:throw new AssertionError(kind);
+        }
+        SceneNode node=SceneDraggable.create(context,GalleryStyle.frame(body,theme).size(Size.natural(),Size.natural()),state,options);
+        body.bind(club.heiqi.uilib.ui.scene.runtime.NodeBinding.value(() -> state.snapshot().get().active?theme.get().hover:
+                context.runtime().focusRouter().focused().get()==node?theme.get().pressed:theme.get().panel,SceneNode::background));
+        stage.add(node);card.add(stage);return GalleryStyle.frame(card,theme);
     }
     private static SceneNode draggable(ScenePageContext context,SceneNode body,ReadableSignal<SceneTheme> theme,SceneDraggable.State state) {
         SceneNode node=SceneDraggable.create(context,GalleryStyle.frame(body,theme).size(Size.natural(),Size.natural()),state);
