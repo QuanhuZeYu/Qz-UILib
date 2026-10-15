@@ -806,6 +806,19 @@ public final class SceneRuntime implements AutoCloseable {
         }
     }
 
+    /** 取消清理不要求旧目标仍有交互资格；仍保护输入扩展不能直接改挂载声明。 */
+    void dispatchControlCaptureLost(SceneNode node) {
+        domain.checkWrite();
+        if (node.control() == null) return;
+        boolean previous = routing;
+        routing = true;
+        try {
+            node.control().captureLost(node);
+        } finally {
+            routing = previous;
+        }
+    }
+
     boolean dispatchControlScroll(
             SceneNode node,
             club.heiqi.uilib.ui.scene.input.ScenePointerEvent event,
@@ -959,6 +972,7 @@ public final class SceneRuntime implements AutoCloseable {
     public boolean dispatchEscape() {
         domain.checkWrite();
         command();
+        if (pointerRouter.cancelOnEscape()) return true;
         if (dispatchEdit(
                 club.heiqi.uilib.ui.scene.input.SceneEditEvent.command(
                         club.heiqi.uilib.ui.scene.input.SceneEditEvent.Command.ESCAPE,

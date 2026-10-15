@@ -92,12 +92,19 @@ public final class ScenePointerRouter implements AutoCloseable {
         runtime.invalidatePaint();
     }
 
+    /** 先结束唯一 owner，再通知内部清理；状态失效引发重验也不会重复取消。 */
+    private void cancelOwner() {
+        MountHandle cancelled = owner;
+        setOwner(null);
+        if (cancelled != null) runtime.dispatchControlCaptureLost(cancelled.node());
+    }
+
     /** 即使本帧没有事件，也检查来源更新后的owner资格；失活后本段不再恢复。 */
     public void prepare(SceneGeometryView geometry) {
         checkAccess();
         if (preparedGeometry != geometry) { hover.clear(); passive.clear(); preparedGeometry = geometry; }
         revalidate();
-        if (owner != null && geometry.get(owner.node()) == null) setOwner(null);
+        if (owner != null && geometry.get(owner.node()) == null) cancelOwner();
         publishHover(geometry);
     }
 
@@ -108,7 +115,7 @@ public final class ScenePointerRouter implements AutoCloseable {
         if (owner != null
                 && (!owner.active()
                         || !runtime.interactive(owner.node())
-                        || !runtime.pointerTargetValid(owner.node(), ownerTarget))) setOwner(null);
+                        || !runtime.pointerTargetValid(owner.node(), ownerTarget))) cancelOwner();
     }
 
     /** 按采集顺序处理一个事件。仅原owner按钮在有效目标位置UP时发布click。 */
@@ -176,11 +183,11 @@ public final class ScenePointerRouter implements AutoCloseable {
                     runtime.dispatchPointerTarget(activation.node(), identity);
                 return;
             case CANCEL:
-                setOwner(null);
+                cancelOwner();
                 return;
             case ALL_BUTTONS_RELEASED:
-                setOwner(null);
-                buttons.clear();
+                try { cancelOwner(); }
+                finally { buttons.clear(); }
                 return;
             case SCROLL:
                 SceneNode scrolling = hits.hitScroll(runtime, geometry, event.x, event.y);
@@ -226,21 +233,35 @@ public final class ScenePointerRouter implements AutoCloseable {
      * 已采集第二DOWN不能因为中断批次而丢失，否则下一帧会误建owner。 */
     public void discardAfterFailure(ScenePointerEvent event) {
         runtime.domain().checkAccess();
-        setOwner(null);
-        if (closed) return;
-        switch (event.kind) {
-            case DOWN:
-                buttons.add(event.button);
-                break;
-            case UP:
-                buttons.remove(event.button);
-                break;
-            case ALL_BUTTONS_RELEASED:
-                buttons.clear();
-                break;
-            default:
-                break;
+        try { cancelOwner(); }
+        finally {
+            // 清理扩展失败也保留物理尾部，不能让第二键变成后来的新手势。
+            if (!closed) {
+                switch (event.kind) {
+                    case DOWN:
+                        buttons.add(event.button);
+                        break;
+                    case UP:
+                        buttons.remove(event.button);
+                        break;
+                    case ALL_BUTTONS_RELEASED:
+                        buttons.clear();
+                        break;
+                    default:
+                        break;
+                }
+            }
         }
+    }
+
+    /** 当前范围的捕获可明确消费 ESC；保留物理占位，后续 MOVE/UP 不能复活。 */
+    boolean cancelOnEscape() {
+        checkAccess();
+        revalidate();
+        if (owner == null || owner.node().control() == null
+                || !owner.node().control().cancelCaptureOnEscape(owner.node())) return false;
+        cancelOwner();
+        return true;
     }
 
     boolean idle() {
@@ -257,10 +278,12 @@ public final class ScenePointerRouter implements AutoCloseable {
     @Override
     public void close() {
         runtime.domain().checkAccess();
-        setOwner(null);
-        buttons.clear();
-        hover.clear(); passive.clear(); preparedGeometry = null;
-        hoverInterests.clear();
-        closed = true;
+        try { cancelOwner(); }
+        finally {
+            buttons.clear();
+            hover.clear(); passive.clear(); preparedGeometry = null;
+            hoverInterests.clear();
+            closed = true;
+        }
     }
 }

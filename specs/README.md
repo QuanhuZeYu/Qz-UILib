@@ -12,6 +12,7 @@
 | 主题与控件文案 | [主题规格](<2026-10-07-uilib-theme-spec.md>) |
 | 草稿、提交、撤销与输入法 | [编辑规格](<2026-10-07-uilib-editing-spec.md>) |
 | 声明式页面与宿主生命周期 | [页面接入规格](<2026-10-07-uilib-page-host-spec.md>) |
+| 普通内容的指针拖拽与结束清理 | [Draggable 规格](<2026-10-15-uilib-draggable-spec.md>) |
 | 横纵排列、响应网格与布局扩展 | [常规布局规格](<2026-10-13-uilib-layout-spec.md>) |
 | 所属层空间、共同呈现、输入参与与结束 | [所属层与输入范围规格](<2026-10-13-uilib-layer-input-spec.md>) |
 | 内部协作者职责与交接 | [内部协作职责规格](<2026-10-14-uilib-internal-responsibilities-spec.md>) |

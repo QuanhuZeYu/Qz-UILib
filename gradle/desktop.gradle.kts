@@ -162,6 +162,9 @@ val desktopGallery = galleryApplication("desktopGallery", "打开与MC和自动�
 val desktopMailbox = galleryApplication("desktopMailbox", "直接打开与MC共用的收件箱案例").apply { configure {
     args("--mailbox")
 } }
+val desktopDraggable = galleryApplication("desktopDraggable", "打开用户参考的原生Draggable案例").apply { configure {
+    args("--draggable")
+} }
 val desktopMailboxPerformance = desktopApplication("desktopMailboxPerformance", "完整收件箱真实桌面计时", true).apply { configure {
     mainClass.set("club.heiqi.uilib.host.desktop.DesktopMailboxPerformance")
     systemProperty("uilib.version", project.version.toString())
@@ -187,6 +190,12 @@ val desktopSettingsVerify = desktopApplication("desktopSettingsVerify", "真实�
     mustRunAfter(desktopGalleryVerify)
 }
 }
+val desktopDraggableVerify = desktopApplication("desktopDraggableVerify", "真实回调与GPU验收原生拖拽和生命周期", true).apply { configure {
+    mainClass.set("club.heiqi.uilib.host.desktop.DesktopDraggableVerification")
+    args(layout.buildDirectory.dir("reports/draggable-desktop").get().asFile.absolutePath)
+    mustRunAfter(desktopSettingsVerify)
+} }
+tasks.named("check") { dependsOn(desktopDraggableVerify) }
 listOf("desktopPerformance", "desktopPerformanceBenchmark").forEach { taskName ->
     desktopApplication(taskName, "独立性能压测广场与有限真实Desktop基线", true).configure {
         mainClass.set("club.heiqi.uilib.host.desktop.DesktopPerformance")

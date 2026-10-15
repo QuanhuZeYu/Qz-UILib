@@ -173,6 +173,15 @@ public interface SceneControl {
         return false;
     }
 
+    /**
+     * 唯一 router 取消原 owner 时的内部清理；目标可能已经隐藏、禁用或卸载。
+     * 不依赖几何，不激活、提交或执行业务 handler；正常 UP 仍由 pointer 处理。
+     */
+    default void captureLost(SceneNode node) {}
+
+    /** 当前捕获明确参与 ESC 取消；只读查询，真正终止仍归唯一 router。 */
+    default boolean cancelCaptureOnEscape(SceneNode node) { return false; }
+
     /** 指针定位/拖选沿已有owner，区域来自本次生产布局。 */
     default void pointer(
             SceneNode node,

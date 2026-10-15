@@ -6,14 +6,22 @@ import java.util.UUID;
 import club.heiqi.uilib.testing.TestApplication;
 import club.heiqi.uilib.ui.reactive.ReactiveDomain;
 import club.heiqi.uilib.ui.reactive.Signal;
+import club.heiqi.uilib.ui.scene.control.SceneControl;
 import club.heiqi.uilib.ui.scene.host.SceneFramePipeline;
 import club.heiqi.uilib.ui.scene.host.ScenePageSession;
 import club.heiqi.uilib.ui.scene.host.ScenePageContext;
 import club.heiqi.uilib.ui.scene.input.ScenePointerEvent;
+import club.heiqi.uilib.ui.scene.layout.ChildPlacements;
+import club.heiqi.uilib.ui.scene.layout.Constraints;
+import club.heiqi.uilib.ui.scene.layout.LayoutBox;
+import club.heiqi.uilib.ui.scene.layout.MeasuredSize;
+import club.heiqi.uilib.ui.scene.layout.SceneChildMeasurer;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometryView;
 import club.heiqi.uilib.ui.scene.layout.Size;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.PaintCommand;
+import club.heiqi.uilib.ui.scene.paint.PaintPlanBuilder;
+import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
 import club.heiqi.uilib.ui.scene.runtime.BindingActivation;
 import club.heiqi.uilib.ui.scene.runtime.MountHandle;
 import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
@@ -264,6 +272,58 @@ public final class PointerInputScenario extends TestApplication {
                     p.events(ScenePointerEvent.up(1, 5, 5));
                     p.tap();
                     p.expect(2, "Effect错误清理后全部释放恢复");
+                });
+        scenario(
+                "捕获取消清理异常仍登记整批UP与第二DOWN",
+                () -> {
+                    Page p = new Page();
+                    RuntimeException original = new RuntimeException("指针处理失败A");
+                    RuntimeException cleanup = new RuntimeException("捕获取消清理失败C");
+                    int[] pointerCalls = {0}, cancellations = {0};
+                    p.domain.execute(() -> p.children.set(Collections.emptyList()));
+                    p.session.frame();
+                    p.domain.execute(() -> {
+                        p.button.control(new SceneControl() {
+                            @Override public MeasuredSize measure(SceneNode node, Constraints body, SceneTextMeasurer text) {
+                                return new MeasuredSize(40, 20);
+                            }
+                            @Override public ChildPlacements arrange(SceneNode node, LayoutBox allocated, SceneChildMeasurer children) {
+                                return new ChildPlacements(Collections.emptyList());
+                            }
+                            @Override public void paint(SceneNode node, SceneGeometryView geometry, PaintPlanBuilder target) {}
+                            @Override public boolean capturesPointer() { return true; }
+                            @Override public void pointer(SceneNode node, ScenePointerEvent event, SceneGeometryView geometry) {
+                                pointerCalls[0]++;
+                                if (event.kind == ScenePointerEvent.Kind.MOVE) throw original;
+                            }
+                            @Override public void captureLost(SceneNode node) {
+                                cancellations[0]++;
+                                throw cleanup;
+                            }
+                        });
+                        p.children.set(Collections.singletonList(p.button));
+                    });
+                    p.session.frame();
+                    p.down();
+                    p.session.pointer(ScenePointerEvent.move(6, 5));
+                    p.session.pointer(ScenePointerEvent.up(0, 6, 5));
+                    p.session.pointer(ScenePointerEvent.down(1, 6, 5));
+                    try {
+                        p.session.frame();
+                        throw new AssertionError("指针原异常必须外抛");
+                    } catch (RuntimeException actual) {
+                        require(actual == original, "必须保留原异常A身份");
+                        require(Arrays.asList(actual.getSuppressed()).contains(cleanup),
+                                "清理异常C必须作为A的suppressed保留");
+                    }
+                    require(cancellations[0] == 1 && pointerCalls[0] == 2,
+                            "只取消一次且剩余物理尾部不得再分发控件handler");
+                    p.events(ScenePointerEvent.syntheticActivation(5, 5));
+                    p.expect(0, "第二DOWN已登记，不能绕过其物理尾部激活");
+                    p.events(ScenePointerEvent.up(1, 6, 5), ScenePointerEvent.syntheticActivation(5, 5));
+                    p.expect(1, "原UP也已登记，第二键释放后立即允许完整激活");
+                    p.tap();
+                    p.expect(2, "异常收尾后下一完整物理点击正常到达");
                 });
         scenario(
                 "外部executor的Effect结算异常保留尾部",

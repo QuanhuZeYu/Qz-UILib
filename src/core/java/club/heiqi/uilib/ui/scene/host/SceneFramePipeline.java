@@ -280,9 +280,24 @@ public final class SceneFramePipeline implements AutoCloseable {
         if (batch.independent) release(batch);
         ScenePointerRouter router = runtime.pointerRouter();
         // 导航后的Effect也可能失败；即使剩余只有导航，旧物理owner仍必须取消。
-        router.discardAfterFailure(ScenePointerEvent.cancel());
-        for (int tail = firstDiscard; tail < batch.events.size(); tail++)
-            batch.events.get(tail).discard(router);
+        Throwable cleanupFailure = null;
+        try {
+            router.discardAfterFailure(ScenePointerEvent.cancel());
+        } catch (RuntimeException | Error failure) {
+            cleanupFailure = failure;
+        }
+        // captureLost 扩展可能失败；仍须登记完整物理尾部，避免丢 UP 或第二 DOWN。
+        for (int tail = firstDiscard; tail < batch.events.size(); tail++) {
+            try {
+                batch.events.get(tail).discard(router);
+            } catch (RuntimeException | Error failure) {
+                if (cleanupFailure == null) cleanupFailure = failure;
+                else if (failure != cleanupFailure) cleanupFailure.addSuppressed(failure);
+            }
+        }
+        // 交给原失败边界保留业务原异常，并将清理异常作为 suppressed 传播。
+        if (cleanupFailure instanceof Error) throw (Error) cleanupFailure;
+        if (cleanupFailure instanceof RuntimeException) throw (RuntimeException) cleanupFailure;
     }
 
     private void replay(InputBatch batch) {
