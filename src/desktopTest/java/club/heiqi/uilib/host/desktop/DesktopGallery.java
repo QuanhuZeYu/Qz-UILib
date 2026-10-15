@@ -25,13 +25,25 @@ import javax.imageio.ImageIO;
 public final class DesktopGallery {
     public static void main(String[] args) throws Exception {
         boolean verify = args.length > 0 && "--verify".equals(args[0]);
+        boolean mailbox = args.length > 0 && ("--mailbox".equals(args[0])||"--mailbox-smoke".equals(args[0]));
+        boolean smoke=args.length>0&&"--mailbox-smoke".equals(args[0]);
         Path output = args.length > 1 ? Paths.get(args[1]) : Paths.get("gallery-report");
         Files.createDirectories(output);
         Path configuration = output.resolve("gallery.yaml");
         if (verify) Files.deleteIfExists(configuration);
         try (DesktopWindow window =
                 DesktopWindow.openWithImages(
-                        configuration, images -> new TestGallery(() -> images))) {
+                        configuration, images -> new TestGallery(() -> images,mailbox?TestGallery.Page.MAILBOX:TestGallery.Page.HOME))) {
+            if(smoke) {
+                glfwSetWindowSize(window.handle(),1400,900);
+                settle(window);
+                if(window.lastPlan.commands().stream().noneMatch(c -> c.kind==PaintCommand.Kind.TEXT&&"QZ Mail".equals(c.text.logicalText)))
+                    throw new AssertionError("独立测试启动器没有进入收件箱");
+                saveGeometry(window,output.resolve("mailbox-launcher.geometry.json"));
+                screenshot(window,output.resolve("mailbox-launcher.png"),0xfff8fafd);
+                System.out.println("MAILBOX_LAUNCHER directEntry=true actualPixels=true sharedGallery=true");
+                return;
+            }
             if (!verify) {
                 while (!window.shouldClose()) window.frame();
                 return;
@@ -99,9 +111,12 @@ public final class DesktopGallery {
                         }
                         public void evidence(String name) {
                             try {
+                                if(name.equals("mailbox-navigation-motion")) {navigationMotion(window,input,output);return;}
+                                long motionEnd=System.nanoTime()+220000000L;
+                                while(System.nanoTime()<motionEnd)window.frame();
                                 settle(window);
                                 int background=name.startsWith("mailbox-")
-                                        ? name.equals("mailbox-dark")?0xff111315:0xfff6f8fc : 0xfffafafa;
+                                        ? name.equals("mailbox-dark")?0xff111315:0xfff8fafd : 0xfffafafa;
                                 if(name.startsWith("mailbox-")) saveGeometry(window,output.resolve(name+".geometry.json"));
                                 screenshot(window,output.resolve(name+".png"),background);
                             }
@@ -242,6 +257,51 @@ public final class DesktopGallery {
         glReadPixels(x, window.height() - 1 - y, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, pixel);
         if (glGetError() != GL_NO_ERROR || (pixel.get(2) & 255) < 150)
             throw new AssertionError("PNG纹理没有真实蓝色像素");
+    }
+
+    /** 实际GLFW hover序列与GPU像素取证，端点通道范围可捕获透明插值暗闪。 */
+    private static void navigationMotion(DesktopWindow window,DesktopTestInput input,Path output) throws Exception {
+        SceneGeometryView.Entry[] item={null};
+        window.domain.execute(() -> item[0]=DesktopTestInput.geometry(window).ordered().stream()
+                .filter(e -> e.node.focusable()&&e.node.text().equals("星标邮件")).findFirst().get());
+        input.point(1100,40);window.frame();settle(window);
+        int x=item[0].box.x+item[0].box.width-20,y=item[0].box.y+item[0].box.height/2;
+        int[] pixels=new int[6];long[] elapsed=new long[6];pixels[0]=pixel(window,x,y);
+        int[] times={0,20,45,75,180};
+        ByteBuffer[] images=new ByteBuffer[times.length];
+        for(int i=0;i<images.length;i++)images[i]=ByteBuffer.allocateDirect(window.width()*window.height()*4);
+        long start=System.nanoTime();input.point(x,y);
+        for(int i=0;i<times.length;i++) {
+            long target=start+times[i]*1000000L;
+            do {window.frame();}while(System.nanoTime()<target);
+            elapsed[i+1]=System.nanoTime()-start;pixels[i+1]=pixel(window,x,y);
+            glReadPixels(0,0,window.width(),window.height(),GL_RGBA,GL_UNSIGNED_BYTE,images[i]);
+            if(glGetError()!=GL_NO_ERROR)throw new AssertionError("过渡帧读取失败");
+        }
+        java.util.Set<Integer> colors=new java.util.HashSet<>();for(int value:pixels)colors.add(value);
+        if(colors.size()<3)throw new AssertionError("没有采到真实过渡中间颜色");
+        // PNG编码与文件写入在连续GPU采样之后，避免编码耗时挤掉短过渡的中间帧。
+        for(int i=0;i<images.length;i++) {
+            BufferedImage image=new BufferedImage(window.width(),window.height(),BufferedImage.TYPE_INT_ARGB);
+            for(int py=0;py<window.height();py++)for(int px=0;px<window.width();px++) {
+                int at=(py*window.width()+px)*4;ByteBuffer bytes=images[i];
+                image.setRGB(px,window.height()-1-py,((bytes.get(at+3)&255)<<24)|((bytes.get(at)&255)<<16)
+                        |((bytes.get(at+1)&255)<<8)|(bytes.get(at+2)&255));
+            }
+            ImageIO.write(image,"png",output.resolve("mailbox-motion-"+times[i]+".png").toFile());
+        }
+        for(int value:pixels)for(int shift=0;shift<24;shift+=8) {
+            int channel=(value>>>shift)&255,a=(pixels[0]>>>shift)&255,b=(pixels[pixels.length-1]>>>shift)&255;
+            if(channel<Math.min(a,b)-1||channel>Math.max(a,b)+1)throw new AssertionError("导航过渡中途颜色超出端点范围");
+        }
+        Files.write(output.resolve("mailbox-motion.json"),("{\"elapsedNanos\":"+java.util.Arrays.toString(elapsed)+",\"argb\":"+java.util.Arrays.toString(pixels)+"}").getBytes("UTF-8"));
+        input.point(1100,40);window.frame();
+        System.out.println("MAILBOX_MOTION actualGpuPixels=true monotonicTimes=true noDarkFlash=true");
+    }
+    private static int pixel(DesktopWindow window,int x,int y) {
+        glFinish();ByteBuffer value=ByteBuffer.allocateDirect(4);glReadPixels(x,window.height()-1-y,1,1,GL_RGBA,GL_UNSIGNED_BYTE,value);
+        if(glGetError()!=GL_NO_ERROR)throw new AssertionError("过渡像素读取失败");
+        return 0xff000000|((value.get(0)&255)<<16)|((value.get(1)&255)<<8)|(value.get(2)&255);
     }
 
     /** 证据只读正式几何与实际绘制，不为页面增加定位标记或布局接缝。 */

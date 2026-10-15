@@ -352,7 +352,8 @@ public final class SceneFramePipeline implements AutoCloseable {
                 || geometry != presentation.geometry
                 || width != w
                 || height != h
-                || metrics != nextMetrics) {
+                || metrics != nextMetrics
+                || System.nanoTime() >= paint.nextPaintNanos()) {
             PaintPlan paint = runtime.domain().readOnly(() -> this.paint.collect(geometry, nextMetrics));
             presentation = new ScenePresentation(++generation, geometry, paint);
             revision = runtime.revision();

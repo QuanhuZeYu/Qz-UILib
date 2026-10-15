@@ -124,7 +124,18 @@ public final class GalleryJourney {
     private static void mailbox(Driver driver) {
         go(driver, TestGallery.Page.MAILBOX);
         driver.resize(1400,900); driver.frame();
+        driver.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.Kind.MOVE,1100,40);driver.frame();
         driver.evidence("mailbox-inbox");
+        driver.evidence("mailbox-navigation-motion");
+        click(driver,"折叠导航");driver.evidence("mailbox-collapsed");
+        click(driver,"展开导航");driver.frame();
+        click(driver,"分类：推广");
+        require(contains(driver,"工坊活动与本周精选"),"推广分类没有真实消息");driver.evidence("mailbox-promotions");
+        click(driver,"分类：社交");
+        require(contains(driver,"你关注的讨论"),"社交分类没有真实消息");driver.evidence("mailbox-social");
+        click(driver,"分类：主要");
+        if(driver.resize(2504,1469)) {driver.frame();click(driver,"每页 25");driver.click(1100,40);driver.frame();driver.evidence("mailbox-reference-size");click(driver,"每页 50");}
+        driver.resize(1400,900);driver.frame();
         if(driver.resize(1000,760)) {driver.frame();driver.evidence("mailbox-medium");}
         driver.resize(1400,900);driver.frame();
         click(driver,"放大文字");driver.evidence("mailbox-large-text");
@@ -149,10 +160,16 @@ public final class GalleryJourney {
             require(driver.focused()==rowAction,"Tab未到达邮件主体合法焦点");
             driver.evidence("mailbox-focus");
         }
+        namedAction(driver,"林晓 · 产品设计\n周五");
+        require(contains(driver,"这封邮件记录"),"无查询的宽屏旁读没有正文");driver.evidence("mailbox-reading-unfiltered");
+        if(driver.resize(1120,900)) {driver.frame();driver.evidence("mailbox-reading-threshold");}
+        driver.resize(1400,900);driver.frame();
+        click(driver,"返回列表");
         SceneGeometryView.Entry field = driver.geometry().ordered().stream()
                 .filter(e -> e.node.control() != null && e.node.control().acceptsTextInput(e.node))
                 .findFirst().orElseThrow(() -> new AssertionError("收件箱没有正式搜索字段"));
         driver.click(field.box.x + 10, field.box.y + field.box.height / 2);
+        driver.evidence("mailbox-search-focus");
         driver.replaceText("Café"); driver.frame();
         SceneGeometryView.Entry message = driver.geometry().ordered().stream()
                 .filter(e -> e.text != null && e.text.logicalText.contains("本周工坊精选") && visible(e))
@@ -181,6 +198,7 @@ public final class GalleryJourney {
         driver.evidence("mailbox-all-mail");
         if(driver.resize(720,900)) {
             driver.frame();driver.evidence("mailbox-narrow");
+            click(driver,"收件箱");driver.frame();driver.evidence("mailbox-narrow-inbox");
             SceneGeometryView.Entry current=driver.geometry().ordered().stream()
                 .filter(e->e.text!=null&&e.text.logicalText.contains("周五的设计评审")&&visible(e))
                 .findFirst().orElseThrow(()->new AssertionError("窄窗口消息不可达"));

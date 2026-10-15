@@ -716,6 +716,7 @@ public final class SceneRuntime implements AutoCloseable {
             node = compositionMount.node();
         }
         if (node == null || !interactive(node) || node.control() == null) return false;
+        focusRouter.keyboardInput();
         boolean previous = routing;
         routing = true;
         boolean terminal = event.compositionSource != null

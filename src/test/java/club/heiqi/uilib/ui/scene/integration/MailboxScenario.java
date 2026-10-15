@@ -114,6 +114,9 @@ public final class MailboxScenario extends TestApplication {
         @Override public void close() { session.close(); }
     }
     @Override protected void runTests() throws Exception {
+        scenario("点击保留唯一逻辑焦点且键盘导航显示线索",this::focusCues);
+        scenario("有限搜索过渡仅重绘且结束复用计划",this::finiteTransition);
+        scenario("真实分类切换跨分类搜索归档与动态计数",this::categories);
         scenario("空态混排提示方向动态换代",this::placeholderPolicy);
         scenario("搜索空态提示与组字复制隔离及工具区不跳位",this::searchPresentation);
         scenario("复合邮件主体文字与空白命中同一当前对象",this::compositeInput);
@@ -155,6 +158,90 @@ public final class MailboxScenario extends TestApplication {
                 require(view.painted("邮件已不存在"), "主题变化丢失业务状态");
             }
         });
+    }
+    private void focusCues() {
+        try(View view=new View()) {
+            view.search("");
+            club.heiqi.uilib.ui.scene.input.SceneCompositionSource old=new club.heiqi.uilib.ui.scene.input.SceneCompositionSource();
+            view.session.edit(SceneEditEvent.compositionBegin(old,"未确认"));view.frame();
+            view.named("添加星标：周五");
+            view.session.edit(SceneEditEvent.compositionUpdate(old,"迟到",true));
+            view.session.edit(SceneEditEvent.compositionCommit(old,"旧提交"));view.frame();
+            view.domain.execute(() -> {
+                club.heiqi.uilib.ui.scene.runtime.SceneFocusRouter focus=view.session.runtime().focusRouter();
+                require(focus.focused().get()!=null&&!focus.focusVisible(focus.focused().get()),"鼠标点击未保留逻辑焦点或仍显示键盘框");
+            });
+            view.session.navigation(SceneNavigationEvent.NEXT);view.frame();
+            view.domain.execute(() -> {
+                club.heiqi.uilib.ui.scene.runtime.SceneFocusRouter focus=view.session.runtime().focusRouter();
+                require(focus.focusVisible(focus.focused().get()),"Tab没有显示当前合法焦点线索");
+            });
+            view.search("Café");
+            view.domain.execute(() -> {
+                club.heiqi.uilib.ui.scene.runtime.SceneFocusRouter focus=view.session.runtime().focusRouter();
+                require(focus.focusVisible(focus.focused().get())&&focus.focused().get().control().acceptsTextInput(focus.focused().get()),
+                        "鼠标进入字段丢失编辑焦点线索");
+            });
+        }
+    }
+    private void finiteTransition() throws Exception {
+        try(View view=new View()) {
+            int[] point=new int[2];view.domain.execute(() -> {
+                SceneGeometryView.Entry field=view.geometry().ordered().stream().filter(v -> v.node.control()!=null&&v.node.control().acceptsTextInput(v.node)).findFirst().get();
+                point[0]=field.box.x+5;point[1]=field.box.y+field.box.height/2;
+            });
+            view.session.pointer(ScenePointerEvent.down(0,point[0],point[1]));view.session.pointer(ScenePointerEvent.up(0,point[0],point[1]));view.frame();
+            SceneGeometryView[] geometry={null};view.domain.execute(() -> geometry[0]=view.geometry());java.util.Set<PaintPlan> plans=java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<PaintPlan,Boolean>());
+            long end=System.nanoTime()+300000000L;
+            do {Thread.sleep(8);view.frame();plans.add(view.plan);view.domain.execute(() -> require(view.geometry()==geometry[0],"搜索颜色过渡重新布局或改变了输入几何"));}while(System.nanoTime()<end);
+            require(plans.size()>1,"搜索过渡没有实际更新绘制计划");PaintPlan settled=view.plan;
+            view.frame();require(view.plan==settled,"有限过渡结束后仍每帧重建计划");
+            view.session.pointer(ScenePointerEvent.down(0,1,view.height-1));view.session.pointer(ScenePointerEvent.up(0,1,view.height-1));view.frame();
+            int[] icon=new int[3];LayoutBox[] bounds={null};club.heiqi.uilib.ui.scene.node.SceneNode[] readNode={null};
+            view.domain.execute(() -> {
+                SceneGeometryView.Entry read=view.geometry().ordered().stream().filter(v -> v.node.focusable()&&v.node.text().equals("标为已读：周五的设计评审：收件箱与阅读体验")).findFirst().get();
+                icon[0]=read.box.x+read.box.width/2;icon[1]=read.box.y+read.box.height/2;icon[2]=read.node.style().color&0xffffff;bounds[0]=read.box;readNode[0]=read.node;
+            });
+            view.session.pointer(ScenePointerEvent.move(icon[0],icon[1]));view.frame();
+            view.domain.execute(() -> {
+                club.heiqi.uilib.ui.scene.runtime.SceneFocusRouter focus=view.session.runtime().focusRouter();
+                for(int i=0;i<100&&focus.focused().get()!=readNode[0];i++)focus.navigate(false);
+                require(focus.focused().get()==readNode[0],"键盘导航未达到次级动作");
+            });view.frame();
+            require(view.plan.commands().stream().anyMatch(c -> c.kind==PaintCommand.Kind.RECT&&(c.color&0xffffff)==icon[2]&&(c.color>>>24)==255
+                    &&c.box.x>=bounds[0].x&&c.box.y>=bounds[0].y&&c.box.x+c.box.width<=bounds[0].x+bounds[0].width
+                    &&c.box.y+c.box.height<=bounds[0].y+bounds[0].height),"hover渐显途中聚焦同一动作仍未立即可见");
+        }
+    }
+    private void categories() {
+        try(View view=new View()) {
+            view.domain.execute(() -> {
+                for(int i=0;i<30;i++)view.model.receive(new MailboxModel.Message("promo-"+i,"工坊推广",
+                        "分类核验推广 "+i,"动态摘要","推广正文","昨天",false,false,true,MailboxModel.Category.PROMOTIONS));
+                view.model.receive(new MailboxModel.Message("social","社区","分类核验社交","摘要","正文","昨天",false,false,true,MailboxModel.Category.SOCIAL));
+            });view.frame();
+            view.named("分类：推广");
+            view.domain.execute(() -> require(view.model.results.get().size()==30&&view.model.unread(MailboxModel.Category.PROMOTIONS)==30,
+                    "分类按钮未筛选真实数据或计数不是当前来源"));
+            view.domain.execute(() -> view.model.movePage(1));view.frame();
+            view.named("选择邮件：分类核验推广");view.named("分类：社交");
+            view.domain.execute(() -> require(view.model.pageIndex.get()==0&&view.model.checked.get().isEmpty()
+                    &&view.model.results.get().get(0).id.equals("social"),"分类切换没有结束原分页与选择"));
+            view.search("分类核验推广");
+            view.domain.execute(() -> require(view.model.results.get().size()==30,"搜索被隐藏分类过滤"));
+            view.click("清空搜索");view.named("分类：推广");
+            view.named("选择邮件：分类核验推广");view.named("归档已选邮件");
+            view.domain.execute(() -> {
+                require(view.model.results.get().size()==29&&view.model.unread(MailboxModel.Category.PROMOTIONS)==29,"归档未同步分类与计数");
+                view.model.update(new MailboxModel.Message("promo-1","社区","分类核验迁移","摘要","正文","昨天",false,false,true,MailboxModel.Category.SOCIAL));
+            });view.frame();
+            view.named("分类：社交");
+            view.domain.execute(() -> require(view.model.results.get().size()==2&&view.model.unread(MailboxModel.Category.SOCIAL)==2,"同id分类更新未进入当前集合"));
+            view.click("所有邮件");
+            view.domain.execute(() -> require(view.model.results.get().size()==55,"其他文件夹没有覆盖全部分类"));
+            view.click("收件箱");
+            view.domain.execute(() -> require(view.model.category.get()==MailboxModel.Category.SOCIAL&&view.model.results.get().size()==2,"返回收件箱丢失分类"));
+        }
     }
     /** 保护实际评审发现：空草稿不改变时只切文本方向，提示仍须重新呈现。 */
     private void placeholderPolicy() throws Exception {

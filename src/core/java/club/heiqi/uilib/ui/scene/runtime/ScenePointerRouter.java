@@ -113,6 +113,7 @@ public final class ScenePointerRouter implements AutoCloseable {
                 if (idle && event.button == 0) {
                     SceneHitTester.Target target = hits.target(runtime, geometry, x, y);
                     if (target != null) {
+                        runtime.focusRouter().pointerInput();
                         SceneNode hit = target.node;
                         ownerTarget = target.identity;
                         setOwner(runtime.captureMount(hit));
@@ -185,6 +186,7 @@ public final class ScenePointerRouter implements AutoCloseable {
                 }
             if (!owned) return;
         }
+        runtime.focusRouter().pointerInput();
         SceneNode focused = runtime.focusRouter().focused().get();
         if (focused != null && !inside(geometry.get(focused))) runtime.focusRouter().clear();
     }

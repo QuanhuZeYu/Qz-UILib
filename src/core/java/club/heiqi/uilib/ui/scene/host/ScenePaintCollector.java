@@ -22,6 +22,8 @@ import java.util.Set;
 final class ScenePaintCollector {
     private final SceneLayoutEngine layout;
     private final SceneTextMeasurer text;
+    private long nextPaintNanos=Long.MAX_VALUE;
+    long nextPaintNanos() { return nextPaintNanos; }
 
     ScenePaintCollector(SceneLayoutEngine layout, SceneTextMeasurer text) {
         this.layout = layout;
@@ -29,6 +31,7 @@ final class ScenePaintCollector {
     }
 
     PaintPlan collect(SceneGeometryView geometry, long metricsRevision) {
+        nextPaintNanos=Long.MAX_VALUE;
         PaintPlanBuilder content = new PaintPlanBuilder(), overlay = new PaintPlanBuilder();
         // 捕获标记覆盖整页所有组，避免备用modal后代在后续组无条件再绘制。
         Set<SceneNode> captured = identitySet();
@@ -83,6 +86,8 @@ final class ScenePaintCollector {
             entry.node.control().paintOverlay(entry.node, geometry, overlay, text);
             PaintPlan childOverlay = childOverlays.get(entry.node);
             if (childOverlay != null) append(overlay, childOverlay);
+            LayoutBox visible=entry.clip==null?entry.box:entry.box.intersect(entry.clip);
+            if(visible.width>0&&visible.height>0)nextPaintNanos=Math.min(nextPaintNanos,entry.node.control().nextPaintNanos(entry.node));
         }
         return new PaintLayers(content.build(), overlay.build());
     }

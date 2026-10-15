@@ -18,12 +18,12 @@ public final class MailboxPage {
         return create(p,theme,p.themeMode());
     }
     public static SceneNode create(ScenePageContext p, ReadableSignal<SceneTheme> theme, ReadableSignal<ThemeMode> mode) {
-        MailboxModel model=new MailboxModel(p.domain(),MailSamples.messages(24));
+        MailboxModel model=new MailboxModel(p.domain(),MailSamples.showcase());
         return create(p,theme,mode,model,true).own(model);
     }
     public static SceneNode create(ScenePageContext p, ReadableSignal<SceneTheme> theme,
             ReadableSignal<ThemeMode> mode, Runnable onBack, Runnable onThemePreview) {
-        MailboxModel model=new MailboxModel(p.domain(),MailSamples.messages(24));
+        MailboxModel model=new MailboxModel(p.domain(),MailSamples.showcase());
         return create(p,theme,mode,model,true,onBack,onThemePreview).own(model);
     }
     /** 外部模型由调用方拥有，页面不关闭共享业务状态。 */
@@ -40,8 +40,9 @@ public final class MailboxPage {
     private static SceneNode create(ScenePageContext p, ReadableSignal<SceneTheme> base,
             ReadableSignal<ThemeMode> mode, MailboxModel model, boolean paged, Runnable onBack, Runnable onThemePreview) {
         Owner scope=p.domain().owner();Signal<Float> fontScale=p.domain().signal(1f);
+        Signal<Boolean> collapsed=p.domain().signal(false);
         ReadableSignal<MailPalette> palette=p.domain().computed(scope, () -> MailPalette.from(base.get().withTextStyle(
-                base.get().textStyle.withEm(base.get().textStyle.logicalEm*fontScale.get())),mode.get()));
+                base.get().textStyle.withEm(base.get().textStyle.logicalEm*(onBack==null?1f:14f/15f)*fontScale.get())),mode.get()));
         ReadableSignal<SceneTheme> theme=p.domain().computed(scope, () -> palette.get().theme);
         ReadableSignal<Boolean> wide=p.domain().computed(scope, () -> p.viewportWidth().get()>=Math.ceil(theme.get().textStyle.logicalEm*70));
         ReadableSignal<Boolean> split=p.domain().computed(scope,() -> p.viewportWidth().get()>=Math.ceil(theme.get().textStyle.logicalEm*80));
@@ -49,7 +50,7 @@ public final class MailboxPage {
         SceneNode root=new SceneNode().size(Size.fill(1),Size.fill(1)).own(scope);
         root.bind(NodeBinding.value(palette,(n,v) -> n.background(v.canvas)));
         SceneNode search=MailSearch.create(p,theme,palette,model);
-        root.add(MailChrome.header(p,theme,mode,search,onBack,onThemePreview,
+        root.add(MailChrome.header(p,theme,mode,search,onBack,onThemePreview,collapsed,() -> collapsed.set(!collapsed.get()),
                 () -> fontScale.get()==1f?"放大文字":"标准文字",() -> fontScale.set(fontScale.get()==1f?1.25f:1f)));
         Signal<Integer> sequence=p.domain().signal(0);
         Runnable receive=() -> {int next=sequence.get()+1;sequence.set(next);
@@ -57,12 +58,13 @@ public final class MailboxPage {
                     "新消息已经进入收件箱。","你好，\n\n这是刚刚收到的交接记录。请在需要时将它加星，或归档到所有邮件。","刚刚",false,false,true));};
         SceneNode body=new SceneNode().size(Size.fill(1),Size.fill(1));
         body.bind(NodeBinding.value(wide,(n,v) -> n.axis(v?SceneNode.Axis.ROW:SceneNode.Axis.COLUMN)));
-        body.add(MailChrome.navigation(p,theme,palette,model,wide,receive));
+        body.add(MailChrome.navigation(p,theme,palette,model,wide,collapsed,receive));
         SceneNode workspace=MailStyle.surface(theme,() -> palette.get().surface,1.1f)
                 .axis(SceneNode.Axis.ROW).size(Size.fill(1),Size.fill(1)).clip(true);
         SceneNode listPane=new SceneNode().size(Size.fill(2),Size.fill(1));
         listPane.bind(NodeBinding.value(() -> split.get()||!model.reading.get(),SceneNode::visible));
         listPane.add(MailToolbar.create(p,theme,model,wide,receive));
+        listPane.add(MailCategories.create(p,theme,palette,model,wide));
         SceneNode list=new SceneNode().size(Size.fill(1),Size.fill(1));
         list.bind(NodeBinding.repeat(() -> Collections.singletonList(paged?model.pageIndex.get()+":"+model.pageSize.get():"ordinary"),key -> key,ignored -> {
             SceneNode viewport=new SceneNode().size(Size.fill(1),Size.fill(1)).scrollable(true).clip(true);

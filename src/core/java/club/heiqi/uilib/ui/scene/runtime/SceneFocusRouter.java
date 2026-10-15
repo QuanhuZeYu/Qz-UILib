@@ -23,6 +23,7 @@ public final class SceneFocusRouter {
     private final SceneRuntime runtime;
     private final Signal<SceneNode> value;
     private final ReadableSignal<SceneNode> view;
+    private final Signal<Boolean> keyboardCue;
     private final List<Range> ranges = new ArrayList<>();
     private MountHandle owner, pendingReveal;
     // 仅记录已发出的控件通知，不参与焦点资格或路由决定；owner是唯一权威。
@@ -38,6 +39,7 @@ public final class SceneFocusRouter {
     SceneFocusRouter(SceneRuntime runtime) {
         this.runtime = runtime;
         value = runtime.domain().signal(null);
+        keyboardCue=runtime.domain().signal(true);
         view = value::get; // 只读包装保留依赖追踪，不暴露可强转的写端。
         ranges.add(new Range(null));
     }
@@ -46,6 +48,18 @@ public final class SceneFocusRouter {
     public ReadableSignal<SceneNode> focused() {
         runtime.domain().checkAccess();
         return view;
+    }
+
+    /** 逻辑焦点只有一个；显示线索由最近的有效输入方式派生，文字编辑始终保留。 */
+    public boolean focusVisible(SceneNode node) {
+        runtime.domain().checkAccess();
+        return value.get()==node&&(keyboardCue.get()||node.control()!=null&&node.control().acceptsTextInput(node));
+    }
+    void pointerInput() { setKeyboardCue(false); }
+    void keyboardInput() { setKeyboardCue(true); }
+    private void setKeyboardCue(boolean next) {
+        runtime.domain().checkWrite();
+        if(keyboardCue.get()!=next) {keyboardCue.set(next);runtime.invalidatePaint();}
     }
 
     /** 域内受控请求，可从handler调用；无效/异runtime/旧token返回false，不激活业务。 */
@@ -65,6 +79,7 @@ public final class SceneFocusRouter {
      * 单项仍返回true但不重复通知，无焦点正向取首项/反向取末项；不激活控件。 */
     public boolean navigate(boolean backward) {
         runtime.domain().checkWrite();
+        keyboardInput();
         if (closed) return false;
         revalidate();
         Range range = top();
@@ -96,6 +111,7 @@ public final class SceneFocusRouter {
     /** 激活唯一当前焦点，不补选或改变owner；标准键盘按钮复用同一业务click路径。 */
     public boolean activate() {
         runtime.domain().checkWrite();
+        keyboardInput();
         if (closed) return false;
         revalidate();
         if (owner == null

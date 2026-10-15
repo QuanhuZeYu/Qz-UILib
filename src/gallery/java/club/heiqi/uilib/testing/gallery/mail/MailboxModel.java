@@ -17,11 +17,18 @@ import java.util.LinkedHashSet;
 /** 本地收件箱业务；打开、勾选和消息事实分别拥有权威，不从控件位置推断身份。 */
 public final class MailboxModel implements AutoCloseable {
     public enum Folder { INBOX, STARRED, ALL }
+    public enum Category { PRIMARY, PROMOTIONS, SOCIAL }
     public static final class Message {
         public final String id, sender, subject, preview, body, time;
         public final boolean starred, read, inbox;
+        public final Category category;
         public Message(String id, String sender, String subject, String preview, String body, String time,
                        boolean starred, boolean read, boolean inbox) {
+            this(id,sender,subject,preview,body,time,starred,read,inbox,Category.PRIMARY);
+        }
+        public Message(String id, String sender, String subject, String preview, String body, String time,
+                       boolean starred, boolean read, boolean inbox, Category category) {
+            this.category=Objects.requireNonNull(category);
             this.id = Objects.requireNonNull(id, "消息id");
             if (id.isEmpty()) throw new IllegalArgumentException("消息id不能为空");
             this.sender = Objects.requireNonNull(sender); this.subject = Objects.requireNonNull(subject);
@@ -29,7 +36,7 @@ public final class MailboxModel implements AutoCloseable {
             this.time = Objects.requireNonNull(time); this.starred = starred; this.read = read; this.inbox = inbox;
         }
         public Message flags(boolean star, boolean seen, boolean inInbox) {
-            return new Message(id, sender, subject, preview, body, time, star, seen, inInbox);
+            return new Message(id, sender, subject, preview, body, time, star, seen, inInbox, category);
         }
     }
     public static final class Item {
@@ -44,6 +51,7 @@ public final class MailboxModel implements AutoCloseable {
     public final Signal<String> query, openedId, feedback;
     public final Signal<Boolean> reading;
     public final Signal<Folder> folder;
+    public final Signal<Category> category;
     public final Signal<Set<String>> checked;
     public final ReadableSignal<List<Item>> results;
     public final ReadableSignal<Message> opened;
@@ -56,6 +64,7 @@ public final class MailboxModel implements AutoCloseable {
         source = domain.signal(Collections.emptyList()); query = domain.signal("");
         pageSize = domain.signal(25); requestedPage = domain.signal(0);
         openedId = domain.signal(null); reading = domain.signal(false); feedback = domain.signal("");
+        category=domain.signal(Category.PRIMARY);
         folder = domain.signal(Folder.INBOX); checked = domain.signal(Collections.emptySet());
         for (Message message : initial) {
             if (byId.put(message.id, new Item(domain, message)) != null)
@@ -68,6 +77,7 @@ public final class MailboxModel implements AutoCloseable {
             for (Item item : source.get()) {
                 Message m = item.value.get();
                 if (f == Folder.INBOX && !m.inbox || f == Folder.STARRED && !m.starred) continue;
+                if (f==Folder.INBOX && q.isEmpty() && m.category!=category.get()) continue;
                 if (q.isEmpty() || (m.sender + " " + m.subject + " " + m.preview).toLowerCase(Locale.ROOT).contains(q)) list.add(item);
             }
             return Collections.unmodifiableList(list);
@@ -91,6 +101,15 @@ public final class MailboxModel implements AutoCloseable {
             Message m = item.value.get();
             if (selected == Folder.ALL || selected == Folder.INBOX && m.inbox || selected == Folder.STARRED && m.starred) total++;
         }
+        return total;
+    }
+    /** 仅分类收件箱，查询和其他文件夹覆盖全部分类；不保存第二份消息集合。 */
+    public void setCategory(Category value) {
+        if(category.get()!=value) {category.set(Objects.requireNonNull(value));checked.set(Collections.emptySet());requestedPage.set(0);}
+        reading.set(false);
+    }
+    public int unread(Category value) {
+        int total=0;for(Item item:source.get()) {Message m=item.value.get();if(m.inbox&&m.category==value&&!m.read)total++;}
         return total;
     }
     private void publish() { source.set(Collections.unmodifiableList(new ArrayList<>(byId.values()))); }

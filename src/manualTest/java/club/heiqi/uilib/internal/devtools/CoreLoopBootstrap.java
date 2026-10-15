@@ -12,13 +12,14 @@ import net.minecraftforge.client.ClientCommandHandler;
 /** 仅开发 classpath 中注册；场景不进入发布包。 */
 public final class CoreLoopBootstrap {
     private static boolean installed, pendingOpen, pendingPerformance;
+    private static club.heiqi.uilib.testing.gallery.TestGallery.Page pendingPage=club.heiqi.uilib.testing.gallery.TestGallery.Page.HOME;
 
     @SubscribeEvent
     public void tick(TickEvent.ClientTickEvent event) {
         if (event.phase != TickEvent.Phase.END || !pendingOpen) return;
         pendingOpen = false;
         Minecraft.getMinecraft().displayGuiScreen(pendingPerformance ? new PerformanceScreen()
-                : new CoreLoopScreen(club.heiqi.uilib.testing.gallery.TestGallery.Page.HOME));
+                : new CoreLoopScreen(pendingPage));
         pendingPerformance = false;
     }
 
@@ -37,7 +38,7 @@ public final class CoreLoopBootstrap {
 
                     @Override
                     public String getCommandUsage(ICommandSender sender) {
-                        return "/qzcore";
+                        return "/qzcore [mailbox]";
                     }
 
                     @Override
@@ -49,6 +50,8 @@ public final class CoreLoopBootstrap {
                     public void processCommand(
                             ICommandSender sender,
                             String[] args) { // GuiChat 在命令返回后会关闭当前界面，必须等聊天输入收尾后再打开。
+                        pendingPage=args.length>0&&"mailbox".equalsIgnoreCase(args[0])
+                                ?club.heiqi.uilib.testing.gallery.TestGallery.Page.MAILBOX:club.heiqi.uilib.testing.gallery.TestGallery.Page.HOME;
                         pendingPerformance = false;
                         pendingOpen = true;
                     }

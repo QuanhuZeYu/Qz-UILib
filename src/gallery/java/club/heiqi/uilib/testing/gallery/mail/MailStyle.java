@@ -13,7 +13,7 @@ import club.heiqi.uilib.ui.scene.control.SceneTextPolicy;
 /** 案例局部视觉词汇，尺寸仍由正式控件测量。 */
 final class MailStyle {
     private MailStyle() {}
-    static int px(SceneTheme theme, float value) { return Math.round(theme.textStyle.logicalEm * value / 15f); }
+    static int px(SceneTheme theme, float value) { return Math.round(theme.textStyle.logicalEm * value / 14f); }
     static SceneNode surface(ReadableSignal<SceneTheme> theme, ReadableSignal<Integer> color, float radius) {
         return surface(theme,color,radius,true);
     }

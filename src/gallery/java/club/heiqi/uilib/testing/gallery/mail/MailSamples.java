@@ -7,6 +7,17 @@ import club.heiqi.uilib.testing.gallery.mail.MailboxModel.Message;
 /** 确定的本地交接邮件，数据事件与页面实现分离。 */
 public final class MailSamples {
     private MailSamples() {}
+    /** 真实分类样本只用于人工广场；负载与既有场景沿原始可配置数据。 */
+    public static List<Message> showcase() {
+        List<Message> result=messages(50);
+        for(int i=0;i<8;i++) result.add(new Message("promotion-"+i,"Workshop Weekly",
+                "工坊活动与本周精选 · "+(i+1),"浏览本周课程、社区活动和资源推荐。",
+                "你好，\n\n本周工坊开放新的课程和活动。请按自己的计划阅读。","10月14日",false,false,true,MailboxModel.Category.PROMOTIONS));
+        for(int i=0;i<6;i++) result.add(new Message("social-"+i,"社区协作组",
+                "你关注的讨论有了新回复 · "+(i+1),"新的社区讨论与协作反馈已送达。",
+                "你好，\n\n你参与的社区讨论有了新回复。欢迎继续交流。","10月13日",false,i%2==0,true,MailboxModel.Category.SOCIAL));
+        return result;
+    }
     public static List<Message> messages(int count) {
         String[] senders = {"林晓 · 产品设计", "陈默 · 工程协作", "Workshop Weekly", "资源维护团队", "周宁 · 项目运营"};
         String[] subjects = {"周五的设计评审：收件箱与阅读体验", "构建已完成，等待交接确认", "Café / 本周工坊精选", "字体与语言资料更新通知", "项目排期与下周安排"};

@@ -10,6 +10,7 @@ import java.util.List;
 
 /** 案例显式选择现代字体，不改变宿主字体配置；显式候选仍由调用方决定。
  * 资源来自 google/fonts a85815a42757630ce188fdad368c2dfc444d4773，原 OFL 随资源分发。
+ * Google Sans 来自 google/fonts a0e3dbcdc3a3ecfafff3f071159ae0221628922d，OFL随包，不引入Google业务或品牌身份。
  * classpath 字节归当前加载器的不变资源代际，真实样式匹配及失效仍归正式字体服务。 */
 final class MailTypography {
     private static final List<FontSource> CANDIDATES = candidates();
@@ -19,6 +20,8 @@ final class MailTypography {
         ClassLoader loader = MailTypography.class.getClassLoader();
         try {
             List<FontSource> result = new ArrayList<>();
+            result.add(FontSource.resource("mail-google-sans", 1, loader,
+                    "assets/qz_uilib/gallery/fonts/google-sans/GoogleSans-VF.ttf", false,Collections.<String>emptySet()));
             result.add(FontSource.resource("mail-noto-sans-sc", 1, loader,
                     "assets/qz_uilib/gallery/fonts/noto-sans-sc/NotoSansSC-VF.ttf", false,
                     Collections.<String>emptySet()));

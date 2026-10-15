@@ -73,7 +73,7 @@ abstract class SceneSymbolControl implements SceneControl {
         boolean pressed = enabled && node.runtime().pointerRouter().pressed(node);
         if(node.clickAction()!=null) club.heiqi.uilib.ui.scene.paint.ScenePaintShapes.rounded(target,e.box,e.clip,
                 !enabled?style.disabled:pressed?style.pressed:hover?style.hover:style.button,Math.min(e.box.width,e.box.height)/2);
-        if (enabled && node.runtime().focusRouter().focused().get() == node) SceneControlPaint.border(target,e.box,e.clip,style.focus);
+        if (enabled && node.runtime().focusRouter().focusVisible(node)) SceneControlPaint.border(target,e.box,e.clip,style.focus);
         LayoutBox inner = SceneControlPaint.inner(e.box,node.padding());
         int side = Math.min(symbolSize(node),Math.min(inner.width,inner.height));
         LayoutBox mark = new LayoutBox(inner.x+(showLabel?0:(inner.width-side)/2),inner.y + (inner.height-side)/2,side,side);
@@ -88,7 +88,7 @@ abstract class SceneSymbolControl implements SceneControl {
     }
     @Override public void paintOverlay(SceneNode node, SceneGeometryView geometry, PaintPlanBuilder target, SceneTextMeasurer text) {
         if (showLabel || node.runtime() == null || !node.runtime().interactive(node)) return;
-        if (node.runtime().pointerRouter().hovered(geometry) != node && node.runtime().focusRouter().focused().get() != node) return;
+        if (node.runtime().pointerRouter().hovered(geometry) != node && !node.runtime().focusRouter().focusVisible(node)) return;
         SceneGeometryView.Entry e = geometry.get(node); if (e == null) return;
         LayoutBox viewport = geometry.viewport(); LayoutBox visible = e.box.intersect(viewport);
         if (e.clip != null) visible = visible.intersect(e.clip);

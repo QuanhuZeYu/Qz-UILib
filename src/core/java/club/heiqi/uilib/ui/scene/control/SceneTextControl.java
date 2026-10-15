@@ -104,7 +104,7 @@ final class SceneTextControl implements SceneControl {
         for (SceneNode cursor = node; cursor != null; cursor = cursor.parent())
             enabled &= cursor.enabled();
         boolean focused =
-                enabled && runtime != null && runtime.focusRouter().focused().get() == node;
+                enabled && runtime != null && runtime.focusRouter().focusVisible(node);
         if (button) {
             boolean hovered =
                     enabled && runtime != null && runtime.pointerRouter().hovered(geometry) == node;
@@ -142,7 +142,7 @@ final class SceneTextControl implements SceneControl {
                 || presented == source
                 || entry.text != presented) return;
         if (runtime.pointerRouter().hovered(geometry) != node
-                && runtime.focusRouter().focused().get() != node) return;
+                && !runtime.focusRouter().focusVisible(node)) return;
         LayoutBox viewport = geometry.viewport();
         if (viewport.width == 0 || viewport.height == 0) return;
         LayoutBox visible = entry.box.intersect(viewport);

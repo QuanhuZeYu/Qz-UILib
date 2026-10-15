@@ -195,11 +195,11 @@ public final class PointerInputScenario extends TestApplication {
             });
             p.events(ScenePointerEvent.down(0, p.host.width + 1, 5),
                     ScenePointerEvent.up(0, p.host.width + 1, 5));
-            p.domain.execute(() -> require(p.runtime.focusRouter().focused().get() == focused[0],
-                    "viewport外按下清除了模态焦点"));
+            p.domain.execute(() -> require(p.runtime.focusRouter().focused().get() == focused[0]&&p.runtime.focusRouter().focusVisible(focused[0]),
+                    "viewport外按下清除了模态焦点或键盘线索"));
             p.events(ScenePointerEvent.down(0, 60, 40), ScenePointerEvent.up(0, 60, 40));
-            p.domain.execute(() -> require(p.runtime.focusRouter().focused().get() == focused[0],
-                    "模态外背景清除了前台焦点"));
+            p.domain.execute(() -> require(p.runtime.focusRouter().focused().get() == focused[0]&&p.runtime.focusRouter().focusVisible(focused[0]),
+                    "模态外背景清除了前台焦点或键盘线索"));
             p.events(ScenePointerEvent.down(0, 5, 5), ScenePointerEvent.up(0, 5, 5));
             p.domain.execute(() -> require(p.runtime.focusRouter().focused().get() == focused[0],
                     "无clickAction的焦点节点内部被当作外部背景"));

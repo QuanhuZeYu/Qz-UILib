@@ -76,7 +76,12 @@ final class SceneIconGlyph {
             case SORT:p.line(4,7,20,7);p.line(7,12,17,12);p.line(10,17,14,17);break;
             case CHECK:p.line(5,12,10,17);p.line(10,17,19,7);break;
             case MINUS:p.line(6,12,18,12);break;
+            case MENU:p.line(4,6,20,6);p.line(4,12,20,12);p.line(4,18,20,18);break;
             case CHECK_BOX:p.polygon(false,4,4,20,4,20,20,4,20);break;
+            case TAG:p.polygon(false,3,3,11,3,21,13,13,21,3,11);p.circle(7,7,1,1.5f);break;
+            case PEOPLE:p.circle(9,8,3,1.8f);p.circle(17,9,2.5f,1.8f);
+                p.polygon(false,3,20,3,17,6,14,12,14,15,17,15,20);
+                p.line(17,14,21,17);p.line(21,17,21,20);break;
             default:throw new AssertionError(symbol);
         }
         return p;

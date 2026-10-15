@@ -154,6 +154,10 @@ val desktopGallery = desktopApplication("desktopGallery", "打开与MC和自动�
     mainClass.set("club.heiqi.uilib.host.desktop.DesktopGallery")
 }
 }
+val desktopMailbox = desktopApplication("desktopMailbox", "直接打开与MC共用的收件箱案例", true).apply { configure {
+    mainClass.set("club.heiqi.uilib.host.desktop.DesktopGallery")
+    args("--mailbox")
+} }
 val desktopMailboxPerformance = desktopApplication("desktopMailboxPerformance", "完整收件箱真实桌面计时", true).apply { configure {
     mainClass.set("club.heiqi.uilib.host.desktop.DesktopMailboxPerformance")
     systemProperty("uilib.version", project.version.toString())

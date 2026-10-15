@@ -26,6 +26,7 @@ class MailSurface implements SceneControl {
     private final ReadableSignal<Integer> color;
     private final float radius;
     private final boolean feedback;
+    private final MailMotion transition=new MailMotion();
     MailSurface(ReadableSignal<SceneTheme> theme, ReadableSignal<Integer> color, float radius) {
         this(theme,color,radius,true);
     }
@@ -60,11 +61,13 @@ class MailSurface implements SceneControl {
             if (n.runtime().pointerRouter().pressed(n)) background = t.pressed;
             else if (n.runtime().pointerRouter().hovered(g) == n) background = t.hover;
         }
+        if(feedback&&n.clickAction()!=null)background=transition.color(background,n.runtime().pointerRouter().pressed(n)?0:150000000L);
         if ((background >>> 24) != 0) ScenePaintShapes.rounded(target, e.box, e.clip, background,
                 Math.max(0, Math.round(t.textStyle.logicalEm * radius)));
     }
+    @Override public long nextPaintNanos(SceneNode n) {return transition.nextPaintNanos();}
     @Override public void paintAfterChildren(SceneNode n, SceneGeometryView g, PaintPlanBuilder target) {
-        if (!feedback || n.runtime().focusRouter().focused().get() != n) return;
+        if (!feedback || !n.runtime().focusRouter().focusVisible(n)) return;
         SceneGeometryView.Entry e = g.get(n); if (e == null) return;
         int color = theme.get().focus;
         target.add(PaintCommand.rect(new LayoutBox(e.box.x, e.box.y, e.box.width, 2), e.clip, color));

@@ -12,8 +12,9 @@ import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
 /** 操作与分页保持同一工具区域；选择状态只替换可用动作，不额外推下一整条列表。 */
 final class MailToolbar {
     private MailToolbar() {}
-    static SceneNode create(ScenePageContext p, ReadableSignal<SceneTheme> theme, MailboxModel model,
+    static SceneNode create(ScenePageContext p, ReadableSignal<SceneTheme> base, MailboxModel model,
             ReadableSignal<Boolean> wide, Runnable receive) {
+        ReadableSignal<SceneTheme> theme=() -> base.get().withTextStyle(base.get().textStyle.withColor(base.get().disabledText));
         ReadableSignal<Boolean> roomy=() -> wide.get()&&!model.reading.get();
         SceneNode tools=MailStyle.surface(theme,() -> 0x00000000,0).size(Size.fill(1),Size.natural());
         tools.bind(NodeBinding.value(() -> roomy.get()+":"+theme.get().textStyle.logicalEm,(n,value) -> {

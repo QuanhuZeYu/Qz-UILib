@@ -33,6 +33,10 @@ public interface SceneControl {
         return Collections.emptyList();
     }
 
+    /** 只读的下一次绘制时刻（System.nanoTime同一时基）；有限过渡结束返回MAX_VALUE。
+     * 不请求测量/布局，不创建线程或在绘制阶段写业务状态；未声明的控件继续复用静态计划。 */
+    default long nextPaintNanos(SceneNode node) { return Long.MAX_VALUE; }
+
     /** 唯一 scene 布局的文本入口，属性内容不另建排版树。 */
     default club.heiqi.uilib.ui.scene.text.TextLayout layoutText(
             SceneNode node, SceneTextMeasurer text, int width) {
