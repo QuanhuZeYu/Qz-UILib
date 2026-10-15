@@ -56,12 +56,15 @@ tasks.named<JavaCompile>("compileJava") { classpath = fontBindings + classpath }
 tasks.named<JavaCompile>("compileTestJava") { classpath = fontBindings + classpath }
 val isolatedFontResources = layout.buildDirectory.dir("generated/isolated-font")
 val packageFontBindings by tasks.registering {
-    inputs.files(isolatedFontRuntime)
-    outputs.dir(isolatedFontResources)
+    // 执行动作只捕获文件集合与目录来源，避免人工 Gradle 启动在存储配置缓存时失败。
+    val bindings = objects.fileCollection().from(isolatedFontRuntime)
+    val resourcesDirectory = isolatedFontResources
+    inputs.files(bindings)
+    outputs.dir(resourcesDirectory)
     doLast {
-        val destination = isolatedFontResources.get().dir("assets/qz_uilib/runtime/font").asFile
+        val destination = resourcesDirectory.get().dir("assets/qz_uilib/runtime/font").asFile
         destination.mkdirs()
-        val artifacts = isolatedFontRuntime.files.sortedBy { it.name }
+        val artifacts = bindings.files.sortedBy { it.name }
         // 私有字体固定使用完整的官方JNI实现。3.4.2的Java25多版本FFM在
         // FT_New_Memory_Face的invokePPNNPI生成时发生Operand stack underflow。
         // 仅移除随包字体绑定的版本覆盖，保留根类及全部native；不改宿主LWJGL或全局配置。

@@ -139,13 +139,15 @@ tasks.named("check") { dependsOn(verifyDevToolsNotPackaged) }
 // MC 重混淆产物依赖该发行组成部分，单独生成 MC 成品也保留资源门禁。
 tasks.named("reobfJar") { dependsOn("coreJar") }
 tasks.named<Jar>("coreJar") {
+    // 固定到声明的资源目录；执行期不调用脚本的 Project.file，保持桌面启动可缓存。
+    val coreResources = layout.projectDirectory.dir("src/core/resources")
     doLast {
         ZipFile(archiveFile.get().asFile).use { zip ->
             listOf("STIXTwoMath-Regular.otf", "OFL.txt", "SOURCE.md").forEach { name ->
                 val resource = "assets/qz_uilib/fonts/math/$name"
                 val entry = zip.getEntry(resource) ?: error("数学字体发行资源缺失：$resource")
                 val bytes = zip.getInputStream(entry).use { it.readBytes() }
-                check(bytes.contentEquals(file("src/core/resources/$resource").readBytes())) { "数学字体发行资源被改写：$resource" }
+                check(bytes.contentEquals(coreResources.file(resource).asFile.readBytes())) { "数学字体发行资源被改写：$resource" }
             }
         }
     }

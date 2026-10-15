@@ -147,18 +147,19 @@ fun desktopApplication(name: String, summary: String, verify: Boolean) = tasks.r
     if (mac) jvmArgs("-XstartOnFirstThread")
     workingDir(layout.buildDirectory.dir("install/desktop"))
 }
-val desktopRun = desktopApplication("desktopRun", "以正式发行组合启动独立桌面单窗口", false)
+// 人工入口统一装配当前共享广场，仍只在测试消费者 jar 中携带页面和样本。
+fun galleryApplication(name: String, summary: String) = desktopApplication(name, summary, true).apply { configure {
+    group = "application"
+    mainClass.set("club.heiqi.uilib.host.desktop.DesktopGallery")
+} }
+val desktopRun = galleryApplication("desktopRun", "打开当前共享测试广场的场景目录，不启动MC")
 val runDesktopSettings = desktopApplication("runDesktopSettings", "以正式发行组合打开共享配置页，不启动MC", false).apply { configure {
     mainClass.set(desktopSettingsMain)
 }
 }
 val desktopVerify = desktopApplication("desktopVerify", "以正式发行组合运行有限真实窗口绘制交互与释放验收", true)
-val desktopGallery = desktopApplication("desktopGallery", "打开与MC和自动机共用的测试广场", true).apply { configure {
-    mainClass.set("club.heiqi.uilib.host.desktop.DesktopGallery")
-}
-}
-val desktopMailbox = desktopApplication("desktopMailbox", "直接打开与MC共用的收件箱案例", true).apply { configure {
-    mainClass.set("club.heiqi.uilib.host.desktop.DesktopGallery")
+val desktopGallery = galleryApplication("desktopGallery", "打开与MC和自动机共用的测试广场")
+val desktopMailbox = galleryApplication("desktopMailbox", "直接打开与MC共用的收件箱案例").apply { configure {
     args("--mailbox")
 } }
 val desktopMailboxPerformance = desktopApplication("desktopMailboxPerformance", "完整收件箱真实桌面计时", true).apply { configure {
