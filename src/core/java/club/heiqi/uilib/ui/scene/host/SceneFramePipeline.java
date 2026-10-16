@@ -85,8 +85,12 @@ public final class SceneFramePipeline implements AutoCloseable {
             return new QueuedInput(InputKind.ESCAPE, null, null, null, FollowUp.host(fallback));
         }
 
+        boolean preparesPointerRelease() {
+            return kind == InputKind.POINTER && pointer.kind == ScenePointerEvent.Kind.UP && pointer.button == 0;
+        }
+
         boolean requiresTopLevelSettlement() {
-            return followUp != null;
+            return followUp != null || preparesPointerRelease();
         }
 
         void discard(ScenePointerRouter router) {
@@ -205,6 +209,9 @@ public final class SceneFramePipeline implements AutoCloseable {
         for (int i = 0; i < batch.events.size(); i++) {
             final int index = i;
             QueuedInput event = batch.events.get(index);
+            // 释放坐标先进入位置意图；独立顶层操作使其 Effect 在 UP 前结算，随后 route 正式重排。
+            if (event.preparesPointerRelease())
+                submit(batch.independent, () -> preparePointerRelease(batch, event), failure -> failBatch(batch, index));
             // 路由失败仍须记录当前物理事件；后续动作失败时当前事件已结算。
             submit(batch.independent, () -> route(batch, event), failure -> failBatch(batch, index));
             if (event.followUp != null)
@@ -220,13 +227,18 @@ public final class SceneFramePipeline implements AutoCloseable {
             checkOpen();
             while (!inputs.isEmpty()) events.add(inputs.remove());
         }
-        // 有后续动作的事件需要顶层Effect结算；已排队的独立批次也不能被同步批次越过。
+        // 有后续动作或释放前位置准备的事件需要顶层Effect结算；已排队批次不能被同步批次越过。
         synchronized (inputs) {
             boolean independent = pendingIndependent > 0
                     || events.stream().anyMatch(QueuedInput::requiresTopLevelSettlement);
             if (independent) pendingIndependent++;
             return new InputBatch(events, independent);
         }
+    }
+
+    private void preparePointerRelease(InputBatch batch, QueuedInput event) {
+        if (batch.failed || isClosed() || !runtime.alive()) return;
+        runtime.pointerRouter().prepareRelease(event.pointer, prepare(batch.frameNanos).geometry);
     }
 
     private void route(InputBatch batch, QueuedInput event) {

@@ -133,6 +133,17 @@ public final class ScenePointerRouter implements AutoCloseable {
                         || !runtime.pointerTargetValid(owner.node(), ownerTarget))) cancelOwner();
     }
 
+    /** 释放坐标先交给原 owner 声明位置；不结束物理段、不合成 MOVE、不建立新 owner。
+     * 帧管线在此操作及其 Effect 结算后重新 prepare，再沿 routeUp 正常结束。 */
+    public void prepareRelease(ScenePointerEvent event, SceneGeometryView geometry) {
+        checkAccess();
+        prepare(geometry);
+        if (event.kind != ScenePointerEvent.Kind.UP || event.button != 0
+                || !buttons.contains(event.button) || owner == null || !owner.active()) return;
+        updatePointerPosition(event);
+        runtime.prepareControlPointerRelease(owner.node(), event, geometry);
+    }
+
     /** 按采集顺序准备当前范围并分派事件，所有阶段共用本路由器的唯一手势状态。 */
     public void route(ScenePointerEvent event, SceneGeometryView geometry) {
         checkAccess();

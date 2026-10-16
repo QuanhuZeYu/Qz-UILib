@@ -258,8 +258,98 @@ public final class ImageServiceScenario extends TestApplication {
         throw new AssertionError("服务未在有限窗口完成");
     }
 
+    private void budgetReloadConsumers() throws Exception {
+        AtomicInteger loads = new AtomicInteger();
+        JavaImageLoader loader = new JavaImageLoader(id -> new ByteArrayInputStream(png), JavaImageLoader.Budget.defaults());
+        SharedImageService s = own(new SharedImageService(source -> {
+            loads.incrementAndGet();
+            return loader.prepare(source);
+        }, new SharedImageService.Budget(1, 1, 1, 1, 120 * 60 * 4)));
+        ImageSource sourceA = ImageSource.resource("test:budget-a"), sourceB = ImageSource.resource("test:budget-b"),
+                removed = ImageSource.resource("test:budget-removed");
+        ImageService.Lease a = lease(s, sourceA), b = lease(s, sourceB), shared = lease(s, sourceB),
+                detached = lease(s, sourceB), abandoned = lease(s, removed);
+        require(ready(s, a).status == ImageState.Status.READY, "预算内 A 没有加载");
+        require(state(b).status == ImageState.Status.FAILED && state(b).stage.equals("budget"), "B 没有明确预算失败");
+        ImageState detachedState = state(detached), abandonedState = state(abandoned);
+        domain.execute(() -> { detached.close(); abandoned.close(); });
+        s.reload(sourceB);
+        require(state(b).status == ImageState.Status.FAILED && state(b).request == state(shared).request,
+                "仍无预算的 reload 没有通知所有活跃消费者");
+        for (int i = 0; i < 3; i++) s.drain();
+        require(loads.get() == 1 && s.entryCount() == 1, "拒绝消费者进入了自动重试或突破条目预算");
+        domain.execute(a::close);
+        s.drain();
+        require(loads.get() == 1 && state(b).status == ImageState.Status.FAILED, "容量释放触发了自动重试");
+        s.reload(removed);
+        require(loads.get() == 1 && state(abandoned) == abandonedState, "已关闭拒绝 Lease 仍参与 reload");
+        s.reload(sourceB);
+        require(state(b).status == ImageState.Status.LOADING && state(b).request == state(shared).request,
+                "正式 reload 没有使原失败 Lease 共享当前加载");
+        ImageState ready = ready(s, b);
+        require(ready.status == ImageState.Status.READY && state(shared).content == ready.content
+                && loads.get() == 2 && s.entryCount() == 1 && s.retainedBytes() == ready.content.bytes(),
+                "原失败消费者没有共享有界加载或字节重复计费");
+        require(state(detached) == detachedState, "拒绝后卸载的 Lease 收到迟到恢复");
+        domain.execute(b::close);
+        s.reload(sourceB);
+        require(ready(s, shared).status == ImageState.Status.READY && loads.get() == 3 && state(b) == ready,
+                "共享消费者卸载破坏有效消费者或复活已关闭 Lease");
+        s.close();
+        require(s.awaitClose(1000) && s.entryCount() == 0 && s.retainedBytes() == 0, "服务关闭未释放预算");
+        System.out.println("IMAGE_BUDGET_RELOAD entries=1 originalLease=true shared=true stillFull=true noAutoRetry=true detached=true loads=" + loads.get());
+    }
+
+    private void budgetReloadLateClose() throws Exception {
+        AtomicInteger loads = new AtomicInteger();
+        CountDownLatch started = new CountDownLatch(1), release = new CountDownLatch(1), finished = new CountDownLatch(1);
+        ImageContent current = pixels(1, 1), late = pixels(1, 1);
+        SharedImageService s = own(new SharedImageService(source -> {
+            int attempt = loads.incrementAndGet();
+            return () -> {
+                if (attempt == 2) {
+                    started.countDown();
+                    for (;;) try {
+                        if (!release.await(2, TimeUnit.SECONDS)) throw new AssertionError("迟到请求未释放");
+                        break;
+                    } catch (InterruptedException cancelled) { /* 模拟不响应取消的解码。 */ }
+                    finished.countDown();
+                    return late;
+                }
+                return current;
+            };
+        }, new SharedImageService.Budget(2, 1, 1, 1, 4)));
+        onClose(release::countDown);
+        ImageSource sourceA = ImageSource.resource("test:late-a"), sourceB = ImageSource.resource("test:late-b");
+        ImageService.Lease a = lease(s, sourceA), b = lease(s, sourceB);
+        ready(s, a);
+        domain.execute(a::close);
+        s.reload(sourceB); s.drain();
+        require(started.await(1, TimeUnit.SECONDS), "原拒绝消费者的 reload 未进入 worker");
+        ImageState closedState = state(b);
+        domain.execute(b::close);
+        require(s.entryCount() == 0, "最后一个恢复消费者卸载未取消请求");
+        ImageService.Lease replacement = lease(s, sourceB);
+        require(ready(s, replacement).content == current, "重新 acquire 未取得独立当前结果");
+        release.countDown();
+        require(finished.await(1, TimeUnit.SECONDS), "旧请求未结束");
+        Thread.sleep(20); s.drain();
+        require(state(replacement).content == current && state(b) == closedState && s.retainedBytes() == 4,
+                "旧请求迟到污染有效消费者或重复记账");
+        ImageService.Lease rejected = lease(s, ImageSource.resource("test:close-rejected"));
+        ImageState rejectedState = state(rejected);
+        s.close();
+        require(s.awaitClose(1000) && state(rejected) == rejectedState && s.entryCount() == 0 && s.retainedBytes() == 0,
+                "服务关闭遗留拒绝消费者或预算");
+        try { s.reload(sourceB); throw new AssertionError("关闭后仍允许 reload"); }
+        catch (IllegalStateException expected) { require(expected.getMessage().contains("已关闭"), "错误关闭诊断"); }
+        System.out.println("IMAGE_BUDGET_LATE reload=true unmount=true lateIgnored=true serviceClose=true loads=" + loads.get());
+    }
+
     @Override
     protected void runTests() throws Exception {
+        scenario("预算拒绝的活跃消费者原 Lease 显式恢复共享加载", this::budgetReloadConsumers);
+        scenario("预算恢复后的卸载关闭与旧请求迟到", this::budgetReloadLateClose);
         scenario(
                 "真实HTTP成功透明像素共享及单消费者卸载",
                 () -> {

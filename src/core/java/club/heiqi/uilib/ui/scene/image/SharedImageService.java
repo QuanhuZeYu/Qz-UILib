@@ -44,6 +44,8 @@ public final class SharedImageService implements ImageService, AutoCloseable {
     private final ThreadPoolExecutor workers;
     private final LinkedHashMap<ImageSource, Entry> entries = new LinkedHashMap<>();
     private final LinkedHashSet<RequestAttempt> completed = new LinkedHashSet<>();
+    // 登记只随活跃 Lease；拒绝不占资源条目，也不进入自动重试队列。
+    private final LinkedHashSet<Subscription> consumers = new LinkedHashSet<>();
     private long request, bytes;
     private boolean closed;
 
@@ -215,15 +217,21 @@ public final class SharedImageService implements ImageService, AutoCloseable {
     }
 
     private final class Subscription implements Lease {
-        final Entry entry;
+        final ImageSource source;
+        Entry entry;
+        ImageState rejection;
         final ReactiveDomain domain;
         final Signal<ImageState> state;
         volatile boolean alive = true;
 
-        Subscription(Entry entry, ReactiveDomain domain, ImageState initial) {
+        Subscription(ImageSource source, Entry entry, ReactiveDomain domain, ImageState initial) {
+            this.source = source;
             this.entry = entry;
             this.domain = domain;
+            rejection = entry == null ? initial : null;
             state = domain.signal(initial);
+            consumers.add(this);
+            if (entry != null) entry.subscriptions.add(this);
         }
 
         @Override
@@ -238,8 +246,8 @@ public final class SharedImageService implements ImageService, AutoCloseable {
                         synchronized (SharedImageService.this) {
                             if (!closed
                                     && alive
-                                    && entry.attempt.current()
-                                    && entry.state == next) state.set(next);
+                                    && (entry == null ? rejection == next
+                                            : entry.attempt.current() && entry.state == next)) state.set(next);
                         }
                     });
         }
@@ -250,13 +258,17 @@ public final class SharedImageService implements ImageService, AutoCloseable {
             synchronized (SharedImageService.this) {
                 if (!alive) return;
                 alive = false;
-                if (entry != null) {
-                    entry.subscriptions.remove(this);
-                    if (entry.subscriptions.isEmpty()
-                            && (entry.state.status == ImageState.Status.LOADING
-                                    || entry.source.kind == ImageSource.Kind.BITMAP)) {
-                        RuntimeException failure = entry.attempt.cancel();
-                        entries.remove(entry.source);
+                consumers.remove(this);
+                Entry owned = entry;
+                entry = null;
+                rejection = null;
+                if (owned != null) {
+                    owned.subscriptions.remove(this);
+                    if (owned.subscriptions.isEmpty()
+                            && (owned.state.status == ImageState.Status.LOADING
+                                    || owned.source.kind == ImageSource.Kind.BITMAP)) {
+                        RuntimeException failure = owned.attempt.cancel();
+                        entries.remove(owned.source);
                         if (failure != null) throw failure;
                     }
                 }
@@ -296,20 +308,21 @@ public final class SharedImageService implements ImageService, AutoCloseable {
         checkOpen();
         Objects.requireNonNull(source, "source");
         Entry entry = entries.get(source);
-        if (entry == null) {
-            while (entries.size() >= budget.entries && evict()) {}
-            if (entries.size() >= budget.entries)
-                return new Subscription(
-                        null,
-                        domain,
-                        ImageState.failure(source, ++request, false, "budget", "共享图像条目预算已满"));
-            entry = new Entry(source);
-            entries.put(source, entry);
-            restart(entry);
-        }
-        Subscription subscription = new Subscription(entry, domain, entry.state);
-        entry.subscriptions.add(subscription);
-        return subscription;
+        if (entry == null) entry = admit(source);
+        return new Subscription(source, entry, domain, entry == null ? budgetFailure(source) : entry.state);
+    }
+
+    private ImageState budgetFailure(ImageSource source) {
+        return ImageState.failure(source, ++request, false, "budget", "共享图像条目预算已满");
+    }
+
+    private Entry admit(ImageSource source) {
+        while (entries.size() >= budget.entries && evict()) {}
+        if (entries.size() >= budget.entries) return null;
+        Entry entry = new Entry(source);
+        entries.put(source, entry);
+        restart(entry);
+        return entry;
     }
 
     private void restart(Entry entry) {
@@ -323,29 +336,41 @@ public final class SharedImageService implements ImageService, AutoCloseable {
         ImageState next;
         synchronized (this) {
             checkOpen();
+            subscribers = new ArrayList<>();
+            for (Subscription s : consumers) if (s.source.equals(source)) subscribers.add(s);
             Entry entry = entries.get(source);
-            if (entry == null) return;
-            if (entry.subscriptions.isEmpty()) {
+            if (subscribers.isEmpty()) {
+                if (entry == null) return;
                 RuntimeException cleanup = entry.attempt.cancel();
                 entries.remove(source);
                 if (cleanup != null) System.err.println(cleanup);
                 return;
             }
-            restart(entry);
-            next = entry.state;
-            subscribers = new ArrayList<>(entry.subscriptions);
+            if (entry == null) entry = admit(source);
+            else restart(entry);
+            next = entry == null ? budgetFailure(source) : entry.state;
+            for (Subscription s : subscribers) {
+                if (entry != null && s.entry != entry) {
+                    s.entry = entry;
+                    entry.subscriptions.add(s);
+                }
+                s.rejection = entry == null ? next : null;
+            }
         }
         for (Subscription s : subscribers) s.publish(next);
     }
 
     /** 资源包换代只重启资源依赖；HTTP/调用方独立位图不随资源包取消。 */
     public void resourcesReloaded() {
-        List<ImageSource> sources = new ArrayList<>();
+        LinkedHashSet<ImageSource> sources = new LinkedHashSet<>();
         synchronized (this) {
             checkOpen();
             for (Entry e : entries.values())
                 if (e.source.kind == ImageSource.Kind.RESOURCE
                         || e.source.kind == ImageSource.Kind.ITEM) sources.add(e.source);
+            for (Subscription s : consumers)
+                if (s.source.kind == ImageSource.Kind.RESOURCE
+                        || s.source.kind == ImageSource.Kind.ITEM) sources.add(s.source);
         }
         for (ImageSource s : sources) reload(s);
     }
@@ -463,6 +488,13 @@ public final class SharedImageService implements ImageService, AutoCloseable {
                 }
             }
         } finally {
+            for (Subscription s : consumers) {
+                s.alive = false;
+                s.entry = null;
+                s.rejection = null;
+            }
+            consumers.clear();
+            for (Entry e : entries.values()) e.subscriptions.clear();
             entries.clear();
             completed.clear();
             bytes = 0;

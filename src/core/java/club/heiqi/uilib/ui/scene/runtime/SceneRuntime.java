@@ -968,6 +968,16 @@ public final class SceneRuntime implements AutoCloseable {
         }
     }
 
+    void prepareControlPointerRelease(SceneNode node,
+            club.heiqi.uilib.ui.scene.input.ScenePointerEvent event, SceneGeometryView geometry) {
+        command();
+        if (!interactive(node) || node.control() == null) return;
+        boolean previous = routing;
+        routing = true;
+        try { node.control().preparePointerRelease(node, event, geometry); }
+        finally { routing = previous; }
+    }
+
     void dispatchControlPointer(
             SceneNode node,
             club.heiqi.uilib.ui.scene.input.ScenePointerEvent event,

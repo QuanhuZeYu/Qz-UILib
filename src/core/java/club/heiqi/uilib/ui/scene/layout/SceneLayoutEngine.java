@@ -220,12 +220,13 @@ public final class SceneLayoutEngine {
                 if (!available || !child.visible()) continue;
                 int[] desired = measure(child, viewport.width, viewport.height);
                 int w = cross(child.width(), desired[0], viewport.width), h = cross(child.height(), desired[1], viewport.height);
-                int x = anchored(source.box.x, w, viewport.x, viewport.width);
-                int y = anchored((long) source.box.y + source.box.height + policy.gap, h, viewport.y, viewport.height);
-                LayoutBox placed = child.control().placeLayer(child, source.box, viewport, new MeasuredSize(w, h));
-                if (placed == null) placed = new LayoutBox(x, y, w, h);
-                if (placed.width != w || placed.height != h)
+                LayoutBox preferred = child.control().placeLayer(child, source.box, viewport, new MeasuredSize(w, h));
+                if (preferred != null && (preferred.width != w || preferred.height != h))
                     throw new IllegalArgumentException("所属层定位不能替换测量尺寸: node=" + child.id());
+                // 自定义端口与默认锚定都只给首选位置；统一以正式测量尺寸限位后发布共同几何。
+                int x = anchored(preferred == null ? source.box.x : preferred.x, w, viewport.x, viewport.width);
+                int y = anchored(preferred == null ? (long) source.box.y + source.box.height + policy.gap : preferred.y, h, viewport.y, viewport.height);
+                LayoutBox placed = new LayoutBox(x, y, w, h);
                 int begin = entries.size();
                 arrange(child, placed, viewport, entries);
                 for (int i = begin; i < entries.size(); i++) index.put(entries.get(i).node, entries.get(i));

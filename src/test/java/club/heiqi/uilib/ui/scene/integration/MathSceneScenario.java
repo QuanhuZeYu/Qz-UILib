@@ -74,6 +74,7 @@ public final class MathSceneScenario extends TestApplication {
         scenario("三像素小盒带装饰数量完整保留与有界缩小", this::quantityDecoration);
         scenario("被动hover祖先clip窄视口滚动", this::input);
         scenario("数学只换颜色保留显式同色与真实定位和有序投影", this::colorRefresh);
+        scenario("同源码显式宏上下文变化自动重测原数学控件", this::macroContextRefresh);
         scenario("来源主题字号字体重载与整式错误恢复", this::dynamic);
         scenario("绑定唯一身份passive资格及卸载释放", this::lifecycle);
         scenario("装饰有序图元夹多个Item及phantom失去资格", this::decorations);
@@ -1514,6 +1515,55 @@ public final class MathSceneScenario extends TestApplication {
                 near(a.stroke.width, b.stroke.width, "只换色改变路径宽度");
             } else require(a.embed == b.embed, "只换色替换嵌入定位");
         }
+    }
+
+    private void macroContextRefresh() throws Exception {
+        String source = tex("@foo");
+        try (Fixture f = new Fixture(source, MathStyle.DISPLAY)) {
+            java.util.UUID identity = f.math.id();
+            f.domain.execute(() -> f.content.set(MathContent.parse(source,
+                    club.heiqi.uilib.ui.scene.text.math.MathMacros.of(Collections.singletonMap(source, "x")))));
+            f.frame();
+            healthy(f.layout());
+            TextLayout.Glyph x = mathPaintGlyphs(f.paint).get(0);
+            float firstWidth = f.layout().width;
+            MathLayout initial = f.layout();
+            f.text.reset();
+            f.domain.execute(() -> f.content.set(MathContent.parse(source,
+                    club.heiqi.uilib.ui.scene.text.math.MathMacros.of(Collections.singletonMap(source, "y")))));
+            f.frame();
+            healthy(f.layout());
+            List<TextLayout.Glyph> y = mathPaintGlyphs(f.paint);
+            require(f.layout() != initial && f.text.mathCalls > 0 && identity.equals(f.math.id()),
+                    "同源码宏上下文变化没有使原 UUID 自动重测");
+            require(y.size() == 1 && y.get(0).glyphId != x.glyphId,
+                    "正常帧 PaintCommand 仍保留 x 字形");
+            MathLayout changed = f.layout();
+            f.domain.execute(() -> f.content.set(MathContent.parse(source,
+                    club.heiqi.uilib.ui.scene.text.math.MathMacros.of(Collections.singletonMap(source, "xxxx")))));
+            f.frame();
+            healthy(f.layout());
+            require(f.layout() != changed && f.layout().width > firstWidth
+                    && mathPaintGlyphs(f.paint).size() == 4 && identity.equals(f.math.id()),
+                    "不同宽度宏没有在同一正式帧更新尺寸及字形");
+            MathLayout stable = f.layout();
+            PaintPlan stablePaint = f.paint;
+            f.text.reset();
+            for (int i = 0; i < 3; i++) f.frame();
+            require(f.layout() == stable && f.paint == stablePaint && f.text.mathCalls == 0 && f.text.textCalls == 0,
+                    "宏变化后的稳定帧重复测量或绘制计划失去复用");
+            System.out.println("MATH_MACRO_REFRESH source=" + source + " sameUUID=true xGlyph=" + x.glyphId
+                    + " yGlyph=" + y.get(0).glyphId + " firstWidth=" + firstWidth + " wideWidth=" + stable.width
+                    + " stableFrames=3 textCalls=" + f.text.textCalls + " mathCalls=" + f.text.mathCalls);
+        }
+    }
+
+    private static List<TextLayout.Glyph> mathPaintGlyphs(PaintPlan paint) {
+        List<TextLayout.Glyph> glyphs = new java.util.ArrayList<>();
+        for (PaintCommand command : paint.commands()) if (command.kind == PaintCommand.Kind.TEXT)
+            for (TextLayout.Line line : command.text.lines()) glyphs.addAll(line.glyphs());
+        require(!glyphs.isEmpty(), "正式 PaintCommand 没有数学字形");
+        return glyphs;
     }
 
     private void dynamic() throws Exception {

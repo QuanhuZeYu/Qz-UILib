@@ -24,6 +24,11 @@ public interface SceneControl {
         return null;
     }
 
+    /** 主键释放前可更新位置意图；仅当前有效 owner 收到，框架结算变化并重新准备正式几何后才派 UP。
+     * 默认无操作，不合成 MOVE；此阶段不发布放下或激活动作。 */
+    default void preparePointerRelease(SceneNode node,
+            club.heiqi.uilib.ui.scene.input.ScenePointerEvent event, SceneGeometryView geometry) {}
+
     /** 只读输入时间需求；MAX 表示静止。实际读取的 Signal 随挂载订阅，不逐帧扫描控件树。 */
     default long nextInputNanos(SceneNode node) { return Long.MAX_VALUE; }
 

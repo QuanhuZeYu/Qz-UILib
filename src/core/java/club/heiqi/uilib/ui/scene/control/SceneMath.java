@@ -49,6 +49,7 @@ public final class SceneMath implements SceneControl {
     private final Map<String, Embed> slots;
     private final Map<String, MathEmbedMetrics> metrics;
     private final MathStyle mathStyle;
+    private final ReadableSignal<MathContent> contentDependency;
     private final ReadableSignal<Integer> equationNumberDependency;
     private int initialEquationNumber = 1;
     private int cachedInitialEquationNumber;
@@ -105,7 +106,9 @@ public final class SceneMath implements SceneControl {
     private SceneMath(
             Map<String, Embed> slots,
             MathStyle mathStyle,
+            ReadableSignal<MathContent> contentDependency,
             ReadableSignal<Integer> equationNumberDependency) {
+        this.contentDependency = contentDependency;
         this.equationNumberDependency = equationNumberDependency;
         this.slots = Collections.unmodifiableMap(new LinkedHashMap<>(slots));
         Map<String, MathEmbedMetrics> values = new LinkedHashMap<>();
@@ -150,7 +153,7 @@ public final class SceneMath implements SceneControl {
                 throw new IllegalArgumentException("嵌入必须是未归属的 SceneImage");
             passive(value.node);
         }
-        SceneMath control = new SceneMath(copy, mathStyle, initialEquationNumber);
+        SceneMath control = new SceneMath(copy, mathStyle, source, initialEquationNumber);
         SceneNode root = new SceneNode().control(control).textPolicy(TextPolicy.NO_WRAP);
         for (Embed slot : copy.values()) root.add(slot.node);
         // 至多 slots-1 个中间段，创建时固定声明；变化只更新投影，不拆树/重挂 Item。
@@ -229,9 +232,10 @@ public final class SceneMath implements SceneControl {
 
     @Override
     public List<ReadableSignal<?>> measureDependencies(SceneNode node) {
+        // 相同源码可携带不同显式宏上下文；完整声明身份变化仍须进入正式测量失效。
         return equationNumberDependency == null
-                ? Collections.emptyList()
-                : Collections.<ReadableSignal<?>>singletonList(equationNumberDependency);
+                ? Collections.<ReadableSignal<?>>singletonList(contentDependency)
+                : java.util.Arrays.asList(contentDependency, equationNumberDependency);
     }
 
     /** 最近正式测量的外层呈现基线；同数学逻辑基线一起平移，供共同文档行内对齐。 */

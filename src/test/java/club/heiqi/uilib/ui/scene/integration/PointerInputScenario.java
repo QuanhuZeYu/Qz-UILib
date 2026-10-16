@@ -127,8 +127,93 @@ public final class PointerInputScenario extends TestApplication {
         new PointerInputScenario().run(args);
     }
 
+    private void releasePreparationOrder(boolean nested) {
+        Page p = new Page();
+        java.util.List<String> order = new java.util.ArrayList<>();
+        Signal<Integer>[] position = new Signal[1], settled = new Signal[1];
+        p.domain.execute(() -> p.children.set(Collections.emptyList())); p.session.frame();
+        p.domain.execute(() -> {
+            position[0] = p.domain.signal(40); settled[0] = p.domain.signal(40);
+            p.domain.effect(p.context.scope(), () -> {
+                int x = position[0].get(); order.add("effect:" + x); settled[0].set(x);
+            });
+            p.button.bind(NodeBinding.value(settled[0], (node, value) -> node.size(Size.fixed(value), Size.fixed(20))));
+            p.button.control(new SceneControl() {
+                public MeasuredSize measure(SceneNode n, Constraints c, SceneTextMeasurer text) { return new MeasuredSize(40, 20); }
+                public ChildPlacements arrange(SceneNode n, LayoutBox box, SceneChildMeasurer children) { return new ChildPlacements(Collections.emptyList()); }
+                public void paint(SceneNode n, SceneGeometryView geometry, PaintPlanBuilder paint) {}
+                public boolean capturesPointer() { return true; }
+                public void preparePointerRelease(SceneNode n, ScenePointerEvent event, SceneGeometryView geometry) {
+                    order.add("prepare:" + event.x); position[0].set(event.x);
+                }
+                public void pointer(SceneNode n, ScenePointerEvent event, SceneGeometryView geometry) {
+                    if (event.kind == ScenePointerEvent.Kind.UP) {
+                        require(geometry.get(n).box.width == event.x, "UP 未等待预备 Effect 与正式排列");
+                        order.add("UP:" + event.x);
+                    } else order.add(event.kind.name());
+                }
+            });
+            p.children.set(Collections.singletonList(p.button));
+        });
+        p.session.frame(); order.clear();
+        p.session.pointer(ScenePointerEvent.down(0, 5, 5));
+        p.session.pointer(ScenePointerEvent.move(6, 5));
+        p.session.pointer(ScenePointerEvent.up(0, 60, 5));
+        p.session.pointer(ScenePointerEvent.down(0, 5, 5));
+        p.session.pointer(ScenePointerEvent.up(0, 70, 5));
+        if (nested) p.domain.execute(p.session::frame); else p.session.frame();
+        require(order.equals(Arrays.asList("DOWN", "MOVE", "prepare:60", "effect:60", "UP:60", "DOWN", "prepare:70", "effect:70", "UP:70")),
+                "释放前结算打乱同批事件或额外伪造 MOVE: " + order);
+        p.events(ScenePointerEvent.up(0, 70, 5));
+        require(order.size() == 9, "未知或重复 UP 仍进入预备 handler");
+        System.out.println("POINTER_RELEASE_ORDER nested=" + nested + " order=" + order + " noSyntheticMove=true");
+    }
+
+    private void releasePreparationFailure(boolean effectFailure) {
+        Page p = new Page();
+        RuntimeException original = new RuntimeException("释放前位置" + (effectFailure ? "Effect" : "handler") + "失败A");
+        RuntimeException cleanup = new RuntimeException("释放前取消失败C");
+        int[] prepared = {0}, ups = {0}, cancels = {0}; boolean[] armed = {true};
+        Signal<Integer>[] requested = new Signal[1];
+        club.heiqi.uilib.ui.reactive.Owner[] effect = new club.heiqi.uilib.ui.reactive.Owner[1];
+        p.domain.execute(() -> p.children.set(Collections.emptyList())); p.session.frame();
+        p.domain.execute(() -> {
+            requested[0] = p.domain.signal(0); effect[0] = p.context.scope().child();
+            p.domain.effect(effect[0], () -> { if (effectFailure && requested[0].get() > 0) throw original; });
+            p.button.control(new SceneControl() {
+                public MeasuredSize measure(SceneNode n, Constraints c, SceneTextMeasurer text) { return new MeasuredSize(40, 20); }
+                public ChildPlacements arrange(SceneNode n, LayoutBox box, SceneChildMeasurer children) { return new ChildPlacements(Collections.emptyList()); }
+                public void paint(SceneNode n, SceneGeometryView geometry, PaintPlanBuilder paint) {}
+                public boolean capturesPointer() { return true; }
+                public void preparePointerRelease(SceneNode n, ScenePointerEvent event, SceneGeometryView geometry) {
+                    prepared[0]++;
+                    if (armed[0]) { if (effectFailure) requested[0].set(event.x); else throw original; }
+                }
+                public void pointer(SceneNode n, ScenePointerEvent event, SceneGeometryView geometry) { if (event.kind == ScenePointerEvent.Kind.UP) ups[0]++; }
+                public void captureLost(SceneNode n) { cancels[0]++; if (armed[0]) throw cleanup; }
+            });
+            p.children.set(Collections.singletonList(p.button));
+        });
+        p.session.frame(); p.down();
+        p.session.pointer(ScenePointerEvent.up(0, 25, 5));
+        p.session.pointer(ScenePointerEvent.down(1, 5, 5));
+        try { p.session.frame(); throw new AssertionError("释放前异常应阻止实际 UP"); }
+        catch (RuntimeException actual) {
+            require(actual == original && Arrays.asList(actual.getSuppressed()).contains(cleanup), "释放前原异常或清理异常丢失");
+        }
+        armed[0] = false; p.domain.execute(effect[0]::dispose);
+        require(prepared[0] == 1 && ups[0] == 0 && cancels[0] == 1, "释放前失败仍派 UP 或未清唯一 owner");
+        p.events(ScenePointerEvent.syntheticActivation(5, 5)); p.expect(0, "失败后丢失本批第二键占位");
+        p.events(ScenePointerEvent.up(1, 5, 5), ScenePointerEvent.syntheticActivation(5, 5));
+        p.expect(1, "释放前失败没有登记原 UP 或第二键尾部不能结束");
+        p.tap(); p.expect(2, "失败收尾后新手势不能恢复");
+        System.out.println("POINTER_RELEASE_FAILURE effect=" + effectFailure + " originalIdentity=true cleanupSuppressed=true noUp=true physicalTail=true");
+    }
+
     @Override
     protected void runTests() throws Exception {
+        for (boolean nested : new boolean[] {false, true}) scenario("释放前位置Effect与同批事件顺序 nested=" + nested, () -> releasePreparationOrder(nested));
+        for (boolean effect : new boolean[] {false, true}) scenario("释放前失败保留物理尾部 effect=" + effect, () -> releasePreparationFailure(effect));
         scenario(
                 "纯核心Java8类路径",
                 () -> {

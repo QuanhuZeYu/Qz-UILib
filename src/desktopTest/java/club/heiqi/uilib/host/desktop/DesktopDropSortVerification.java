@@ -34,6 +34,12 @@ public final class DesktopDropSortVerification extends TestApplication {
     @Override protected void runTests() throws Exception {
         for (SceneDragDrop.Collision collision : SceneDragDrop.Collision.values())
             scenario("接收碰撞 " + collision, () -> collision(collision));
+        for (SceneDragDrop.Collision collision : SceneDragDrop.Collision.values())
+            for (boolean overlay : new boolean[] {false, true})
+                for (SceneDraggable.Bounds bounds : SceneDraggable.Bounds.values())
+                    scenario("无前置MOVE的UP " + collision + " overlay=" + overlay + " bounds=" + bounds,
+                            () -> releaseWithoutMove(collision, overlay, bounds));
+        scenario("独立预览的最终边缘几何与缩窗接收再确认", this::overlayFinalGeometry);
         scenario("当前接收规则、挂载与物理尾部", this::dynamicTargets);
         scenario("裁剪、被动层和模态范围", this::targetEligibility);
         scenario("接收区键盘与普通子动作", this::keyboardAndChildren);
@@ -56,17 +62,27 @@ public final class DesktopDropSortVerification extends TestApplication {
         boolean failNext;
         final RuntimeException failure = new RuntimeException("候选规则的一次真实失败");
         String last;
+        ReleaseGeometryProbe releaseProbe;
+        LayoutBox lastBox;
+        club.heiqi.uilib.ui.scene.layout.SceneGeometryView.Entry entryAtDrop;
+        SceneDraggable.Snapshot finalDrag;
+        int releaseX, releaseY;
         DropPage(SceneDragDrop.Collision collision) { this.collision = collision; }
         void build(club.heiqi.uilib.ui.scene.host.ScenePageContext ctx) {
             accept = ctx.domain().signal(true); attached = ctx.domain().signal(true);
             sourceVisible = ctx.domain().signal(true); modal = ctx.domain().signal(false);
-            scope = SceneDragDrop.create(ctx, collision, drop -> { drops++; last = drop.target; });
+            scope = SceneDragDrop.create(ctx, collision, drop -> {
+                drops++; last = drop.target; lastBox = drop.box; releaseX = drop.x; releaseY = drop.y;
+                if (releaseProbe != null) entryAtDrop = releaseProbe.entry;
+            });
             state = SceneDraggable.state(ctx.domain());
             SceneNode body = new SceneNode().size(Size.fixed(140), Size.fixed(110)).padding(8).gap(8).background(0xffdbeafe);
             body.add(new SceneNode().size(Size.fill(1), Size.fixed(35)).text("拖放来源"));
             body.add(SceneButton.create(ctx, () -> "内部动作", () -> SceneTheme.light(), () -> clicks++).size(Size.fill(1), Size.fixed(35)));
             SceneNode preview = new SceneNode().size(Size.fixed(140), Size.fixed(110)).text("拖动预览").background(0xffb6d4ff);
-            options = ctx.domain().signal(scope.draggable("source", new SceneDraggable.Options().overlay(preview)));
+            if (releaseProbe != null) { body.control(releaseProbe); preview.control(releaseProbe); }
+            options = ctx.domain().signal(scope.draggable("source", new SceneDraggable.Options().overlay(preview)
+                    .onDrop(value -> finalDrag = value)));
             source = SceneDraggable.create(ctx, body, state, options);
             source.bind(NodeBinding.value(sourceVisible, SceneNode::visible));
             first = SceneDroppable.create(ctx, scope, "A", target("目标 A"),
@@ -112,6 +128,137 @@ public final class DesktopDropSortVerification extends TestApplication {
             require(glGetError() == GL_NO_ERROR, "接收回放GL错误");
         }
     }
+    private void overlayFinalGeometry() throws Exception {
+        SceneDragDrop<String>[] scope = new SceneDragDrop[1];
+        SceneDraggable.State[] state = new SceneDraggable.State[1];
+        SceneNode[] source = new SceneNode[1], preview = new SceneNode[1];
+        int[] drops = {0}, delta = {0, 0}; String[] received = {null}; LayoutBox[] receivedBox = {null};
+        try (DesktopWindow w = DesktopWindow.openWithServices(output.resolve("overlay-final-geometry.yaml"), false, services -> ctx -> {
+            scope[0] = SceneDragDrop.create(ctx, SceneDragDrop.Collision.INTERSECTION,
+                    drop -> { drops[0]++; received[0] = drop.target; receivedBox[0] = drop.box; });
+            state[0] = SceneDraggable.state(ctx.domain());
+            preview[0] = new SceneNode().size(Size.fixed(140), Size.fixed(110)).text("最终共同盒").background(0xffb6d4ff);
+            source[0] = SceneDraggable.create(ctx,
+                    new SceneNode().size(Size.fixed(140), Size.fixed(110)).text("边缘来源").background(0xffdbeafe), state[0],
+                    scope[0].draggable("edge", new SceneDraggable.Options().overlay(preview[0]).autoScroll(false)
+                            .onDrop(value -> { delta[0] = value.deltaX; delta[1] = value.deltaY; })));
+            ctx.mountOwned(new SceneNode().size(Size.fill(1), Size.fill(1)).padding(30).add(source[0]));
+            SceneNode old = SceneDroppable.create(ctx, scope[0], "old-box",
+                    new SceneNode().size(Size.fixed(40), Size.fixed(40)).background(0xffffbb88));
+            SceneNode current = SceneDroppable.create(ctx, scope[0], "current-box",
+                    new SceneNode().size(Size.fixed(40), Size.fixed(40)).background(0xff99ddbb));
+            // 两个普通流目标有独立固定位置；缩窗后旧盒只在视口外，不能继续接收。
+            ctx.mountOwned(new SceneNode().size(Size.fixed(1100), Size.fixed(650))
+                    .add(new SceneNode().size(Size.fixed(1), Size.fixed(540)))
+                    .add(new SceneNode().axis(SceneNode.Axis.ROW).size(Size.fixed(1100), Size.fixed(40))
+                            .add(new SceneNode().size(Size.fixed(960), Size.fixed(1))).add(old)));
+            ctx.mountOwned(new SceneNode().size(Size.fixed(1100), Size.fixed(650))
+                    .add(new SceneNode().size(Size.fixed(1), Size.fixed(390)))
+                    .add(new SceneNode().axis(SceneNode.Axis.ROW).size(Size.fixed(1100), Size.fixed(40))
+                            .add(new SceneNode().size(Size.fixed(660), Size.fixed(1))).add(current)));
+        })) {
+            glfwSetWindowSize(w.handle(), 1100, 650); glfwSwapInterval(0); settle(w);
+            require(glfwGetWindowAttrib(w.handle(), GLFW_VISIBLE) == GLFW_FALSE, "边缘验证必须隐藏窗口");
+            DesktopTestInput input = new DesktopTestInput(w);
+            LayoutBox start = geometry(w, source[0]).box;
+            pickup(w, input, source[0]); move(w, input, w.width() - 2, w.height() - 2);
+            LayoutBox edge = geometry(w, preview[0]).box;
+            require(edge.x + edge.width == w.width() && edge.y + edge.height == w.height(), "Bounds.NONE 预览未统一限位窗口右下");
+            requireDragGeometry(w, scope[0], state[0], start, edge, "old-box");
+            save(w, output.resolve("overlay-final-edge.png"));
+            glfwSetWindowSize(w.handle(), 800, 500); settle(w);
+            LayoutBox resized = geometry(w, preview[0]).box;
+            require(resized.x == 660 && resized.y == 390 && resized.width == 140 && resized.height == 110,
+                    "缩窗未按独立期望更新正式预览盒");
+            requireDragGeometry(w, scope[0], state[0], start, resized, "current-box");
+            save(w, output.resolve("overlay-final-resized.png"));
+            release(w, input);
+            require(drops[0] == 1 && "current-box".equals(received[0]) && sameBox(receivedBox[0], resized),
+                    "UP 没有按最终几何再确认，或命中了只在旧盒中的目标");
+            require(delta[0] == resized.x - start.x && delta[1] == resized.y - start.y,
+                    "UP 的有效位移与最终 Entry 不同");
+            require(glGetError() == GL_NO_ERROR, "边缘场景真实 GL 出错");
+            System.out.println("DROP_FINAL_GEOMETRY bounds=NONE actualCallbacks=true edge=" + edge.x + "," + edge.y
+                    + " resized=" + resized.x + "," + resized.y + " scopeMatchesEntry=true target=" + received[0]
+                    + " dropDelta=" + delta[0] + "," + delta[1] + " oldBoxRejected=true");
+        }
+    }
+    private static void requireDragGeometry(DesktopWindow w, SceneDragDrop<String> scope, SceneDraggable.State state,
+            LayoutBox start, LayoutBox box, String target) {
+        w.domain.execute(() -> {
+            SceneDragDrop.Snapshot<String> value = scope.snapshot().get();
+            SceneDraggable.Snapshot drag = state.snapshot().get();
+            require(value.active && sameBox(value.box, box) && target.equals(value.target), "observer 的盒/目标不等于最终共同几何");
+            require(drag.deltaX == box.x - start.x && drag.deltaY == box.y - start.y, "公开拖动位移未消费最终 Entry");
+        });
+    }
+    private static boolean sameBox(LayoutBox a, LayoutBox b) {
+        return a != null && b != null && a.x == b.x && a.y == b.y && a.width == b.width && a.height == b.height;
+    }
+
+    /** 只记录正式 paint 收到的 Entry，断言不参与生产位置求解。 */
+    private static final class ReleaseGeometryProbe implements club.heiqi.uilib.ui.scene.control.SceneControl {
+        club.heiqi.uilib.ui.scene.layout.SceneGeometryView.Entry entry;
+        public club.heiqi.uilib.ui.scene.layout.MeasuredSize measure(SceneNode node,
+                club.heiqi.uilib.ui.scene.layout.Constraints constraints, club.heiqi.uilib.ui.scene.text.SceneTextMeasurer text) {
+            return new club.heiqi.uilib.ui.scene.layout.MeasuredSize(0, 0);
+        }
+        public club.heiqi.uilib.ui.scene.layout.MeasuredSize measure(SceneNode node,
+                club.heiqi.uilib.ui.scene.layout.Constraints constraints, club.heiqi.uilib.ui.scene.text.SceneTextMeasurer text,
+                club.heiqi.uilib.ui.scene.layout.SceneChildMeasurer children) {
+            return club.heiqi.uilib.ui.scene.layout.SceneFlowLayout.measure(node, constraints, children);
+        }
+        public club.heiqi.uilib.ui.scene.layout.ChildPlacements arrange(SceneNode node, LayoutBox box,
+                club.heiqi.uilib.ui.scene.layout.SceneChildMeasurer children) {
+            return club.heiqi.uilib.ui.scene.layout.SceneFlowLayout.arrange(node, box, children);
+        }
+        public void paint(SceneNode node, club.heiqi.uilib.ui.scene.layout.SceneGeometryView geometry,
+                club.heiqi.uilib.ui.scene.paint.PaintPlanBuilder paint) {
+            entry = geometry.get(node);
+            paint.add(club.heiqi.uilib.ui.scene.paint.PaintCommand.rect(entry.box, entry.clip, node.background()));
+        }
+    }
+    private void releaseWithoutMove(SceneDragDrop.Collision collision, boolean overlay, SceneDraggable.Bounds bounds) throws Exception {
+        DropPage page = new DropPage(collision); page.releaseProbe = new ReleaseGeometryProbe();
+        try (DesktopWindow w = open(page, "up-only-" + collision + "-" + overlay + "-" + bounds)) {
+            w.domain.execute(() -> {
+                // 声明变更在输入前完成；无 overlay 时直接使用同一普通内容 Entry。
+                SceneDraggable.Options configured = new SceneDraggable.Options().bounds(bounds).autoScroll(false)
+                        .onDrop(value -> page.finalDrag = value);
+                if (overlay) configured = configured.overlay(page.source.children().get(1).children().get(0));
+                page.options.set(page.scope.draggable("source", configured));
+            });
+            w.frame();
+            DesktopTestInput input = new DesktopTestInput(w);
+            LayoutBox start = geometry(w, page.source).box, destination = geometry(w, page.second).box;
+            pickup(w, input, page.source); pointAt(w, input, page.first);
+            require("A".equals(over(w, page)), "无MOVE-UP反例没有先在 A 建立活动反馈");
+            int x = destination.x + destination.width / 2, y = destination.y + destination.height / 2;
+            int expectedX = x - 12, expectedY = y - 12;
+            if (bounds == SceneDraggable.Bounds.PARENT) {
+                LayoutBox parent = geometry(w, page.source.parent()).box;
+                expectedY = Math.min(expectedY, parent.y + parent.height - start.height);
+            }
+            // 直接递交公开 UP；不调用 cursor/point，也不在 UP 前补 MOVE。
+            w.page.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.up(0, x, y));
+            w.frame();
+            require(page.drops == 1 && "B".equals(page.last), "UP 新坐标仍按旧 A 接收：" + page.last);
+            require(page.lastBox.x == expectedX && page.lastBox.y == expectedY
+                    && page.lastBox.width == 140 && page.lastBox.height == 110, "UP 未正式排列新坐标或边界解错误");
+            require(page.entryAtDrop != null && sameBox(page.entryAtDrop.box, page.lastBox),
+                    "UP observer 不是消费正式 paint 的同一最终 Entry");
+            require(page.finalDrag != null && page.finalDrag.deltaX == expectedX - start.x
+                    && page.finalDrag.deltaY == expectedY - start.y, "UP 有效 delta 与当前 Entry 不同");
+            require(page.releaseX == x && page.releaseY == y, "POINTER 接收点未使用 UP 新坐标");
+            // 宿主采集状态仍由其实际 RELEASE 清理；重复 UP 不得再投放。
+            release(w, input); require(page.drops == 1 && !active(w, page), "直接 UP 后物理尾部重复提交");
+            require(glGetError() == GL_NO_ERROR, "无MOVE-UP真实 GPU 回放异常");
+            System.out.println("DROP_UP_ONLY collision=" + collision + " overlay=" + overlay + " bounds=" + bounds
+                    + " target=" + page.last + " box=" + page.lastBox.x + "," + page.lastBox.y
+                    + " delta=" + page.finalDrag.deltaX + "," + page.finalDrag.deltaY + " formalEntry=true");
+        }
+    }
+
     private void dynamicTargets() throws Exception {
         DropPage page = new DropPage(SceneDragDrop.Collision.POINTER);
         try (DesktopWindow w = open(page, "dynamic-targets")) {
