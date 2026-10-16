@@ -476,6 +476,13 @@ public final class SceneNode {
         if (next != null) next.children.add(this);
     }
 
+    /** 框架原生装饰沿宿主父链参与输入；不加入页面声明的内容子项或普通流。 */
+    public void frameworkDecorationParent(SceneRuntime authority, SceneNode host) {
+        authority.checkMutation();
+        if (runtime != null && runtime != authority) throw new IllegalArgumentException("装饰属于另一运行时");
+        parent = host; logicalOwner = host; logicalOwned = true;
+    }
+
     /** 仅确定全部存续孩子的顺序；父归属、逻辑拥有和挂载身份仍由各自端口维护。 */
     public void frameworkChildrenOrder(SceneRuntime authority, List<SceneNode> ordered) {
         authority.checkMutation();

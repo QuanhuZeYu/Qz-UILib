@@ -58,6 +58,10 @@ public final class SceneScrollViewport {
         Snapshot view = runtime.scrollSnapshot(node, current, geometry);
         return view == null ? null : new Snapshot(view.box, view.clip, view.offset, view.maximum, view.extent, current);
     }
+    /** 定位阶段只读原所有者的内容事实，不以尚未安装的输入几何判断层资格。 */
+    Snapshot layoutSnapshot(SceneGeometryView geometry) {
+        return enabled.getAsBoolean() ? runtime.scrollLayoutSnapshot(node, axis(), geometry) : null;
+    }
     public int moveByPixels(int pixels) { return enabled.getAsBoolean() ? runtime.scrollByPixels(node, axis(), pixels) : 0; }
     /** 绝对位置意图在原所有者处差分，多个条同批推进不重复累加旧几何偏移。 */
     public int moveToPixels(int offset) { return enabled.getAsBoolean() ? runtime.scrollToPixels(node, axis(), offset) : 0; }

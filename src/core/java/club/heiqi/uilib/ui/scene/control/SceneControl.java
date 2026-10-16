@@ -182,6 +182,12 @@ public interface SceneControl {
         return false;
     }
 
+    /** 专用内容公开的滚动轴；标准视口默认包含条，页面无需另加节点。 */
+    default SceneScrollArea.Axes scrollbarAxes(SceneNode node) { return SceneScrollArea.Axes.NONE; }
+
+    /** 框架装饰在完整内容几何后定位，不参与宿主内容测量或范围。 */
+    default LayoutBox placeScrollDecoration(SceneNode node, SceneGeometryView geometry) { return null; }
+
     /** 专用内容视口的同批事实；缺省null由普通Node滚动适配。位置仍归控件。 */
     default SceneScrollViewport.Snapshot scrollViewport(SceneNode node, SceneNode.Axis axis, SceneGeometryView geometry) { return null; }
 

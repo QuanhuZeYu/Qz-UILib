@@ -31,6 +31,7 @@ public final class ScenePageContext {
         themeMode = themes == null ? domain.signal(ThemeMode.LIGHT)
                 : themes.bind(domain, scope);
         theme = domain.computed(scope, () -> themeMode.get().sceneTheme());
+        runtime.scrollbarTheme(theme);
     }
 
     /** 应用配置的页面域投影；局部配色可由此派生，不抢占全局主题权威。 */

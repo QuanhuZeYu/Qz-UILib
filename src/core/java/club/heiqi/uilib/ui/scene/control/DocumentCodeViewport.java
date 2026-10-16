@@ -71,7 +71,10 @@ final class DocumentCodeViewport implements SceneControl {
     }
 
     @Override
-    public SceneScrollViewport.Snapshot scrollViewport(SceneNode node, SceneNode.Axis axis, SceneGeometryView geometry) {
+    public SceneScrollArea.Axes scrollbarAxes(SceneNode node) { return SceneScrollArea.Axes.HORIZONTAL; }
+
+        @Override
+        public SceneScrollViewport.Snapshot scrollViewport(SceneNode node, SceneNode.Axis axis, SceneGeometryView geometry) {
         if (axis != SceneNode.Axis.ROW || geometry.get(node) == null || node.children().isEmpty()) return null;
         SceneGeometryView.Entry content = geometry.get(node.children().get(0));
         if (content == null) return null;

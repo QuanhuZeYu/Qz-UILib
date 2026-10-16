@@ -75,10 +75,17 @@ public final class SceneScrollbar {
         Objects.requireNonNull(context, "context").domain().checkWrite();
         if (!Objects.requireNonNull(viewport, "viewport").belongsTo(context.runtime()))
             throw new IllegalArgumentException("滚动条与视口必须属于同一运行时");
-        Control control = new Control(context, viewport, Objects.requireNonNull(theme, "theme"));
+        Control control = new Control(context.runtime(), viewport, Objects.requireNonNull(theme, "theme"));
         SceneNode node = control.createNode(Objects.requireNonNull(options, "options"));
         if (hoverScope != null) hoverScope.bind(NodeBinding.hoverWithin(0, (self, inside) -> control.visibility.areaHover(inside)));
         return node;
+    }
+    /** 运行时原生装饰仍复用同一Control，只有位置与焦点参与方式不同。 */
+    public static SceneNode automatic(SceneRuntime runtime, SceneNode host, SceneNode.Axis axis, ReadableSignal<SceneTheme> theme) {
+        SceneScrollViewport viewport = new SceneScrollViewport(runtime, host, axis)
+                .enabled(() -> !runtime.hasExplicitScrollbar(host, axis));
+        Control control = new Control(runtime, viewport, theme); control.automatic = true;
+        return control.createNode(Options::new);
     }
     private static final class Control implements SceneControl {
         private final SceneRuntime runtime;
@@ -91,27 +98,29 @@ public final class SceneScrollbar {
         private final SceneScrollVisibility visibility;
         private final SceneScrollPage page;
         private final Object target = new Object(), trackTarget = new Object();
-        private boolean dragging;
+        private boolean dragging, automatic;
         private int grab;
-        Control(ScenePageContext context, SceneScrollViewport viewport, ReadableSignal<SceneTheme> theme) {
-            runtime = context.runtime(); this.viewport = viewport; this.theme = theme;
-            configuration = context.domain().signal(new Options()); thickness = context.domain().signal(11);
-            axis = context.domain().signal(viewport.axis());
-            hasRange = context.domain().signal(false); present = context.domain().signal(false);
-            visibility = new SceneScrollVisibility(runtime, configuration); page = new SceneScrollPage(context.domain());
+        Control(SceneRuntime runtime, SceneScrollViewport viewport, ReadableSignal<SceneTheme> theme) {
+            this.runtime = runtime; this.viewport = viewport; this.theme = theme;
+            configuration = runtime.domain().signal(new Options()); thickness = runtime.domain().signal(11);
+            axis = runtime.domain().signal(viewport.axis());
+            hasRange = runtime.domain().signal(false); present = runtime.domain().signal(false);
+            visibility = new SceneScrollVisibility(runtime, configuration); page = new SceneScrollPage(runtime.domain());
         }
         SceneNode createNode(ReadableSignal<Options> source) {
             SceneNode node = new SceneNode().clickFocus(false).control(this);
             node.bind((active, self, owner) -> {
                 // 声明可在挂载前移动；真正的所属关系在激活点核验，同runtime重挂载仍合法。
                 if (!viewport.belongsTo(active)) throw new IllegalArgumentException("滚动条挂载运行时与视口不同");
+                if (automatic) owner.own(runtime.observeScrollHover(viewport.node(), visibility::areaHover));
+                else owner.own(runtime.claimScrollbar(viewport));
                 owner.own(viewport.observe(this::viewportChanged));
                 owner.own(() -> { stop(); visibility.close(); });
                 return new BindingActivation() { public void refresh() {} public void close() {} };
             });
             node.bind(NodeBinding.hoverWithin(0, (self, inside) -> visibility.hover(inside)));
             node.bind(SceneControlBindings.declaration(source, (self, value) -> configure(Objects.requireNonNull(value, "scroll options"))));
-            node.bind(NodeBinding.value(hasRange, SceneNode::focusable));
+            if (!automatic) node.bind(NodeBinding.value(hasRange, SceneNode::focusable));
             return node;
         }
         private void configure(Options next) {
@@ -131,6 +140,19 @@ public final class SceneScrollbar {
         @Override public List<ReadableSignal<?>> paintDependencies(SceneNode node) { return Arrays.asList(configuration, theme, visibility.opacity); }
         @Override public MeasuredSize measure(SceneNode node, Constraints body, SceneTextMeasurer text) {
             return axis.get() == SceneNode.Axis.ROW ? new MeasuredSize(0, thickness.get()) : new MeasuredSize(thickness.get(), 0);
+        }
+        @Override public LayoutBox placeScrollDecoration(SceneNode node, SceneGeometryView geometry) {
+            if (!automatic) return null;
+            SceneScrollViewport.Snapshot view = viewport.layoutSnapshot(geometry);
+            if (view == null || view.maximum == 0) return new LayoutBox(0, 0, 0, 0);
+            boolean horizontal = viewport.axis() == SceneNode.Axis.ROW;
+            SceneNode.Axis otherAxis = horizontal ? SceneNode.Axis.COLUMN : SceneNode.Axis.ROW;
+            SceneScrollViewport.Snapshot other = runtime.scrollLayoutSnapshot(viewport.node(), otherAxis, geometry);
+            int corner = other != null && other.maximum > 0 && !runtime.hasExplicitScrollbar(viewport.node(), otherAxis) ? thickness.get() : 0;
+            LayoutBox window = view.box;
+            int cross = Math.min(thickness.get(), horizontal ? window.height : window.width);
+            return horizontal ? new LayoutBox(window.x, window.y + window.height - cross, Math.max(0, window.width - corner), cross)
+                    : new LayoutBox(window.x + window.width - cross, window.y, cross, Math.max(0, window.height - corner));
         }
         @Override public ChildPlacements arrange(SceneNode node, LayoutBox box, SceneChildMeasurer children) { return new ChildPlacements(Collections.emptyList()); }
         @Override public boolean passiveHover() { return true; }

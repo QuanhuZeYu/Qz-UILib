@@ -221,6 +221,9 @@ public final class SceneTextField {
         }
 
         @Override
+        public SceneScrollArea.Axes scrollbarAxes(SceneNode node) { return SceneScrollArea.Axes.HORIZONTAL; }
+
+        @Override
         public SceneScrollViewport.Snapshot scrollViewport(SceneNode node, SceneNode.Axis axis, SceneGeometryView geometry) {
             SceneGeometryView.Entry entry = geometry.get(node);
             if (axis != SceneNode.Axis.ROW || source == null || entry == null) return null;

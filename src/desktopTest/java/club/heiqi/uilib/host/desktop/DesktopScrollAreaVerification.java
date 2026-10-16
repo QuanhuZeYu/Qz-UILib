@@ -53,6 +53,10 @@ public final class DesktopScrollAreaVerification extends TestApplication {
         scenario("旧节点入口轴资格与动态换轴", this::legacyAdapter);
         scenario("视口端口拒绝跨运行时组合", this::runtimeIdentity);
         scenario("两个滚动条同批分页只提交目标位置", this::multiplePages);
+        scenario("旧scrollable声明自动获得可拖滚动条", this::automaticViewport);
+        scenario("旧设置与邮件页面自动获得滚动条", this::automaticLegacyPages);
+        scenario("标准编辑与文档自动获得内部滚动条", this::automaticContent);
+        scenario("自动条动态资格、接管与挂载清理", this::automaticLifetime);
         scenario("无溢出强制轨道消费点击", this::forcedTrackClick);
     }
     private static final class Page {
@@ -626,6 +630,144 @@ public final class DesktopScrollAreaVerification extends TestApplication {
             int actual = geometry(w, viewport[0]).scrollOffset;
             System.out.println("SCROLL_MULTIPLE_PAGES offset=" + actual + " target=180");
             require(actual == 180, "同批绝对位置被重复按旧几何累加");
+        }
+    }
+    private static SceneNode automaticBar(DesktopWindow w, SceneNode host, SceneNode.Axis axis) {
+        final SceneNode[] result = {null};
+        w.domain.execute(() -> {
+            java.util.List<SceneNode> bars = w.page.runtime().scrollDecorations(host);
+            if (!bars.isEmpty()) result[0] = bars.get(axis == SceneNode.Axis.ROW ? 0 : 1);
+        });
+        return result[0];
+    }
+    private static boolean defaultThumbPainted(DesktopWindow w, SceneNode bar) {
+        LayoutBox box = geometry(w, bar).box;
+        return w.lastPlan.commands().stream().anyMatch(command -> command.kind == club.heiqi.uilib.ui.scene.paint.PaintCommand.Kind.RECT
+                && (command.color >>> 24) > 0 && command.box.width > 0 && command.box.height > 0
+                && box.contains(command.box.x, command.box.y) && command.box.width < box.width);
+    }
+    private static void requireVisibleBar(DesktopWindow w, SceneNode host, SceneNode.Axis axis) {
+        SceneNode bar = automaticBar(w, host, axis);
+        require(bar != null && geometry(w, bar).box.width > 0 && geometry(w, bar).box.height > 0, "旧视口没有自动条几何");
+        require(!bar.focusable() && bar.parent() == host && !host.children().contains(bar), "自动条污染业务子项或Tab顺序");
+    }
+    private void automaticViewport() throws Exception {
+        final SceneNode[] host = {null}, child = {null};
+        try (DesktopWindow w = DesktopWindow.openWithServices(output.resolve("automatic-viewport.yaml"), false, services -> ctx -> {
+            child[0] = new SceneNode().size(Size.fixed(300), Size.fixed(900)).background(0xffe2e8f0);
+            host[0] = new SceneNode().size(Size.fixed(320), Size.fixed(220)).padding(10).scrollable(true).add(child[0]);
+            ctx.mountOwned(new SceneNode().size(Size.fill(1), Size.fill(1)).padding(30).add(host[0]));
+        })) {
+            glfwSetWindowSize(w.handle(), 1000, 680); glfwSwapInterval(0); settle(w); DesktopTestInput in = new DesktopTestInput(w);
+            requireVisibleBar(w, host[0], SceneNode.Axis.COLUMN);
+            require(host[0].children().size() == 1 && geometry(w, child[0]).box.height == 900, "默认条改变内容布局");
+            point(w, in, 800, 600); advance(w, 950);
+            require(!defaultThumbPainted(w, automaticBar(w, host[0], SceneNode.Axis.COLUMN)), "离开区域后默认条未淡出");
+            in.moveTo(host[0]); w.frame(); advance(w, 950);
+            require(defaultThumbPainted(w, automaticBar(w, host[0], SceneNode.Axis.COLUMN)), "纯内容区域进入/停留未保持默认条");
+            dragBarToEnd(w, in, automaticBar(w, host[0], SceneNode.Axis.COLUMN), false);
+            require(geometry(w, host[0]).scrollOffset == geometry(w, host[0]).scrollMaximum, "旧scrollable默认条没有驱动原偏移");
+            save(w, "automatic-viewport.png");
+        }
+    }
+    private void automaticLegacyPages() throws Exception {
+        for (club.heiqi.uilib.testing.gallery.TestGallery.Page page : new club.heiqi.uilib.testing.gallery.TestGallery.Page[] {
+                club.heiqi.uilib.testing.gallery.TestGallery.Page.SETTINGS, club.heiqi.uilib.testing.gallery.TestGallery.Page.MAILBOX}) {
+            try (DesktopWindow w = DesktopWindow.openWithServices(output.resolve("automatic-" + page + ".yaml"), false,
+                    services -> DesktopGallery.createGallery(services, page))) {
+                glfwSetWindowSize(w.handle(), 1100, 760); glfwSwapInterval(0); settle(w); DesktopTestInput in = new DesktopTestInput(w);
+                SceneNode host = geometry(w).ordered().stream().filter(e -> e.node.scrollable() && e.scrollMaximum > 0
+                        && e.box.intersect(geometry(w).viewport()).height > 80).map(e -> e.node).findFirst().orElse(null);
+                require(host != null, "旧页面未触发真实正文溢出: " + page); requireVisibleBar(w, host, host.axis());
+                in.moveTo(host); w.frame(); save(w, "automatic-" + page + ".png");
+                dragBarToEnd(w, in, automaticBar(w, host, host.axis()), host.axis() == SceneNode.Axis.ROW);
+                require(geometry(w, host).scrollOffset == geometry(w, host).scrollMaximum, "旧页面默认条未到末端: " + page);
+                System.out.println("AUTOMATIC_LEGACY_PAGE page=" + page + " maximum=" + geometry(w, host).scrollMaximum);
+            }
+        }
+    }
+    private void automaticContent() throws Exception {
+        final SceneNode[] editor = {null}; final SceneEditState[] state = {null}; final SceneScrollViewport[] port = {null};
+        final String text = String.join("\n", java.util.Collections.nCopies(30, "标准正文无需手工加条"));
+        try (DesktopWindow w = DesktopWindow.openWithServices(output.resolve("automatic-editor.yaml"), false, services -> ctx -> {
+            state[0] = new SceneEditState(ctx.domain(), text, SceneEditState.Mode.MULTI_LINE);
+            editor[0] = SceneTextArea.create(ctx, state[0], () -> SceneTheme.light(), () -> false, value -> {})
+                    .size(Size.fixed(320), Size.fixed(180));
+            port[0] = SceneScrollViewport.of(ctx, editor[0], SceneNode.Axis.COLUMN);
+            ctx.mountOwned(new SceneNode().size(Size.fill(1), Size.fill(1)).padding(30).add(editor[0]));
+        })) {
+            glfwSetWindowSize(w.handle(), 1000, 680); glfwSwapInterval(0); settle(w); DesktopTestInput in = new DesktopTestInput(w);
+            requireVisibleBar(w, editor[0], SceneNode.Axis.COLUMN);
+            w.domain.execute(() -> {
+                w.page.runtime().focusRouter().request(w.page.runtime().captureMount(editor[0]));
+                port[0].moveToPixels(0);
+            });
+            w.frame(); dragBarToEnd(w, in, automaticBar(w, editor[0], SceneNode.Axis.COLUMN), false);
+            require(viewport(w, port[0]).offset == viewport(w, port[0]).maximum, "默认条没有驱动标准正文偏移");
+            w.domain.execute(() -> require(state[0].snapshot().get().text.equals(text)
+                    && w.page.runtime().focusRouter().focused().get() == editor[0], "默认条修改草稿或抢走编辑焦点"));
+            save(w, "automatic-editor.png");
+        }
+        for (boolean table : new boolean[] {false, true}) {
+            final SceneScrollViewport[] documentPort = {null};
+            try (DesktopWindow w = DesktopWindow.openWithServices(output.resolve("automatic-document-" + table + ".yaml"), false, services -> ctx -> {
+                String wide = String.join("", java.util.Collections.nCopies(80, "unbreakable_"));
+                club.heiqi.uilib.ui.scene.text.DocumentContent.Block code = club.heiqi.uilib.ui.scene.text.DocumentContent.Block.code(
+                        club.heiqi.uilib.ui.scene.text.TextContent.plain(wide), "", 0, 0);
+                club.heiqi.uilib.ui.scene.text.DocumentContent.Block block = code;
+                if (table) {
+                    club.heiqi.uilib.ui.scene.text.TableContent.Cell cell = new club.heiqi.uilib.ui.scene.text.TableContent.Cell(
+                            java.util.Collections.singletonList(code), club.heiqi.uilib.ui.scene.text.TableContent.Alignment.DEFAULT, false, 0, 0);
+                    block = club.heiqi.uilib.ui.scene.text.DocumentContent.Block.table(new club.heiqi.uilib.ui.scene.text.TableContent(
+                            java.util.Collections.singletonList(new club.heiqi.uilib.ui.scene.text.TableContent.Row(java.util.Collections.singletonList(cell), 0, 0))), 0, 0);
+                }
+                final club.heiqi.uilib.ui.scene.text.DocumentContent content = new club.heiqi.uilib.ui.scene.text.DocumentContent(java.util.Collections.singletonList(block));
+                SceneNode document = club.heiqi.uilib.ui.scene.control.SceneDocument.create(ctx, () -> content, () -> SceneTheme.light(), null, link -> {})
+                        .size(Size.fixed(320), Size.natural());
+                ctx.mountOwned(new SceneNode().size(Size.fill(1), Size.fill(1)).padding(30).add(document));
+            })) {
+                glfwSetWindowSize(w.handle(), 1000, 680); glfwSwapInterval(0); settle(w); DesktopTestInput in = new DesktopTestInput(w);
+                w.domain.execute(() -> {
+                    for (SceneGeometryView.Entry entry : geometry(w).ordered()) {
+                        SceneScrollViewport candidate = new SceneScrollViewport(w.page.runtime(), entry.node, SceneNode.Axis.ROW);
+                        SceneScrollViewport.Snapshot view = candidate.snapshot(geometry(w));
+                        if (view != null && view.maximum > 0) { documentPort[0] = candidate; break; }
+                    }
+                });
+                require(documentPort[0] != null, "标准代码表格未发布横向范围");
+                requireVisibleBar(w, documentPort[0].node(), SceneNode.Axis.ROW);
+                dragBarToEnd(w, in, automaticBar(w, documentPort[0].node(), SceneNode.Axis.ROW), true);
+                require(viewport(w, documentPort[0]).offset == viewport(w, documentPort[0]).maximum, "标准文档内部条未自动接入");
+            }
+        }
+    }
+
+    private void automaticLifetime() throws Exception {
+        final SceneNode[] host = {null}; final Signal<Boolean>[] enabled = new Signal[1];
+        final club.heiqi.uilib.ui.scene.host.ScenePageContext[] context = {null};
+        final club.heiqi.uilib.ui.scene.runtime.MountHandle[] mount = {null};
+        try (DesktopWindow w = DesktopWindow.openWithServices(output.resolve("automatic-lifetime.yaml"), false, services -> ctx -> {
+            context[0] = ctx; enabled[0] = ctx.domain().signal(false);
+            host[0] = new SceneNode().size(Size.fixed(320), Size.fixed(180)).bind(NodeBinding.value(enabled[0], SceneNode::scrollable))
+                    .add(new SceneNode().size(Size.fixed(320), Size.fixed(900)));
+            mount[0] = ctx.mount(host[0]);
+        })) {
+            glfwSetWindowSize(w.handle(), 1000, 680); glfwSwapInterval(0); settle(w);
+            require(automaticBar(w, host[0], SceneNode.Axis.COLUMN) == null, "未声明滚动就自动转换溢出");
+            w.domain.execute(() -> enabled[0].set(true)); w.frame(); requireVisibleBar(w, host[0], SceneNode.Axis.COLUMN);
+            SceneNode old = automaticBar(w, host[0], SceneNode.Axis.COLUMN);
+            final club.heiqi.uilib.ui.scene.runtime.MountHandle[] custom = {null}; final SceneNode[] explicit = {null};
+            w.domain.execute(() -> {
+                explicit[0] = SceneScrollbar.create(context[0], host[0]).size(Size.fixed(11), Size.fixed(180));
+                custom[0] = context[0].mount(explicit[0]);
+            }); w.frame(); require(geometry(w, old).box.width == 0, "显式条未接管默认条");
+            w.domain.execute(() -> custom[0].detach()); w.frame(); requireVisibleBar(w, host[0], SceneNode.Axis.COLUMN);
+            w.domain.execute(() -> mount[0].detach()); w.frame();
+            require(old.runtime() == null && old.destroyed(), "卸载遗留默认条挂载资源");
+            w.domain.execute(() -> mount[0] = context[0].mount(host[0])); w.frame();
+            requireVisibleBar(w, host[0], SceneNode.Axis.COLUMN); require(automaticBar(w, host[0], SceneNode.Axis.COLUMN) != old, "重挂复活旧条会话");
+            w.domain.execute(() -> enabled[0].set(false)); w.frame(); require(automaticBar(w, host[0], SceneNode.Axis.COLUMN) == null, "取消滚动声明后仍留默认条");
+            w.domain.execute(() -> { mount[0].detach(); host[0].destroy(); explicit[0].destroy(); });
         }
     }
     private void save(DesktopWindow w, String name) throws Exception {

@@ -258,6 +258,9 @@ public final class SceneTextArea {
         }
 
         @Override
+        public SceneScrollArea.Axes scrollbarAxes(SceneNode node) { return SceneScrollArea.Axes.BOTH; }
+
+        @Override
         public SceneScrollViewport.Snapshot scrollViewport(SceneNode node, SceneNode.Axis axis, SceneGeometryView geometry) {
             SceneGeometryView.Entry entry = geometry.get(node);
             if (entry == null || source == null) return null;

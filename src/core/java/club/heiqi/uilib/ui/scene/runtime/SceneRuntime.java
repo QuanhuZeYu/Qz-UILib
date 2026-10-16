@@ -46,6 +46,7 @@ public final class SceneRuntime implements AutoCloseable {
 
     private final Map<SceneNode, ScrollPosition> scrolling = new IdentityHashMap<>();
     private final SceneScrollObservers scrollObservers = new SceneScrollObservers();
+    private final SceneScrollDecorations scrollDecorations;
     private final ScenePointerRouter pointerRouter;
     private final SceneFocusRouter focusRouter;
     private final ReactiveDomain domain;
@@ -86,6 +87,7 @@ public final class SceneRuntime implements AutoCloseable {
         owner = domain.owner();
         pointerRouter = new ScenePointerRouter(this);
         focusRouter = new SceneFocusRouter(this);
+        scrollDecorations = new SceneScrollDecorations(this);
     }
 
     /** 宿主根可用空间的响应事实，不表示任意子节点的最终分配盒。 */
@@ -181,6 +183,7 @@ public final class SceneRuntime implements AutoCloseable {
             invalidate();
             return;
         }
+        scrollDecorations.changed(origin);
         long next = ++nodeMeasureRevisionClock;
         for (SceneNode node = origin; node != null; node = node.parent()) {
             Mount mount = mounts.get(node);
@@ -350,7 +353,35 @@ public final class SceneRuntime implements AutoCloseable {
             });
         }
         dirtyBindings.add(node);
+        scrollDecorations.changed(node);
         for (SceneNode child : node.children()) mountSubtree(child, mount.owner);
+    }
+
+    /** 页面主题投影进入默认条，原有页面无需另行声明条。 */
+    public void scrollbarTheme(ReadableSignal<club.heiqi.uilib.ui.scene.control.SceneTheme> theme) {
+        domain.checkWrite(); scrollDecorations.theme(Objects.requireNonNull(theme, "theme"));
+    }
+    public List<SceneNode> scrollDecorations(SceneNode host) { domain.checkAccess(); return Collections.unmodifiableList(scrollDecorations.nodes(host)); }
+    public boolean hasExplicitScrollbar(SceneNode host, SceneNode.Axis axis) { domain.checkAccess(); return scrollDecorations.claimed(host, axis); }
+    public AutoCloseable claimScrollbar(SceneScrollViewport viewport) { domain.checkWrite(); return scrollDecorations.claim(viewport); }
+    void invalidateScrollDecorations() { invalidateArrangement(); }
+    void mountScrollDecoration(SceneNode host, SceneNode bar) {
+        bar.frameworkDecorationParent(this, host);
+        mountSubtree(bar, mounts.get(host).owner);
+    }
+    void releaseScrollDecoration(SceneNode bar) {
+        Mount mount = mounts.get(bar);
+        try { if (mount != null) mount.owner.dispose(); }
+        finally {
+            releaseSubtree(bar); bar.frameworkDecorationParent(this, null); bar.destroy();
+        }
+    }
+    /** 作用域悬停仍由正式HoverBinding更新，装饰卸载移除同一订阅。 */
+    public AutoCloseable observeScrollHover(SceneNode host, java.util.function.Consumer<Boolean> changed) {
+        Mount mount = mounts.get(host);
+        BindingActivation active = NodeBinding.hoverWithin(0, (node, inside) -> changed.accept(inside)).activate(this, host, mount.owner);
+        mount.bindings.add(active); dirtyBindings.add(host);
+        return () -> { mount.bindings.remove(active); active.close(); };
     }
 
     private void observeControl(SceneNode node, Mount mount,
@@ -451,11 +482,12 @@ public final class SceneRuntime implements AutoCloseable {
 
     /** 同批转移先于旧声明退出，不让订阅注册顺序决定条目生死。 */
     private void settleBindingDeclarations() {
-        while(!dirtyBindings.isEmpty()) {
+        while(!dirtyBindings.isEmpty() || scrollDecorations.pending()) {
             List<SceneNode> batch=new ArrayList<>(dirtyBindings);
             dirtyBindings.clear();
             refreshTransferDeclarations(batch);
             refreshNodeDeclarations(batch);
+            scrollDecorations.settle();
         }
     }
     private void refreshTransferDeclarations(List<SceneNode> batch) {
@@ -502,6 +534,7 @@ public final class SceneRuntime implements AutoCloseable {
     }
 
     private void releaseSubtree(SceneNode node) {
+        for (SceneNode bar : scrollDecorations.remove(node)) releaseScrollDecoration(bar);
         for (SceneNode child : node.children()) releaseSubtree(child);
         mounts.remove(node);
         clearLogicalModal();
@@ -1071,7 +1104,14 @@ public final class SceneRuntime implements AutoCloseable {
     public SceneScrollViewport.Snapshot scrollSnapshot(
             SceneNode node, SceneNode.Axis axis, SceneGeometryView geometry) {
         domain.checkAccess(); checkAlive();
-        if (geometry == null || !interactive(node)) return null;
+        if (!interactive(node)) return null;
+        return scrollLayoutSnapshot(node, axis, geometry);
+    }
+
+    /** 同批定位的纯事实；输入资格只由外层scrollSnapshot检查。 */
+    public SceneScrollViewport.Snapshot scrollLayoutSnapshot(SceneNode node, SceneNode.Axis axis, SceneGeometryView geometry) {
+        domain.checkAccess(); checkAlive();
+        if (geometry == null) return null;
         SceneGeometryView.Entry entry = geometry.get(node);
         if (entry == null) return null;
         if (node.control() != null) {

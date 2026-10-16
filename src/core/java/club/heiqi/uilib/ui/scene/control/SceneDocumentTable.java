@@ -278,7 +278,10 @@ final class SceneDocumentTable implements SceneControl {
     }
 
     @Override
-    public SceneScrollViewport.Snapshot scrollViewport(SceneNode node, SceneNode.Axis axis, SceneGeometryView geometry) {
+    public SceneScrollArea.Axes scrollbarAxes(SceneNode node) { return SceneScrollArea.Axes.HORIZONTAL; }
+
+        @Override
+        public SceneScrollViewport.Snapshot scrollViewport(SceneNode node, SceneNode.Axis axis, SceneGeometryView geometry) {
         SceneGeometryView.Entry entry = geometry.get(node);
         if (axis != SceneNode.Axis.ROW || entry == null) return null;
         LayoutBox window = SceneControlPaint.inner(entry.box, node.padding());

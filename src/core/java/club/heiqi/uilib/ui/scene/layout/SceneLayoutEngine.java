@@ -153,7 +153,7 @@ public final class SceneLayoutEngine {
             for (SceneGeometryView.Entry entry : entries) index.put(entry.node, entry);
             Map<SceneNode, Boolean> sources = new IdentityHashMap<>();
             for (SceneNode root : roots) projectLayers(root, viewport, entries, index, sources);
-            SceneGeometry geometry = ScenePresentationOrder.publish(roots, entries, viewport, sources);
+            SceneGeometry geometry = ScenePresentationOrder.publish(roots, SceneScrollDecorationLayout.project(entries, viewport), viewport, sources);
             presentedStyles.clear();
             for (SceneGeometryView.Entry entry : geometry.ordered()) presentedStyles.put(entry.node, entry.node.style());
             return geometry;
@@ -354,7 +354,7 @@ public final class SceneLayoutEngine {
         try {
             List<SceneGeometryView.Entry> entries = new ArrayList<>();
             arrange(root, allocated, ancestorClip, entries, true);
-            return new SceneGeometry(entries, viewport);
+            return new SceneGeometry(SceneScrollDecorationLayout.project(entries, viewport), viewport);
         } finally {
             endTextRequests();
         }

@@ -16,17 +16,27 @@ public final class SceneHitTester {
     }
 
     public SceneNode passive(SceneRuntime runtime, SceneGeometryView geometry, int x, int y) {
+        return passiveTargets(runtime, geometry, x, y, node -> false).control;
+    }
+    /** 控件提示与区域兴趣含义不同；一次正式查询分别投影，区域不冒充禁用后仍有提示。 */
+    public static final class PassiveTargets {
+        public final SceneNode control, within;
+        PassiveTargets(SceneNode control, SceneNode within) { this.control = control; this.within = within; }
+    }
+    public PassiveTargets passiveTargets(SceneRuntime runtime, SceneGeometryView geometry, int x, int y,
+            java.util.function.Predicate<SceneNode> interested) {
+        SceneNode within = null;
         List<SceneGeometryView.Entry> entries = geometry.ordered();
         for (int i = entries.size() - 1; i >= 0; i--) {
             SceneGeometryView.Entry entry = entries.get(i);
-            if (entry.clip != null && !entry.clip.contains(x, y)) continue;
-            if (entry.box.contains(x, y)
-                    && runtime.interactive(entry.node)
-                    && (entry.node.clickAction() != null
-                            || entry.node.control() != null && entry.node.control().passiveHover()))
-                return entry.node;
+            if (!entry.box.contains(x, y) || entry.clip != null && !entry.clip.contains(x, y)
+                    || !runtime.interactive(entry.node)) continue;
+            boolean control = entry.node.clickAction() != null
+                    || entry.node.control() != null && entry.node.control().passiveHover();
+            if (within == null && (control || interested.test(entry.node))) within = entry.node;
+            if (control) return new PassiveTargets(entry.node, within);
         }
-        return null;
+        return new PassiveTargets(null, within);
     }
 
     public static final class Target {

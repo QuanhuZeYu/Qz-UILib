@@ -23,6 +23,7 @@ public final class ScenePointerRouter implements AutoCloseable {
     private final HoverProjection hover = new HoverProjection(), passive = new HoverProjection();
     private SceneGeometryView preparedGeometry;
     private final java.util.Set<HoverInterest> hoverInterests = new java.util.LinkedHashSet<>();
+    private final java.util.Map<SceneNode, Integer> hoverNodes = new java.util.IdentityHashMap<>();
 
     /** 只订阅正式被动命中到逻辑祖先的投影，不建立新的区域或手势owner。 */
     final class HoverInterest implements AutoCloseable {
@@ -30,14 +31,20 @@ public final class ScenePointerRouter implements AutoCloseable {
         final Runnable changed;
         boolean inside;
         HoverInterest(SceneNode node,Runnable changed) {this.node=node;this.changed=changed;}
-        @Override public void close() {hoverInterests.remove(this);}
+        @Override public void close() {
+            if (!hoverInterests.remove(this)) return;
+            int count = hoverNodes.get(node);
+            if (count == 1) hoverNodes.remove(node); else hoverNodes.put(node, count - 1);
+            passive.clear();
+        }
     }
     HoverInterest observeHover(SceneNode node,Runnable changed) {
-        HoverInterest interest=new HoverInterest(node,changed);hoverInterests.add(interest);return interest;
+        HoverInterest interest=new HoverInterest(node,changed);hoverInterests.add(interest);
+        hoverNodes.put(node, hoverNodes.getOrDefault(node, 0) + 1); passive.clear(); return interest;
     }
     private void publishHover(SceneGeometryView geometry) {
         if(hoverInterests.isEmpty())return;
-        SceneNode target=passiveHovered(geometry);
+        SceneNode target = closed || !positionKnown ? null : passive.within(geometry);
         for(HoverInterest interest:new java.util.ArrayList<>(hoverInterests)) {
             boolean inside=false;
             for(SceneNode cursor=target;cursor!=null;cursor=cursor.parent())
@@ -52,16 +59,20 @@ public final class ScenePointerRouter implements AutoCloseable {
         private SceneGeometryView geometry;
         private long revision;
         private int px, py;
-        private SceneNode node;
+        private SceneNode node, within;
+        SceneNode within(SceneGeometryView next) { get(next, true); return within; }
         SceneNode get(SceneGeometryView next, boolean passiveQuery) {
             long nextRevision = runtime.revision();
             if (geometry != next || revision != nextRevision || px != x || py != y) {
-                node = passiveQuery ? hits.passive(runtime, next, x, y) : hits.hit(runtime, next, x, y);
+                if (passiveQuery) {
+                    SceneHitTester.PassiveTargets targets = hits.passiveTargets(runtime, next, x, y, hoverNodes::containsKey);
+                    node = targets.control; within = targets.within;
+                } else node = hits.hit(runtime, next, x, y);
                 geometry = next; revision = nextRevision; px = x; py = y;
             }
             return node;
         }
-        void clear() { geometry = null; node = null; }
+        void clear() { geometry = null; node = null; within = null; }
     }
 
     /** 悬停只是已有指针位置在当前范围的投影，不建立另一个输入owner。 */
@@ -341,7 +352,7 @@ public final class ScenePointerRouter implements AutoCloseable {
         finally {
             buttons.clear();
             hover.clear(); passive.clear(); preparedGeometry = null;
-            hoverInterests.clear();
+            hoverInterests.clear(); hoverNodes.clear();
             closed = true;
         }
     }
