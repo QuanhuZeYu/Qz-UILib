@@ -7,6 +7,7 @@ import club.heiqi.uilib.ui.scene.text.ParagraphContent;
 import club.heiqi.uilib.ui.scene.text.StyledText;
 import club.heiqi.uilib.ui.scene.text.TableContent;
 import club.heiqi.uilib.ui.scene.text.TextContent;
+import club.heiqi.uilib.ui.scene.text.TextSemanticSpan;
 import club.heiqi.uilib.ui.scene.text.TextInput;
 import club.heiqi.uilib.ui.scene.text.TextLayout;
 import club.heiqi.uilib.ui.scene.text.TextStyleOverride;
@@ -317,6 +318,7 @@ public final class MarkdownAdapter {
         InlineHtmlSession session = new InlineHtmlSession(n, b);
         inline(n, session, MarkdownStyleIntent.INHERIT, null, math);
         session.finishHtml(end(n));
+        session.endSemantics();
         return b.finish();
     }
 
@@ -417,9 +419,19 @@ public final class MarkdownAdapter {
                         new TextContent.Link(
                                 ((Link) n).getDestination(), title(((Link) n).getTitle())),
                         math);
-            } else if (n instanceof Emphasis) inline(n, session, style.italic(), link, math);
-            else if (n instanceof StrongEmphasis) inline(n, session, style.bold(), link, math);
-            else if (n instanceof Strikethrough) inline(n, session, style.strike(), link, math);
+            } else if (n instanceof Emphasis) {
+                SemanticRun semantic = b.begin(TextSemanticSpan.Kind.EMPHASIS);
+                inline(n, session, style.italic(), link, math);
+                session.endSemantic(semantic);
+            } else if (n instanceof StrongEmphasis) {
+                SemanticRun semantic = b.begin(TextSemanticSpan.Kind.IMPORTANCE);
+                inline(n, session, style.bold(), link, math);
+                session.endSemantic(semantic);
+            } else if (n instanceof Strikethrough) {
+                SemanticRun semantic = b.begin(TextSemanticSpan.Kind.NO_LONGER_ACCURATE);
+                inline(n, session, style.strike(), link, math);
+                session.endSemantic(semantic);
+            }
             else inline(n, session, style, link, math);
         }
     }
@@ -432,11 +444,26 @@ public final class MarkdownAdapter {
         final String tag;
         final TextContent.Link link;
         final boolean suppressed;
+        final SemanticRun semantic;
 
-        HtmlFrame(String tag, TextContent.Link link) {
+        HtmlFrame(String tag, TextContent.Link link, SemanticRun semantic) {
             this.tag = tag;
             this.link = link;
+            this.semantic = semantic;
             suppressed = tag.equals("script") || tag.equals("style");
+        }
+    }
+
+    private static TextSemanticSpan.Kind htmlSemantic(String tag) {
+        switch (tag) {
+            case "strong": return TextSemanticSpan.Kind.IMPORTANCE;
+            case "b": return TextSemanticSpan.Kind.ATTENTION;
+            case "em": return TextSemanticSpan.Kind.EMPHASIS;
+            case "i": return TextSemanticSpan.Kind.ALTERNATE_VOICE;
+            case "u": return TextSemanticSpan.Kind.ANNOTATION;
+            case "s": return TextSemanticSpan.Kind.NO_LONGER_ACCURATE;
+            case "del": return TextSemanticSpan.Kind.DELETION;
+            default: return null;
         }
     }
 
@@ -700,11 +727,13 @@ public final class MarkdownAdapter {
             if (tag.equals("br")) b.append("\n", source.start(node), source.end(node), style, link);
             else if (tag.equals("img")) htmlImage(element, source, b, style, link);
             else {
+                SemanticRun semantic = b.begin(code ? null : htmlSemantic(tag));
                 style = htmlStyle(tag, style);
                 if (tag.equals("a") && element.hasAttr("href"))
                     link = new TextContent.Link(element.attr("href"), element.attr("title"));
                 for (org.jsoup.nodes.Node child : element.childNodes())
                     htmlInline(child, source, b, style, link, code || tag.equals("code"));
+                b.end(semantic);
             }
         }
     }
@@ -1141,6 +1170,16 @@ public final class MarkdownAdapter {
             return link(link) == null ? markdown : markdown.underline();
         }
 
+        void endSemantic(SemanticRun semantic) {
+            // HTML code 的正文延后统一投影；源码遍历先离开的 Markdown 范围也随该正文结束。
+            if (capture == null) output.end(semantic);
+            else capture.endingSemantics.add(semantic);
+        }
+
+        void endSemantics() {
+            for (HtmlFrame frame : htmlFrames) output.end(frame.semantic);
+        }
+
         void finishHtml(int end) {
             if (capture == null) return;
             if (contentSource == null) contentSource = htmlSource(contentNode);
@@ -1155,6 +1194,7 @@ public final class MarkdownAdapter {
                         style(capture.style, capture.link),
                         link(capture.link),
                         true);
+            for (SemanticRun semantic : capture.endingSemantics) output.end(semantic);
             capture = null;
         }
 
@@ -1170,6 +1210,7 @@ public final class MarkdownAdapter {
                 }
                 for (int i = htmlFrames.size() - 1; i >= 0; i--) {
                     if (htmlFrames.get(i).tag.equals(tag)) {
+                        for (int j = i; j < htmlFrames.size(); j++) output.end(htmlFrames.get(j).semantic);
                         htmlFrames.subList(i, htmlFrames.size()).clear();
                         break;
                     }
@@ -1197,7 +1238,7 @@ public final class MarkdownAdapter {
             if (tag.equals("script") || tag.equals("style")) diagnose(s, e, "HTML 非正文内容不显示");
             else if (!htmlSupported(tag)) diagnose(s, e, "忽略未知 HTML 容器，保留正文");
             if (htmlSuppressed()) {
-                htmlFrames.add(new HtmlFrame(tag, null));
+                htmlFrames.add(new HtmlFrame(tag, null, null));
             } else if (tag.equals("br")) output.append("\n", s, e, style(style, link), link(link));
             else if (tag.equals("img"))
                 htmlImage(element, source, output, style(style, link), link(link));
@@ -1206,12 +1247,14 @@ public final class MarkdownAdapter {
                         tag.equals("a") && element.hasAttr("href")
                                 ? new TextContent.Link(element.attr("href"), element.attr("title"))
                                 : null;
-                htmlFrames.add(new HtmlFrame(tag, target));
+                htmlFrames.add(new HtmlFrame(tag, target, output.begin(htmlSemantic(tag))));
                 if (tag.equals("code")) {
                     capture = new HtmlCodeCapture(e, htmlStyle("code", style), link);
                 }
-                if (element.tag().isEmpty() || literal.endsWith("/>"))
+                if (element.tag().isEmpty() || literal.endsWith("/>")) {
+                    output.end(htmlFrames.get(htmlFrames.size() - 1).semantic);
                     htmlFrames.remove(htmlFrames.size() - 1);
+                }
             }
         }
     }
@@ -1221,6 +1264,7 @@ public final class MarkdownAdapter {
         final int start;
         final MarkdownStyleIntent style;
         final TextContent.Link link;
+        final List<SemanticRun> endingSemantics = new ArrayList<>();
 
         HtmlCodeCapture(int start, MarkdownStyleIntent style, TextContent.Link link) {
             this.start = start;
@@ -1244,12 +1288,40 @@ public final class MarkdownAdapter {
         }
     }
 
+    /** 仅累积期可变，finish 发布同一共同文本中的不可变语义范围；不持有 HTML 树。 */
+    private static final class SemanticRun {
+        final int start;
+        final TextSemanticSpan.Kind kind;
+        int end;
+        boolean finished;
+
+        SemanticRun(int start, TextSemanticSpan.Kind kind) {
+            this.start = start;
+            this.end = start;
+            this.kind = kind;
+        }
+    }
+
     private final class ParagraphBuilder {
         final StringBuilder value = new StringBuilder();
         final List<Integer> starts = new ArrayList<>(), ends = new ArrayList<>();
         final List<StyleRun> styleRuns = new ArrayList<>();
         final List<TextContent.LinkSpan> links = new ArrayList<>();
         final List<InlineContent> objects = new ArrayList<>();
+        final List<SemanticRun> semantics = new ArrayList<>();
+
+        SemanticRun begin(TextSemanticSpan.Kind kind) {
+            if (kind == null) return null;
+            SemanticRun run = new SemanticRun(value.length(), kind);
+            semantics.add(run);
+            return run;
+        }
+
+        void end(SemanticRun run) {
+            if (run == null || run.finished) return;
+            run.end = value.length();
+            run.finished = true;
+        }
 
         void append(String text, int s, int e, MarkdownStyleIntent style, TextContent.Link link) {
             if (text.isEmpty()) return;
@@ -1301,7 +1373,13 @@ public final class MarkdownAdapter {
                             styles,
                             TextStyleOverride.INHERIT,
                             Collections.<TextLayout.Diagnostic>emptyList());
-            return TextContent.paragraph(new ParagraphContent(styled, links, objects));
+            List<TextSemanticSpan> semanticSpans = new ArrayList<>();
+            for (SemanticRun run : semantics) {
+                end(run);
+                if (run.end > run.start)
+                    semanticSpans.add(new TextSemanticSpan(run.start, run.end, run.kind));
+            }
+            return TextContent.paragraph(new ParagraphContent(styled, links, objects, semanticSpans));
         }
     }
 }

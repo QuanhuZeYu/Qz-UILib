@@ -24,6 +24,9 @@ import club.heiqi.uilib.ui.scene.runtime.MountHandle;
 import club.heiqi.uilib.ui.scene.text.DocumentContent;
 import club.heiqi.uilib.ui.scene.text.FontStyle;
 import club.heiqi.uilib.ui.scene.text.InlineContent;
+import club.heiqi.uilib.ui.scene.text.ParagraphContent;
+import club.heiqi.uilib.ui.scene.text.StyledText;
+import club.heiqi.uilib.ui.scene.text.TextSemanticSpan;
 import club.heiqi.uilib.ui.scene.text.MarkdownDocument;
 import club.heiqi.uilib.ui.scene.text.TableContent;
 import club.heiqi.uilib.ui.scene.text.TextContent;
@@ -64,6 +67,7 @@ public final class MarkdownTableHtmlScenario extends TestApplication {
         runScenario("管道列数对齐补空裁剪及成熟块结束边界", this::pipeStructure, failures);
         runScenario("CRLF代理对转义管道代码及typed原子的原文来源", this::pipeSources, failures);
         runScenario("HTML全部内容类别及inline与block成熟Markdown边界", this::htmlSemantics, failures);
+        runScenario("HTML与Markdown共同语义嵌套来源及主题身份", this::inlineMeaning, failures);
         runScenario("HTML实体有效attrs无效尺寸原value诊断不吞后文", this::htmlSources, failures);
         runScenario("同段密集HTML code保持精确容器与管道来源", this::htmlCodeRanges, failures);
         runScenario("真实字体表格列行主题动态重排与全投影对齐", this::tableScene, failures);
@@ -450,6 +454,93 @@ public final class MarkdownTableHtmlScenario extends TestApplication {
                     "主题变化重建链接或原子声明");
             require(allText(doc).endsWith("尾"), "CRLF表格吞后续原文");
         }
+    }
+
+    private void inlineMeaning() {
+        String source = "lead <strong>S</strong><b>B</b><em>E</em><i>I</i><u>U</u><s>X</s><del>D</del> "
+                + "<b><b>中😀&amp;</b></b> <a href='next'><i>L</i></a> "
+                + "<strong>A<code>&lt;b&gt;</code>Z</strong> "
+                + "<code>&lt;b&gt;literal&lt;/b&gt;</code> **M** *N* ~~O~~ tail";
+        String expected = "lead SBEIUXD 中😀& L A<b>Z <b>literal</b> M N O tail";
+        TextSemanticSpan.Kind[] kinds = {
+            TextSemanticSpan.Kind.IMPORTANCE, TextSemanticSpan.Kind.ATTENTION,
+            TextSemanticSpan.Kind.EMPHASIS, TextSemanticSpan.Kind.ALTERNATE_VOICE,
+            TextSemanticSpan.Kind.ANNOTATION, TextSemanticSpan.Kind.NO_LONGER_ACCURATE,
+            TextSemanticSpan.Kind.DELETION, TextSemanticSpan.Kind.ATTENTION,
+            TextSemanticSpan.Kind.ATTENTION, TextSemanticSpan.Kind.ALTERNATE_VOICE,
+            TextSemanticSpan.Kind.IMPORTANCE, TextSemanticSpan.Kind.IMPORTANCE,
+            TextSemanticSpan.Kind.EMPHASIS, TextSemanticSpan.Kind.NO_LONGER_ACCURATE
+        };
+        String[] fragments = {"S", "B", "E", "I", "U", "X", "D", "中😀&", "中😀&", "L", "A<b>Z", "M", "N", "O"};
+        for (boolean bytes : new boolean[] {false, true}) {
+            TextContent content = checked(source, bytes).blocks().get(0).paragraph;
+            TextContent.Resolved first = content.resolve(BASE);
+            TextContent.Resolved themed = content.resolve(new TextStyle("default", 31, 0xff112233));
+            equal(expected, first.text.input.text, "语义不能改正文或代码字面");
+            equal(kinds.length, first.semantics().size(), "同样视觉与重复嵌套不可吞语义");
+            for (int i = 0; i < kinds.length; i++) {
+                TextSemanticSpan span = first.semantics().get(i);
+                int start = expected.indexOf(fragments[i]);
+                equal(kinds[i], span.kind, "中性含义/顺序 " + i);
+                equal(start, span.start, "语义UTF16开始 " + i);
+                equal(start + fragments[i].length(), span.end, "语义UTF16结束 " + i);
+                require(span == content.semantics().get(i) && span == themed.semantics().get(i),
+                        "主题派生重建语义声明 " + i);
+            }
+            TextSemanticSpan inner = first.semantics().get(8);
+            equal(bytes ? TextInput.SourceUnit.BYTE : TextInput.SourceUnit.UTF16,
+                    first.text.input.sourceUnit, "语义来源单位");
+            int originalStart = source.indexOf("中😀&amp;");
+            int originalEnd = originalStart + "中😀&amp;".length();
+            equal(bytes ? source.substring(0, originalStart).getBytes(StandardCharsets.UTF_8).length : originalStart,
+                    first.text.input.sourceStart(inner.start), "嵌套语义真实来源开始");
+            equal(bytes ? source.substring(0, originalEnd).getBytes(StandardCharsets.UTF_8).length : originalEnd,
+                    first.text.input.sourceEnd(inner.end - 1), "实体语义真实来源结束");
+            equal("next", first.links().get(0).link.target, "语义不代替链接身份");
+            require(first.links().get(0).link == themed.links().get(0).link, "语义派生更换链接");
+            require(first.text.styleAt(expected.indexOf('S')).fontStyle.weight == 700
+                            && first.text.styleAt(expected.indexOf('B')).fontStyle.weight == 700
+                            && first.text.styleAt(expected.indexOf('I')).fontStyle.posture == FontStyle.Posture.ITALIC,
+                    "语义补全改变既有视觉意图");
+        }
+        String[] captures = {"*<code>x*</code>", "**<code>x**</code>", "~~<code>x~~</code>", "*a<code>b*</code>c"};
+        String[] capturedText = {"x*", "x**", "x~~", "ab*c"};
+        int[] capturedEnd = {2, 3, 3, 3};
+        TextSemanticSpan.Kind[] capturedKind = {TextSemanticSpan.Kind.EMPHASIS,
+                TextSemanticSpan.Kind.IMPORTANCE, TextSemanticSpan.Kind.NO_LONGER_ACCURATE,
+                TextSemanticSpan.Kind.EMPHASIS};
+        for (int i = 0; i < captures.length; i++) {
+            for (boolean bytes : new boolean[] {false, true}) {
+                TextContent.Resolved captured = checked(captures[i], bytes).blocks().get(0).paragraph.resolve(BASE);
+                equal(capturedText[i], captured.text.input.text, "延后代码捕获保持原字面合同");
+                equal(1, captured.semantics().size(), "代码延后投影不能丢失进入时语义 " + captures[i]);
+                TextSemanticSpan span = captured.semantics().get(0);
+                equal(capturedKind[i], span.kind, "代码捕获的中性含义");
+                require(span.start == 0 && span.end == capturedEnd[i], "语义随实际延迟正文结束而非源码遍历结束");
+            }
+        }
+        TextContent.Resolved block = checked("<p><strong>A<b>B</b></strong><i>C</i></p>", false)
+                .blocks().get(0).paragraph.resolve(BASE);
+        equal("ABC", block.text.input.text, "HTML块共同正文");
+        equal(3, block.semantics().size(), "HTML块递归须保留相同语义");
+        equal(TextSemanticSpan.Kind.IMPORTANCE, block.semantics().get(0).kind, "HTML块strong");
+        equal(TextSemanticSpan.Kind.ATTENTION, block.semantics().get(1).kind, "HTML块b");
+        require(block.semantics().get(0).start == 0 && block.semantics().get(0).end == 2
+                        && block.semantics().get(1).start == 1 && block.semantics().get(1).end == 2,
+                "HTML块语义范围");
+        TextContent.Resolved escaped = checked("&lt;b&gt;x&lt;/b&gt;", false).blocks().get(0).paragraph.resolve(BASE);
+        require(escaped.semantics().isEmpty(), "转义文字不能重解释HTML语义");
+        require(TextContent.plain("<b>x</b>").resolve(BASE).semantics().isEmpty()
+                        && TextContent.richTags("<b>x</b>").resolve(BASE).semantics().isEmpty(),
+                "PLAIN与DSL入口不隐式获得HTML含义");
+        ParagraphContent legacy = new ParagraphContent(
+                new StyledText(TextInput.string("old"), null, Collections.singletonList(
+                        new club.heiqi.uilib.ui.scene.text.TextStyleOverrideSpan(0, 3,
+                                club.heiqi.uilib.ui.scene.text.TextStyleOverride.INHERIT)),
+                        club.heiqi.uilib.ui.scene.text.TextStyleOverride.INHERIT,
+                        Collections.<TextLayout.Diagnostic>emptyList()),
+                Collections.<TextContent.LinkSpan>emptyList(), Collections.<InlineContent>emptyList());
+        require(legacy.semantics().isEmpty(), "旧共同段落构造器必须兼容");
     }
 
     private void htmlSemantics() {

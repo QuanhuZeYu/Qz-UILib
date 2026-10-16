@@ -110,6 +110,7 @@ public final class TextContent {
         public final AttributedText text;
         private final List<LinkSpan> links;
         private final List<InlineContent> inline;
+        private final List<TextSemanticSpan> semantics;
         private final String serialized;
 
         Resolved(AttributedText text, List<LinkSpan> links, String serialized) {
@@ -121,10 +122,21 @@ public final class TextContent {
                 List<LinkSpan> links,
                 String serialized,
                 List<InlineContent> inline) {
+            this(text, links, serialized, inline, Collections.<TextSemanticSpan>emptyList());
+        }
+
+        Resolved(AttributedText text, List<LinkSpan> links, String serialized,
+                List<InlineContent> inline, List<TextSemanticSpan> semantics) {
+            this.semantics = Collections.unmodifiableList(new ArrayList<>(semantics));
             this.inline = Collections.unmodifiableList(new ArrayList<>(inline));
             this.text = text;
             this.links = Collections.unmodifiableList(new ArrayList<LinkSpan>(links));
             this.serialized = serialized;
+        }
+
+        /** 文本样式派生不重建语义声明；范围来源仍由 text.input 映射。 */
+        public List<TextSemanticSpan> semantics() {
+            return semantics;
         }
 
         public List<InlineContent> inlineContents() {
@@ -203,6 +215,10 @@ public final class TextContent {
     }
 
     /** 稳定声明身份随源码替换；主题及宽度变化不重新解析或重建子内容。 */
+    public List<TextSemanticSpan> semantics() {
+        return content().paragraph.semantics();
+    }
+
     public List<InlineContent> inlineContents() {
         return content().paragraph.inlineContents();
     }
@@ -212,6 +228,6 @@ public final class TextContent {
         ContentResult result = content();
         ParagraphContent value = result.paragraph;
         return new Resolved(
-                value.text.resolve(style), value.links(), result.canonical, value.inlineContents());
+                value.text.resolve(style), value.links(), result.canonical, value.inlineContents(), value.semantics());
     }
 }
