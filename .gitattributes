@@ -52,3 +52,6 @@ src/core/resources/assets/qz_uilib/fonts/math-text/**/OFL.txt -whitespace
 
 # TSV 尾部 Tab 表示最后一个空字段，保留列数与固定原始事实。
 src/test/resources/math/reference/coverage-corpus.tsv whitespace=-blank-at-eol
+
+# MPEG-TS 验证样片保持二进制原字节，不能套用默认的文本换行归一化。
+src/mediaTest/resources/uilib-media/segment.ts binary
