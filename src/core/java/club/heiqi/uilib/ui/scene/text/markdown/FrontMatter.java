@@ -63,7 +63,7 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/** 前缀识别及 YAML 到共同内容的转换；图值与显示遵循文本规格「YAML frontmatter 默认阅读」。 */
+/** 前缀识别及 YAML 到共同内容的转换；图值与显示见 specs/content/uilib-markdown-spec.md 第 3 节。 */
 final class FrontMatter {
     final String masked;
     final List<DocumentContent.Block> blocks = new ArrayList<>();

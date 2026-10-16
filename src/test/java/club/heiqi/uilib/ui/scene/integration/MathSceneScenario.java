@@ -708,7 +708,7 @@ public final class MathSceneScenario extends TestApplication {
     }
 
     private void explicitEmbedBox() throws Exception {
-        // text spec 1.4.1：em 内联盒明确分配，节点声明不参与自然尺寸/min/max 求解。
+        // specs/content/uilib-math-content-spec.md 第 2 节：em 内联盒明确分配，节点声明不参与自然尺寸/min/max 求解。
         try (Fixture f = new Fixture(tex("x^{@embed{ore}}"), MathStyle.TEXT,
                 SceneTheme.dark().textStyle.withEm(EM), "",
                 ImageOptions.defaults().size(Size.fixed(120).bounds(80, 120), Size.fixed(120).bounds(80, 120)),

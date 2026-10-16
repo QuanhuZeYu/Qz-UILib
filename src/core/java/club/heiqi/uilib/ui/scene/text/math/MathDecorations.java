@@ -12,7 +12,7 @@ import club.heiqi.uilib.ui.scene.text.math.MathLayoutEngine.Session;
 
 import java.util.Locale;
 
-/** 数学装饰与局部作用域：只展开为同一有序盒，不保存 AST 或第二棵几何树。 宽饰件是文本规格 1.4.3 的数学路径；括号仍请求真实 HORIZONTAL MATH。 */
+/** 数学装饰与局部作用域：只展开为同一有序盒，不保存 AST 或第二棵几何树。 宽饰件沿 specs/content/uilib-math-content-spec.md 第 4 节的数学路径；括号仍请求真实 HORIZONTAL MATH。 */
 final class MathDecorations {
     private MathDecorations() {}
 

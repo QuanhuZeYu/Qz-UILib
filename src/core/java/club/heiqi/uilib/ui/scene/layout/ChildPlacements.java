@@ -24,7 +24,7 @@ public final class ChildPlacements {
         }
 
         /**
-         * 内容协议明确给定的盒，例如文本规格 1.4.1 的数学 em 嵌入。
+         * 内容协议明确给定的盒，例如 specs/content/uilib-math-content-spec.md 第 2 节的数学 em 嵌入。
          * 该协议负责尺寸分配，不自动求解子节点的 Size；仍使用同树几何、裁剪和输入。
          * 普通容器应使用构造器并尊重子节点尺寸，不能以内容盒掩盖非法排列。
          */

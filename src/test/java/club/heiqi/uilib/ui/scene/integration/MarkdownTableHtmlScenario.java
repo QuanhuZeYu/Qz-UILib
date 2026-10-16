@@ -44,7 +44,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 /**
- * text spec §1.3 表格/HTML 的阅读和输入回归。期望来自固定 markdown-it14.2 与 jsoup1.19.1
+ * specs/content/uilib-markdown-spec.md 第 2、4 节 表格/HTML 的阅读和输入回归。期望来自固定 markdown-it14.2 与 jsoup1.19.1
  * 的实际研究证据及规格，手写语义断言，不把生产输出转成期望或结构快照。 真实字体场景使用共同 scene；不冒充宿主 GL 或双实例部署验收。
  */
 public final class MarkdownTableHtmlScenario extends TestApplication {

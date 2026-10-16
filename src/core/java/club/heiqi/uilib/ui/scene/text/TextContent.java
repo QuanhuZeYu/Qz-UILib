@@ -5,7 +5,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
-/** 显式内容声明。实例身份也是链接手势的声明代际，不能以源码相等替代。 语法及失败合同见文本规格 §0 与富文本 DSL 正常内容合同。 */
+/** 显式内容声明。实例身份也是链接手势的声明代际，不能以源码相等替代。 输入模式及失败合同见 specs/content/2026-10-07-uilib-text-content-spec.md 第 0、2 节。 */
 public final class TextContent {
     public enum Mode {
         PLAIN,
