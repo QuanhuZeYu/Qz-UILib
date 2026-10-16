@@ -29,13 +29,17 @@ final class SceneSortableInteraction<T, K, C> {
     SceneSortableInteraction(SceneSortableModel<T, K, C> model) {
         this.model = model; selection = new SceneSortableSelection<>(model); feedback = model.context.domain().signal(null);
     }
-    void clear() { active = anchor = null; position = null; token = null; feedback.set(null); }
+    void clear() {
+        if (active != null) model.motion.finish();
+        active = anchor = null; position = null; token = null; feedback.set(null);
+    }
     private void clear(SceneSortableModel.RowEntry<T, K, C> row) { if (active == row) clear(); }
     private void publish(LayoutBox box) {
         Feedback<T, K, C> old = feedback.get();
         if (old != null && old.row == active && (old.position == position || old.position != null && old.position.same(position))
                 && old.box.x == box.x && old.box.y == box.y && old.box.width == box.width && old.box.height == box.height) return;
-        feedback.set(new Feedback<>(token, active, position, box));
+        Feedback<T, K, C> value = new Feedback<>(token, active, position, box);
+        feedback.set(value); model.motion.show(value);
     }
     SceneDragSupport.Observer observer(SceneSortableModel.RowEntry<T, K, C> row, SceneDragSupport.Observer delegate) {
         return new SourceObserver(row, delegate);
@@ -65,8 +69,12 @@ final class SceneSortableInteraction<T, K, C> {
                 clear(); active = anchor = row; token = new Object();
                 position = new SceneSortableSelection.Position<>(row.container.get(), model.successor(row));
             }
-            if (!keyboard) position = selection.pointer(row, geometry, x, y);
+            model.motion.synchronize(geometry);
+            model.motion.remember(geometry);
+            SceneSortableSelection.Position<T, K, C> oldPosition = position;
+            if (!keyboard && !selection.occupies(row, position, geometry, x, y)) position = selection.pointer(row, geometry, x, y);
             else if (!selection.valid(row, position, geometry)) position = null;
+            if (oldPosition != position && (oldPosition == null || !oldPosition.same(position))) model.motion.prepare();
             publish(box);
         }
         @Override public Runnable normalDrop(SceneNode node, SceneGeometryView geometry, boolean keyboard, LayoutBox box, int x, int y) {
@@ -86,10 +94,13 @@ final class SceneSortableInteraction<T, K, C> {
             if (active != row) return null;
             if (direction != null) {
                 SceneSortableSelection.Step<T, K, C> step = selection.step(row, position, anchor, geometry, direction);
+                if (position != step.position && (position == null || !position.same(step.position))) {
+                    model.motion.remember(geometry); model.motion.prepare();
+                }
                 position = step.position; anchor = step.anchor;
             }
             if (position == null || !selection.valid(row, position, geometry)) return null;
-            SceneGeometryView.Entry entry = anchor == null ? geometry.get(position.container.declaration.items) : geometry.get(anchor.node);
+            SceneGeometryView.Entry entry = geometry.get(row.declaration.content);
             LayoutBox visible = SceneDragSupport.visibleBox(geometry, entry);
             if (visible != null && visible.width > 0 && visible.height > 0) return visible;
             // 导航请求先由正式 reveal 落实；同批尚未显露时只使用当前目标容器可见片段。

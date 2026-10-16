@@ -90,7 +90,7 @@ final class SceneSortableDeclarations {
         for (SceneNode handle : declaration.handles)
             if (!SceneDragSupport.within(handle, declaration.content) || !handles.add(handle))
                 throw new IllegalArgumentException("排序把手必须是当前行内的唯一节点: " + key + " / " + handle.id());
-        return new SceneSortableModel.RowEntry<>(key, cell, model.context.domain().signal(container), declaration);
+        return new SceneSortableModel.RowEntry<>(model.context.domain(), key, cell, model.context.domain().signal(container), declaration);
     }
     private static <T, K, C> void bindDeclarations(SceneSortableModel<T, K, C> model, Plan<T, K, C> plan,
             List<SceneSortableModel.RowEntry<T, K, C>> freshRows) {

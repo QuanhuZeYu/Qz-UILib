@@ -131,6 +131,9 @@ public interface SceneControl {
 
     void paint(SceneNode node, SceneGeometryView geometry, PaintPlanBuilder target);
 
+    /** 只控制后代绘制，布局、挂载及输入事实保持；例如排序来源的不可见插槽。 */
+    default boolean paintChildren(SceneNode node) { return true; }
+
     /** 本节点当前有效几何子树结束后、下一兄弟内容之前的局部装饰。 与paint共用同代几何和失效生命周期；全页tooltip仍由paintOverlay处理。 */
     default void paintAfterChildren(
             SceneNode node, SceneGeometryView geometry, PaintPlanBuilder target) {}

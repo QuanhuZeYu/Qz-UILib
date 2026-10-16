@@ -77,6 +77,8 @@ final class ScenePaintCollector {
                     fallback == null ? null : fallback.content);
             PaintPlan ownPlan = own.build();
             append(content, ownPlan);
+            if (!entry.node.control().paintChildren(entry.node))
+                for (SceneNode child : entry.node.children()) captured.add(child);
             if (fallback != null && !fallback.overlay.commands().isEmpty())
                 childOverlays.put(entry.node, branchOverlay(ownPlan, fallback));
         }

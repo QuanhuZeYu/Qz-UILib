@@ -56,10 +56,17 @@ final class SceneSortableSelection<T, K, C> {
         }
         return chosen == null || !legal.contains(chosen) ? null : insertion(source, chosen, geometry, x, y);
     }
+    boolean occupies(SceneSortableModel.RowEntry<T, K, C> source, Position<T, K, C> position,
+                     SceneGeometryView geometry, int x, int y) {
+        if (!valid(source, position, geometry) || source.node.parent() != position.container.declaration.items) return false;
+        LayoutBox box = SceneDragSupport.visibleBox(geometry, geometry.get(source.node));
+        return box != null && x >= box.x && (long) x < (long) box.x + box.width
+                && y >= box.y && (long) y < (long) box.y + box.height;
+    }
     private List<SceneSortableModel.RowEntry<T, K, C>> rows(SceneSortableModel.ContainerEntry<T, K, C> container,
             SceneGeometryView geometry, SceneSortableModel.RowEntry<T, K, C> excluded) {
         List<SceneSortableModel.RowEntry<T, K, C>> result = new ArrayList<>();
-        for (SceneSortableModel.RowEntry<T, K, C> row : container.rows)
+        for (SceneSortableModel.RowEntry<T, K, C> row : container.displayed)
             if (row != excluded && geometry.get(row.node) != null && row.node.visible()) result.add(row);
         return result;
     }
@@ -111,7 +118,7 @@ final class SceneSortableSelection<T, K, C> {
             SceneSortableModel.RowEntry<T, K, C> anchor, SceneGeometryView geometry, SceneEditEvent.Command direction) {
         List<SceneSortableModel.ContainerEntry<T, K, C>> legal = containers(source, geometry);
         SceneSortableModel.ContainerEntry<T, K, C> container = current == null ? source.container.get() : current.container;
-        SceneGeometryView.Entry anchorEntry = anchor == null ? null : geometry.get(anchor.node);
+        SceneGeometryView.Entry anchorEntry = geometry.get(source.node);
         LayoutBox origin = anchorEntry != null ? anchorEntry.box : geometry.get(container.declaration.root).box;
         boolean horizontal = direction == SceneEditEvent.Command.LEFT || direction == SceneEditEvent.Command.RIGHT;
         boolean positive = direction == SceneEditEvent.Command.RIGHT || direction == SceneEditEvent.Command.DOWN;
@@ -123,7 +130,7 @@ final class SceneSortableSelection<T, K, C> {
                     || horizontal == (target.declaration.layout == SceneSortable.Layout.HORIZONTAL);
             for (SceneSortableModel.RowEntry<T, K, C> row : rows(target, geometry, null)) {
                 if (target == container && !localAxis) continue;
-                if (row == anchor) continue;
+                if (row == source) continue;
                 double score = directionScore(origin, geometry.get(row.node).box, horizontal, positive);
                 if (score < best) { best = score; chosen = row; chosenContainer = target; }
             }
@@ -137,13 +144,13 @@ final class SceneSortableSelection<T, K, C> {
             if (chosen == source) before = model.successor(source);
             else if (!positive) before = chosen.key;
             else {
-                List<SceneSortableModel.RowEntry<T, K, C>> ordered = chosenContainer.rows;
+                List<SceneSortableModel.RowEntry<T, K, C>> ordered = chosenContainer.displayed;
                 int index = ordered.indexOf(chosen) + 1;
                 while (index < ordered.size() && ordered.get(index) == source) index++;
                 before = index < ordered.size() ? ordered.get(index).key : null;
             }
         }
-        model.runtime.requestInputReveal(chosen == null ? chosenContainer.declaration.root : chosen.node);
+        model.runtime.requestInputReveal(source.node);
         return new Step<>(new Position<>(chosenContainer, before), chosen);
     }
     private double directionScore(LayoutBox origin, LayoutBox box, boolean horizontal, boolean positive) {

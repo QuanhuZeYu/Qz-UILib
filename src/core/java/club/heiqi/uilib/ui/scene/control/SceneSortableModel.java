@@ -21,17 +21,21 @@ final class SceneSortableModel<T, K, C> {
     static final class ContainerEntry<T, K, C> {
         final C key;
         final SceneSortable.Container declaration;
-        List<RowEntry<T, K, C>> rows = new ArrayList<>();
+        List<RowEntry<T, K, C>> rows = new ArrayList<>(), displayed = new ArrayList<>();
         ContainerEntry(C key, SceneSortable.Container declaration) { this.key = key; this.declaration = declaration; }
     }
     static final class RowEntry<T, K, C> {
         final K key;
         final Signal<T> value;
-        final Signal<ContainerEntry<T, K, C>> container;
+        final Signal<ContainerEntry<T, K, C>> container, placed;
+        final Signal<SceneSortableMotion.Offset> offset;
         final SceneSortable.Row declaration;
         SceneNode node;
-        RowEntry(K key, Signal<T> value, Signal<ContainerEntry<T, K, C>> container, SceneSortable.Row declaration) {
+        RowEntry(club.heiqi.uilib.ui.reactive.ReactiveDomain domain, K key, Signal<T> value,
+                 Signal<ContainerEntry<T, K, C>> container, SceneSortable.Row declaration) {
             this.key = key; this.value = value; this.container = container; this.declaration = declaration;
+            placed = domain.signal(container.get());
+            offset = domain.signal(SceneSortableMotion.Offset.ZERO);
         }
     }
     final ScenePageContext context;
@@ -47,6 +51,10 @@ final class SceneSortableModel<T, K, C> {
     final Map<C, ContainerEntry<T, K, C>> containers = new LinkedHashMap<>();
     final SceneDragDrop<Object> scope;
     final SceneSortableInteraction<T, K, C> interaction;
+    final SceneSortableMotion<T, K, C> motion;
+    final SceneSortableProjection<T, K, C> projection;
+    final Signal<Long> revision;
+    private long modelRevision;
     final SceneNode layer;
 
     SceneSortableModel(ScenePageContext context, ReadableSignal<List<SceneSortable.Group<C, T>>> groups,
@@ -58,13 +66,17 @@ final class SceneSortableModel<T, K, C> {
         // Scope 只负责正式挂载、资格和会话；最终业务只由排序的显式 normalDrop 发布 Move。
         scope = SceneDragDrop.create(context, SceneDragDrop.Collision.CLOSEST_CENTER, drop -> {});
         root = new SceneNode().axis(SceneNode.Axis.ROW).size(Size.fill(1), Size.natural());
+        revision = context.domain().signal(0L);
         interaction = new SceneSortableInteraction<>(this);
+        motion = new SceneSortableMotion<>(this); projection = new SceneSortableProjection<>(this);
         root.control(new SceneSortablePresentation<>(this));
         layer = SceneSortablePresentation.layer(this);
         root.add(layer);
-        root.bind(NodeBinding.value(groups, (node, value) -> apply(value)));
+        root.bind(SceneSortableBindings.declaration(groups, (node, value) -> apply(value)));
+        root.bind(SceneSortableBindings.declaration(() -> { revision.get(); return interaction.feedback.get(); },
+                (node, value) -> projection.apply(value)));
         root.bind((runtime, node, owner) -> {
-            owner.own(interaction::clear);
+            owner.own(() -> { interaction.clear(); motion.clear(); });
             return new BindingActivation() { public void refresh() {} public void close() {} };
         });
         root.own(() -> { rows.clear(); containers.clear(); });
@@ -89,26 +101,32 @@ final class SceneSortableModel<T, K, C> {
         ReadableSignal<SceneDraggable.Options> policy = () -> {
             SceneSortable.Options<T, C> current = options();
             SceneDraggable.Options base = scope.draggable(new SceneSortableKeys.SourceKey<>(row.key),
-                    new SceneDraggable.Options().handles(row.declaration.handles).preserveSlot()
-                            .sourceAnchor(row.container.get().declaration.root)
+                    new SceneDraggable.Options().handles(row.declaration.handles).sourceContent(row.declaration.content).preserveSlot()
+                            .sourceAnchor(row.placed.get().declaration.root)
                             .autoScroll(current.autoScroll).autoScrollSpeed(current.autoScrollSpeed));
             return base.observer(interaction.observer(row, base.observer()));
         };
-        row.node = SceneDraggable.create(context, row.declaration.content, state, policy);
-        row.node.size(row.container.get().declaration.layout == SceneSortable.Layout.HORIZONTAL ? Size.natural() : Size.fill(1), Size.natural());
-        row.node.bind(NodeBinding.value(() -> options().draggable.test(row.value.get()), SceneNode::enabled));
-        row.node.bind(NodeBinding.value(() -> row.container.get().declaration.layout, (node, layout) ->
+        SceneNode visual = new SceneNode().size(Size.fill(1), Size.natural())
+                .control(new SceneSortableRow<>(this, row)).add(row.declaration.content);
+        visual.bind(NodeBinding.value(() -> row.placed.get().declaration.layout, (node, layout) ->
                 node.size(layout == SceneSortable.Layout.HORIZONTAL ? Size.natural() : Size.fill(1), Size.natural())));
-        bindTarget(row.node, new SceneSortableKeys.RowTarget<>(row.key), source -> accepts(row.container.get(), source));
+        row.node = SceneDraggable.create(context, visual, state, policy);
+        row.node.size(row.placed.get().declaration.layout == SceneSortable.Layout.HORIZONTAL ? Size.natural() : Size.fill(1), Size.natural());
+        row.node.bind(NodeBinding.value(() -> options().draggable.test(row.value.get()), SceneNode::enabled));
+        row.node.bind(NodeBinding.value(() -> row.placed.get().declaration.layout, (node, layout) ->
+                node.size(layout == SceneSortable.Layout.HORIZONTAL ? Size.natural() : Size.fill(1), Size.natural())));
+        bindTarget(row.node, new SceneSortableKeys.RowTarget<>(row.key), source -> accepts(row.placed.get(), source));
     }
     private void apply(List<SceneSortable.Group<C, T>> groups) {
         SceneSortableDeclarations.Plan<T, K, C> plan = SceneSortableDeclarations.prepare(this, groups);
+        motion.prepareIfShowing();
         try {
             mountDestinations(plan);
             syncValues(plan);
             relocateAll(plan);
             reconcileRows(plan);
             finishContainers(plan);
+            revision.set(++modelRevision);
         } catch (RuntimeException | Error failure) {
             plan.releaseUnattached(failure);
             throw failure;
@@ -130,7 +148,7 @@ final class SceneSortableModel<T, K, C> {
     private void relocateAll(SceneSortableDeclarations.Plan<T, K, C> plan) {
         for (ContainerEntry<T, K, C> container : plan.containers.values()) {
             for (RowEntry<T, K, C> row : plan.order.get(container.key)) {
-                row.container.set(container);
+                row.container.set(container); row.placed.set(container);
                 if (row.node.runtime() != null && row.node.parent() != container.declaration.items)
                     runtime.relocate(row.node, container.declaration.items);
             }
@@ -142,7 +160,7 @@ final class SceneSortableModel<T, K, C> {
             List<SceneNode> children = new ArrayList<>();
             for (RowEntry<T, K, C> row : ordered) children.add(row.node);
             runtime.reconcile(container.declaration.items, children, container.declaration.items, true);
-            container.rows = ordered;
+            container.rows = ordered; container.displayed = ordered;
         }
     }
     private void finishContainers(SceneSortableDeclarations.Plan<T, K, C> plan) {

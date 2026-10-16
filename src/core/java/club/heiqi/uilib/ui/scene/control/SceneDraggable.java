@@ -39,7 +39,7 @@ public final class SceneDraggable {
         private long delayMillis;
         private boolean activationExplicit;
         private SceneNode[] handles = new SceneNode[0];
-        private SceneNode overlay, sourceAnchor;
+        private SceneNode overlay, sourceAnchor, sourceContent;
         private boolean preserveSlot;
         private Consumer<Snapshot> onDrop;
         private SceneDragSupport.Observer observer;
@@ -51,7 +51,7 @@ public final class SceneDraggable {
             distance = value.distance; tolerance = value.tolerance; delayMillis = value.delayMillis;
             handles = value.handles; overlay = value.overlay; onDrop = value.onDrop; activationExplicit = value.activationExplicit;
             observer = value.observer; autoScroll = value.autoScroll; autoScrollSpeed = value.autoScrollSpeed;
-            sourceAnchor = value.sourceAnchor; preserveSlot = value.preserveSlot;
+            sourceAnchor = value.sourceAnchor; preserveSlot = value.preserveSlot; sourceContent = value.sourceContent;
         }
         public Options axis(Axis value) { Options next = new Options(this); next.axis = Objects.requireNonNull(value, "axis"); return next; }
         public Options bounds(Bounds value) { Options next = new Options(this); next.bounds = Objects.requireNonNull(value, "bounds"); return next; }
@@ -83,7 +83,9 @@ public final class SceneDraggable {
         SceneDragSupport.Observer observer() { return observer; }
         SceneNode sourceAnchor() { return sourceAnchor; }
         Options sourceAnchor(SceneNode anchor) { Options next = new Options(this); next.sourceAnchor = Objects.requireNonNull(anchor, "anchor"); return next; }
-        /** 排序保持原槽，由容器自己的所属层绘制预览；不移动原行几何。 */
+        /** 额外呈现包装不改变实际内容的输入资格。 */
+        Options sourceContent(SceneNode content) { Options next = new Options(this); next.sourceContent = Objects.requireNonNull(content, "content"); return next; }
+        /** 排序保留容器分配的当前插槽，拖动反馈由所属层呈现。 */
         Options preserveSlot() { Options next = new Options(this); next.preserveSlot = true; return next; }
     }
 
@@ -207,9 +209,13 @@ public final class SceneDraggable {
             observer = null;
             if (next != null) { next.attach(runtime, node, state::end); observer = next; }
         }
+        private SceneNode sourceContent() { return options().sourceContent == null ? content : options().sourceContent; }
+        private boolean eligible(SceneNode node) {
+            return SceneDragSupport.within(sourceContent(), content) && SceneDragSupport.eligible(sourceContent(), node);
+        }
         private boolean valid(SceneNode node, SceneGeometryView geometry) {
             SceneNode anchor = options().sourceAnchor == null ? node : options().sourceAnchor;
-            return geometry != null && runtime.interactive(node) && SceneDragSupport.eligible(content, node)
+            return geometry != null && runtime.interactive(node) && eligible(node)
                     && SceneDragSupport.within(node, anchor) && geometry.get(node) != null
                     && SceneDragSupport.visible(geometry, anchor);
         }
@@ -233,17 +239,17 @@ public final class SceneDraggable {
         }
         @Override public boolean capturesPointer() { return true; }
         @Override public Object pointerTarget(SceneNode node, SceneGeometryView geometry, int x, int y) {
-            if (!SceneDragSupport.eligible(content, node)) return null;
+            if (!eligible(node)) return null;
             Options options = options();
             if (options.handles.length > 0) return SceneDragSupport.handle(node, options.handles, geometry, x, y);
-            return SceneDragSupport.inside(geometry.get(content), x, y) ? bodyTarget : null;
+            return SceneDragSupport.inside(geometry.get(sourceContent()), x, y) ? bodyTarget : null;
         }
         @Override public Object pointerActivator(SceneNode node, SceneNode hit, SceneGeometryView geometry, int x, int y) {
             SceneNode handle = SceneDragSupport.handle(node, options().handles, geometry, x, y);
             return handle != null && SceneDragSupport.within(hit, handle) ? handle : null;
         }
         @Override public boolean pointerTargetValid(SceneNode node, Object candidate) {
-            if (!SceneDragSupport.eligible(content, node)) return false;
+            if (!eligible(node)) return false;
             Options options = options();
             if (candidate == bodyTarget) return options.handles.length == 0;
             for (SceneNode handle : options.handles) if (candidate == handle && SceneDragSupport.eligible(handle, node)) return true;
@@ -270,7 +276,7 @@ public final class SceneDraggable {
         private void update(SceneNode node, SceneGeometryView geometry, SceneDragSupport.AutoScroll.Shift shift) {
             if (!state.snapshot.get().active) return;
             if (!valid(node, geometry)) { state.end(); return; }
-            SceneGeometryView.Entry wrapper = geometry.get(node), sourceBox = geometry.get(content);
+            SceneGeometryView.Entry wrapper = geometry.get(node), sourceBox = geometry.get(sourceContent());
             if (wrapper == null || sourceBox == null) { state.end(); return; }
             boolean sourceMoves = shift.scroller != null && SceneDragSupport.within(node, shift.scroller);
             int sx = sourceMoves ? shift.x : 0, sy = sourceMoves ? shift.y : 0;
@@ -340,7 +346,7 @@ public final class SceneDraggable {
             syncObserver(node, options());
             switch (event.kind) {
                 case DOWN:
-                    SceneGeometryView.Entry entry = geometry.get(content);
+                    SceneGeometryView.Entry entry = geometry.get(sourceContent());
                     if (entry == null) return;
                     state.end(); state.keyboard = false; state.delayAllowed = true;
                     state.startX = state.pointerX = event.x; state.startY = state.pointerY = event.y;

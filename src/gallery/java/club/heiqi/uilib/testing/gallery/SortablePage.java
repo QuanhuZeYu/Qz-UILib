@@ -35,6 +35,13 @@ public final class SortablePage {
         root.add(example(context, theme, "响应网格", SceneSortable.Layout.GRID, true, true, false, false));
         root.add(example(context, theme, "多个列表与空接收区", SceneSortable.Layout.VERTICAL, true, false, false, true));
         root.add(scrolling(context, theme));
+        SceneNode transitions = GalleryStyle.grid(context, theme);
+        transitions.add(section(context, theme, "回弹让位过渡", SceneSortable.Layout.VERTICAL,
+                Collections.singletonList(group("列表", 1, 2, 3, 4)), true, false, false, false,
+                new SceneSortable.Transition(300, .34, 1.56, .64, 1)));
+        transitions.add(section(context, theme, "关闭让位过渡 · 保留落下动画", SceneSortable.Layout.VERTICAL,
+                Collections.singletonList(group("列表", 1, 2, 3, 4)), true, false, false, false, null));
+        root.add(transitions);
         root.add(GalleryStyle.label(context, () -> "Tab 到达条目，空格或 Enter 拾起，方向键选择插入位置，再次确认放下。Esc 取消，取消不会改变顺序。", theme, 14, true));
         return root;
     }
@@ -57,6 +64,12 @@ public final class SortablePage {
     private static SceneNode section(ScenePageContext context, ReadableSignal<SceneTheme> theme, String title,
             SceneSortable.Layout layout, List<SceneSortable.Group<String, Integer>> initial,
             boolean handles, boolean variable, boolean disabled, boolean scrolling) {
+        return section(context, theme, title, layout, initial, handles, variable, disabled, scrolling,
+                new SceneSortable.Transition(250, .25, 1, .5, 1));
+    }
+    private static SceneNode section(ScenePageContext context, ReadableSignal<SceneTheme> theme, String title,
+            SceneSortable.Layout layout, List<SceneSortable.Group<String, Integer>> initial,
+            boolean handles, boolean variable, boolean disabled, boolean scrolling, SceneSortable.Transition transition) {
         Signal<List<SceneSortable.Group<String, Integer>>> values = context.domain().signal(initial);
         Signal<String> result = context.domain().signal("拖动时只预览，放下后更新顺序。");
         Signal<Boolean> expanded = context.domain().signal(false);
@@ -75,28 +88,11 @@ public final class SortablePage {
             column.add(GalleryStyle.label(context, () -> empty(values.get(), containerKey) ? "拖到这里 · 空列表" : "按住条目或使用键盘排序", theme, 12, true));
             column.add(GalleryStyle.frame(items, theme));
             return new SceneSortable.Container(column, items, layout);
-        }, item -> {
-            SceneNode body = GalleryStyle.centeredRow().size(layout == SceneSortable.Layout.HORIZONTAL
-                    ? Size.fixed(variable ? 112 + item.get() % 3 * 36 : 140) : Size.fill(1), Size.natural()).padding(12).gap(10);
-            SceneNode grip = GalleryStyle.dragGrip(theme);
-            if (handles) body.add(grip);
-            SceneNode text = new SceneNode().size(Size.fill(1), Size.natural()).gap(5);
-            text.add(GalleryStyle.label(context, () -> "条目 " + item.get() + (disabled && item.get() == 3 ? " · 已禁用" : ""), theme, 15, false));
-            if (variable) {
-                SceneNode detail = GalleryStyle.label(context, () -> item.get() % 2 == 0 ? "不同尺寸的内容也按实际位置排序。" : "简短内容", theme, 12, true);
-                detail.bind(NodeBinding.value(() -> item.get() % 2 == 0 || expanded.get(), SceneNode::visible)); text.add(detail);
-            }
-            body.add(text);
-            if (handles && !scrolling && layout == SceneSortable.Layout.VERTICAL && !variable)
-                body.add(GalleryStyle.button(context, () -> "+", theme, () -> clicks.set(clicks.get() + 1)));
-            SceneNode surface = GalleryStyle.frame(body, theme).size(layout == SceneSortable.Layout.HORIZONTAL ? Size.natural() : Size.fill(1), Size.natural());
-            surface.bind(NodeBinding.value(() -> !(disabled && item.get() == 3), SceneNode::enabled));
-            return handles ? new SceneSortable.Row(surface, grip) : new SceneSortable.Row(surface);
-        }, item -> GalleryStyle.frame(GalleryStyle.label(context, () -> "条目 " + item.get() + " · 拖动中", theme, 15, false).padding(14), theme)
-                .size(Size.fixed(layout == SceneSortable.Layout.HORIZONTAL ? 150 : 220), Size.natural()), move -> {
+        }, item -> row(context, theme, item, layout, handles, variable, disabled, scrolling, expanded, clicks),
+                item -> row(context, theme, item, layout, handles, variable, disabled, scrolling, expanded, clicks).content, move -> {
             values.set(moved(values.get(), move));
             result.set("条目 " + move.key + " → " + move.containerKey + (move.beforeKey == null ? " 的末尾" : "，条目 " + move.beforeKey + " 之前"));
-        });
+        }, () -> new SceneSortable.Options<Integer, String>().transition(transition));
         board.gap(16); card.add(board);
         SceneNode actions = new SceneNode().axis(SceneNode.Axis.ROW).size(Size.fill(1), Size.natural()).gap(12);
         actions.add(GalleryStyle.button(context, () -> "重置顺序", theme, () -> { values.set(initial); result.set("已重置顺序"); }));
@@ -106,6 +102,26 @@ public final class SortablePage {
             actions.add(GalleryStyle.label(context, () -> "独立按钮点击：" + clicks.get(), theme, 13, true));
         card.add(actions);
         return GalleryStyle.frame(card, theme);
+    }
+    private static SceneSortable.Row row(ScenePageContext context, ReadableSignal<SceneTheme> theme, ReadableSignal<Integer> item,
+            SceneSortable.Layout layout, boolean handles, boolean variable, boolean disabled, boolean scrolling,
+            ReadableSignal<Boolean> expanded, Signal<Integer> clicks) {
+        SceneNode body = GalleryStyle.centeredRow().size(layout == SceneSortable.Layout.HORIZONTAL
+                ? Size.fixed(variable ? 112 + item.get() % 3 * 36 : 140) : Size.fill(1), Size.natural()).padding(12).gap(10);
+        SceneNode grip = GalleryStyle.dragGrip(theme);
+        if (handles) body.add(grip);
+        SceneNode text = new SceneNode().size(Size.fill(1), Size.natural()).gap(5);
+        text.add(GalleryStyle.label(context, () -> "条目 " + item.get() + (disabled && item.get() == 3 ? " · 已禁用" : ""), theme, 15, false));
+        if (variable) {
+            SceneNode detail = GalleryStyle.label(context, () -> item.get() % 2 == 0 ? "不同尺寸的内容也按实际位置排序。" : "简短内容", theme, 12, true);
+            detail.bind(NodeBinding.value(() -> item.get() % 2 == 0 || expanded.get(), SceneNode::visible)); text.add(detail);
+        }
+        body.add(text);
+        if (handles && !scrolling && layout == SceneSortable.Layout.VERTICAL && !variable)
+            body.add(GalleryStyle.button(context, () -> "+", theme, () -> clicks.set(clicks.get() + 1)));
+        SceneNode surface = GalleryStyle.frame(body, theme).size(layout == SceneSortable.Layout.HORIZONTAL ? Size.natural() : Size.fill(1), Size.natural());
+        surface.bind(NodeBinding.value(() -> !(disabled && item.get() == 3), SceneNode::enabled));
+        return handles ? new SceneSortable.Row(surface, grip) : new SceneSortable.Row(surface);
     }
     private static boolean empty(List<SceneSortable.Group<String, Integer>> groups, String key) {
         for (SceneSortable.Group<String, Integer> group : groups) if (Objects.equals(group.key, key)) return group.items.isEmpty();
