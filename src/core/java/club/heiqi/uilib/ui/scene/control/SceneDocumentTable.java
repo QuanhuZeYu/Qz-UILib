@@ -278,13 +278,26 @@ final class SceneDocumentTable implements SceneControl {
     }
 
     @Override
-    public boolean scroll(SceneNode node, ScenePointerEvent event, SceneGeometryView geometry) {
-        if (geometry.get(node) == null) return false;
-        int next = SceneControlViewport.scrolled(offset, maximum, event.delta, node.scrollStep());
-        if (next == offset) return false;
-        offset = next;
-        return true;
+    public SceneScrollViewport.Snapshot scrollViewport(SceneNode node, SceneNode.Axis axis, SceneGeometryView geometry) {
+        SceneGeometryView.Entry entry = geometry.get(node);
+        if (axis != SceneNode.Axis.ROW || entry == null) return null;
+        LayoutBox window = SceneControlPaint.inner(entry.box, node.padding());
+        return new SceneScrollViewport.Snapshot(window, entry.clip, offset, maximum, window.width);
     }
+    @Override
+    public int scrollByPixels(SceneNode node, SceneNode.Axis axis, int pixels, SceneGeometryView geometry) {
+        if (axis != SceneNode.Axis.ROW || geometry.get(node) == null) return 0;
+        int before = offset; offset = SceneControlViewport.moved(offset, maximum, pixels); return offset - before;
+    }
+    @Override
+    public SceneScrollResult scrollResult(SceneNode node, ScenePointerEvent event, SceneGeometryView geometry) {
+        return SceneScrollResult.moved(scrollByPixels(node, SceneNode.Axis.ROW,
+                SceneControlViewport.wheelPixels(event.delta, node.scrollStep()), geometry));
+    }
+    @Override
+    public boolean scroll(SceneNode node, ScenePointerEvent event, SceneGeometryView geometry) {
+            return scrollResult(node, event, geometry).consumed;
+        }
 
     /** 单元格聚合实际子内容宽度，不用fill声明掩盖不可拆分原子项的最小宽度。 */
     private static final class Cell implements SceneControl {

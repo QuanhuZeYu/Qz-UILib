@@ -7,6 +7,12 @@ import static club.heiqi.uilib.host.desktop.DesktopTestFrames.settle;
 import club.heiqi.uilib.testing.TestApplication;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.control.SceneButton;
+import club.heiqi.uilib.ui.scene.control.SceneScrollViewport;
+import club.heiqi.uilib.ui.scene.control.SceneScrollbar;
+import club.heiqi.uilib.ui.scene.control.SceneTextArea;
+import club.heiqi.uilib.ui.scene.control.SceneTextField;
+import club.heiqi.uilib.ui.scene.control.SceneDraggable;
+import club.heiqi.uilib.ui.scene.edit.SceneEditState;
 import club.heiqi.uilib.ui.scene.control.SceneScrollArea;
 import club.heiqi.uilib.ui.scene.control.SceneTheme;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
@@ -40,6 +46,13 @@ public final class DesktopScrollAreaVerification extends TestApplication {
         scenario("独立滚动条的动态视口资格", this::standalone);
         scenario("共享参考页按钮、动态内容与切页保留", this::gallery);
         scenario("首帧所属层滚动条可拖动与聚焦", this::layerFirstFrame);
+        scenario("专用编辑视口共用滚动条且端点不重排", this::editorViewport);
+        scenario("代码与表格内部视口共用滚动条", this::documentViewport);
+        scenario("样式期限不重排与悬停范围恢复", this::configurationProjection);
+        scenario("双轴拖动自动滚动独立推进", this::bothDragScroll);
+        scenario("旧节点入口轴资格与动态换轴", this::legacyAdapter);
+        scenario("视口端口拒绝跨运行时组合", this::runtimeIdentity);
+        scenario("两个滚动条同批分页只提交目标位置", this::multiplePages);
         scenario("无溢出强制轨道消费点击", this::forcedTrackClick);
     }
     private static final class Page {
@@ -421,6 +434,199 @@ public final class DesktopScrollAreaVerification extends TestApplication {
             in.point(w.width() - 4, w.height() / 2.0); wheel(w, in, entry.box.y < 0 ? 8 : -8);
         }
         throw new AssertionError("示例动作不能由页面滚动条显露：" + text);
+    }
+    private static SceneScrollViewport.Snapshot viewport(DesktopWindow w, SceneScrollViewport port) {
+        final SceneScrollViewport.Snapshot[] result = {null};
+        w.domain.execute(() -> result[0] = port.snapshot(geometry(w))); return result[0];
+    }
+    private static void dragBarToEnd(DesktopWindow w, DesktopTestInput in, SceneNode bar, boolean horizontal) {
+        LayoutBox box = geometry(w, bar).box;
+        point(w, in, box.x + 5, box.y + 5); press(w, in);
+        point(w, in, horizontal ? box.x + box.width + 50 : box.x + 5, horizontal ? box.y + 5 : box.y + box.height + 50);
+        release(w, in);
+    }
+    private void editorViewport() throws Exception {
+        for (boolean multiline : new boolean[] {true, false}) {
+            final SceneNode[] editor = {null}, bar = {null}; final SceneEditState[] state = {null}; final SceneScrollViewport[] port = {null};
+            final String text = multiline ? String.join("\n", java.util.Collections.nCopies(30, "正文与草稿保持原有领域语义"))
+                    : String.join("", java.util.Collections.nCopies(35, "宽文字"));
+            try (DesktopWindow w = DesktopWindow.openWithServices(output.resolve("editor-port-" + multiline + ".yaml"), false, services -> context -> {
+                state[0] = new SceneEditState(context.domain(), text, multiline ? SceneEditState.Mode.MULTI_LINE : SceneEditState.Mode.SINGLE_LINE);
+                editor[0] = multiline ? SceneTextArea.create(context, state[0], () -> SceneTheme.light(), () -> false, submission -> {})
+                        : SceneTextField.create(context, state[0], () -> SceneTheme.light(), () -> false, submission -> {});
+                editor[0].size(Size.fixed(320), Size.fixed(multiline ? 150 : 45));
+                port[0] = SceneScrollViewport.of(context, editor[0], multiline ? SceneNode.Axis.COLUMN : SceneNode.Axis.ROW);
+                bar[0] = SceneScrollbar.create(context, port[0], () -> new SceneScrollbar.Options().autoHide(false), () -> SceneTheme.light())
+                        .size(Size.fixed(multiline ? 11 : 320), Size.fixed(multiline ? 150 : 11));
+                context.mountOwned(new SceneNode().size(Size.fill(1), Size.fill(1)).padding(30)
+                        .axis(multiline ? SceneNode.Axis.ROW : SceneNode.Axis.COLUMN).add(editor[0]).add(bar[0]));
+            })) {
+                glfwSetWindowSize(w.handle(), 1000, 680); glfwSwapInterval(0); settle(w); DesktopTestInput in = new DesktopTestInput(w);
+                require(viewport(w, port[0]).maximum > 0 && !editor[0].scrollable(), "专用正文没有通过中性端口发布范围");
+                w.domain.execute(() -> { port[0].moveByPixels(-Integer.MAX_VALUE); w.page.runtime().focusRouter().request(w.page.runtime().captureMount(editor[0])); }); w.frame();
+                final SceneEditState.Snapshot[] before = {null}; w.domain.execute(() -> before[0] = state[0].snapshot().get());
+                float paintedStart = geometry(w, editor[0]).text.lines().get(0).x;
+                dragBarToEnd(w, in, bar[0], !multiline);
+                SceneScrollViewport.Snapshot atEnd = viewport(w, port[0]);
+                require(atEnd.offset == atEnd.maximum, "通用条未驱动专用正文末端");
+                if (!multiline) {
+                    float paintedEnd = geometry(w, editor[0]).text.lines().get(0).x;
+                    System.out.println("FIELD_PORT_PAINT before=" + paintedStart + " after=" + paintedEnd + " offset=" + atEnd.offset);
+                    require(paintedEnd == paintedStart - atEnd.offset, "端口移动没有更新单行正文共同投影");
+                }
+                w.domain.execute(() -> {
+                    require(state[0].snapshot().get().text.equals(text) && state[0].snapshot().get().caret == before[0].caret, "拖条改变草稿或光标");
+                    require(w.page.runtime().focusRouter().focused().get() == editor[0], "拖条夺走编辑焦点");
+                });
+                if (multiline) {
+                    in.moveTo(editor[0]); SceneGeometryView stable = geometry(w); wheel(w, in, -1);
+                    require(geometry(w) == stable, "字段端点保留消费仍重建共同几何");
+                }
+                save(w, "editor-port-" + multiline + ".png");
+            }
+        }
+    }
+    private void documentViewport() throws Exception {
+        for (boolean table : new boolean[] {false, true}) {
+            final club.heiqi.uilib.ui.scene.host.ScenePageContext[] context = {null}; final SceneNode[] document = {null}, bar = {null}; final SceneScrollViewport[] port = {null};
+            try (DesktopWindow w = DesktopWindow.openWithServices(output.resolve("document-port-" + table + ".yaml"), false, services -> ctx -> {
+                context[0] = ctx;
+                String wide = String.join("", java.util.Collections.nCopies(80, "unbreakable_"));
+                club.heiqi.uilib.ui.scene.text.DocumentContent.Block code = club.heiqi.uilib.ui.scene.text.DocumentContent.Block.code(
+                        club.heiqi.uilib.ui.scene.text.TextContent.plain(wide), "", 0, 0);
+                club.heiqi.uilib.ui.scene.text.DocumentContent.Block block = code;
+                if (table) {
+                    club.heiqi.uilib.ui.scene.text.TableContent.Cell cell = new club.heiqi.uilib.ui.scene.text.TableContent.Cell(
+                            java.util.Collections.singletonList(code), club.heiqi.uilib.ui.scene.text.TableContent.Alignment.DEFAULT, false, 0, 0);
+                    block = club.heiqi.uilib.ui.scene.text.DocumentContent.Block.table(new club.heiqi.uilib.ui.scene.text.TableContent(
+                            java.util.Collections.singletonList(new club.heiqi.uilib.ui.scene.text.TableContent.Row(java.util.Collections.singletonList(cell), 0, 0))), 0, 0);
+                }
+                final club.heiqi.uilib.ui.scene.text.DocumentContent content = new club.heiqi.uilib.ui.scene.text.DocumentContent(java.util.Collections.singletonList(block));
+                document[0] = club.heiqi.uilib.ui.scene.control.SceneDocument.create(ctx, () -> content, () -> SceneTheme.light(), null, link -> {})
+                        .size(Size.fixed(320), Size.natural());
+                ctx.mountOwned(new SceneNode().size(Size.fill(1), Size.fill(1)).padding(30).add(document[0]));
+            })) {
+                glfwSetWindowSize(w.handle(), 1000, 680); glfwSwapInterval(0); settle(w); DesktopTestInput in = new DesktopTestInput(w);
+                w.domain.execute(() -> {
+                    for (SceneGeometryView.Entry entry : geometry(w).ordered()) {
+                        SceneScrollViewport candidate = SceneScrollViewport.of(context[0], entry.node, SceneNode.Axis.ROW);
+                        SceneScrollViewport.Snapshot view = candidate.snapshot(geometry(w));
+                        if (view != null && view.maximum > 0) { port[0] = candidate; break; }
+                    }
+                    require(port[0] != null, "真实文档未发布内部横向视口");
+                    bar[0] = SceneScrollbar.create(context[0], port[0], () -> new SceneScrollbar.Options().autoHide(false), () -> SceneTheme.light())
+                            .size(Size.fixed(320), Size.fixed(11)); context[0].mountOwned(bar[0]);
+                }); w.frame(); dragBarToEnd(w, in, bar[0], true);
+                require(viewport(w, port[0]).offset == viewport(w, port[0]).maximum, "文档内部横向位置未由通用条驱动");
+                require(!port[0].node().scrollable(), "专用文档视口额外声明普通布局滚动");
+                save(w, "document-port-" + table + ".png");
+            }
+        }
+    }
+    private void configurationProjection() throws Exception {
+        Page page = new Page(SceneScrollArea.Axes.VERTICAL);
+        try (DesktopWindow w = open(page, "configuration-projection")) {
+            DesktopTestInput in = new DesktopTestInput(w); SceneGeometryView before = geometry(w);
+            w.domain.execute(() -> page.options.set(page.options.get().colors(0xffe2e8f0, 0xff64748b, 0xff2563eb).timing(50, 40))); w.frame();
+            require(geometry(w) == before, "仅颜色或期限变化重排内容");
+            w.domain.execute(() -> page.options.set(page.options.get().autoHide(true))); w.frame();
+            require(geometry(w) == before, "切换自动隐藏重排内容");
+            in.moveTo(page.area.node());
+            w.domain.execute(() -> page.options.set(page.options.get().axes(SceneScrollArea.Axes.NONE))); w.frame();
+            w.domain.execute(() -> page.options.set(page.options.get().axes(SceneScrollArea.Axes.VERTICAL))); w.frame();
+            advance(w, 200); require(thumbPainted(w), "范围恢复丢失仍在区域内的正式悬停事实");
+            w.domain.execute(() -> page.options.set(page.options.get().dimensions(16, 30, 3))); w.frame();
+            require(geometry(w, bar(page, SceneNode.Axis.COLUMN)).box.width == 16, "条几何变化没有正式重排");
+        }
+    }
+    private void bothDragScroll() throws Exception {
+        final SceneScrollArea.Area[] area = {null}; final SceneNode[] draggable = {null};
+        try (DesktopWindow w = DesktopWindow.openWithServices(output.resolve("both-drag-scroll.yaml"), false, services -> ctx -> {
+            draggable[0] = SceneDraggable.create(ctx, new SceneNode().size(Size.fixed(280), Size.fixed(180)).text("双轴拖动"), SceneDraggable.state(ctx.domain()));
+            SceneNode content = new SceneNode().size(Size.fixed(850), Size.fixed(850)).add(draggable[0]);
+            area[0] = SceneScrollArea.create(ctx, content, new SceneScrollArea.Options().axes(SceneScrollArea.Axes.BOTH).autoHide(false));
+            area[0].node().size(Size.fixed(360), Size.fixed(240));
+            ctx.mountOwned(new SceneNode().size(Size.fill(1), Size.fill(1)).padding(30).add(area[0].node()));
+        })) {
+            glfwSetWindowSize(w.handle(), 1000, 680); glfwSwapInterval(0); settle(w); DesktopTestInput in = new DesktopTestInput(w);
+            in.moveTo(draggable[0]); press(w, in); point(w, in, 385, 150); advance(w, 180);
+            int horizontal = geometry(w, area[0].viewport(SceneNode.Axis.ROW)).scrollOffset;
+            require(horizontal > 0 && geometry(w, area[0].viewport(SceneNode.Axis.COLUMN)).scrollOffset == 0, "水平边缘被内层纵轴遮住");
+            point(w, in, 385, 265); advance(w, 180);
+            int cornerX = geometry(w, area[0].viewport(SceneNode.Axis.ROW)).scrollOffset;
+            int cornerY = geometry(w, area[0].viewport(SceneNode.Axis.COLUMN)).scrollOffset;
+            System.out.println("SCROLL_BOTH_DRAG beforeX=" + horizontal + " cornerX=" + cornerX + " cornerY=" + cornerY);
+            require(cornerX > horizontal && cornerY > 0, "角落未独立推进双轴");
+            release(w, in); System.out.println("SCROLL_BOTH_DRAG horizontal=true cornerBoth=true");
+        }
+    }
+    private void legacyAdapter() throws Exception {
+        final Signal<SceneNode.Axis>[] axis = new Signal[1]; final Signal<SceneScrollArea.Options>[] policy = new Signal[1];
+        final SceneNode[] node = {null}, bar = {null};
+        try (DesktopWindow w = DesktopWindow.openWithServices(output.resolve("legacy-adapter.yaml"), false, services -> ctx -> {
+            axis[0] = ctx.domain().signal(SceneNode.Axis.COLUMN);
+            policy[0] = ctx.domain().signal(new SceneScrollArea.Options().axes(SceneScrollArea.Axes.BOTH).autoHide(false));
+            node[0] = new SceneNode().size(Size.fixed(320), Size.fixed(320)).scrollable(true)
+                    .bind(NodeBinding.value(axis[0], SceneNode::axis)).add(new SceneNode().size(Size.fixed(700), Size.fixed(700)));
+            bar[0] = SceneScrollbar.create(ctx, node[0], policy[0])
+                    .bind(NodeBinding.value(axis[0], (self, current) -> self.size(
+                            current == SceneNode.Axis.ROW ? Size.fixed(320) : Size.natural(),
+                            current == SceneNode.Axis.ROW ? Size.natural() : Size.fixed(320))));
+            ctx.mountOwned(new SceneNode().size(Size.fill(1), Size.fill(1)).padding(30).gap(10).add(node[0]).add(bar[0]));
+        })) {
+            glfwSetWindowSize(w.handle(), 1000, 680); glfwSwapInterval(0); settle(w); DesktopTestInput in = new DesktopTestInput(w);
+            require(bar[0].focusable(), "旧接口初始纵轴无资格");
+            w.domain.execute(() -> policy[0].set(policy[0].get().axes(SceneScrollArea.Axes.NONE))); w.frame();
+            require(!bar[0].focusable(), "旧入口axes NONE仍保留资格");
+            in.moveTo(bar[0]); wheel(w, in, -1); require(geometry(w, node[0]).scrollOffset == 0, "禁用轴仍通过条滚动来源");
+            w.domain.execute(() -> { axis[0].set(SceneNode.Axis.ROW); policy[0].set(policy[0].get().axes(SceneScrollArea.Axes.BOTH)); }); w.frame();
+            require(bar[0].focusable(), "普通Node入口换轴后永久失去视口");
+            require(geometry(w, bar[0]).box.height == 11, "等范围换轴没有更新自然条尺寸");
+            dragBarToEnd(w, in, bar[0], true);
+            require(geometry(w, node[0]).scrollOffset == geometry(w, node[0]).scrollMaximum, "换轴后拖条未使用当前轴");
+            System.out.println("SCROLL_LEGACY axesDisabled=true dynamicAxis=true");
+        }
+    }
+    private void runtimeIdentity() throws Exception {
+        final boolean[] rejected = {false}, mountRejected = {false};
+        try (DesktopWindow w = DesktopWindow.openWithServices(output.resolve("runtime-identity.yaml"), false, services -> ctx -> {
+            club.heiqi.uilib.ui.scene.runtime.SceneRuntime foreign = new club.heiqi.uilib.ui.scene.runtime.SceneRuntime(ctx.domain());
+            try {
+                SceneScrollViewport port = new SceneScrollViewport(foreign, new SceneNode().scrollable(true), SceneNode.Axis.COLUMN);
+                try { SceneScrollbar.create(ctx, port, () -> new SceneScrollbar.Options(), () -> SceneTheme.light()); }
+                catch (IllegalArgumentException expected) { rejected[0] = true; }
+                SceneNode local = SceneScrollbar.create(ctx, SceneScrollViewport.of(ctx, new SceneNode(), SceneNode.Axis.COLUMN),
+                        () -> new SceneScrollbar.Options(), () -> SceneTheme.light());
+                try { foreign.attach(null, local); }
+                catch (IllegalArgumentException expected) { mountRejected[0] = true; }
+                ctx.own(local::destroy);
+            } finally { foreign.close(); }
+            ctx.mountOwned(new SceneNode().size(Size.fill(1), Size.fill(1)).text("运行时边界"));
+        })) {
+            settle(w); require(rejected[0] && mountRejected[0], "异runtime端口或挂载未在所属边界拒绝");
+        }
+    }
+    private void multiplePages() throws Exception {
+        final SceneNode[] viewport = {null}, first = {null}, second = {null};
+        try (DesktopWindow w = DesktopWindow.openWithServices(output.resolve("multiple-pages.yaml"), false, services -> ctx -> {
+            viewport[0] = new SceneNode().size(Size.fixed(320), Size.fixed(180)).scrollable(true)
+                    .add(new SceneNode().size(Size.fixed(320), Size.fixed(900)));
+            first[0] = SceneScrollbar.create(ctx, viewport[0]).size(Size.fixed(11), Size.fixed(180));
+            second[0] = SceneScrollbar.create(ctx, viewport[0]).size(Size.fixed(11), Size.fixed(180));
+            ctx.mountOwned(new SceneNode().size(Size.fill(1), Size.fill(1)).axis(SceneNode.Axis.ROW).padding(30).gap(15)
+                    .add(viewport[0]).add(first[0]).add(second[0]));
+        })) {
+            glfwSetWindowSize(w.handle(), 1000, 680); glfwSwapInterval(0); settle(w); DesktopTestInput in = new DesktopTestInput(w);
+            for (SceneNode bar : new SceneNode[] {first[0], second[0]}) {
+                LayoutBox box = geometry(w, bar).box; in.enqueueAt(box.x + 5, box.y + box.height - 10);
+            }
+            w.frame();
+            // 两次正常轨道点击已入同批，下一次输入推进直接到有限页动画末端。
+            Thread.sleep(200); w.frame();
+            int actual = geometry(w, viewport[0]).scrollOffset;
+            System.out.println("SCROLL_MULTIPLE_PAGES offset=" + actual + " target=180");
+            require(actual == 180, "同批绝对位置被重复按旧几何累加");
+        }
     }
     private void save(DesktopWindow w, String name) throws Exception {
         settle(w); glClearColor(1, 1, 1, 1); glClear(GL_COLOR_BUFFER_BIT); w.fonts.beginPresentation(1_000_000);

@@ -9,11 +9,11 @@ final class SceneScrollVisibility {
     final Signal<Float> opacity;
     final Signal<Long> wake;
     private final SceneRuntime runtime;
-    private final ReadableSignal<SceneScrollArea.Options> source;
+    private final ReadableSignal<SceneScrollbar.Options> source;
     private boolean hovered, areaHovered, dragging;
     private long fadeAt;
 
-    SceneScrollVisibility(SceneRuntime runtime, ReadableSignal<SceneScrollArea.Options> source) {
+    SceneScrollVisibility(SceneRuntime runtime, ReadableSignal<SceneScrollbar.Options> source) {
         this.runtime = runtime; this.source = source;
         opacity = runtime.domain().signal(0f); wake = runtime.domain().signal(Long.MAX_VALUE);
     }
@@ -35,19 +35,21 @@ final class SceneScrollVisibility {
         if (active) activity(); else schedule();
     }
     private void schedule() {
-        SceneScrollArea.Options options = source.get();
+        SceneScrollbar.Options options = source.get();
         fadeAt = runtime.inputNanos() + options.hideDelayMillis * 1_000_000L;
         wake.set(options.autoHide && !hovered && !areaHovered && !dragging && opacity.get() > 0 ? fadeAt : Long.MAX_VALUE);
     }
     long next() { return source.get().autoHide ? wake.get() : Long.MAX_VALUE; }
     float alpha() { return source.get().autoHide ? opacity.get() : 1f; }
     void advance(long now) {
-        SceneScrollArea.Options options = source.get();
+        SceneScrollbar.Options options = source.get();
         if (!options.autoHide || hovered || areaHovered || dragging) { wake.set(Long.MAX_VALUE); return; }
         long elapsed = now - fadeAt;
         if (elapsed < 0) return;
         float value = options.fadeMillis == 0 ? 0 : Math.max(0f, 1f - (float) ((double) elapsed / (options.fadeMillis * 1_000_000L)));
         opacity.set(value); wake.set(value > 0 ? 0L : Long.MAX_VALUE);
     }
-    void reset() { hovered = false; areaHovered = false; dragging = false; opacity.set(0f); wake.set(Long.MAX_VALUE); }
+    // 范围暂时归零只结束时间线；悬停事实仍由正式绑定持有，恢复范围时继续消费。
+    void stop() { dragging = false; opacity.set(0f); wake.set(Long.MAX_VALUE); }
+    void close() { hovered = false; areaHovered = false; stop(); }
 }

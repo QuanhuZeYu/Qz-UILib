@@ -1,5 +1,8 @@
 package club.heiqi.uilib.ui.scene.runtime;
 
+import club.heiqi.uilib.ui.scene.control.SceneScrollResult;
+import club.heiqi.uilib.ui.scene.control.SceneScrollViewport;
+
 import club.heiqi.uilib.ui.reactive.Observation;
 import club.heiqi.uilib.ui.reactive.Owner;
 import club.heiqi.uilib.ui.reactive.ReactiveDomain;
@@ -756,7 +759,7 @@ public final class SceneRuntime implements AutoCloseable {
         if (changed) focusRouter.rangeChanged();
         focusRouter.prepareScopes();
         // 所属层资格必须消费本批输入几何；布局刚返回时尚无首帧层事实。
-        scrollObservers.publish(geometry, this::interactive, revision);
+        scrollObservers.publish(geometry, revision);
         pointerRouter.prepare(geometry);
     }
 
@@ -959,23 +962,24 @@ public final class SceneRuntime implements AutoCloseable {
         }
     }
 
-    boolean dispatchControlScroll(
+    SceneScrollResult dispatchControlScroll(
             SceneNode node,
             club.heiqi.uilib.ui.scene.input.ScenePointerEvent event,
             SceneGeometryView geometry) {
         command();
         if (!interactive(node) || node.control() == null || !node.control().scrollableContent())
-            return false;
-        boolean consumed;
+            return SceneScrollResult.IGNORED;
+        long previousGeometry = geometryRevision;
+        SceneScrollResult result;
         routing = true;
         try {
-            consumed = node.control().scroll(node, event, geometry);
+            result = node.control().scrollResult(node, event, geometry);
         } finally {
             routing = false;
         }
         // 滚动只更新视图位置；唯一分发负责发布同代几何，保留不变的字体与内容度量。
-        if (consumed) invalidateArrangement();
-        return consumed;
+        if (result.viewChanged && geometryRevision == previousGeometry) invalidateArrangement();
+        return result;
     }
 
     /** 已知逻辑目标的业务激活入口；物理输入应经帧管线的typed事件。 有物理按钮占位时吞掉，不能绕过已有手势；仍按当前挂载与输入范围检查目标。 */
@@ -1056,8 +1060,63 @@ public final class SceneRuntime implements AutoCloseable {
         Objects.requireNonNull(viewport, "viewport"); Objects.requireNonNull(changed, "changed");
         SceneGeometryView.Entry current = inputGeometryReady && inputGeometry != null && viewport.scrollable() && interactive(viewport)
                 ? inputGeometry.get(viewport) : null;
-        AutoCloseable observation = scrollObservers.observe(viewport, current, changed);
+        AutoCloseable observation = scrollObservers.observe(current,
+                geometry -> viewport.scrollable() && interactive(viewport) ? geometry.get(viewport) : null,
+                (left, right) -> left.scrollOffset == right.scrollOffset && left.scrollMaximum == right.scrollMaximum
+                        && left.box.width == right.box.width && left.box.height == right.box.height, changed);
         return () -> { domain.checkWrite(); observation.close(); };
+    }
+
+    /** 同批轴向内容事实，专用控件优先，普通Node继续消费原ScrollPosition。 */
+    public SceneScrollViewport.Snapshot scrollSnapshot(
+            SceneNode node, SceneNode.Axis axis, SceneGeometryView geometry) {
+        domain.checkAccess(); checkAlive();
+        if (geometry == null || !interactive(node)) return null;
+        SceneGeometryView.Entry entry = geometry.get(node);
+        if (entry == null) return null;
+        if (node.control() != null) {
+            SceneScrollViewport.Snapshot own = node.control().scrollViewport(node, axis, geometry);
+            if (own != null) return own;
+        }
+        if (!node.scrollable() || node.axis() != axis) return null;
+        int padding = node.padding();
+        club.heiqi.uilib.ui.scene.layout.LayoutBox contentWindow = new club.heiqi.uilib.ui.scene.layout.LayoutBox(
+                entry.box.x + padding, entry.box.y + padding, Math.max(0, entry.box.width - padding * 2), Math.max(0, entry.box.height - padding * 2));
+        return new SceneScrollViewport.Snapshot(contentWindow, entry.clip,
+                entry.scrollOffset, entry.scrollMaximum, axis == SceneNode.Axis.ROW ? entry.box.width : entry.box.height);
+    }
+
+    public AutoCloseable observeScroll(SceneScrollViewport viewport,
+            java.util.function.Consumer<SceneScrollViewport.Snapshot> changed) {
+        domain.checkWrite(); checkAlive();
+        AutoCloseable observation = scrollObservers.observe(inputGeometryReady ? viewport.snapshot(inputGeometry) : null,
+                viewport::snapshot, SceneScrollViewport.Snapshot::sameRange, changed);
+        return () -> { domain.checkWrite(); observation.close(); };
+    }
+
+    /** 绝对位置在原位置所有者处求差；一批内多个来源不重复消费旧Entry偏移。 */
+    public int scrollToPixels(SceneNode node, SceneNode.Axis axis, int offset) {
+        domain.checkWrite(); checkAlive();
+        SceneScrollViewport.Snapshot view = scrollSnapshot(node, axis, inputGeometry);
+        if (view == null) return 0;
+        boolean specialized = node.control() != null && node.control().scrollViewport(node, axis, inputGeometry) != null;
+        int current = specialized ? view.offset : scrollOffset(node);
+        return scrollByPixels(node, axis, Math.max(0, Math.min(view.maximum, offset)) - current);
+    }
+
+    /** 同一像素移动入口适配专用视口；变化只失效一次，不调用业务wheel动作。 */
+    public int scrollByPixels(SceneNode node, SceneNode.Axis axis, int pixels) {
+        domain.checkWrite(); checkAlive();
+        if (!interactive(node) || inputGeometry == null) return 0;
+        if (node.control() == null || node.control().scrollViewport(node, axis, inputGeometry) == null)
+            return node.axis() == axis ? scrollByPixels(node, pixels) : 0;
+        boolean previousRouting = routing;
+        int applied;
+        routing = true;
+        try { applied = node.control().scrollByPixels(node, axis, pixels, inputGeometry); }
+        finally { routing = previousRouting; }
+        if (applied != 0) invalidateArrangement();
+        return applied;
     }
 
     /** 控件的主动显露意图保持当前焦点；后续结算复用正式祖先显露和同一滚动位置。 */

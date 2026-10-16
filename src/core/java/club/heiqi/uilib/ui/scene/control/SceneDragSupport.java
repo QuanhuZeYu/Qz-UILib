@@ -91,19 +91,18 @@ final class SceneDragSupport {
                 (int) Math.max(0L, (long) entry.box.height - 2L * p));
     }
 
-    /** 只保存时间及亚像素余量；nearest 的窗口来自当前 clip，不把整块屏外容器当边缘。 */
+    /** 每轴只保存时间及亚像素余量；最近视口与窗口来自当前共同几何。 */
     static final class AutoScroll {
         private long last;
         private boolean sampled;
-        private double remainder;
-        private SceneNode previous;
-        private int direction;
-        void reset(long now) { last = now; sampled = true; remainder = 0; previous = null; direction = 0; }
+        private final AxisScroll horizontal = new AxisScroll(SceneNode.Axis.ROW);
+        private final AxisScroll vertical = new AxisScroll(SceneNode.Axis.COLUMN);
+        void reset(long now) { last = now; sampled = true; horizontal.reset(); vertical.reset(); }
         static final class Shift {
-            static final Shift NONE = new Shift(null, 0, 0);
-            final SceneNode scroller;
+            static final Shift NONE = new Shift(null, null, 0, 0);
+            final SceneNode xScroller, yScroller;
             final int x, y;
-            Shift(SceneNode scroller, int x, int y) { this.scroller = scroller; this.x = x; this.y = y; }
+            Shift(SceneNode xScroller, SceneNode yScroller, int x, int y) { this.xScroller = xScroller; this.yScroller = yScroller; this.x = x; this.y = y; }
         }
         Shift advance(SceneRuntime runtime, SceneNode source, SceneGeometryView geometry,
                 int x, int y, long now, boolean allowX, boolean allowY) {
@@ -112,60 +111,66 @@ final class SceneDragSupport {
         Shift advance(SceneRuntime runtime, SceneNode source, SceneGeometryView geometry,
                 int x, int y, long now, boolean allowX, boolean allowY, double speed) {
             long elapsed = sample(now);
-            if (source == null || !runtime.interactive(source) || speed == 0) { resetProgress(); return Shift.NONE; }
-            SceneNode scroller = nearestScroller(runtime, source, geometry.layerBoundary(source), allowX, allowY);
-            if (scroller == null) { resetProgress(); return Shift.NONE; }
-            return scrollViewport(runtime, scroller, geometry, x, y, elapsed, speed);
+            if (source == null || !runtime.interactive(source) || speed == 0) { horizontal.reset(); vertical.reset(); return Shift.NONE; }
+            int dx = horizontal.advance(runtime, source, geometry, x, y, elapsed, speed, allowX);
+            int dy = vertical.advance(runtime, source, geometry, x, y, elapsed, speed, allowY);
+            return dx == 0 && dy == 0 ? Shift.NONE : new Shift(horizontal.previous, vertical.previous, -dx, -dy);
         }
         private long sample(long now) {
             long elapsed = sampled ? Math.max(0L, Math.min(50_000_000L, now - last)) : 0;
-            sampled = true; last = now;
-            return elapsed;
+            sampled = true; last = now; return elapsed;
         }
-        private void resetProgress() { remainder = 0; previous = null; direction = 0; }
-        private SceneNode nearestScroller(SceneRuntime runtime, SceneNode source, SceneNode boundary, boolean allowX, boolean allowY) {
-            for (SceneNode ancestor = source; ancestor != null; ancestor = ancestor == boundary ? null : ancestor.parent()) {
-                // 原路径一旦失格即停止，不能穿过它继续找更远祖先。
-                if (!runtime.interactive(ancestor)) return ancestor;
-                boolean allowedAxis = ancestor.axis() == SceneNode.Axis.ROW ? allowX : allowY;
-                if (ancestor.scrollable() && allowedAxis) return ancestor;
+        private static final class AxisScroll {
+            private final SceneNode.Axis axis;
+            private double remainder;
+            private SceneNode previous;
+            private int direction;
+            AxisScroll(SceneNode.Axis axis) { this.axis = axis; }
+            void reset() { remainder = 0; previous = null; direction = 0; }
+            int advance(SceneRuntime runtime, SceneNode source, SceneGeometryView geometry,
+                    int x, int y, long elapsed, double speed, boolean allowed) {
+                SceneNode scroller = allowed ? nearest(runtime, source, geometry) : null;
+                if (scroller == null) { reset(); return 0; }
+                SceneScrollViewport.Snapshot view = runtime.scrollSnapshot(scroller, axis, geometry);
+                if (view == null) { reset(); return 0; }
+                LayoutBox window = view.box.intersect(geometry.viewport());
+                if (view.clip != null) window = window.intersect(view.clip);
+                double strength = strength(window, x, y);
+                return integrate(runtime, scroller, strength, elapsed, speed);
             }
-            return null;
-        }
-        private Shift scrollViewport(SceneRuntime runtime, SceneNode scroller, SceneGeometryView geometry,
-                                     int x, int y, long elapsed, double speed) {
-            if (!runtime.interactive(scroller)) return Shift.NONE;
-            SceneGeometryView.Entry entry = geometry.get(scroller);
-            if (entry == null) return Shift.NONE;
-            LayoutBox window = inner(entry).intersect(geometry.viewport());
-            if (entry.clip != null) window = window.intersect(entry.clip);
-            if (window.width == 0 || window.height == 0) return Shift.NONE;
-            boolean horizontal = scroller.axis() == SceneNode.Axis.ROW;
-            int cross = horizontal ? y : x, crossStart = horizontal ? window.y : window.x;
-            int crossSize = horizontal ? window.height : window.width;
-            if (cross < crossStart || (long) cross >= (long) crossStart + crossSize) return Shift.NONE;
-            double strength = edgeStrength(horizontal ? x : y, horizontal ? window.x : window.y,
-                    horizontal ? window.width : window.height);
-            int actual = integrate(runtime, scroller, strength, elapsed, speed);
-            return actual == 0 ? Shift.NONE : new Shift(scroller, horizontal ? -actual : 0, horizontal ? 0 : -actual);
+            private SceneNode nearest(SceneRuntime runtime, SceneNode source, SceneGeometryView geometry) {
+                SceneNode boundary = geometry.layerBoundary(source);
+                for (SceneNode node = source; node != null; node = node == boundary ? null : node.parent()) {
+                    if (!runtime.interactive(node)) return null;
+                    if (runtime.scrollSnapshot(node, axis, geometry) != null) return node;
+                }
+                return null;
+            }
+            private double strength(LayoutBox window, int x, int y) {
+                if (window.width == 0 || window.height == 0) return 0;
+                boolean horizontal = axis == SceneNode.Axis.ROW;
+                int cross = horizontal ? y : x, start = horizontal ? window.y : window.x, size = horizontal ? window.height : window.width;
+                if (cross < start || (long) cross >= (long) start + size) return 0;
+                return edgeStrength(horizontal ? x : y, horizontal ? window.x : window.y, horizontal ? window.width : window.height);
+            }
+            private int integrate(SceneRuntime runtime, SceneNode scroller, double strength, long elapsed, double speed) {
+                int sign = Double.compare(strength, 0);
+                if (scroller != previous || sign != direction) remainder = 0;
+                previous = scroller; direction = sign;
+                if (sign == 0) return 0;
+                double pixels = remainder + strength * 720.0 * speed * elapsed / 1_000_000_000.0;
+                int whole = (int) pixels;
+                remainder = pixels - whole;
+                int actual = runtime.scrollByPixels(scroller, axis, whole);
+                if (actual != whole) remainder = 0;
+                return actual;
+            }
         }
         private static double edgeStrength(int point, int start, int size) {
             double edge = Math.min(48.0, size / 3.0);
             if (point < start + edge) return -Math.min(1.0, (start + edge - point) / edge);
             if (point > start + size - edge) return Math.min(1.0, (point - start - size + edge) / edge);
             return 0;
-        }
-        private int integrate(SceneRuntime runtime, SceneNode scroller, double strength, long elapsed, double speed) {
-            int sign = Double.compare(strength, 0);
-            if (scroller != previous || sign != direction) remainder = 0;
-            previous = scroller; direction = sign;
-            if (sign == 0) return 0;
-            double pixels = remainder + strength * 720.0 * speed * elapsed / 1_000_000_000.0;
-            int whole = (int) pixels;
-            remainder = pixels - whole;
-            int actual = runtime.scrollByPixels(scroller, whole);
-            if (actual != whole) remainder = 0;
-            return actual;
         }
     }
 }

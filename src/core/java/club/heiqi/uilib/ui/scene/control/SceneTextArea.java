@@ -258,22 +258,32 @@ public final class SceneTextArea {
         }
 
         @Override
+        public SceneScrollViewport.Snapshot scrollViewport(SceneNode node, SceneNode.Axis axis, SceneGeometryView geometry) {
+            SceneGeometryView.Entry entry = geometry.get(node);
+            if (entry == null || source == null) return null;
+            LayoutBox window = SceneControlPaint.inner(entry.box, node.padding());
+            boolean horizontal = axis == SceneNode.Axis.ROW;
+            return new SceneScrollViewport.Snapshot(window, entry.clip, horizontal ? offsetX : offsetY,
+                    horizontal ? maximumX(source, width) : maximumY(source, height), horizontal ? width : height);
+        }
+        @Override
+        public int scrollByPixels(SceneNode node, SceneNode.Axis axis, int pixels, SceneGeometryView geometry) {
+            SceneScrollViewport.Snapshot viewport = scrollViewport(node, axis, geometry);
+            if (viewport == null) return 0;
+            int next = SceneControlViewport.moved(viewport.offset, viewport.maximum, pixels);
+            if (axis == SceneNode.Axis.ROW) offsetX = next; else offsetY = next;
+            return next - viewport.offset;
+        }
+        @Override
+        public SceneScrollResult scrollResult(SceneNode node, ScenePointerEvent event, SceneGeometryView geometry) {
+            int step = source == null || source.lines().isEmpty() ? 0 : (int) Math.ceil(source.lines().get(0).lineHeight);
+            int moved = scrollByPixels(node, SceneNode.Axis.COLUMN, SceneControlViewport.wheelPixels(event.delta, step), geometry);
+            // 字段端点继续保留消费，只有正文实际位移才需要排列。
+            return moved == 0 ? SceneScrollResult.CONSUMED : SceneScrollResult.CHANGED;
+        }
+        @Override
         public boolean scroll(SceneNode node, ScenePointerEvent event, SceneGeometryView geometry) {
-            if (source != null) {
-                int step =
-                        source.lines().isEmpty()
-                                ? 0
-                                : (int) Math.ceil(source.lines().get(0).lineHeight);
-                offsetY =
-                        (int)
-                                Math.max(
-                                        0L,
-                                        Math.min(
-                                                maximumY(source, height),
-                                                (long) offsetY - (long) event.delta * step));
-            }
-            // 端点也消费，避免查看字段时意外滚动外页；核心 dispatch 负责几何失效。
-            return true;
+            return scrollResult(node, event, geometry).consumed;
         }
 
         @Override

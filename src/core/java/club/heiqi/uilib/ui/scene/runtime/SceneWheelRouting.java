@@ -31,17 +31,22 @@ final class SceneWheelRouting {
         if (start == null) return;
         SceneNode boundary = geometry.layerBoundary(start);
         MountHandle initial = runtime.captureMount(start);
+        MountHandle consumer = consume(start, boundary, event, geometry);
+        remember(consumer == null ? initial : consumer, geometry, boundary, now, originX, originY);
+    }
+
+    /** 当前消费路径只向祖先；选区/联系保留与事件派发分开，回调失败仍保持旧联系已清理。 */
+    private MountHandle consume(SceneNode start, SceneNode boundary, ScenePointerEvent event, SceneGeometryView geometry) {
         for (SceneNode node = start; node != null; node = node == boundary ? null : node.parent()) {
             if (!runtime.interactive(node) || !inside(geometry.get(node), event.x, event.y)) continue;
             // 控件可在回调中改变资格或树；消费前记录挂载，不能把迟到结果附到新挂载上。
             MountHandle consumer = runtime.captureMount(node);
-            if (runtime.dispatchControlScroll(node, event, geometry) || runtime.tryDispatchScroll(node, event.delta)) {
-                remember(consumer, geometry, boundary, now, originX, originY);
-                return;
+            if (runtime.dispatchControlScroll(node, event, geometry).consumed || runtime.tryDispatchScroll(node, event.delta)) {
+                return consumer;
             }
         }
-        // 到达整条祖先链末端仍保留起点，反向不重新掉回刚移入指针的子区。
-        remember(initial, geometry, boundary, now, originX, originY);
+        // 未有祖先消费时由调用者保留原起点，反向不重新掉回子区。
+        return null;
     }
 
     private boolean continuation(SceneNode hit, SceneGeometryView geometry) {

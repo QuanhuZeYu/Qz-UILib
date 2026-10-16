@@ -302,8 +302,8 @@ public final class SceneDraggable {
             DragGeometry(SceneNode node, SceneGeometryView geometry, SceneDragSupport.AutoScroll.Shift shift,
                          LayoutBox wrapper, LayoutBox content) {
                 this.node = node; this.geometry = geometry; this.shift = shift; options = options();
-                boolean sourceMoves = shift.scroller != null && SceneDragSupport.within(node, shift.scroller);
-                scrollX = sourceMoves ? shift.x : 0; scrollY = sourceMoves ? shift.y : 0;
+                scrollX = shift.xScroller != null && SceneDragSupport.within(node, shift.xScroller) ? shift.x : 0;
+                scrollY = shift.yScroller != null && SceneDragSupport.within(node, shift.yScroller) ? shift.y : 0;
                 baseX = SceneDragSupport.integer((long) wrapper.x + node.padding() + scrollX);
                 baseY = SceneDragSupport.integer((long) wrapper.y + node.padding() + scrollY);
                 SceneGeometryView.Entry overlay = options.overlay == null ? null : geometry.get(layer);
@@ -332,9 +332,8 @@ public final class SceneDraggable {
                 SceneGeometryView.Entry parent = node.parent() == null ? null : geometry.get(node.parent());
                 if (parent == null) return geometry.viewport();
                 LayoutBox inner = SceneDragSupport.inner(parent);
-                boolean moves = shift.scroller != null && shift.scroller != node.parent();
-                return new LayoutBox(SceneDragSupport.integer((long) inner.x + (moves ? scrollX : 0)),
-                        SceneDragSupport.integer((long) inner.y + (moves ? scrollY : 0)), inner.width, inner.height);
+                return new LayoutBox(SceneDragSupport.integer((long) inner.x + (shift.xScroller != node.parent() ? scrollX : 0)),
+                        SceneDragSupport.integer((long) inner.y + (shift.yScroller != node.parent() ? scrollY : 0)), inner.width, inner.height);
             }
             private int constrainedDelta(int raw, boolean allowed, int grid, int base, int size, LayoutBox bounds, boolean horizontal) {
                 if (!allowed) return 0;

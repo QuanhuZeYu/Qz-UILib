@@ -182,6 +182,18 @@ public interface SceneControl {
         return false;
     }
 
+    /** 专用内容视口的同批事实；缺省null由普通Node滚动适配。位置仍归控件。 */
+    default SceneScrollViewport.Snapshot scrollViewport(SceneNode node, SceneNode.Axis axis, SceneGeometryView geometry) { return null; }
+
+    /** 专用内容像素移动；返回实际位移，runtime统一按变化失效共同几何。 */
+    default int scrollByPixels(SceneNode node, SceneNode.Axis axis, int pixels, SceneGeometryView geometry) { return 0; }
+
+    /** 正式结果区分消费与变化；旧扩展的boolean按既有“消费即变化”语义接入。 */
+    default SceneScrollResult scrollResult(SceneNode node,
+            club.heiqi.uilib.ui.scene.input.ScenePointerEvent event, SceneGeometryView geometry) {
+        return scroll(node, event, geometry) ? SceneScrollResult.CHANGED : SceneScrollResult.IGNORED;
+    }
+
     /** 同一受控输入分发；消费后不同时滚动外层容器。 */
     default boolean scroll(
             SceneNode node,

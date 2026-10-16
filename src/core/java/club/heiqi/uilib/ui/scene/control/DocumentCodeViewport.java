@@ -71,16 +71,29 @@ final class DocumentCodeViewport implements SceneControl {
     }
 
     @Override
-    public boolean scroll(SceneNode node, ScenePointerEvent event, SceneGeometryView geometry) {
-        SceneGeometryView.Entry viewport = geometry.get(node);
-        if (viewport == null || node.children().isEmpty()) return false;
+    public SceneScrollViewport.Snapshot scrollViewport(SceneNode node, SceneNode.Axis axis, SceneGeometryView geometry) {
+        if (axis != SceneNode.Axis.ROW || geometry.get(node) == null || node.children().isEmpty()) return null;
         SceneGeometryView.Entry content = geometry.get(node.children().get(0));
-        if (content == null) return false;
-        int width = Math.max(0, viewport.box.width - node.padding() * 2);
-        int maximum = Math.max(0, content.box.width - width);
-        int next = SceneControlViewport.scrolled(offset, maximum, event.delta, node.scrollStep());
-        if (next == offset) return false;
-        offset = next;
-        return true;
+        if (content == null) return null;
+        SceneGeometryView.Entry entry = geometry.get(node);
+        LayoutBox window = SceneControlPaint.inner(entry.box, node.padding());
+        return new SceneScrollViewport.Snapshot(window, entry.clip, offset, Math.max(0, content.box.width - window.width), window.width);
     }
+    @Override
+    public int scrollByPixels(SceneNode node, SceneNode.Axis axis, int pixels, SceneGeometryView geometry) {
+        SceneScrollViewport.Snapshot viewport = scrollViewport(node, axis, geometry);
+        if (viewport == null) return 0;
+        int before = offset;
+        offset = SceneControlViewport.moved(offset, viewport.maximum, pixels);
+        return offset - before;
+    }
+    @Override
+    public SceneScrollResult scrollResult(SceneNode node, ScenePointerEvent event, SceneGeometryView geometry) {
+        return SceneScrollResult.moved(scrollByPixels(node, SceneNode.Axis.ROW,
+                SceneControlViewport.wheelPixels(event.delta, node.scrollStep()), geometry));
+    }
+    @Override
+    public boolean scroll(SceneNode node, ScenePointerEvent event, SceneGeometryView geometry) {
+            return scrollResult(node, event, geometry).consumed;
+        }
 }

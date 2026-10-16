@@ -12,7 +12,6 @@ import club.heiqi.uilib.ui.scene.layout.MeasuredSize;
 import club.heiqi.uilib.ui.scene.layout.SceneChildMeasurer;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometryView;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
-import club.heiqi.uilib.ui.scene.paint.PaintCommand;
 import club.heiqi.uilib.ui.scene.paint.PaintPlanBuilder;
 import club.heiqi.uilib.ui.scene.runtime.BindingActivation;
 import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
@@ -23,84 +22,131 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
-/** 既有单轴视口的可组合滚动条；布局与业务生命周期仍由父节点持有。 */
+/** 某轴内容视口的可组合滚动条；消费中性端口，不接管内容位置或领域显露。 */
 public final class SceneScrollbar {
+    /** 条自身的不可变策略；布局、绘制与时间分别在挂载期投影。 */
+    public static final class Options {
+        boolean autoHide = true, clickOnTrack = true, forceVisible;
+        int thickness = 11, minimumThumb = 25, inset = 2;
+        long hideDelayMillis = 675, fadeMillis = 200;
+        Integer trackColor, thumbColor, activeColor;
+        public Options() {}
+        private Options(Options from) {
+            autoHide = from.autoHide; clickOnTrack = from.clickOnTrack; forceVisible = from.forceVisible;
+            thickness = from.thickness; minimumThumb = from.minimumThumb; inset = from.inset;
+            hideDelayMillis = from.hideDelayMillis; fadeMillis = from.fadeMillis;
+            trackColor = from.trackColor; thumbColor = from.thumbColor; activeColor = from.activeColor;
+        }
+        public Options autoHide(boolean value) { Options next = new Options(this); next.autoHide = value; return next; }
+        public Options clickOnTrack(boolean value) { Options next = new Options(this); next.clickOnTrack = value; return next; }
+        public Options forceVisible(boolean value) { Options next = new Options(this); next.forceVisible = value; return next; }
+        public Options dimensions(int thickness, int minimumThumb, int inset) {
+            if (inset < 0 || minimumThumb <= 0 || (long) thickness <= (long) inset * 2)
+                throw new IllegalArgumentException("滚动条宽度、最小滑块及内缩无效");
+            Options next = new Options(this); next.thickness = thickness; next.minimumThumb = minimumThumb; next.inset = inset; return next;
+        }
+        public Options timing(long hideDelayMillis, long fadeMillis) {
+            if (hideDelayMillis < 0 || fadeMillis < 0 || hideDelayMillis > Long.MAX_VALUE / 4_000_000L || fadeMillis > Long.MAX_VALUE / 4_000_000L)
+                throw new IllegalArgumentException("滚动条隐藏时间无效");
+            Options next = new Options(this); next.hideDelayMillis = hideDelayMillis; next.fadeMillis = fadeMillis; return next;
+        }
+        public Options colors(int track, int thumb, int active) {
+            Options next = new Options(this); next.trackColor = track; next.thumbColor = thumb; next.activeColor = active; return next;
+        }
+    }
     private SceneScrollbar() {}
     public static SceneNode create(ScenePageContext context, SceneNode viewport) {
         Objects.requireNonNull(viewport, "viewport");
-        SceneScrollArea.Options options = new SceneScrollArea.Options().axes(
-                viewport.axis() == SceneNode.Axis.ROW ? SceneScrollArea.Axes.HORIZONTAL : SceneScrollArea.Axes.VERTICAL);
-        return create(context, viewport, () -> options);
+        return create(context, SceneScrollViewport.of(context, viewport), () -> new Options(), context.theme());
     }
+    /** 既有Area配置入口作为适配保留；独立条不依赖容器配置。 */
     public static SceneNode create(ScenePageContext context, SceneNode viewport, ReadableSignal<SceneScrollArea.Options> options) {
         return create(context, viewport, options, context.theme());
     }
-    public static SceneNode create(ScenePageContext context, SceneNode viewport, ReadableSignal<SceneScrollArea.Options> options,
-            ReadableSignal<SceneTheme> theme) {
-        Objects.requireNonNull(context, "context").domain().checkWrite();
-        return new Control(context, Objects.requireNonNull(viewport, "viewport"), Objects.requireNonNull(options, "options"),
-                Objects.requireNonNull(theme, "theme")).createNode();
+    public static SceneNode create(ScenePageContext context, SceneNode viewport, ReadableSignal<SceneScrollArea.Options> options, ReadableSignal<SceneTheme> theme) {
+        return create(context, SceneScrollViewport.of(context, viewport).enabled(() -> options.get().includes(viewport.axis())),
+                () -> options.get().bar(viewport.axis()), theme);
     }
-    static final class Control implements SceneControl {
+    public static SceneNode create(ScenePageContext context, SceneScrollViewport viewport, ReadableSignal<Options> options, ReadableSignal<SceneTheme> theme) {
+        return create(context, viewport, options, theme, null);
+    }
+    static SceneNode create(ScenePageContext context, SceneScrollViewport viewport, ReadableSignal<Options> options,
+            ReadableSignal<SceneTheme> theme, SceneNode hoverScope) {
+        Objects.requireNonNull(context, "context").domain().checkWrite();
+        if (!Objects.requireNonNull(viewport, "viewport").belongsTo(context.runtime()))
+            throw new IllegalArgumentException("滚动条与视口必须属于同一运行时");
+        Control control = new Control(context, viewport, Objects.requireNonNull(theme, "theme"));
+        SceneNode node = control.createNode(Objects.requireNonNull(options, "options"));
+        if (hoverScope != null) hoverScope.bind(NodeBinding.hoverWithin(0, (self, inside) -> control.visibility.areaHover(inside)));
+        return node;
+    }
+    private static final class Control implements SceneControl {
         private final SceneRuntime runtime;
-        private final SceneNode viewport;
-        private final ReadableSignal<SceneScrollArea.Options> source;
+        private final SceneScrollViewport viewport;
         private final ReadableSignal<SceneTheme> theme;
-        final SceneScrollVisibility visibility;
-        private final Signal<Boolean> paging, hasRange;
+        private final Signal<Options> configuration;
+        private final Signal<Integer> thickness;
+        private final Signal<SceneNode.Axis> axis;
+        private final Signal<Boolean> hasRange, present;
+        private final SceneScrollVisibility visibility;
+        private final SceneScrollPage page;
         private final Object target = new Object(), trackTarget = new Object();
         private boolean dragging;
         private int grab;
-        private Page page;
-        Control(ScenePageContext context, SceneNode viewport, ReadableSignal<SceneScrollArea.Options> source, ReadableSignal<SceneTheme> theme) {
-            runtime = context.runtime(); this.viewport = viewport; this.source = source; this.theme = theme;
-            visibility = new SceneScrollVisibility(runtime, source); paging = context.domain().signal(false);
-            hasRange = context.domain().signal(false);
+        Control(ScenePageContext context, SceneScrollViewport viewport, ReadableSignal<SceneTheme> theme) {
+            runtime = context.runtime(); this.viewport = viewport; this.theme = theme;
+            configuration = context.domain().signal(new Options()); thickness = context.domain().signal(11);
+            axis = context.domain().signal(viewport.axis());
+            hasRange = context.domain().signal(false); present = context.domain().signal(false);
+            visibility = new SceneScrollVisibility(runtime, configuration); page = new SceneScrollPage(context.domain());
         }
-        SceneNode createNode() {
-            SceneNode node = new SceneNode().focusable(true).clickFocus(false).control(this);
+        SceneNode createNode(ReadableSignal<Options> source) {
+            SceneNode node = new SceneNode().clickFocus(false).control(this);
             node.bind((active, self, owner) -> {
-                owner.own(active.observeScroll(viewport, entry -> {
-                    hasRange.set(entry != null && entry.scrollMaximum > 0);
-                    if (entry == null) reset(); else visibility.activity();
-                }));
-                owner.own(this::reset);
+                // 声明可在挂载前移动；真正的所属关系在激活点核验，同runtime重挂载仍合法。
+                if (!viewport.belongsTo(active)) throw new IllegalArgumentException("滚动条挂载运行时与视口不同");
+                owner.own(viewport.observe(this::viewportChanged));
+                owner.own(() -> { stop(); visibility.close(); });
                 return new BindingActivation() { public void refresh() {} public void close() {} };
             });
             node.bind(NodeBinding.hoverWithin(0, (self, inside) -> visibility.hover(inside)));
-            // 仅观察配置：透明度更新不能重启隐藏期限，见实际淡出回归。
-            node.bind(SceneControlBindings.declaration(source, (self, value) -> visibility.configure()));
-            node.bind(NodeBinding.value(() -> source.get().axes.includes(viewport.axis()) && hasRange.get(), SceneNode::focusable));
+            node.bind(SceneControlBindings.declaration(source, (self, value) -> configure(Objects.requireNonNull(value, "scroll options"))));
+            node.bind(NodeBinding.value(hasRange, SceneNode::focusable));
             return node;
         }
-        private SceneScrollArea.Options options() { return Objects.requireNonNull(source.get(), "scroll options"); }
-        private boolean horizontal() { return viewport.axis() == SceneNode.Axis.ROW; }
-        private boolean available() { return options().axes.includes(viewport.axis()) && viewport.scrollable() && runtime.interactive(viewport); }
-        private Metrics metrics(SceneNode node, SceneGeometryView geometry) {
-            return new Metrics(geometry.get(node), geometry.get(viewport), horizontal(), options());
+        private void configure(Options next) {
+            Options previous = configuration.get(); configuration.set(next); thickness.set(next.thickness);
+            if (previous.autoHide != next.autoHide || previous.hideDelayMillis != next.hideDelayMillis || previous.fadeMillis != next.fadeMillis)
+                visibility.configure();
+            if (!next.clickOnTrack) page.stop();
         }
-        @Override public List<ReadableSignal<?>> measureDependencies(SceneNode node) { return Collections.singletonList(source); }
-        @Override public List<ReadableSignal<?>> paintDependencies(SceneNode node) { return Arrays.asList(source, theme, visibility.opacity); }
+        private void viewportChanged(SceneScrollViewport.Snapshot next) {
+            axis.set(viewport.axis()); present.set(next != null); hasRange.set(next != null && next.maximum > 0);
+            if (hasRange.get()) visibility.activity(); else stop();
+        }
+        private SceneScrollbarGeometry geometry(SceneNode node, SceneGeometryView geometry) {
+            return new SceneScrollbarGeometry(geometry.get(node), viewport.snapshot(geometry), viewport.axis(), configuration.get());
+        }
+        @Override public List<ReadableSignal<?>> measureDependencies(SceneNode node) { return Arrays.asList(thickness, axis); }
+        @Override public List<ReadableSignal<?>> paintDependencies(SceneNode node) { return Arrays.asList(configuration, theme, visibility.opacity); }
         @Override public MeasuredSize measure(SceneNode node, Constraints body, SceneTextMeasurer text) {
-            return horizontal() ? new MeasuredSize(0, options().thickness) : new MeasuredSize(options().thickness, 0);
+            return axis.get() == SceneNode.Axis.ROW ? new MeasuredSize(0, thickness.get()) : new MeasuredSize(thickness.get(), 0);
         }
         @Override public ChildPlacements arrange(SceneNode node, LayoutBox box, SceneChildMeasurer children) { return new ChildPlacements(Collections.emptyList()); }
         @Override public boolean passiveHover() { return true; }
         @Override public boolean capturesPointer() { return true; }
         @Override public Object pointerTarget(SceneNode node, SceneGeometryView geometry, int x, int y) {
-            Metrics current = metrics(node, geometry);
-            if (!available() || !current.trackVisible() || !current.contains(x, y)) return null;
-            // 强制轨道也占据自己的输入区域，无溢出时只消费点击，不伪造可拖滑块。
+            SceneScrollbarGeometry current = geometry(node, geometry);
+            if (!current.contains(x, y)) return null;
             return current.scrollable() ? target : trackTarget;
         }
         @Override public boolean pointerTargetValid(SceneNode node, Object identity) {
-            if (!available()) return false;
-            if (identity == target) return hasRange.get();
-            return identity == trackTarget && (hasRange.get() || options().forceVisible.includes(viewport.axis()));
+            if (!present.get() || !runtime.interactive(viewport.node())) return false;
+            return identity == target ? hasRange.get() : identity == trackTarget && (hasRange.get() || configuration.get().forceVisible);
         }
         @Override public boolean cancelCaptureOnEscape(SceneNode node) { return true; }
         @Override public void pointer(SceneNode node, ScenePointerEvent event, SceneGeometryView geometry) {
-            Metrics current = metrics(node, geometry);
+            SceneScrollbarGeometry current = geometry(node, geometry);
             switch (event.kind) {
                 case DOWN: begin(current, event); break;
                 case MOVE: move(current, event); break;
@@ -108,126 +154,42 @@ public final class SceneScrollbar {
                 default: break;
             }
         }
-        private void begin(Metrics current, ScenePointerEvent event) {
-            stopPage();
+        private void begin(SceneScrollbarGeometry current, ScenePointerEvent event) {
+            page.stop();
             if (!current.scrollable()) return;
-            visibility.activity();
-            int coordinate = horizontal() ? event.x : event.y;
-            if (coordinate >= current.thumbStart && coordinate < current.thumbStart + current.thumbLength) {
-                dragging = true; grab = coordinate - current.thumbStart; visibility.drag(true);
-            } else if (options().clickOnTrack) {
-                int direction = coordinate < current.thumbStart ? -1 : 1;
-                int destination = (int) Math.max(0L, Math.min(current.maximum, (long) current.offset + (long) direction * current.viewportLength));
-                page = new Page(runtime.inputNanos(), current.offset, destination); paging.set(true);
-            }
+            visibility.activity(); int coordinate = current.coordinate(event.x, event.y);
+            if (current.onThumb(coordinate)) {
+                dragging = true; grab = current.grab(coordinate); visibility.drag(true);
+            } else if (configuration.get().clickOnTrack) page.begin(current.view, current.direction(coordinate), runtime.inputNanos());
         }
-        private void move(Metrics current, ScenePointerEvent event) {
+        private void move(SceneScrollbarGeometry current, ScenePointerEvent event) {
             if (!dragging) return;
             if (!current.scrollable()) { endDrag(); return; }
-            int coordinate = horizontal() ? event.x : event.y;
-            int offset = current.offsetAt((long) coordinate - grab - current.trackStart);
-            runtime.scrollByPixels(viewport, offset - runtime.scrollOffset(viewport));
-            visibility.activity();
+            viewport.moveToPixels(current.offset(current.coordinate(event.x, event.y), grab)); visibility.activity();
         }
         private void endDrag() { dragging = false; grab = 0; visibility.drag(false); }
-        private void stopPage() { page = null; paging.set(false); }
-        private void reset() { dragging = false; grab = 0; stopPage(); visibility.reset(); }
-        @Override public void captureLost(SceneNode node) { endDrag(); stopPage(); }
-        @Override public long nextInputNanos(SceneNode node) { return paging.get() ? 0 : visibility.next(); }
+        private void stop() { dragging = false; grab = 0; page.stop(); visibility.stop(); }
+        @Override public void captureLost(SceneNode node) { endDrag(); page.stop(); }
+        @Override public long nextInputNanos(SceneNode node) { return page.active.get() ? 0 : visibility.next(); }
         @Override public void inputFrame(SceneNode node, SceneGeometryView geometry, long now) {
-            if (!runtime.interactive(node) || !available() || !metrics(node, geometry).scrollable()) { reset(); return; }
-            if (!options().clickOnTrack) stopPage();
-            if (page != null) advancePage(now);
-            visibility.advance(now);
+            SceneScrollViewport.Snapshot view = viewport.snapshot(geometry);
+            if (!runtime.interactive(node) || view == null || view.maximum == 0) { stop(); return; }
+            page.advance(viewport, view, now); visibility.advance(now);
         }
-        private void advancePage(long now) {
-            Page current = page;
-            double progress = Math.max(0, Math.min(1, (double) (now - current.started) / 160_000_000L));
-            int position = (int) Math.round(current.from + (current.to - (double) current.from) * (1 - Math.pow(1 - progress, 3)));
-            runtime.scrollByPixels(viewport, position - runtime.scrollOffset(viewport));
-            if (progress >= 1) stopPage();
-        }
-        @Override public void inputFrameCancelled(SceneNode node) { reset(); }
+        @Override public void inputFrameCancelled(SceneNode node) { stop(); }
         @Override public boolean scrollableContent() { return true; }
-        @Override public boolean scroll(SceneNode node, ScenePointerEvent event, SceneGeometryView geometry) {
-            if (!available()) return false;
-            stopPage();
-            long delta = -(long) event.delta * viewport.scrollStep();
-            return runtime.scrollByPixels(viewport, (int) Math.max(Integer.MIN_VALUE, Math.min(Integer.MAX_VALUE, delta))) != 0;
+        @Override public SceneScrollResult scrollResult(SceneNode node, ScenePointerEvent event, SceneGeometryView geometry) {
+            page.stop();
+            return SceneScrollResult.moved(viewport.moveByPixels(SceneControlViewport.wheelPixels(event.delta, viewport.node().scrollStep())));
         }
         @Override public boolean edit(SceneNode node, SceneEditEvent event, SceneGeometryView geometry) {
-            if (event.command == null || !available()) return false;
-            Metrics current = metrics(node, geometry);
-            int delta;
-            switch (event.command) {
-                case LEFT: if (!horizontal()) return false; delta = -viewport.scrollStep(); break;
-                case RIGHT: if (!horizontal()) return false; delta = viewport.scrollStep(); break;
-                case UP: if (horizontal()) return false; delta = -viewport.scrollStep(); break;
-                case DOWN: if (horizontal()) return false; delta = viewport.scrollStep(); break;
-                case PAGE_UP: delta = -current.viewportLength; break;
-                case PAGE_DOWN: delta = current.viewportLength; break;
-                case HOME: case DOCUMENT_HOME: delta = -current.offset; break;
-                case END: case DOCUMENT_END: delta = current.maximum - current.offset; break;
-                default: return false;
-            }
-            stopPage(); runtime.scrollByPixels(viewport, delta); visibility.activity(); return true;
+            Integer delta = geometry(node, geometry).command(event.command, viewport.node().scrollStep());
+            if (delta == null) return false;
+            page.stop(); viewport.moveByPixels(delta); visibility.activity(); return true;
         }
         @Override public void paint(SceneNode node, SceneGeometryView geometry, PaintPlanBuilder target) {
-            Metrics current = metrics(node, geometry);
-            if (!available() || !current.trackVisible()) return;
-            SceneScrollArea.Options options = options(); SceneTheme style = theme.get();
-            int track = options.trackColor == null ? 0 : options.trackColor;
-            target.add(PaintCommand.rect(current.track, current.clip, track));
-            if (!current.scrollable()) return;
             boolean active = dragging || runtime.pointerRouter().passiveHovered(geometry) == node || runtime.focusRouter().focused().get() == node;
-            int color = active ? (options.activeColor == null ? style.focus : options.activeColor)
-                    : (options.thumbColor == null ? (style.textStyle.color & 0x00ffffff) | 0x80000000 : options.thumbColor);
-            float opacity = active ? 1f : visibility.alpha();
-            int alpha = Math.round((color >>> 24) * opacity);
-            rounded(target, current.thumb, current.clip, (color & 0x00ffffff) | alpha << 24);
-        }
-    }
-    private static final class Page {
-        final long started;
-        final int from, to;
-        Page(long started, int from, int to) { this.started = started; this.from = from; this.to = to; }
-    }
-    /** 同一纯几何值同时服务 paint、hit、抓取点和端点映射。 */
-    private static final class Metrics {
-        final LayoutBox track, thumb, clip;
-        final int offset, maximum, viewportLength, trackStart, thumbStart, thumbLength, travel;
-        final boolean forced;
-        Metrics(SceneGeometryView.Entry bar, SceneGeometryView.Entry viewport, boolean horizontal, SceneScrollArea.Options options) {
-            track = bar == null ? new LayoutBox(0, 0, 0, 0) : bar.box;
-            clip = bar == null ? null : bar.clip;
-            offset = viewport == null ? 0 : viewport.scrollOffset; maximum = viewport == null ? 0 : viewport.scrollMaximum;
-            viewportLength = viewport == null ? 0 : horizontal ? viewport.box.width : viewport.box.height;
-            trackStart = (horizontal ? track.x : track.y) + options.inset;
-            int length = Math.max(0, (horizontal ? track.width : track.height) - options.inset * 2);
-            thumbLength = maximum == 0 ? 0 : Math.min(length, Math.max(options.minimumThumb,
-                    (int) ((long) length * viewportLength / ((long) viewportLength + maximum))));
-            travel = length - thumbLength;
-            thumbStart = trackStart + (maximum == 0 ? 0 : (int) Math.round((double) offset * travel / maximum));
-            int cross = Math.max(0, (horizontal ? track.height : track.width) - options.inset * 2);
-            thumb = horizontal ? new LayoutBox(thumbStart, track.y + options.inset, thumbLength, cross)
-                    : new LayoutBox(track.x + options.inset, thumbStart, cross, thumbLength);
-            forced = options.forceVisible.includes(horizontal ? SceneNode.Axis.ROW : SceneNode.Axis.COLUMN);
-        }
-        boolean scrollable() { return maximum > 0 && viewportLength > 0 && thumbLength > 0 && thumb.width > 0 && thumb.height > 0; }
-        boolean trackVisible() { return track.width > 0 && track.height > 0 && (maximum > 0 || forced); }
-        boolean contains(int x, int y) { return track.contains(x, y) && (clip == null || clip.contains(x, y)); }
-        int offsetAt(long position) { return travel <= 0 ? offset : (int) Math.round(Math.max(0d, Math.min(travel, (double) position)) * maximum / travel); }
-    }
-    /** 圆角只组合正式矩形命令，所有 backend 继续消费同一载荷。 */
-    private static void rounded(PaintPlanBuilder target, LayoutBox box, LayoutBox clip, int color) {
-        if ((color >>> 24) == 0 || box.width == 0 || box.height == 0) return;
-        int radius = Math.min(3, Math.min(box.width, box.height) / 2);
-        target.add(PaintCommand.rect(new LayoutBox(box.x, box.y + radius, box.width, box.height - radius * 2), clip, color));
-        for (int y = 0; y < radius; y++) {
-            double dy = radius - y - .5;
-            int inset = (int) Math.ceil(radius - Math.sqrt(radius * radius - dy * dy));
-            target.add(PaintCommand.rect(new LayoutBox(box.x + inset, box.y + y, box.width - inset * 2, 1), clip, color));
-            target.add(PaintCommand.rect(new LayoutBox(box.x + inset, box.y + box.height - y - 1, box.width - inset * 2, 1), clip, color));
+            SceneScrollbarPaint.paint(geometry(node, geometry), configuration.get(), theme.get(), active, visibility.alpha(), target);
         }
     }
 }

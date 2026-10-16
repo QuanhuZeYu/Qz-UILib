@@ -105,7 +105,7 @@ public final class SceneTextField {
         private TextLayout source, presented;
         private Snapshot presentation;
         private int width = -1;
-        private int offset;
+        private int offset, paintedOffset;
         private boolean reveal;
         private SceneCaretBoundary boundary;
         private final Signal<Boolean> viewChanged;
@@ -207,8 +207,11 @@ public final class SceneTextField {
                     nextOffset = (int) Math.ceil(x - Math.max(0, innerWidth - 1));
                 nextOffset = Math.max(0, Math.min(nextOffset, maximum));
             }
-            if (changed || offset != nextOffset || width != innerWidth)
+            // 端口可在两次排版之间移动offset；呈现缓存必须对照已绘制位置，而非当前权威位置。
+            if (changed || paintedOffset != nextOffset || width != innerWidth) {
                 presented = translate(full, nextOffset);
+                paintedOffset = nextOffset;
+            }
             source = full;
             width = innerWidth;
             offset = nextOffset;
@@ -217,6 +220,20 @@ public final class SceneTextField {
             return presented;
         }
 
+        @Override
+        public SceneScrollViewport.Snapshot scrollViewport(SceneNode node, SceneNode.Axis axis, SceneGeometryView geometry) {
+            SceneGeometryView.Entry entry = geometry.get(node);
+            if (axis != SceneNode.Axis.ROW || source == null || entry == null) return null;
+            LayoutBox window = SceneControlPaint.inner(entry.box, node.padding());
+            return new SceneScrollViewport.Snapshot(window, entry.clip, offset,
+                    Math.max(0, source.width - Math.max(0, width - 1)), width);
+        }
+        @Override
+        public int scrollByPixels(SceneNode node, SceneNode.Axis axis, int pixels, SceneGeometryView geometry) {
+            SceneScrollViewport.Snapshot viewport = scrollViewport(node, axis, geometry);
+            if (viewport == null) return 0;
+            int before = offset; offset = SceneControlViewport.moved(offset, viewport.maximum, pixels); return offset - before;
+        }
         @Override
         public boolean capturesPointer() {
             return true;
