@@ -20,10 +20,12 @@ import org.lwjgl.util.freetype.FT_GlyphSlot;
 import org.lwjgl.util.freetype.FT_Size_Metrics;
 import org.lwjgl.util.freetype.FreeType;
 import org.lwjgl.util.harfbuzz.HarfBuzz;
+import org.lwjgl.util.harfbuzz.OpenType;
 import org.lwjgl.util.harfbuzz.hb_glyph_info_t;
 import org.lwjgl.util.harfbuzz.hb_glyph_position_t;
 
 import java.nio.ByteBuffer;
+import java.nio.IntBuffer;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -133,7 +135,7 @@ public final class NativeFontFace implements FontFace {
             if (font == 0 || font == HarfBuzz.hb_font_get_empty())
                 throw new IllegalStateException("Cannot create HarfBuzz font");
             HarfBuzz.hb_ft_font_set_load_flags(
-                    font, FreeType.FT_LOAD_DEFAULT | FreeType.FT_LOAD_COLOR);
+                    font, FreeType.FT_LOAD_COLOR | FreeType.FT_LOAD_BITMAP_METRICS_ONLY);
         } catch (RuntimeException | Error failure) {
             try {
                 close();
@@ -152,6 +154,57 @@ public final class NativeFontFace implements FontFace {
     public FontMetrics metrics() {
         checkOpen();
         return metrics;
+    }
+
+    @Override
+    public boolean supportsScript(String script) {
+        checkOpen();
+        Objects.requireNonNull(script, "script");
+        int hbScript = HarfBuzz.hb_script_from_string(script);
+        if (hbScript == HarfBuzz.HB_SCRIPT_INVALID) return false;
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            IntBuffer count = stack.ints(OpenType.HB_OT_MAX_TAGS_PER_SCRIPT);
+            IntBuffer tags = stack.mallocInt(OpenType.HB_OT_MAX_TAGS_PER_SCRIPT);
+            OpenType.hb_ot_tags_from_script_and_language(
+                    hbScript, HarfBuzz.hb_language_from_string("und"), count, tags, null, null);
+            IntBuffer index = stack.mallocInt(1);
+            long actualFace = HarfBuzz.hb_font_get_face(font);
+            for (int i = 0; i < count.get(0); i++) {
+                int tag = tags.get(i);
+                // 必须命中实际脚本记录；DFLT 回退或 cmap 非空不能证明复杂脚本布局能力。
+                if (tag != OpenType.HB_OT_TAG_DEFAULT_SCRIPT
+                        && (OpenType.hb_ot_layout_table_find_script(
+                                        actualFace, OpenType.HB_OT_TAG_GSUB, tag, index)
+                                || OpenType.hb_ot_layout_table_find_script(
+                                        actualFace, OpenType.HB_OT_TAG_GPOS, tag, index))) return true;
+            }
+            return false;
+        }
+    }
+
+    @Override
+    public boolean hasColorGlyph(int glyphId) {
+        checkOpen();
+        // 稳定替代也查询 .notdef；数学端口的正 glyph ID 限制不适用于呈现事实。
+        if (glyphId < 0 || glyphId >= face.num_glyphs())
+            throw new IllegalArgumentException("Invalid glyph ID");
+        if ((face.face_flags() & FreeType.FT_FACE_FLAG_COLOR) == 0) return false;
+        // 只读取当前实际 strike 的格式和尺寸，禁止解码 bitmap 像素或执行 FT_Render_Glyph。
+        NativeFontService.check(
+                FreeType.FT_Load_Glyph(
+                        face, glyphId, FreeType.FT_LOAD_COLOR | FreeType.FT_LOAD_BITMAP_METRICS_ONLY),
+                "FT_Load_Glyph color facts");
+        FT_GlyphSlot slot = face.glyph();
+        if (slot.format() == FreeType.FT_GLYPH_FORMAT_BITMAP)
+            return slot.bitmap().pixel_mode() == FreeType.FT_PIXEL_MODE_BGRA
+                    && slot.bitmap().width() > 0
+                    && slot.bitmap().rows() > 0;
+        // 当前 FT_Render_Glyph 管线可呈现 COLR v0；SVG/COLR v1 不能仅凭全局 color 标记冒充支持。
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            return FreeType.FT_Get_Color_Glyph_Layer(
+                    face, glyphId, stack.mallocInt(1), stack.mallocInt(1),
+                    org.lwjgl.util.freetype.FT_LayerIterator.calloc(stack));
+        }
     }
 
     /** 墨迹的保守像素界，用于需求裁剪；不执行FT_Render_Glyph或生成像素缓存。 */
@@ -180,7 +233,7 @@ public final class NativeFontFace implements FontFace {
             throw new IllegalArgumentException("Invalid glyph ID");
         NativeFontService.check(
                 FreeType.FT_Load_Glyph(
-                        face, glyphId, FreeType.FT_LOAD_DEFAULT | FreeType.FT_LOAD_COLOR),
+                        face, glyphId, FreeType.FT_LOAD_COLOR | FreeType.FT_LOAD_BITMAP_METRICS_ONLY),
                 "FT_Load_Glyph bounds");
         FT_GlyphSlot slot = face.glyph();
         if (slot.format() == FreeType.FT_GLYPH_FORMAT_BITMAP) {
@@ -208,7 +261,7 @@ public final class NativeFontFace implements FontFace {
         checkGlyph(glyphId);
         NativeFontService.check(
                 FreeType.FT_Load_Glyph(
-                        face, glyphId, FreeType.FT_LOAD_DEFAULT | FreeType.FT_LOAD_COLOR),
+                        face, glyphId, FreeType.FT_LOAD_COLOR | FreeType.FT_LOAD_BITMAP_METRICS_ONLY),
                 "FT_Load_Glyph outline bounds");
         FT_GlyphSlot slot = face.glyph();
         if (slot.format() != FreeType.FT_GLYPH_FORMAT_OUTLINE

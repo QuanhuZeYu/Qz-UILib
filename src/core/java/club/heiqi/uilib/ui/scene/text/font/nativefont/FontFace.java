@@ -10,6 +10,16 @@ public interface FontFace extends AutoCloseable {
 
     int glyphIndex(int codePoint);
 
+    /** 实际 face 的脚本布局能力；不以 cmap/来源提示代替。未知后端保守返回 false，仍须核验完整范围的 shape。 */
+    default boolean supportsScript(String script) {
+        return false;
+    }
+
+    /** 同一实际 glyph 的彩色呈现事实；只读格式/布局数据，不光栅、不生成或复制像素。 */
+    default boolean hasColorGlyph(int glyphId) {
+        return false;
+    }
+
     ShapeRun shape(
             String text,
             int start,

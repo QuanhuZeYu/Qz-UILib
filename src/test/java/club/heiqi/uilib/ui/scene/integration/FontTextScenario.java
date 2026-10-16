@@ -13,6 +13,8 @@ import club.heiqi.uilib.ui.scene.runtime.ScenePresentation;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometryView;
 import club.heiqi.uilib.testing.TestResources;
 import club.heiqi.uilib.host.font.freetype.LwjglFontEngine;
+import club.heiqi.uilib.host.client.font.vanilla.VanillaTextService;
+import club.heiqi.uilib.ui.scene.text.RasterSampling;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.ShapedGlyph;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.ShapeDirection;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.ShapeContext;
@@ -38,6 +40,8 @@ import club.heiqi.uilib.ui.scene.text.TextPolicy;
 import club.heiqi.uilib.ui.scene.text.TextStyle;
 import club.heiqi.uilib.ui.scene.text.font.FontSource;
 import club.heiqi.uilib.ui.scene.text.font.FontTextService;
+import club.heiqi.uilib.ui.scene.text.font.glyph.AsyncGlyphRasterizer;
+import club.heiqi.uilib.ui.scene.text.font.glyph.GlyphKey;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.GlyphBitmap;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.FontFace;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.FontSession;
@@ -651,6 +655,194 @@ public final class FontTextScenario extends TestApplication {
         }
     }
 
+    /** 审计反例使用随包文件经过真实 resolver；计数代理只观察生产调用，不替换 FT/HB 行为。 */
+    private void systemCandidateCapabilities() throws Exception {
+        java.nio.file.Path directory = Paths.get(root, "src/core/resources/assets/qz_uilib/fonts/noto");
+        FontSource arabic = FontRealStyleScenario.family(directory.resolve("NotoSansArabic.ttf"), 31);
+        FontSource emoji = FontRealStyleScenario.family(directory.resolve("NotoColorEmoji.ttf"), 31);
+        CountingEngine engine = new CountingEngine();
+        try (FontTextService fonts = new FontTextService(Arrays.asList(arabic, emoji), engine, 4, 8, 4096);
+                FontSession independent = new LwjglFontEngine().openSession()) {
+            TextStyle system = new TextStyle("default", 32, -1);
+            TextPolicy rtl = policy(TextPolicy.Direction.RTL, TextPolicy.Wrap.NONE, "ar");
+            TextLayout joined = fonts.layout("ببب", system, 1000, rtl);
+            List<TextLayout.Glyph> actual = glyphs(joined);
+            require(joined.diagnostics().isEmpty() && actual.stream().noneMatch(g -> g.replacement),
+                    "实际系统 Arabic 被来源标记排除");
+            try (FontFace face = actual.get(0).source.openFace(independent, 32)) {
+                List<ShapedGlyph> expected = face.shape("ببب", ShapeDirection.RTL, "ar");
+                int isolated = face.shape("ب", ShapeDirection.RTL, "ar").get(0).glyphId;
+                require(face.supportsScript("Arab") && !face.supportsScript("Deva")
+                                && expected.size() == actual.size()
+                                && expected.stream().anyMatch(g -> g.glyphId != isolated),
+                        "实际 Arabic 脚本记录或连接事实无效");
+                for (int i = 0; i < expected.size(); i++)
+                    require(expected.get(i).glyphId == actual.get(i).glyphId
+                                    && expected.get(i).xAdvance == actual.get(i).xAdvance,
+                            "系统 Arabic 匹配结果未复用实际 HB glyph/advance");
+            }
+            TextLayout color = fonts.layout("👩‍💻", system, 1000, TextPolicy.SINGLE_LINE);
+            List<TextLayout.Glyph> colored = glyphs(color);
+            require(color.diagnostics().isEmpty() && colored.size() == 1
+                            && colored.get(0).color && !colored.get(0).replacement,
+                    "系统 ZWJ 未选中单一实际彩色 glyph");
+            TextLayout.Glyph selected = colored.get(0);
+            try (FontFace face = selected.source.openFace(independent, selected.size)) {
+                List<ShapedGlyph> expected = face.shape("👩‍💻", ShapeDirection.LTR, "und");
+                require(expected.size() == 1 && expected.get(0).glyphId == selected.glyphId
+                                && face.hasColorGlyph(selected.glyphId)
+                                && !face.hasColorGlyph(0),
+                        "实际 ZWJ 颜色事实或逐 glyph 边界错误");
+            }
+            // 来源谎称脚本和彩色也必须被实际能力拒绝，不能只以 cmap 或非 .notdef 成功。
+            FontSource mislabeled = FontSource.file("incorrect-hints", 31,
+                    Paths.get(root, "src/core/resources/assets/qz_uilib/fonts/unifont/unifont-16.0.04.otf"),
+                    0, true, Collections.singleton("Arab"));
+            TextStyle falseScript = new TextStyle("explicit", 32, -1, Collections.singletonList(mislabeled));
+            TextLayout rejectedArabic = fonts.layout("ببب", falseScript, 1000, rtl);
+            require(glyphs(rejectedArabic).stream().allMatch(g -> g.replacement),
+                    "缺少脚本布局的 cmap 候选冒充成功");
+            FontSource monochrome = FontSource.file("incorrect-color", 31,
+                    directory.resolve("NotoEmoji.ttf"), 0, true, Collections.<String>emptySet());
+            TextStyle falseColor = new TextStyle("explicit", 32, -1, Collections.singletonList(monochrome));
+            TextLayout rejectedColor = fonts.layout("👩‍💻", falseColor, 1000, TextPolicy.SINGLE_LINE);
+            require(glyphs(rejectedColor).stream().allMatch(g -> g.replacement),
+                    "实际单色 ZWJ 被错误声明成彩色成功");
+            TextStyle ordered = new TextStyle("explicit", 32, -1, Arrays.asList(mislabeled, arabic));
+            TextLayout fallback = fonts.layout("ببب", ordered, 1000, rtl);
+            require(glyphs(fallback).stream().noneMatch(g -> g.replacement)
+                            && glyphs(fallback).get(0).source.metadata().family.equals(arabic.metadata().family),
+                    "较早无脚本能力候选阻断了同列表后续实际候选");
+            TextStyle colorFirst = new TextStyle("explicit", 32, -1, Arrays.asList(emoji, monochrome));
+            TextStyle textFirst = new TextStyle("explicit", 32, -1, Arrays.asList(monochrome, emoji));
+            for (TextStyle order : new TextStyle[] {colorFirst, textFirst}) {
+                for (String raw : new String[] {"☺︎", "☺"})
+                    require(glyphs(fonts.layout(raw, order, 1000, TextPolicy.SINGLE_LINE)).stream()
+                                    .allMatch(g -> !g.color && !g.replacement),
+                            "系统候选 VS15/默认文字被彩色来源污染");
+                for (String raw : new String[] {"☺️", "😀", "👩‍💻"})
+                    require(glyphs(fonts.layout(raw, order, 1000, TextPolicy.SINGLE_LINE)).stream()
+                                    .allMatch(g -> g.color && !g.replacement),
+                            "系统候选 VS16/默认 emoji 没有实际颜色资格");
+            }
+            TextLayout unsupported = fonts.layout("😀‍😀", colorFirst, 1000, TextPolicy.SINGLE_LINE);
+            require(glyphs(unsupported).stream().allMatch(g -> g.replacement),
+                    "未整合的非 RGI 序列被拆开冒充成功");
+            TextStyle empty = new TextStyle("explicit", 32, -1, Collections.<FontSource>emptyList());
+            boolean noFonts = false;
+            try {
+                fonts.layout("ببب", empty, 1000, rtl);
+            } catch (IllegalStateException expected) {
+                noFonts = true;
+            }
+            require(noFonts, "显式空候选列表追加了隐藏字体");
+            long oldGeneration = joined.generation;
+            FontSource next = FontRealStyleScenario.family(directory.resolve("NotoSansArabic.ttf"), 32);
+            fonts.reload(Collections.singletonList(next));
+            TextLayout renewed = fonts.layout("ببب", system, 1000, rtl);
+            require(renewed.generation > oldGeneration
+                            && glyphs(renewed).stream().allMatch(g -> g.source.revision == 32 && !g.replacement)
+                            && actual.stream().allMatch(g -> g.source.revision == 31),
+                    "实际字体换代污染新旧匹配/计划身份");
+            require(engine.shapes > 0 && engine.rasters == 0,
+                    "冷 layout/匹配/缺字/换代路径执行了实际 rasterize: " + engine.rasters);
+            System.out.println("SYSTEM_FACTS Arabic=" + actual.stream().map(g -> g.glyphId)
+                    .collect(java.util.stream.Collectors.toList()) + " ZWJ=" + selected.glyphId
+                    + " actualFace=" + selected.source + " coldLayoutRasterize=" + engine.rasters);
+            // 后续像素必须由现有预算 worker 使用同一个 source/glyph 生成，与能力查询独立取证。
+            AsyncGlyphRasterizer worker = new AsyncGlyphRasterizer(
+                    new AsyncGlyphRasterizer.Budget(8, 8, 8, 1024 * 1024, 4, 32 * 1024 * 1024, 8, 96),
+                    new LwjglFontEngine());
+            try {
+                GlyphKey key = GlyphKey.of(selected);
+                worker.request(key);
+                long deadline = System.nanoTime() + 10000000000L;
+                GlyphBitmap bitmap;
+                while ((bitmap = worker.peek(key)) == null) {
+                    require(System.nanoTime() < deadline && worker.failures().isEmpty()
+                                    && worker.workerFailure() == null, "同 identity 的后台光栅失败");
+                    Thread.yield();
+                }
+                int visible = 0, chromatic = 0;
+                byte[] pixels = bitmap.pixels();
+                for (int i = 0; i < pixels.length; i += 4) {
+                    if ((pixels[i + 3] & 255) == 0) continue;
+                    visible++;
+                    if (pixels[i] != pixels[i + 1] || pixels[i + 1] != pixels[i + 2]) chromatic++;
+                }
+                require(bitmap.color && visible > 0 && chromatic > 0, "后台实际彩色像素为空");
+                System.out.println("SYSTEM_ASYNC key=" + key + " visiblePixels=" + visible
+                        + " chromaticPixels=" + chromatic + " rasterized=" + worker.stats().rasterized);
+            } finally {
+                worker.close();
+                require(worker.awaitClose(10000), "系统候选 worker 未释放");
+            }
+        }
+    }
+
+    /** 同一系统文件不因 scripts 提示缺失而拆开必要连接范围；正式 §k/§r 使用逻辑首样式。 */
+    private void systemObfuscationRanges() throws Exception {
+        java.nio.file.Path path = Paths.get(root, "src/core/resources/assets/qz_uilib/fonts/noto/NotoSansArabic.ttf");
+        FontSource system = FontRealStyleScenario.family(path, 33);
+        FontSource declared = FontSource.file("declared-arabic", 33, path, 0, false, Collections.singleton("Arab"));
+        for (FontSource source : new FontSource[] {system, declared}) {
+            CountingEngine engine = new CountingEngine();
+            try (FontTextService fonts = new FontTextService(Collections.singletonList(source), engine, 4, 8, 4096)) {
+                VanillaTextService vanilla = new VanillaTextService(fonts);
+                VanillaTextService.Settings settings =
+                        new VanillaTextService.Settings(32, 32, 32, true, false, new int[32]);
+                for (String raw : new String[] {"§kببب", "§kب§rبب", "§kبـب", "§kب§rـب", "§kـ§rبب", "§kبب§rـ"}) {
+                    TextLayout original = vanilla.layout(raw, settings, -1, 1000, TextPolicy.SINGLE_LINE);
+                    TextLayout painted = vanilla.sample(raw, settings, -1, 1000, TextPolicy.SINGLE_LINE,
+                            RasterSampling.LOGICAL, 3, 1);
+                    List<TextLayout.Glyph> before = glyphs(original), after = glyphs(painted);
+                    require(before.stream().noneMatch(g -> g.replacement) && before.size() > 1,
+                            "系统混淆反例未触达真实 Arabic 连接结果");
+                    require(after.size() == 1 && after.get(0).logicalStart == 0
+                                    && after.get(0).logicalEnd == original.logicalText.length()
+                                    && after.get(0).sourceStart == before.stream().mapToInt(g -> g.sourceStart).min().getAsInt()
+                                    && after.get(0).sourceEnd == before.stream().mapToInt(g -> g.sourceEnd).max().getAsInt()
+                                    && painted.advanceWidth == original.advanceWidth
+                                    && painted.advanceHeight == original.advanceHeight
+                                    && painted.logicalText.equals(original.logicalText),
+                            "系统候选全量/部分混淆拆开必要范围或改变来源/度量: " + raw);
+                    boolean partial = raw.contains("§r");
+                    require(painted.diagnostics().stream().anyMatch(
+                                    d -> d.kind == TextLayout.Diagnostic.Kind.STYLE_COALESCED) == partial,
+                            "系统必要范围没有按逻辑首样式裁决并诊断: " + raw);
+                    System.out.println("SYSTEM_OBFUSCATION source=" + source + " raw=" + raw
+                            + " original=" + before.stream().map(g -> g.glyphId + "@" + g.logicalStart + ":" + g.logicalEnd)
+                                    .collect(java.util.stream.Collectors.toList())
+                            + " painted=" + after.stream().map(g -> g.glyphId + "@" + g.logicalStart + ":" + g.logicalEnd)
+                                    .collect(java.util.stream.Collectors.toList())
+                            + " coalesced=" + partial);
+                }
+                TextLayout original = vanilla.layout("ب§kبب", settings, -1, 1000, TextPolicy.SINGLE_LINE);
+                TextLayout retained = vanilla.sample("ب§kبب", settings, -1, 1000, TextPolicy.SINGLE_LINE,
+                        RasterSampling.LOGICAL, 3, 1);
+                List<TextLayout.Glyph> before = glyphs(original), after = glyphs(retained);
+                require(before.size() == after.size() && retained.diagnostics().stream().anyMatch(
+                                d -> d.kind == TextLayout.Diagnostic.Kind.STYLE_COALESCED),
+                        "必要范围逻辑首不混淆时没有完整保留并诊断");
+                for (int i = 0; i < before.size(); i++)
+                    require(before.get(i).glyphId == after.get(i).glyphId
+                                    && before.get(i).logicalStart == after.get(i).logicalStart
+                                    && before.get(i).logicalEnd == after.get(i).logicalEnd
+                                    && before.get(i).x == after.get(i).x
+                                    && before.get(i).xAdvance == after.get(i).xAdvance,
+                            "必要范围逻辑首不混淆仍局部替换 Arabic glyph");
+                TextLayout latin = vanilla.sample("§kAB", settings, -1, 1000, TextPolicy.SINGLE_LINE,
+                        RasterSampling.LOGICAL, 3, 1);
+                require(glyphs(latin).size() == 2 && latin.diagnostics().stream().noneMatch(
+                                d -> d.kind == TextLayout.Diagnostic.Kind.STYLE_COALESCED),
+                        "Arabic face 的独立拉丁文字误合为必要范围");
+                require(engine.rasters == 0, "系统混淆匹配/采样执行了实际 rasterize");
+                System.out.println("SYSTEM_OBFUSCATION_BOUNDARY source=" + source
+                        + " logicalLeadingOff=preserved independentLatin=2 rasterize=" + engine.rasters);
+            }
+        }
+    }
+
     /** 交替脚本确实经过真实匹配与每个 run 的 HB 整形；只复用完整上下文准备工作。 */
     private void alternatingScriptContexts() throws Exception {
         CountingEngine engine = new CountingEngine();
@@ -788,6 +980,8 @@ public final class FontTextScenario extends TestApplication {
 
     @Override
     protected void runTests() throws Exception {
+        scenario("系统文件实际能力与匹配无光栅", this::systemCandidateCapabilities);
+        scenario("系统文件复杂脚本完整范围混淆", this::systemObfuscationRanges);
         scenario("颜色与透明度复用真实定位", this::paintOnlyColors);
         scenario("场景颜色绘制失效与禁用字体缓存", this::scenePaintOnlyColors);
         scenario("交替脚本多run复用完整上下文", this::alternatingScriptContexts);

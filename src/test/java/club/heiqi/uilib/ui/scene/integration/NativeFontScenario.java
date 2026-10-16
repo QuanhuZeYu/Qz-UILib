@@ -223,6 +223,12 @@ public final class NativeFontScenario extends TestApplication {
                                             false,
                                             false);
                             require(!run.isEmpty(), "shape 结果为空");
+                            if (index < 3) {
+                                String script = new String[] {"Arab", "Deva", "Thai"}[index];
+                                require(face.supportsScript(script), "实际脚本布局事实丢失: " + script);
+                            }
+                            require(face.hasColorGlyph(run.get(0).glyphId) == (index >= 3),
+                                    "逐 glyph 的非渲染颜色事实与实际字体不符");
                             float advance = 0;
                             StringBuilder glyphs = new StringBuilder();
                             for (ShapedGlyph glyph : run) {

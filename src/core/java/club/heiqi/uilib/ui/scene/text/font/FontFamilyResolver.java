@@ -92,6 +92,7 @@ public final class FontFamilyResolver {
         for (Entry entry : families.get(metadata.family)) {
             List<FontSource> faces = loaded.get(entry.path);
             if (faces == null) {
+                // 文件来源没有脚本/彩色声明；未知提示不排除实际 face，匹配时查询后端事实。
                 FontSource source =
                         FontSource.file(
                                 entry.path.toString(),

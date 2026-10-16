@@ -18,7 +18,6 @@ import club.heiqi.uilib.ui.scene.text.font.nativefont.FontEngine;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.FontFace;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.FontMetrics;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.FontSession;
-import club.heiqi.uilib.ui.scene.text.font.nativefont.GlyphBitmap;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.GlyphRasterStyle;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.InkBounds;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.MathData;
@@ -51,7 +50,7 @@ import java.util.TreeSet;
 
 /**
  * ICU Unicode 算法 + 真实 FT/HB 共享排版服务。创建、测量、重载、关闭均在创建线程。 度量不申请 GPU 资源；光栅消费者用 Glyph.source.openFace
- * 在自己的 native 线程重开。 有界 face/layout/color-probe 缓存。默认资源只是显式候选列表，不建立第二条 fallback 链。
+ * 在自己的 native 线程重开。 有界 face/layout/字形颜色事实缓存。默认资源只是显式候选列表，不建立第二条 fallback 链。
  * 当前未实现省略和编辑器双向光标 affinity；软连字符只在采用断点的最终行内投影，不改原文。
  */
 public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
@@ -1174,16 +1173,7 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
         ColorKey key = new ColorKey(source, size, glyph);
         Boolean found = colors.get(key);
         if (found == null) {
-            GlyphBitmap bitmap = face.rasterize(glyph);
-            found = false;
-            if (bitmap.color && bitmap.width > 0 && bitmap.height > 0) {
-                byte[] pixels = bitmap.pixels();
-                for (int i = 3; i < pixels.length; i += 4)
-                    if (pixels[i] != 0) {
-                        found = true;
-                        break;
-                    }
-            }
+            found = face.hasColorGlyph(glyph);
             colors.put(key, found);
             trim(colors, 1024);
         }
@@ -1276,7 +1266,7 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
         return stableReplacement(doc, range, sources);
     }
 
-    /** 来源的脚本/color 标记只用于预筛，资格由完整范围的实际 shape/彩色像素决定。 */
+    /** 来源提示不作为资格门槛；完整范围 shape 与同一 face 的实际脚本/字形呈现事实共同决定。 */
     private boolean candidateMatches(
             UnicodeText doc,
             MatchingRange range,
@@ -1285,11 +1275,9 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
             FontSource candidate) {
         Unit first = range.first;
         String script = UScript.getShortName(first.script);
-        if (range.contextual && !candidate.supportsScript(script)) return false;
-        if (first.emoji && !candidate.color) return false;
         float em = first.shapeStyle.logicalEm;
         FontFace face = face(candidate, em, doc);
-        if (face == null) return false;
+        if (face == null || range.contextual && !face.supportsScript(script)) return false;
         String context = range.contextual ? doc.display : matchText;
         int from = range.contextual ? first.start : 0;
         int limit = range.contextual ? range.end : matchText.length();
@@ -1308,8 +1296,7 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
             visible++;
             if (glyph.glyphId == 0) return false;
             // Emoji 默认/VS16必须实际彩色；VS15或默认文字不能输出彩色 bitmap。
-            if ((first.emoji || first.emojiLike || candidate.color)
-                    && color(candidate, em, glyph.glyphId, face) != first.emoji) return false;
+            if (color(candidate, em, glyph.glyphId, face) != first.emoji) return false;
         }
         // 一个 emoji 字素必须形成一个真实彩色序列，不把散开的码点宣称正确生成。
         return !first.emoji || visible == 1;
@@ -1969,7 +1956,6 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
         for (FontSource source : resolvedCandidates(style, doc))
             if (!sources.contains(source)) sources.add(source);
         for (FontSource source : sources) {
-            if (source.color) continue;
             FaceKey key = new FaceKey(source, em);
             List<ObfuscatedGlyph> cached = obfuscationPools.get(key);
             if (cached != null && !cached.isEmpty()) return cached;
@@ -2020,7 +2006,11 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
 
     public TextLayout obfuscate(TextLayout layout, AttributedText request, long tick, long salt) {
         check();
-        UnicodeText doc = new UnicodeText(request.input);
+        UnicodeText doc = new UnicodeText(request.input, TextPolicy.NORMAL, request.inlineBoxes());
+        // 复用匹配使用的脚本分段，包含 tatweel/独立标记的 Script_Extensions；来源提示不能定义必要范围。
+        TreeMap<Integer, Integer> scripts = new TreeMap<>();
+        for (Unit unit : doc.units(0, doc.display.length(), unicodeProfile))
+            scripts.put(doc.logical[unit.start], unit.script);
         List<TextLayout.Line> lines = new ArrayList<TextLayout.Line>();
         boolean glyphsReplaced = false;
         for (TextLayout.Line line : layout.lines()) {
@@ -2029,7 +2019,7 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
             ObfuscationRange range = new ObfuscationRange();
             int glyphCursor = 0;
             for (int ci = 0; ci < line.clusters().size(); ci = range.visualEnd) {
-                range.resolve(line, request, ci, doc);
+                range.resolve(line, request, ci, doc, scripts);
                 if (range.replace) {
                     appendObfuscatedRange(line, range, tick, salt, doc, output, clusters);
                     glyphsReplaced = true;
@@ -2086,25 +2076,26 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
         int logicalStart, logicalEnd, sourceStart, sourceEnd;
         float x, advance;
 
-        void resolve(TextLayout.Line line, AttributedText request, int start, UnicodeText doc) {
+        void resolve(
+                TextLayout.Line line, AttributedText request, int start, UnicodeText doc,
+                TreeMap<Integer, Integer> scripts) {
             List<TextLayout.Cluster> original = line.clusters();
             TextLayout.Cluster visualFirst = original.get(start);
             visualStart = start;
             visualEnd = start + 1;
             logicalLeading = visualFirst;
             replace = request.styleAt(visualFirst.logicalStart).effects.obfuscated;
-            boolean complex =
-                    visualFirst.glyphIndexEnd > visualFirst.glyphIndexStart
-                            && !line.glyphs()
-                                    .get(visualFirst.glyphIndexStart)
-                                    .source
-                                    .supportedScripts()
-                                    .isEmpty();
+            int script = scripts.floorEntry(visualFirst.logicalStart).getValue();
+            boolean complex = visualFirst.glyphIndexEnd > visualFirst.glyphIndexStart
+                    && UnicodeText.complex(script);
             if (complex) {
                 FontSource source = line.glyphs().get(visualFirst.glyphIndexStart).source;
                 while (visualEnd < original.size()) {
                     TextLayout.Cluster next = original.get(visualEnd);
                     if (next.glyphIndexStart == next.glyphIndexEnd
+                            || scripts.floorEntry(next.logicalStart).getValue() != script
+                            || next.rtl != visualFirst.rtl
+                            || !sameShapingFont(next.style, visualFirst.style)
                             || line.glyphs().get(next.glyphIndexStart).source != source) break;
                     visualEnd++;
                 }
@@ -2602,7 +2593,7 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
             if (UnicodeText.visible(context, from - start, to - start))
                 draft.glyphs.add(new Placed(unit.source, glyph.glyphId, clusterStart, clusterEnd,
                         pen + glyph.xOffset, -glyph.yOffset, glyph.xAdvance, -glyph.yAdvance,
-                        unit.source.color && color(unit.source, style.logicalEm, glyph.glyphId, font), false));
+                        color(unit.source, style.logicalEm, glyph.glyphId, font), false));
             else if (glyph.xAdvance != 0)
                 draft.spaces.add(new Gap(clusterStart, clusterEnd, glyph.xAdvance));
             pen += glyph.xAdvance;
