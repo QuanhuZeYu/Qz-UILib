@@ -88,13 +88,16 @@ tasks.withType<org.gradle.jvm.tasks.Jar>().configureEach {
 // 配套源码覆盖各生产职责；MC已包含带标记的LWJGL3原文件，避免加入同名桌面变体。
 val companionSources = listOf("core", "fontAdapter", "glRenderer", "lwjgl2", "desktop").map { sourceSets.getByName(it) }
 tasks.named<Jar>("sourcesJar") {
+    dependsOn("packageMediaBindings")
     companionSources.forEach { from(it.allSource) }
-    exclude("assets/qz_uilib/runtime/font/**")
+    from(sourceSets.getByName("mediaAdapter").allSource)
+    exclude("assets/qz_uilib/runtime/font/**", "assets/qz_uilib/runtime/media/**")
 }
 tasks.named<org.gradle.jvm.tasks.Jar>("apiJar") {
     companionSources.forEach { from(it.allJava, it.output.classesDirs) }
+    from(sourceSets.getByName("mediaAdapter").allJava, tasks.named<JavaCompile>("compileMediaAdapterLegacyJava").flatMap { it.destinationDirectory })
 }
-val guardedArchiveTasks = listOf("jar", "shadowJar", "sourcesJar", "apiJar", "reobfJar", "coreJar", "fontAdapterJar")
+val guardedArchiveTasks = listOf("jar", "shadowJar", "sourcesJar", "apiJar", "reobfJar", "coreJar", "fontAdapterJar", "coreLegacyJar", "fontAdapterLegacyJar", "desktopJar", "mediaAdapterJar", "mediaAdapterLegacyJar")
 val verifyDevToolsNotPackaged by tasks.registering {
     group = "verification"
     description = "校验内部开发工具（internal.devtools 整包）未进入任何打包产物"
@@ -103,7 +106,7 @@ val verifyDevToolsNotPackaged by tasks.registering {
         tasks.named(name, AbstractArchiveTask::class.java).flatMap { task -> task.archiveFile }
     }
     val allArchives: Provider<List<File>> = provider {
-        tasks.withType(AbstractArchiveTask::class.java).toList().filter { it.name != "manualTestDevJar" && it.name != "manualTestJar" && it.name != "desktopTestJar" }.map { task -> task.archiveFile.get().asFile }
+        tasks.withType(AbstractArchiveTask::class.java).toList().filter { it.name !in setOf("manualTestDevJar", "manualTestJar", "desktopTestJar", "mediaTestJar", "mediaTestLegacyJar", "lwjgl2TestJar") }.map { task -> task.archiveFile.get().asFile }
     }
     val forbidden = "$internalDevToolsPackagePath/"
     doLast {
@@ -138,8 +141,8 @@ tasks.named("check") { dependsOn(verifyDevToolsNotPackaged) }
 
 // 数学能力依赖核心持有的正式字体；版权与完整许可必须与原资源一起进入 coreJar。
 // MC 重混淆产物依赖该发行组成部分，单独生成 MC 成品也保留资源门禁。
-tasks.named("reobfJar") { dependsOn("coreJar") }
-tasks.named<Jar>("coreJar") {
+tasks.named("reobfJar") { dependsOn("coreLegacyJar") }
+listOf("coreJar", "coreLegacyJar").forEach { taskName -> tasks.named<Jar>(taskName) {
     // 固定到声明的资源目录；执行期不调用脚本的 Project.file，保持桌面启动可缓存。
     val coreResources = layout.projectDirectory.dir("src/core/resources")
     doLast {
@@ -152,4 +155,4 @@ tasks.named<Jar>("coreJar") {
             }
         }
     }
-}
+} }

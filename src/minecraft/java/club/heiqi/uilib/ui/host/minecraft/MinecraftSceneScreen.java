@@ -19,6 +19,7 @@ import club.heiqi.uilib.ui.scene.input.ScenePointerEvent;
 public class MinecraftSceneScreen extends GuiScreen {
     private final ReactiveDomain domain;
     private final ScenePage page;
+    private final club.heiqi.uilib.ui.media.MediaService mediaService;
     private ScenePageSession session;
     private Inputs inputs;
 
@@ -28,6 +29,14 @@ public class MinecraftSceneScreen extends GuiScreen {
 
     /** 借用外部业务状态所属域，结束页面不结束该域。 */
     public MinecraftSceneScreen(ReactiveDomain domain, ScenePage page) {
+        this(domain, page, null);
+    }
+    public MinecraftSceneScreen(ScenePage page, club.heiqi.uilib.ui.media.MediaService media) {
+        this(ReactiveDomain.direct(), page, Objects.requireNonNull(media, "media"));
+    }
+    /** 媒体服务由业务持有；默认入口仍无媒体，不在screen构造时初始化native。 */
+    public MinecraftSceneScreen(ReactiveDomain domain, ScenePage page, club.heiqi.uilib.ui.media.MediaService media) {
+        this.mediaService = media;
         this.domain = Objects.requireNonNull(domain, "domain");
         this.page = Objects.requireNonNull(page, "page");
     }
@@ -35,7 +44,7 @@ public class MinecraftSceneScreen extends GuiScreen {
     @Override
     public void initGui() {
         if (session != null) return;
-        MinecraftSceneHost host = new MinecraftSceneHost();
+        MinecraftSceneHost host = new MinecraftSceneHost(mediaService);
         final boolean[] owned = {false};
         try {
             session =

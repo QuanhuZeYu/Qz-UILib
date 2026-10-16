@@ -13,6 +13,7 @@ public final class PaintCommand {
         LINE,
         TEXT,
         IMAGE,
+        VIDEO,
         IMAGE_BRANCH_OVERLAY
     }
 
@@ -22,6 +23,7 @@ public final class PaintCommand {
     public final TextLayout text;
     public final ImagePlacement image;
     public final Line line;
+    public final club.heiqi.uilib.ui.scene.video.VideoPlacement video;
 
     /** 平端点线段，线宽沿法线居中；零长度不绘制，clip不改变端点或方向。 */
     public static final class Line {
@@ -119,6 +121,13 @@ public final class PaintCommand {
             PaintPlan readyOverlay,
             PaintCommand branchSource,
             Line line) {
+        this(kind, box, clip, color, text, image, pendingPaint, failedPaint, readyOverlay, branchSource, line, null);
+    }
+
+    private PaintCommand(Kind kind, LayoutBox box, LayoutBox clip, int color, TextLayout text,
+            ImagePlacement image, PaintPlan pendingPaint, PaintPlan failedPaint, PaintPlan readyOverlay,
+            PaintCommand branchSource, Line line, club.heiqi.uilib.ui.scene.video.VideoPlacement video) {
+        this.video = video;
         this.line = line;
         this.kind = kind;
         this.box = Objects.requireNonNull(box, "box");
@@ -194,6 +203,12 @@ public final class PaintCommand {
         Line line = new Line(x0, y0, x1, y1, thickness);
         return new PaintCommand(
                 Kind.LINE, line.bounds(), clip, color, null, null, null, null, null, null, line);
+    }
+
+    /** 视频是同一有序计划的封闭值，不读取播放会话或包含 GPU 句柄。 */
+    public static PaintCommand video(LayoutBox box, LayoutBox clip, club.heiqi.uilib.ui.scene.video.VideoPlacement video) {
+        return new PaintCommand(Kind.VIDEO, box, clip, 0xFFFFFFFF, null, null, null, null, null, null, null,
+                Objects.requireNonNull(video, "video"));
     }
 
     public static PaintCommand rect(LayoutBox box, LayoutBox clip, int color) {

@@ -72,11 +72,16 @@ public final class DesktopWindow implements SceneHost, AutoCloseable {
     ClientFontServices fonts;
     private ClientImageServices images;
     private FramebufferSceneRenderer renderer;
+    private final club.heiqi.uilib.ui.media.MediaService mediaService;
+    private club.heiqi.uilib.ui.scene.video.MediaViewPump mediaViews;
+    private List<club.heiqi.uilib.ui.media.MediaPresentation> mediaPresentations = Collections.emptyList();
     ScenePageSession page;
     PaintPlan lastPlan;
     int resizeCallbacks;
 
-    private DesktopWindow(Path path) {
+    private DesktopWindow(Path path) { this(path, null); }
+    private DesktopWindow(Path path, club.heiqi.uilib.ui.media.MediaService mediaService) {
+        this.mediaService = mediaService;
         applicationConfiguration = new DesktopApplicationConfiguration(path);
         domain = applicationConfiguration.domain;
         configPath = applicationConfiguration.path;
@@ -102,13 +107,25 @@ public final class DesktopWindow implements SceneHost, AutoCloseable {
     public static DesktopWindow openWithServices(Path configuration, boolean visible, Function<DesktopPageServices, ScenePage> content) throws IOException {
         return open(configuration, null, Objects.requireNonNull(content, "content"), false, visible);
     }
+    /** 显式借用媒体服务，默认无媒体窗口不会初始化任何音频或解码后端。 */
+    public static DesktopWindow openWithMedia(Path configuration, club.heiqi.uilib.ui.media.MediaService media, ScenePage content) throws IOException {
+        return open(configuration, Objects.requireNonNull(content, "content"), null, false, defaultVisible(), Objects.requireNonNull(media, "media"));
+    }
+    public static DesktopWindow openWithServices(Path configuration, club.heiqi.uilib.ui.media.MediaService media,
+            boolean visible, Function<DesktopPageServices, ScenePage> content) throws IOException {
+        return open(configuration, null, Objects.requireNonNull(content, "content"), false, visible, Objects.requireNonNull(media, "media"));
+    }
     /** 与普通页面共用窗口、字体服务和配置域；关闭确认归共享配置页。 */
     public static DesktopWindow openSettings(Path configuration) throws IOException {
         return open(configuration, null, null, true, defaultVisible());
     }
     private static boolean defaultVisible() { return Boolean.parseBoolean(System.getProperty("uilib.desktop.visible", "true")); }
     private static DesktopWindow open(Path configuration, ScenePage content, Function<DesktopPageServices, ScenePage> factory, boolean settings, boolean visible) throws IOException {
-        DesktopWindow result = new DesktopWindow(configuration);
+        return open(configuration, content, factory, settings, visible, null);
+    }
+    private static DesktopWindow open(Path configuration, ScenePage content, Function<DesktopPageServices, ScenePage> factory,
+            boolean settings, boolean visible, club.heiqi.uilib.ui.media.MediaService media) throws IOException {
+        DesktopWindow result = new DesktopWindow(configuration, media);
         try {
             result.initialize(content, factory, settings, visible);
             return result;
@@ -156,7 +173,8 @@ public final class DesktopWindow implements SceneHost, AutoCloseable {
             return snapshot;
         }, JavaImageLoader.Budget.defaults()), SharedImageService.Budget.defaults());
         own(this::closeImages);
-        renderer = own(new FramebufferSceneRenderer(fonts, images));
+        if (mediaService != null) mediaViews = own(new club.heiqi.uilib.ui.scene.video.MediaViewPump());
+        renderer = own(new FramebufferSceneRenderer(fonts, images, mediaService, true));
         List<FontSource> defaults = FontTextService.defaultSources(loader, 1);
         own(applicationConfiguration);
         applicationConfiguration.initialize(defaults, this::validateFontCandidates, this::resourcesReloaded);
@@ -400,7 +418,14 @@ public final class DesktopWindow implements SceneHost, AutoCloseable {
     // ready只改变可画资源；字体代际才改变度量，与共同字体服务的职责一致。
     @Override public long metricsRevision() { return revision + fonts.fonts().generation(); }
     /** 正式帧管线在测量/输入前接收完成结果，由既有图像信号使相关声明失效。 */
-    @Override public void prepareResources() { check(); images.prepareResources(); }
+    @Override public void prepareResources() { check(); images.prepareResources(); if (mediaViews != null) mediaViews.prepareResources(); }
+    @Override public club.heiqi.uilib.ui.scene.video.MediaViewPump mediaViews() { return mediaViews; }
+    /** 本次成功交换的新帧回执；同帧重复绘制不增加媒体统计。 */
+    public List<club.heiqi.uilib.ui.media.MediaPresentation> mediaPresentations() { check(); return mediaPresentations; }
+    /** 仅资源纯值；允许close后读取最终归零/残留，不暴露GL句柄或修改能力。 */
+    public club.heiqi.uilib.host.client.gl.GlVideoResources.Snapshot mediaResources() {
+        return renderer==null?club.heiqi.uilib.host.client.gl.GlVideoResources.Snapshot.EMPTY:renderer.mediaResources();
+    }
     @Override public void replay(PaintPlan plan) { lastPlan = plan; renderer.replay(plan, width(), height()); }
     public void frame() {
         check(); glfwPollEvents();
@@ -409,8 +434,11 @@ public final class DesktopWindow implements SceneHost, AutoCloseable {
         glViewport(0, 0, width(), height());
         glDisable(GL_DEPTH_TEST); glDisable(GL_SCISSOR_TEST);
         glClearColor(0, 0, 0, 1); glClear(GL_COLOR_BUFFER_BIT);
+        mediaPresentations = Collections.emptyList();
+        try {
         fonts.beginPresentation(++presentation);
         try { page.frame(); } finally { fonts.endPresentation(); }
+        if (closed || window == 0) return;
         // 原生关闭/快捷键先等本批已采集输入结算，避免确认读取旧草稿。
         // 意图一次性消费；关闭与重载同时到达时优先保留离开确认。
         if (pendingSettingsClose || pendingSettingsReload) {
@@ -425,6 +453,11 @@ public final class DesktopWindow implements SceneHost, AutoCloseable {
             }
         }
         glfwSwapBuffers(window);
+        mediaPresentations = renderer.completePresentation(System.nanoTime());
+        } catch (RuntimeException | Error failure) {
+            try { renderer.discardPresentation(); } catch (Throwable next) { if (next != failure) failure.addSuppressed(next); }
+            throw failure;
+        }
     }
     private long presentation;
     public boolean shouldClose() { return closed || glfwWindowShouldClose(window); }
@@ -445,6 +478,7 @@ public final class DesktopWindow implements SceneHost, AutoCloseable {
         if (closed) return;
         if (Thread.currentThread() != thread) throw new IllegalStateException("桌面窗口必须在创建线程关闭");
         closed = true;
+        lastPlan = null; mediaPresentations = Collections.emptyList();
         if(pageServices!=null)pageServices.releaseRequests();
         Throwable failure = null;
         while (!resources.isEmpty()) {

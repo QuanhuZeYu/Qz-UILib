@@ -18,6 +18,7 @@ public final class ScenePageContext {
     private final ReactiveDomain domain;
     private final Owner scope;
     private final SceneRuntime runtime;
+    private final club.heiqi.uilib.ui.scene.video.MediaViewPump mediaViews;
     private LocalizationSource localizationSource;
     private LocalizationBinding localization;
     private final ReadableSignal<ThemeMode> themeMode;
@@ -25,6 +26,12 @@ public final class ScenePageContext {
 
     ScenePageContext(ReactiveDomain domain, Owner scope, SceneRuntime runtime,
             ThemeConfiguration themes) {
+        this(domain, scope, runtime, themes, null);
+    }
+
+    ScenePageContext(ReactiveDomain domain, Owner scope, SceneRuntime runtime, ThemeConfiguration themes,
+            club.heiqi.uilib.ui.scene.video.MediaViewPump mediaViews) {
+        this.mediaViews = mediaViews;
         this.domain = domain;
         this.scope = scope;
         this.runtime = runtime;
@@ -54,6 +61,13 @@ public final class ScenePageContext {
     /** 页面响应式适配使用宿主根可用空间；普通子项仍由正式布局分配。 */
     public ReadableSignal<Integer> viewportWidth() { return runtime.viewportWidth(); }
     public ReadableSignal<Integer> viewportHeight() { return runtime.viewportHeight(); }
+
+    /** 借用宿主泵；绑定仍随正式 NodeBinding 挂载/卸载，不转移媒体会话所有权。 */
+    public club.heiqi.uilib.ui.scene.video.MediaViewPump mediaViews() {
+        domain.checkAccess();
+        if (mediaViews == null) throw new IllegalStateException("宿主未装配媒体呈现服务");
+        return mediaViews;
+    }
 
     public ReactiveDomain domain() {
         return domain;

@@ -32,6 +32,9 @@ public final class GlPaintPlanRenderer implements AutoCloseable {
     private final int capacity, maxDemand;
     private final GlImageResources images;
     private final GlApi gl;
+    private final GlVideoResources videos;
+    private Prepared replaying;
+    private long resourceEpoch;
     private long clippedGlyphs, demandOverflow, blankGlyphs, drawnGlyphs;
 
     public GlPaintPlanRenderer(
@@ -52,7 +55,13 @@ public final class GlPaintPlanRenderer implements AutoCloseable {
             int maxDemand,
             GlProgramProvider programs,
             GlImageResources images) {
+        this(gl, cpu, atlas, quadCapacity, maxDemand, programs, images, null);
+    }
+
+    public GlPaintPlanRenderer(GlApi gl, AsyncGlyphRasterizer cpu, GlGlyphAtlas atlas, int quadCapacity,
+            int maxDemand, GlProgramProvider programs, GlImageResources images, GlVideoResources videos) {
         this.images = images;
+        this.videos = videos;
         this.gl = Objects.requireNonNull(gl, "gl");
         this.programs = Objects.requireNonNull(programs, "programs");
         if (maxDemand < 1) throw new IllegalArgumentException("无效需求预算");
@@ -64,10 +73,11 @@ public final class GlPaintPlanRenderer implements AutoCloseable {
                 new GlQuadRenderer(
                         gl,
                         quadCapacity,
-                        (resource, generation) ->
-                                resource < 0 && images != null
-                                        ? images.resolve(resource, generation)
-                                        : atlas.resolve(resource, generation),
+                        (resource, generation) -> {
+                            if (resource >= 0) return atlas.resolve(resource, generation);
+                            if (replaying == null) throw new IllegalStateException("纹理引用没有所属回放");
+                            return replaying.resolveTexture(resource, generation);
+                        },
                         programs);
     }
 
@@ -209,6 +219,7 @@ public final class GlPaintPlanRenderer implements AutoCloseable {
                         view,
                         needsSolid);
         GlImageResources.Frame imageFrame = null;
+        GlVideoResources.Frame videoFrame = null;
         try {
             frame.prepare(cpu, budget, retainPending);
             frame.freeze();
@@ -217,9 +228,14 @@ public final class GlPaintPlanRenderer implements AutoCloseable {
                 for (PaintCommand command : plan.resourceCommands())
                     if (command.kind == PaintCommand.Kind.IMAGE)
                         throw new IllegalStateException("缺少图像GL宿主服务");
-            return new Prepared(plan, viewport, frame, imageFrame, onClose);
+            if (videos != null) videoFrame = videos.prepare(plan, viewport);
+            else for (PaintCommand command : plan.resourceCommands())
+                if (command.kind == PaintCommand.Kind.VIDEO) throw new IllegalStateException("缺少视频GL宿主服务");
+            return new Prepared(plan, viewport, frame, imageFrame, videoFrame, onClose);
         } catch (RuntimeException | Error failure) {
-            frame.close();
+            AutoCloseable[] acquired = {videoFrame, imageFrame, frame};
+            for (AutoCloseable resource : acquired) if (resource != null) try { resource.close(); }
+                catch (Throwable next) { if (next != failure) failure.addSuppressed(next); }
             throw failure;
         }
     }
@@ -289,18 +305,55 @@ public final class GlPaintPlanRenderer implements AutoCloseable {
         private Replay active;
         private final Runnable onClose;
         private final GlImageResources.Frame imageFrame;
+        private final GlVideoResources.Frame videoFrame;
+        private final long textureEpoch = ++resourceEpoch;
+        private final java.util.Map<Long, TextureRef> textureRefs = new java.util.HashMap<>();
+        private final java.util.Map<Long, Long> imageRefs = new java.util.HashMap<>();
+        private final java.util.Map<club.heiqi.uilib.ui.media.MediaFrameKey, Long> videoRefs = new java.util.HashMap<>();
 
         private Prepared(
                 PaintPlan plan,
                 LayoutBox viewport,
                 GlGlyphAtlas.Frame frame,
                 GlImageResources.Frame imageFrame,
+                GlVideoResources.Frame videoFrame,
                 Runnable onClose) {
             this.plan = plan;
             this.viewport = viewport;
             this.frame = frame;
             this.imageFrame = imageFrame;
+            this.videoFrame = videoFrame;
             this.onClose = onClose;
+            if (textureEpoch <= 0) throw new IllegalStateException("绘制资源代际耗尽");
+            // 本 Prepared 为 image/video 分配独立 ref；不会把负 sessionId 混入图像 identity。
+            for (PaintCommand command : plan.resourceCommands()) {
+                if (command.kind == PaintCommand.Kind.IMAGE && imageFrame != null && imageFrame.ready(command.image.content.identity)
+                        && command.image.content.kind != club.heiqi.uilib.ui.scene.image.ImageContent.Kind.HOST_ITEM
+                        && !imageRefs.containsKey(command.image.content.identity)) {
+                    long ref = -(textureRefs.size() + 1L);
+                    imageRefs.put(command.image.content.identity, ref);
+                    textureRefs.put(ref, new TextureRef(command.image.content.identity, null));
+                } else if (command.kind == PaintCommand.Kind.VIDEO && videoFrame != null
+                        && videoFrame.ready(command.video.frame.key) && !videoRefs.containsKey(command.video.frame.key)) {
+                    long ref = -(textureRefs.size() + 1L);
+                    videoRefs.put(command.video.frame.key, ref);
+                    textureRefs.put(ref, new TextureRef(0, command.video.frame.key));
+                }
+            }
+        }
+
+        private GlQuadRenderer.Texture resolveTexture(long resource, long generation) {
+            check();
+            TextureRef ref = textureRefs.get(resource);
+            if (ref == null || generation != textureEpoch) throw new IllegalArgumentException("失效呈现纹理引用");
+            return ref.video == null ? images.resolve(-ref.image, ref.image) : videoFrame.resolve(ref.video);
+        }
+
+        /** 宿主在成功实际 flush 后取得有界票据；其租约保留到交换或明确提交边界。 */
+        public java.util.List<GlVideoResources.Submission> takeVideoSubmissions() {
+            check();
+            if (active != null) throw new IllegalStateException("先结束回放再交接提交票据");
+            return videoFrame == null ? java.util.Collections.emptyList() : videoFrame.takeSubmissions();
         }
 
         public GlGlyphAtlas.Resident resident(TextLayout.Glyph glyph) {
@@ -356,14 +409,24 @@ public final class GlPaintPlanRenderer implements AutoCloseable {
         public void close() {
             if (closed) return;
             if (active != null) throw new IllegalStateException("先结束回放");
-            try {
-                frame.close();
-            } finally {
-                if (imageFrame != null) imageFrame.close();
-            }
             closed = true;
-            if (onClose != null) onClose.run();
+            Throwable failure = null;
+            AutoCloseable[] acquired = {videoFrame, imageFrame, frame};
+            for (AutoCloseable resource : acquired) if (resource != null) try { resource.close(); }
+                catch (Throwable next) { if (failure == null) failure = next; else if (next != failure) failure.addSuppressed(next); }
+            textureRefs.clear(); imageRefs.clear(); videoRefs.clear();
+            try { if (onClose != null) onClose.run(); }
+                catch (Throwable next) { if (failure == null) failure = next; else if (next != failure) failure.addSuppressed(next); }
+            if (failure instanceof Error) throw (Error) failure;
+            if (failure instanceof RuntimeException) throw (RuntimeException) failure;
+            if (failure != null) throw new IllegalStateException("绘制准备资源释放失败", failure);
         }
+    }
+
+    private static final class TextureRef {
+        final long image;
+        final club.heiqi.uilib.ui.media.MediaFrameKey video;
+        TextureRef(long image, club.heiqi.uilib.ui.media.MediaFrameKey video) { this.image = image; this.video = video; }
     }
 
     private enum ImageChoice {
@@ -382,6 +445,7 @@ public final class GlPaintPlanRenderer implements AutoCloseable {
                 new java.util.IdentityHashMap<>();
         private GlQuadRenderer.Scope scope;
         private OrderedQuadCollector collector;
+        private club.heiqi.uilib.ui.media.MediaFrameKey videoSubmitting;
         private boolean closed;
 
         private Replay(Prepared prepared, float[] mvp, int height, boolean depth) {
@@ -405,7 +469,8 @@ public final class GlPaintPlanRenderer implements AutoCloseable {
             if (context != null && prepared.frame.view != resolveSamplingView(context))
                 throw new IllegalStateException("prepare/replay atlas采样view与activepass不一致");
             scope = context == null ? quads.begin(mvp, height, depth) : quads.begin(context);
-            collector = new OrderedQuadCollector(capacity, scope::consumeBatch);
+            replaying = prepared;
+            collector = new OrderedQuadCollector(capacity, this::submitBatch);
         }
 
         public void draw(PaintCommand command) {
@@ -420,6 +485,9 @@ public final class GlPaintPlanRenderer implements AutoCloseable {
                 case LINE:
                     drawLine(command, clip);
                     break;
+                case VIDEO:
+                    drawVideo(command, clip);
+                    break;
                 case IMAGE:
                     drawImage(command, clip);
                     break;
@@ -430,6 +498,26 @@ public final class GlPaintPlanRenderer implements AutoCloseable {
                     drawText(command, clip);
                     break;
             }
+        }
+
+        private void submitBatch(club.heiqi.uilib.ui.render.batch.OrderedQuadBatch batch) {
+            if (videoSubmitting != null && (prepared.videoFrame == null || !prepared.videoFrame.active(videoSubmitting))) return;
+            scope.consumeBatch(batch);
+            if (videoSubmitting != null) prepared.videoFrame.submitted(videoSubmitting, System.nanoTime());
+        }
+
+        private void drawVideo(PaintCommand command, LayoutBox clip) {
+            if (context != null) throw new IllegalStateException("视频只支持framebuffer scene回放");
+            club.heiqi.uilib.ui.scene.video.VideoPlacement video = command.video;
+            collector.flush();
+            if (prepared.videoFrame == null || !prepared.videoFrame.active(video.frame.key)) return;
+            Long resource = prepared.videoRefs.get(video.frame.key);
+            if (resource == null) return;
+            collector.add(new State(GlQuadRenderer.COLOR_PREMULT, resource, prepared.textureEpoch, clip),
+                    new Quad(video.x, video.y, video.width, video.height, 0, 0, 1, 1, 0, command.color));
+            // VIDEO 单独形成同一 collector 的提交段；容量或委托提交不会把未提交 key 补报成功。
+            videoSubmitting = video.frame.key;
+            try { collector.flush(); } finally { videoSubmitting = null; }
         }
 
         private void drawImageBranchOverlay(PaintCommand command) {
@@ -509,8 +597,8 @@ public final class GlPaintPlanRenderer implements AutoCloseable {
             collector.add(
                     new State(
                             GlQuadRenderer.COLOR_PREMULT,
-                            -image.content.identity,
-                            image.content.identity,
+                            prepared.imageRefs.get(image.content.identity),
+                            prepared.textureEpoch,
                             clip),
                     new Quad(
                             image.x,
@@ -678,6 +766,7 @@ public final class GlPaintPlanRenderer implements AutoCloseable {
                 } catch (RuntimeException | Error failure) {
                     closed = true;
                     prepared.active = null;
+                    replaying = null;
                     throw failure;
                 }
             }
@@ -690,8 +779,8 @@ public final class GlPaintPlanRenderer implements AutoCloseable {
             try {
                 collector.flush();
             } finally {
-                if (scope != null) scope.close();
-                prepared.active = null;
+                try { if (scope != null) scope.close(); }
+                finally { prepared.active = null; replaying = null; }
             }
         }
     }

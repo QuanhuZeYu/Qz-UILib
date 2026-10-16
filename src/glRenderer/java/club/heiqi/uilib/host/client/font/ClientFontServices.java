@@ -404,6 +404,12 @@ public final class ClientFontServices implements SceneTextMeasurer, AutoCloseabl
     /** 图像资源由同级owner提供；此处只组合有序GPU消费者，不持网络服务。 */
     public GlPaintPlanRenderer createPlanRenderer(
             club.heiqi.uilib.host.client.gl.GlImageResources images) {
+        return createPlanRenderer(images, null);
+    }
+
+    /** 同级视频owner仅交给GPU消费者，不进入字体时钟或解码职责。 */
+    public GlPaintPlanRenderer createPlanRenderer(club.heiqi.uilib.host.client.gl.GlImageResources images,
+            club.heiqi.uilib.host.client.gl.GlVideoResources videos) {
         check();
         GlPaintPlanRenderer renderer =
                 new GlPaintPlanRenderer(
@@ -413,7 +419,7 @@ public final class ClientFontServices implements SceneTextMeasurer, AutoCloseabl
                         settings.quadCapacity,
                         settings.maxDemand,
                         programs,
-                        images);
+                        images, videos);
         renderers.add(renderer);
         return renderer;
     }

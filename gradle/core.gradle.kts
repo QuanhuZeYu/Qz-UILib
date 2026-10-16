@@ -1,5 +1,6 @@
 import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
 import org.gradle.api.tasks.SourceSetContainer
+import org.gradle.jvm.toolchain.JavaToolchainService
 
 val sourceSets = extensions.getByType<SourceSetContainer>()
 val coreContentRuntime = configurations.getByName("coreContentRuntime")
@@ -60,12 +61,32 @@ listOf("runClient", "runServer").forEach { name ->
     }
 }
 
+// 主线和MC从同一源码集独立编译；MC仍消费上方release8输出。
+val javaToolchains = extensions.getByType<JavaToolchainService>()
+val compileCore21Java by tasks.registering(JavaCompile::class) {
+    source(coreSources.java)
+    classpath = coreContentRuntime
+    destinationDirectory.set(layout.buildDirectory.dir("classes/java/core21"))
+    javaCompiler.set(javaToolchains.compilerFor { languageVersion.set(JavaLanguageVersion.of(21)) })
+    sourceCompatibility = "21"; targetCompatibility = "21"; options.release.set(21)
+    options.compilerArgs.add("-proc:none")
+}
+val compileFontAdapter21Java by tasks.registering(JavaCompile::class) {
+    dependsOn(compileCore21Java)
+    source(fontAdapterSources.java)
+    classpath = files(compileCore21Java.flatMap { it.destinationDirectory }) + fontBindings
+    destinationDirectory.set(layout.buildDirectory.dir("classes/java/fontAdapter21"))
+    javaCompiler.set(javaToolchains.compilerFor { languageVersion.set(JavaLanguageVersion.of(21)) })
+    sourceCompatibility = "21"; targetCompatibility = "21"; options.release.set(21)
+    options.compilerArgs.add("-proc:none")
+}
 // 共同内容依赖统一私有shadow；完整保留Unicode、实体表等资源，不最小化误删动态入口。
 val coreJar by tasks.registering(ShadowJar::class) {
     group = "build"
-    description = "生成可独立运行的 Java8 UILib 核心（含私有内容依赖及字体/Unicode 资源）"
+    description = "生成 Java21 UILib 核心（含私有内容依赖及字体/Unicode 资源）"
     archiveClassifier.set("core")
-    from(coreSources.output)
+    dependsOn(compileCore21Java, tasks.named(coreSources.processResourcesTaskName))
+    from(compileCore21Java.flatMap { it.destinationDirectory }, coreSources.output.resourcesDir)
     configurations.set(listOf(coreContentRuntime))
     minimizeJar.set(false)
     enableAutoRelocation.set(false)
@@ -81,6 +102,27 @@ val fontAdapterJar by tasks.registering(Jar::class) {
     group = "build"
     description = "生成独立 CPU 字体适配及私有 native 绑定产物"
     archiveClassifier.set("font-adapter")
+    dependsOn(compileFontAdapter21Java, tasks.named(fontAdapterSources.processResourcesTaskName))
+    from(compileFontAdapter21Java.flatMap { it.destinationDirectory }, fontAdapterSources.output.resourcesDir)
+}
+val coreLegacyJar by tasks.registering(ShadowJar::class) {
+    group = "build"
+    description = "生成独立编译的MC Java8核心"
+    archiveClassifier.set("core-java8")
+    from(coreSources.output)
+    configurations.set(listOf(coreContentRuntime))
+    minimizeJar.set(false); enableAutoRelocation.set(false)
+    relocate("com.ibm.icu", "club.heiqi.uilib.shadow.com.ibm.icu")
+    relocate("org.yaml.snakeyaml", "club.heiqi.uilib.shadow.org.yaml.snakeyaml")
+    relocate("org.commonmark", "club.heiqi.uilib.shadow.org.commonmark")
+    relocate("org.jsoup", "club.heiqi.uilib.shadow.org.jsoup")
+    relocate("org.nibor.autolink", "club.heiqi.uilib.shadow.org.nibor.autolink")
+    exclude("META-INF/versions/**", "META-INF/*.SF", "META-INF/*.RSA", "META-INF/*.DSA", "module-info.class")
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+val fontAdapterLegacyJar by tasks.registering(Jar::class) {
+    group = "build"
+    archiveClassifier.set("font-adapter-java8")
     from(fontAdapterSources.output)
 }
 // 宿主的内容依赖统一由核心产物供给，不重复携带；开发运行使用未重定位输出。
@@ -91,4 +133,4 @@ tasks.named<ShadowJar>("shadowJar") {
     relocate("org.jsoup", "club.heiqi.uilib.shadow.org.jsoup")
     relocate("org.nibor.autolink", "club.heiqi.uilib.shadow.org.nibor.autolink")
 }
-tasks.named("assemble") { dependsOn(coreJar, fontAdapterJar) }
+tasks.named("assemble") { dependsOn(coreJar, fontAdapterJar, coreLegacyJar, fontAdapterLegacyJar) }

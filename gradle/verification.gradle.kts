@@ -1,4 +1,5 @@
 import org.gradle.api.tasks.SourceSetContainer
+import java.io.File
 import org.gradle.jvm.toolchain.JavaToolchainService
 
 val sourceSets = extensions.getByType<SourceSetContainer>()
@@ -263,17 +264,21 @@ val nativeFontVisualScenario = registerTestApplication("nativeFontVisualScenario
         layout.buildDirectory.dir("font-machine/native").get().asFile.absolutePath)
 }
 val packagedUnicodeScenario = registerTestApplication("packagedUnicodeScenario", "隔离验证发布包私有ICU的Bidi、字素及泰文字典资源", "club.heiqi.uilib.ui.scene.integration.PackagedUnicodeScenario") {
-    dependsOn(tasks.named("testClasses"), tasks.named("coreJar"))
+    dependsOn(tasks.named("testClasses"), tasks.named("coreLegacyJar"))
     classpath = sourceSets.getByName("test").output
-    doFirst { args(tasks.named<Jar>("coreJar").get().archiveFile.get().asFile.absolutePath) }
+    val launchInputs=files(tasks.named<Jar>("coreLegacyJar").flatMap { it.archiveFile })
+    doFirst { args(launchInputs.files.map { it.absolutePath }) }
 }
 // 正式嵌套绑定必须同时覆盖旧Java8与GTNH的Java25多版本选择。
-val packagedFontScenarios = listOf(8, 25).map { javaVersion ->
+val packagedFontScenarios = listOf(8, 21, 25).map { javaVersion ->
     registerTestApplication("packagedFontJava$javaVersion", "Java${javaVersion}验证正式包字体整形与彩色光栅", "club.heiqi.uilib.ui.scene.integration.PackagedFontScenario") {
-        dependsOn(tasks.named("testClasses"), tasks.named("coreJar"), tasks.named("fontAdapterJar"))
+        val coreTask = if(javaVersion==8) "coreLegacyJar" else "coreJar"
+        val fontTask = if(javaVersion==8) "fontAdapterLegacyJar" else "fontAdapterJar"
+        val artifacts = files(tasks.named<Jar>(coreTask).flatMap { it.archiveFile }, tasks.named<Jar>(fontTask).flatMap { it.archiveFile })
+        dependsOn(tasks.named("testClasses"), tasks.named(coreTask), tasks.named(fontTask))
         classpath = sourceSets.getByName("test").output
         javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(javaVersion)) })
-        doFirst { args(tasks.named<Jar>("coreJar").get().archiveFile.get().asFile.absolutePath, tasks.named<Jar>("fontAdapterJar").get().archiveFile.get().asFile.absolutePath) }
+        doFirst { args(artifacts.files.map { it.absolutePath }) }
     }
 }
 tasks.named("check") { dependsOn(packagedFontScenarios) }
@@ -570,50 +575,180 @@ val compileCoreArtifactScenario by tasks.registering(JavaCompile::class) {
     targetCompatibility = "1.8"
     options.compilerArgs.add("-proc:none")
 }
-val coreArtifact = tasks.named<Jar>("coreJar").flatMap { it.archiveFile }
-val fontAdapterArtifact = tasks.named<Jar>("fontAdapterJar").flatMap { it.archiveFile }
+val coreArtifact = tasks.named<Jar>("coreLegacyJar").flatMap { it.archiveFile }
+val fontAdapterArtifact = tasks.named<Jar>("fontAdapterLegacyJar").flatMap { it.archiveFile }
+val mainlineCoreArtifact = tasks.named<Jar>("coreJar").flatMap { it.archiveFile }
+val mainlineFontArtifact = tasks.named<Jar>("fontAdapterJar").flatMap { it.archiveFile }
 val coreArtifactScenario = registerTestApplication("coreArtifactScenario", "Java8真实核心成品独立配置布局启动验收", "club.heiqi.uilib.ui.scene.integration.CoreArtifactScenario") {
-    dependsOn(compileCoreArtifactScenario, compileCoreSceneScenario, tasks.named("coreJar"))
+    dependsOn(compileCoreArtifactScenario, compileCoreSceneScenario, tasks.named("coreLegacyJar"))
     classpath = files(artifactScenarioClasses)
     inputs.file(coreArtifact)
-    doFirst {
-        args(coreArtifact.get().asFile.absolutePath, coreSceneClasses.get().asFile.absolutePath,
-            testSupportSources.output.classesDirs.singleFile.absolutePath)
-    }
+    val launchInputs=files(coreArtifact,coreSceneClasses,testSupportSources.output.classesDirs)
+    doFirst { args(launchInputs.files.map { it.absolutePath }) }
 }
 val forgeSettingsEntryScenario = registerTestApplication("forgeSettingsEntryScenario", "真实Forge解析成品元数据并验证配置入口资格", "club.heiqi.uilib.ui.scene.integration.ForgeSettingsEntryScenario") {
-    dependsOn(tasks.named("testClasses"), tasks.named("jar"), tasks.named("shadowJar"), tasks.named("reobfJar"))
-    classpath = sourceSets.getByName("test").runtimeClasspath
-    val artifacts = listOf("jar", "shadowJar", "reobfJar").map { name ->
-        tasks.named(name, org.gradle.api.tasks.bundling.AbstractArchiveTask::class.java).flatMap { it.archiveFile }
-    }
+    dependsOn(tasks.named("testClasses"),tasks.named("jar"),tasks.named("shadowJar"),tasks.named("reobfJar"))
+    classpath=sourceSets.getByName("test").runtimeClasspath
+    val artifacts=listOf("jar","shadowJar","reobfJar").map { name -> tasks.named(name,org.gradle.api.tasks.bundling.AbstractArchiveTask::class.java).flatMap { it.archiveFile } }
     inputs.files(artifacts)
     doFirst { args(artifacts.map { it.get().asFile.absolutePath }) }
 }
 tasks.named("check") { dependsOn(forgeSettingsEntryScenario) }
 val mcArtifactIsolationScenario = registerTestApplication("mcArtifactIsolationScenario", "验证MC成品与独立核心字体适配无重复定义", "club.heiqi.uilib.ui.scene.integration.CoreArtifactScenario") {
-    dependsOn(compileCoreArtifactScenario, tasks.named("coreJar"), tasks.named("fontAdapterJar"), tasks.named("jar"), tasks.named("shadowJar"), tasks.named("reobfJar"))
-    classpath = files(artifactScenarioClasses)
-    val hostArtifacts = listOf("jar", "shadowJar", "reobfJar").map { name ->
-        tasks.named(name, org.gradle.api.tasks.bundling.AbstractArchiveTask::class.java).flatMap { it.archiveFile }
-    }
-    inputs.files(coreArtifact, fontAdapterArtifact, hostArtifacts)
-    doFirst {
-        args(listOf("--host", coreArtifact.get().asFile.absolutePath, fontAdapterArtifact.get().asFile.absolutePath)
-            + hostArtifacts.map { it.get().asFile.absolutePath })
-    }
+    dependsOn(compileCoreArtifactScenario,"coreLegacyJar","fontAdapterLegacyJar","jar","shadowJar","reobfJar")
+    classpath=files(artifactScenarioClasses)
+    val hostArtifacts=listOf("jar","shadowJar","reobfJar").map { name -> tasks.named(name,org.gradle.api.tasks.bundling.AbstractArchiveTask::class.java).flatMap { it.archiveFile } }
+    inputs.files(coreArtifact,fontAdapterArtifact,hostArtifacts)
+    val launchInputs=files(coreArtifact,fontAdapterArtifact,hostArtifacts)
+    doFirst { args(listOf("--host")+launchInputs.files.map { it.absolutePath }) }
 }
-val desktopArtifact = tasks.named<Jar>("desktopJar").flatMap { it.archiveFile }
+val desktopArtifact=tasks.named<Jar>("desktopJar").flatMap { it.archiveFile }
 val desktopArtifactScenario = registerTestApplication("desktopArtifactScenario", "扫描正式桌面发行组合的平台与模块字节码隔离", "club.heiqi.uilib.ui.scene.integration.CoreArtifactScenario") {
-    dependsOn(compileCoreArtifactScenario, tasks.named("coreJar"), tasks.named("fontAdapterJar"), tasks.named("desktopJar"))
-    classpath = files(artifactScenarioClasses)
-    inputs.files(coreArtifact, fontAdapterArtifact, desktopArtifact)
-    doFirst {
-        args("--desktop", coreArtifact.get().asFile.absolutePath, fontAdapterArtifact.get().asFile.absolutePath,
-            desktopArtifact.get().asFile.absolutePath)
-    }
+    dependsOn(compileCoreArtifactScenario,"coreJar","fontAdapterJar","desktopJar")
+    classpath=files(artifactScenarioClasses)
+    javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(21)) })
+    inputs.files(mainlineCoreArtifact,mainlineFontArtifact,desktopArtifact)
+    val launchInputs=files(mainlineCoreArtifact,mainlineFontArtifact,desktopArtifact)
+    doFirst { args(listOf("--java21","--desktop")+launchInputs.files.map { it.absolutePath }) }
 }
 tasks.named("desktopVerify") { dependsOn(desktopArtifactScenario) }
 tasks.named("check") { dependsOn(desktopArtifactScenario) }
 tasks.named("coreSceneCheck") { dependsOn(coreArtifactScenario) }
-tasks.named("check") { dependsOn(coreArtifactScenario, mcArtifactIsolationScenario, packagedUnicodeScenario) }
+tasks.named("check") { dependsOn(coreArtifactScenario,mcArtifactIsolationScenario,packagedUnicodeScenario) }
+
+val coreArtifactJava21Scenario = registerTestApplication("coreArtifactJava21Scenario", "Java21无desktop模块真实core成品逻辑", "club.heiqi.uilib.ui.scene.integration.CoreArtifactScenario") {
+    dependsOn(compileCoreArtifactScenario, compileCoreSceneScenario, "coreJar")
+    classpath = files(artifactScenarioClasses)
+    javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(21)) })
+    jvmArgs("--limit-modules=java.base,java.logging,java.management,jdk.unsupported")
+    inputs.file(mainlineCoreArtifact)
+    val launchInputs=files(mainlineCoreArtifact,coreSceneClasses,testSupportSources.output.classesDirs)
+    doFirst { args(listOf("--java21")+launchInputs.files.map { it.absolutePath }) }
+}
+val packagedUnicodeJava21Scenario = registerTestApplication("packagedUnicodeJava21Scenario", "Java21成品私有Unicode实际资源", "club.heiqi.uilib.ui.scene.integration.PackagedUnicodeScenario") {
+    dependsOn("testClasses", "coreJar")
+    classpath = sourceSets.getByName("test").output
+    javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(21)) })
+    inputs.file(mainlineCoreArtifact)
+    val launchInputs=files(mainlineCoreArtifact)
+    doFirst { args(launchInputs.files.map { it.absolutePath }) }
+}
+val mediaTest = sourceSets.getByName("mediaTest")
+val mediaTestArtifact = tasks.named<Jar>("mediaTestJar").flatMap { it.archiveFile }
+val mediaTestLegacyArtifact = tasks.named<Jar>("mediaTestLegacyJar").flatMap { it.archiveFile }
+val mediaArtifact = tasks.named<Jar>("mediaAdapterJar").flatMap { it.archiveFile }
+val mediaLegacyArtifact = tasks.named<Jar>("mediaAdapterLegacyJar").flatMap { it.archiveFile }
+val mediaCoreClasses = layout.buildDirectory.dir("classes/media-core-scenario")
+val compileMediaCoreScenario by tasks.registering(JavaCompile::class) {
+    dependsOn("coreClasses", "testSupportClasses")
+    source(listOf("MediaCoreScenario", "MediaSourceScenario", "MediaTestSupport").map { "src/mediaTest/java/club/heiqi/uilib/testing/media/$it.java" })
+    classpath = coreSources.output + testSupportSources.output
+    destinationDirectory.set(mediaCoreClasses)
+    sourceCompatibility="1.8";targetCompatibility="1.8";options.release.set(8);options.compilerArgs.add("-proc:none")
+}
+listOf(8,21).forEach { version ->
+    listOf("MediaCoreScenario", "MediaSourceScenario").forEach { application ->
+        val label=if(application=="MediaCoreScenario") "mediaCore" else "mediaSource"
+        val taskName=label + if(version==8) "LegacyScenario" else "Scenario"
+        val artifact=if(version==8) coreArtifact else mainlineCoreArtifact
+        val task=registerTestApplication(taskName,"同源媒体纯core来源/状态反例Java$version","club.heiqi.uilib.testing.media.$application") {
+            dependsOn(compileMediaCoreScenario, if(version==8) "coreLegacyJar" else "coreJar")
+            javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(version)) })
+            classpath=files(mediaCoreClasses,artifact)
+            if(version==21)jvmArgs("--limit-modules=java.base,java.logging,java.management,jdk.unsupported")
+        }
+        tasks.named("check") { dependsOn(task) }
+    }
+    registerTestApplication(if(version==8) "mediaPlaybackLegacyScenario" else "mediaPlaybackScenario", "正式媒体成品HTTP/解码/设备短场景Java$version", "club.heiqi.uilib.testing.media.MediaPlaybackScenario") {
+        dependsOn(if(version==8) "mediaTestLegacyJar" else "mediaTestJar",if(version==8) "coreLegacyJar" else "coreJar",if(version==8) "mediaAdapterLegacyJar" else "mediaAdapterJar")
+        javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(version)) })
+        classpath=if(version==8)files(mediaTestLegacyArtifact,coreArtifact,mediaLegacyArtifact) else files(mediaTestArtifact,mainlineCoreArtifact,mediaArtifact)
+        args(providers.gradleProperty("mediaBaseUrl").getOrElse("http://127.0.0.1:59104"))
+    }
+}
+listOf(8,21).forEach { version ->
+    val application=registerTestApplication(if(version==8)"mediaLayoutLegacyScenario" else "mediaLayoutScenario", "同源SceneVideo正式布局和动态extentJava$version", "club.heiqi.uilib.testing.media.SceneVideoLayoutScenario") {
+        dependsOn(if(version==8)"mediaTestLegacyJar" else "mediaTestJar",if(version==8)"coreLegacyJar" else "coreJar")
+        javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(version)) })
+        classpath=if(version==8)files(mediaTestLegacyArtifact,coreArtifact)else files(mediaTestArtifact,mainlineCoreArtifact)
+    }
+    tasks.named("check") { dependsOn(application) }
+}
+val desktopMediaVerify=tasks.register<JavaExec>("desktopMediaVerify") {
+    group="verification"
+    dependsOn("installDesktop","desktopTestJar")
+    javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(21)) })
+    mainClass.set("club.heiqi.uilib.host.desktop.DesktopMediaVerification")
+    classpath=files(tasks.named<Jar>("desktopTestJar").flatMap { it.archiveFile },desktopArtifact,mainlineCoreArtifact,mainlineFontArtifact,mediaArtifact)
+    val output=layout.buildDirectory.dir("reports/media-desktop").get().asFile.absolutePath
+    args(providers.gradleProperty("mediaUrl").getOrElse("http://127.0.0.1:59104/vod.m3u8"),output)
+    systemProperty("uilib.media.evidence",output)
+    if(providers.gradleProperty("desktopHidden").isPresent)systemProperty("uilib.desktop.visible","false")
+}
+val legacyMediaTestClasses=tasks.named<JavaCompile>("compileMediaTestLegacyJava").flatMap { it.destinationDirectory }
+sourceSets.named("lwjgl2Test") { compileClasspath += files(legacyMediaTestClasses) + files(tasks.named<JavaCompile>("compileMediaAdapterLegacyJava").flatMap { it.destinationDirectory }) }
+tasks.named<JavaCompile>("compileLwjgl2TestJava") { dependsOn("compileMediaTestLegacyJava");classpath += files(legacyMediaTestClasses) + files(tasks.named<JavaCompile>("compileMediaAdapterLegacyJava").flatMap { it.destinationDirectory }) }
+val lwjgl2TestJar=tasks.register<Jar>("lwjgl2TestJar") {
+    group="verification";archiveClassifier.set("lwjgl2-test")
+    from(sourceSets.getByName("lwjgl2Test").output)
+}
+val lwjgl2VideoVerify=registerTestApplication("lwjgl2VideoVerify","原LWJGL2同源GPU及私有媒体真实共存","club.heiqi.uilib.ui.scene.integration.Lwjgl2VideoVerification") {
+    dependsOn(lwjgl2TestJar,"mediaTestLegacyJar","coreLegacyJar","fontAdapterLegacyJar","mediaAdapterLegacyJar","jar",extractLwjgl2TestNatives)
+    classpath=files(lwjgl2TestJar.flatMap { it.archiveFile },mediaTestLegacyArtifact,coreArtifact,fontAdapterArtifact,mediaLegacyArtifact,tasks.named<Jar>("jar").flatMap { it.archiveFile }) + lwjgl2Bindings
+    jvmArgs("-Djava.library.path="+layout.buildDirectory.dir("lwjgl2-test/natives").get().asFile.absolutePath)
+}
+listOf(8,21).forEach { version ->
+    val artifact=if(version==8)mediaLegacyArtifact else mediaArtifact
+    val task=registerTestApplication("mediaArtifactJava$version", "媒体成品绑定许可真实ZIP门禁Java$version", "club.heiqi.uilib.ui.scene.integration.CoreArtifactScenario") {
+        dependsOn(compileCoreArtifactScenario,if(version==8)"mediaAdapterLegacyJar" else "mediaAdapterJar")
+        javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(version)) })
+        classpath=files(artifactScenarioClasses)
+        inputs.file(artifact)
+        val launchInputs=files(artifact)
+        doFirst { args((if(version==21)listOf("--java21","--media")else listOf("--media"))+launchInputs.files.map { it.absolutePath }) }
+    }
+    tasks.named("check") { dependsOn(task) }
+}
+// 实际读取RFG待执行classpath，不运行runClient/runServer，不以文件名推测字节码。
+val verifyRunClasspathIsolation=tasks.named("verifyRunClasspathIsolation") {
+    group="verification"
+    dependsOn("classes","coreLegacyJar","fontAdapterLegacyJar","mediaAdapterLegacyJar")
+    val runtime=files(listOf("runClient","runServer").map { tasks.named<JavaExec>(it).get().classpath })
+    inputs.files(runtime)
+    doLast {
+        fun major(input:java.io.InputStream,name:String) {
+            java.io.DataInputStream(input).use { data ->
+                check(data.readInt()==0xCAFEBABE.toInt());data.readUnsignedShort()
+                val version=data.readUnsignedShort();check(version==52) { "MC运行classpath含错误字节码$name major=$version" }
+            }
+        }
+        for(file in runtime.files) {
+            if(file.isDirectory) {
+                val namespace=File(file,"club/heiqi/uilib")
+                if(namespace.isDirectory)namespace.walkTopDown().filter { it.isFile&&it.extension=="class" }.forEach { major(it.inputStream(),it.path) }
+            } else if(file.isFile&&file.extension=="jar")java.util.zip.ZipFile(file).use { zip ->
+                for(entry in zip.entries().asSequence())if(entry.name.startsWith("club/heiqi/uilib/")&&!entry.name.startsWith("club/heiqi/uilib/shadow/")&&entry.name.endsWith(".class"))major(zip.getInputStream(entry),file.name+":"+entry.name)
+            }
+        }
+    }
+}
+tasks.named("check") { dependsOn(coreArtifactJava21Scenario,packagedUnicodeJava21Scenario,verifyRunClasspathIsolation) }
+listOf(8,21).forEach { version ->
+    val legacy=version==8
+    val application=registerTestApplication("packagedMediaJava$version", "正式成品字体/窗口/媒体同JVM真实共存Java$version", "club.heiqi.uilib.testing.media.PackagedMediaScenario") {
+        javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(version)) })
+        dependsOn(if(legacy) "mediaTestLegacyJar" else "mediaTestJar",if(legacy) "coreLegacyJar" else "coreJar",if(legacy) "fontAdapterLegacyJar" else "fontAdapterJar",if(legacy) "mediaAdapterLegacyJar" else "mediaAdapterJar")
+        if(legacy) {
+            dependsOn(lwjgl2TestJar,"jar",extractLwjgl2TestNatives)
+            classpath=files(mediaTestLegacyArtifact,coreArtifact,fontAdapterArtifact,mediaLegacyArtifact,lwjgl2TestJar.flatMap { it.archiveFile },tasks.named<Jar>("jar").flatMap { it.archiveFile })+lwjgl2Bindings
+            jvmArgs("-Djava.library.path="+layout.buildDirectory.dir("lwjgl2-test/natives").get().asFile.absolutePath)
+        }else {
+            dependsOn("desktopJar")
+            classpath=files(mediaTestArtifact,mainlineCoreArtifact,mainlineFontArtifact,mediaArtifact,desktopArtifact)
+            systemProperty("uilib.desktop.visible","false")
+        }
+        maxHeapSize="1024m"
+        mustRunAfter("desktopScrollAreaVerify")
+    }
+    tasks.named("check") { dependsOn(application) }
+}

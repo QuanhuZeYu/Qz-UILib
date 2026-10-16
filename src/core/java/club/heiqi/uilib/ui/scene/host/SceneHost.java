@@ -11,6 +11,9 @@ public interface SceneHost {
     /** 帧开始在宿主调用线程推进有界资源入口，再由服务投受控domain；不逐节点轮询。 */
     default void prepareResources() {}
 
+    /** 显式媒体宿主的挂载 consumer 泵；普通无媒体入口保持无平台且不创建服务。 */
+    default club.heiqi.uilib.ui.scene.video.MediaViewPump mediaViews() { return null; }
+
     int width();
 
     int height();

@@ -1,0 +1,1 @@
+此4秒160×90/10fps测试输入由lavfi testsrc+sine生成，供隔离成品短场景使用；H.264/AAC MPEG-TS，无外部受版权素材。生成命令：ffmpeg -f lavfi -i testsrc=size=160x90:rate=10 -f lavfi -i sine=frequency=440:sample_rate=48000 -t 4 -c:v libx264 -pix_fmt yuv420p -profile:v baseline -g 10 -keyint_min 10 -sc_threshold 0 -c:a aac -b:a 64k -f mpegts segment.ts。正式量化仍使用固定1080p30/600秒受控源，不以本短素材替代。

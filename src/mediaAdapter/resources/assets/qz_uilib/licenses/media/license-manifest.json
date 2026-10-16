@@ -1,0 +1,126 @@
+[
+  {
+    "file": "javacpp-LICENSE.txt",
+    "sha256": "7af2c71123acc752ac8697f64b654b3624a93b481dab26937910a56d6c44f3bb"
+  },
+  {
+    "file": "javacpp-presets-LICENSE.txt",
+    "sha256": "7af2c71123acc752ac8697f64b654b3624a93b481dab26937910a56d6c44f3bb"
+  },
+  {
+    "file": "ffmpeg-COPYING.LGPLv3.txt",
+    "sha256": "da7eabb7bafdf7d3ae5e9f223aa5bdc1eece45ac569dc21b3b037520b4464768"
+  },
+  {
+    "file": "ffmpeg-COPYING.GPLv3.txt",
+    "sha256": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903"
+  },
+  {
+    "file": "ffmpeg-LICENSE.md",
+    "sha256": "cb48bf09a11f5fb576cddb0431c8f5ed0a60157a9ec942adffc13907cbe083f2"
+  },
+  {
+    "file": "m3u8-parser-0.29-MIT.txt",
+    "sha256": "84521c389e511c7ab43fe20abbc96105980af5e4044f9c3d453f1b7f57ccce88"
+  },
+  {
+    "file": "LWJGL-LICENSE.md",
+    "sha256": "8130c6f15e9f961e74c2b197551e60ef9d00521addc5908255be1cdd43a6c90b"
+  },
+  {
+    "file": "OpenAL-Soft-COPYING",
+    "sha256": "d808ce217e5b611854da622b57ec29fe545584c48bc5352fae72a4b6e5074a15"
+  },
+  {
+    "file": "zlib-LICENSE",
+    "sha256": "845efc77857d485d91fb3e0b884aaa929368c717ae8186b66fe1ed2495753243"
+  },
+  {
+    "file": "speex-COPYING",
+    "sha256": "2654a4264b2bfe298dedc508748d140111840c315cc8eb646a3a68c13fa75b01"
+  },
+  {
+    "file": "opus-COPYING",
+    "sha256": "8338ce8d922bb4416ce3dd1e5680173332435e3f0755007ac7801ccd674fe682"
+  },
+  {
+    "file": "OpenSSL-LICENSE",
+    "sha256": "7d5450cb2d142651b8afa315b5f238efc805dad827d91ba367d8516bc9d49e7a"
+  },
+  {
+    "file": "OpenH264-LICENSE",
+    "sha256": "0f2262320212046c7453b0d2f10b44ca6702481f18168ee4a963c45eb6aea2f1"
+  },
+  {
+    "file": "libvpx-LICENSE",
+    "sha256": "8267348d5af1262c11d1a08de2f5afc77457755f1ac658627dd9acf71011d615"
+  },
+  {
+    "file": "libvpx-PATENTS",
+    "sha256": "cc3273e0694ea5896145e0677699b53471b03ea43021ddc50e7923fbb9f5023c"
+  },
+  {
+    "file": "FreeType-FTL.txt",
+    "sha256": "08c135755dd589039470f1fdbb400daaabaaa50d0b366d19cebff4d22986baa1"
+  },
+  {
+    "file": "libxml2-Copyright",
+    "sha256": "c5c63674f8a83c4d2e385d96d1c670a03cb871ba2927755467017317878574bd"
+  },
+  {
+    "file": "SRT-LICENSE",
+    "sha256": "fab3dd6bdab226f1c08630b1dd917e11fcb4ec5e1e020e2c16f83a0a13863e85"
+  },
+  {
+    "file": "libwebp-COPYING",
+    "sha256": "5aec868f669e384a22372a4e8a1a6cd7d44c64cd451f960ca69cc170d1e13acf"
+  },
+  {
+    "file": "mfx-LICENSE",
+    "sha256": "f03bff2bd2f916104d12d50caeaab41875086943ea8b88983eafa5d84890593c"
+  },
+  {
+    "file": "lame-COPYING",
+    "sha256": "bfe4a52dc4645385f356a8e83cc54216a293e3b6f1cb4f79f5fc0277abf937fd"
+  },
+  {
+    "file": "lame-LICENSE",
+    "sha256": "7a40cbd8818c57e5285e83c772a459a996d1662c824a879836b97b473c07cae4"
+  },
+  {
+    "file": "opencore-amr-LICENSE",
+    "sha256": "8b3f1762349248d444ab9acbafe73941254e36e1064954da56bb9ddbd5873ddb"
+  },
+  {
+    "file": "vo-amrwbenc-COPYING",
+    "sha256": "8b3f1762349248d444ab9acbafe73941254e36e1064954da56bb9ddbd5873ddb"
+  },
+  {
+    "file": "SVT-AV1-LICENSE",
+    "sha256": "0acc2fcb27472bdc9aaf8b71f37055bbdac4f54671b7d922f241bd7fcd0dd3e6"
+  },
+  {
+    "file": "AOM-LICENSE",
+    "sha256": "4764a286d8b2faeaf42f4418e7d7a28d58fc8fd4d00a3d0a7f44b0a4099de7f2"
+  },
+  {
+    "file": "AOM-PATENTS",
+    "sha256": "661fb8e504744e95587b556b94a58343448300606a41bea8c7a9b97125696e61"
+  },
+  {
+    "file": "GCC-RUNTIME-EXCEPTION",
+    "sha256": "9d6b43ce4d8de0c878bf16b54d8e7a10d9bd42b75178153e3af6a815bdc90f74"
+  },
+  {
+    "file": "mingw-w64-COPYING",
+    "sha256": "99a69660981156c21336fdb5661f89341b013c94e4bf9e1c7467b4745718397f"
+  },
+  {
+    "file": "sources/ffmpeg-cppbuild.sh",
+    "sha256": "f88d88bca74fda38a15ebedef4f6a82b24459bd9a630a30aee9e02b77165fdc6"
+  },
+  {
+    "file": "nv-codec-headers-COPYRIGHT.txt",
+    "sha256": "af37aa535fb7e7bf4546ac59b493ec14751ce3c0000608e56a5b6084dcc33643"
+  }
+]

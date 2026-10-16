@@ -18,8 +18,10 @@ import java.util.jar.JarFile;
 /** 成品隔离启动：场景仅提供消费者代码，生产定义与资源必须来自正式 coreJar。 */
 public final class CoreArtifactScenario extends TestApplication {
     private boolean desktopMode;
+    private int targetMajor=52;
     private static final String[] CORE = {
         "club/heiqi/uilib/ui/scene/",
+        "club/heiqi/uilib/ui/media/",
         "club/heiqi/uilib/ui/reactive/",
         "club/heiqi/uilib/ui/config/",
         "club/heiqi/uilib/ui/settings/",
@@ -39,35 +41,39 @@ public final class CoreArtifactScenario extends TestApplication {
     @Override
     protected void runTests() throws Exception {
         String[] args = arguments();
-        if (args.length > 0 && "--desktop".equals(args[0])) {
+        if(args.length>0 && "--java21".equals(args[0])) { targetMajor=65; args=java.util.Arrays.copyOfRange(args,1,args.length); }
+        final String[] inputArgs=args;
+        if(args.length==2 && "--media".equals(args[0])) { scenario("媒体成品私有绑定、许可与字节码归属",()->verifyMediaAdapter(new File(inputArgs[1])));return; }
+        if (args.length > 0 && "--desktop".equals(inputArgs[0])) {
             require(args.length == 4, "桌面隔离需要 core、fontAdapter 与 desktop 成品");
             scenario(
                     "桌面正式成品隔离核心字体及MC平台引用",
                     () -> {
-                        verifyCore(new File(args[1]));
-                        verifyAdapter(new File(args[2]));
+                        verifyCore(new File(inputArgs[1]));
+                        verifyAdapter(new File(inputArgs[2]));
                         desktopMode = true;
-                        verifyDesktop(new File(args[3]));
+                        verifyDesktop(new File(inputArgs[3]));
                     });
             return;
         }
-        if (args.length > 0 && "--host".equals(args[0])) {
+        if (args.length > 0 && "--host".equals(inputArgs[0])) {
             require(args.length >= 4, "宿主隔离需要 core、fontAdapter 与 MC 成品");
             scenario(
                     "宿主成品不重复定义核心、ICU、YAML或字体适配",
                     () -> {
-                        verifyAdapter(new File(args[2]));
-                        for (int i = 3; i < args.length; i++) verifyHost(new File(args[i]));
+                        verifyCore(new File(inputArgs[1]));
+                        verifyAdapter(new File(inputArgs[2]));
+                        for (int i = 3; i < inputArgs.length; i++) verifyHost(new File(inputArgs[i]));
                     });
             return;
         }
         require(args.length == 3, "独立核心启动需要 coreJar、隔离场景输出与 testSupport 输出");
-        File core = new File(args[0]).getCanonicalFile();
-        scenario("核心成品只含Java8无平台定义和资源", () -> verifyCore(core));
+        File core = new File(inputArgs[0]).getCanonicalFile();
+        scenario("核心成品只含目标Java无平台定义和资源", () -> verifyCore(core));
         URL[] urls = {
             core.toURI().toURL(),
-            new File(args[1]).toURI().toURL(),
-            new File(args[2]).toURI().toURL()
+            new File(inputArgs[1]).toURI().toURL(),
+            new File(inputArgs[2]).toURI().toURL()
         };
         // null parent 排除开发进程中的 main/core 输出、MC、原始 ICU/YAML 与 native；不把宿主成品接进来。
         try (URLClassLoader loader = new URLClassLoader(urls, null)) {
@@ -246,6 +252,41 @@ public final class CoreArtifactScenario extends TestApplication {
         }
     }
 
+    private void verifyMajor(InputStream input,String name) throws Exception {
+        try(DataInputStream data=new DataInputStream(input)) {
+            require(data.readInt()==0xCAFEBABE,"无效class："+name);data.readUnsignedShort();
+            int major=data.readUnsignedShort();require(major==targetMajor,"产物自有类字节码错误："+name+" major="+major+" expected="+targetMajor);
+        }
+    }
+
+    private void verifyMediaAdapter(File file) throws Exception {
+        try(JarFile jar=new JarFile(file)) {
+            String runtime="assets/qz_uilib/runtime/media/",license="assets/qz_uilib/licenses/media/";
+            require(jar.getJarEntry("club/heiqi/uilib/host/media/IsolatedMediaAdapters.class")!=null,"媒体正式入口缺失");
+            require(jar.getJarEntry(runtime+"index.txt")!=null,"私有媒体清单缺失");
+            for(String name:new String[]{"javacpp-LICENSE.txt","javacpp-presets-LICENSE.txt","ffmpeg-COPYING.LGPLv3.txt","ffmpeg-COPYING.GPLv3.txt","m3u8-parser-0.29-MIT.txt","LWJGL-LICENSE.md","OpenAL-Soft-COPYING","SOURCE.md","license-manifest.json"})require(jar.getJarEntry(license+name)!=null,"媒体许可/来源缺失: "+name);
+            int nested=0;
+            for(JarEntry entry:java.util.Collections.list(jar.entries())) {
+                String name=entry.getName();
+                if(name.endsWith(".class")) {
+                    require(name.startsWith("club/heiqi/uilib/host/media/"),"媒体顶层泄漏非所属类: "+name);
+                    verifyMajor(jar.getInputStream(entry),name);
+                }
+                require(!name.startsWith("club/heiqi/uilib/testing/")&&!name.startsWith("uilib-media/")&&!name.startsWith("assets/qz_uilib_test/"),"媒体生产成品泄漏测试: "+name);
+                if(name.endsWith(".jar")) {
+                    require(name.startsWith(runtime),"媒体嵌套Jar归属错误: "+name);nested++;
+                    try(java.util.jar.JarInputStream child=new java.util.jar.JarInputStream(jar.getInputStream(entry))) {
+                        for(JarEntry item;(item=child.getNextJarEntry())!=null;)if(item.getName().endsWith(".class")&&!item.getName().startsWith("META-INF/versions/")) {
+                            DataInputStream data=new DataInputStream(child);require(data.readInt()==0xCAFEBABE,"无效绑定class");data.readUnsignedShort();
+                            require(data.readUnsignedShort()<=52,"legacy不可加载的私有绑定: "+name+":"+item.getName());
+                        }
+                    }
+                }
+            }
+            require(nested==9,"媒体固定绑定集合不完整: "+nested);
+        }
+    }
+
     private void verifyCore(File file) throws Exception {
         try (JarFile jar = new JarFile(file)) {
             Enumeration<JarEntry> entries = jar.entries();
@@ -305,8 +346,10 @@ public final class CoreArtifactScenario extends TestApplication {
             Enumeration<JarEntry> entries = jar.entries();
             while (entries.hasMoreElements()) {
                 String name = entries.nextElement().getName();
-                if (name.endsWith(".class"))
+                if (name.endsWith(".class")) {
                     require(name.startsWith(ADAPTER), "字体适配重复或泄漏其他定义：" + name);
+                    verifyMajor(jar.getInputStream(jar.getJarEntry(name)),name);
+                }
             }
         }
     }
@@ -332,6 +375,8 @@ public final class CoreArtifactScenario extends TestApplication {
                                         || name.startsWith("org/jsoup/"))),
                         "MC成品重复定义独立模块：" + name);
                 require(!name.startsWith("club/heiqi/uilib/host/desktop/"), "MC成品嵌入桌面宿主：" + name);
+                require(!name.startsWith("club/heiqi/uilib/host/media/")&&!name.startsWith("assets/qz_uilib/runtime/media/"), "MC重复嵌入独立媒体模块："+name);
+                if(name.endsWith(".class")&&name.startsWith("club/heiqi/uilib/"))verifyMajor(jar.getInputStream(jar.getJarEntry(name)),name);
                 require(
                         !name.startsWith("assets/qz_uilib/runtime/font/")
                                 && !name.startsWith("assets/qz_uilib/fonts/")
@@ -414,7 +459,9 @@ public final class CoreArtifactScenario extends TestApplication {
         DataInputStream data = new DataInputStream(input);
         require(data.readInt() == 0xCAFEBABE, "无效class：" + name);
         data.readUnsignedShort();
-        require(data.readUnsignedShort() <= 52, "核心不是Java8字节码：" + name);
+        int major=data.readUnsignedShort();
+        boolean own=name.startsWith("club/heiqi/uilib/")&&!name.startsWith("club/heiqi/uilib/shadow/");
+        require(own?major==targetMajor:major<=52, "成品字节码目标错误："+name+" major="+major+" expected="+targetMajor);
         int count = data.readUnsignedShort();
         String[] utf8 = new String[count];
         List<Integer> typeReferences = new ArrayList<Integer>();
@@ -493,8 +540,12 @@ public final class CoreArtifactScenario extends TestApplication {
                             "net/minecraftforge/",
                             "cpw/mods/",
                             "org/lwjgl/",
+                            "org/bytedeco/",
+                            "io/lindstrom/",
                             "club/heiqi/uilib/host/"
                         };
+        // ICU含可选AWT重载；约束自有core引用，并以无desktop模块的真实逻辑闭环证明加载。
+        if(startsWith(name,CORE))require(!value.contains("java/awt/")&&!value.contains("javax/imageio/")&&!value.contains("javax/sound/"),"自有核心引用desktop："+name+" -> "+value);
         for (String forbidden : forbiddenTypes) {
             // 核心供应的私有重定位引用有效；原始依赖类型不能由开发classpath补齐。
             String checked =

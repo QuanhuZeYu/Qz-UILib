@@ -19,7 +19,16 @@ public final class MinecraftSceneHost implements SceneHost, SceneTextMeasurer, A
     private final ClientFontServices fonts = MinecraftFontServices.shared();
     private final club.heiqi.uilib.host.client.image.ClientImageServices images =
             club.heiqi.uilib.host.client.image.MinecraftImageServices.shared();
-    private final FramebufferSceneRenderer renderer = new FramebufferSceneRenderer(fonts, images);
+    private final FramebufferSceneRenderer renderer;
+    private final club.heiqi.uilib.ui.scene.video.MediaViewPump mediaViews;
+
+    public MinecraftSceneHost() { this(null); }
+    /** 借用中性服务；MC的framebuffer-submit回执不冒充游戏最终交换。 */
+    public MinecraftSceneHost(club.heiqi.uilib.ui.media.MediaService media) {
+        mediaViews = media == null ? null : new club.heiqi.uilib.ui.scene.video.MediaViewPump();
+        renderer = new FramebufferSceneRenderer(fonts, images, media, false);
+    }
+    @Override public club.heiqi.uilib.ui.scene.video.MediaViewPump mediaViews() { return mediaViews; }
 
     @Override
     public ThemeConfiguration themeConfiguration() {
@@ -33,6 +42,7 @@ public final class MinecraftSceneHost implements SceneHost, SceneTextMeasurer, A
     @Override
     public void prepareResources() {
         images.prepareResources();
+        if (mediaViews != null) mediaViews.prepareResources();
     }
 
     @Override
@@ -85,6 +95,12 @@ public final class MinecraftSceneHost implements SceneHost, SceneTextMeasurer, A
 
     @Override
     public void close() {
-        renderer.close();
+        Throwable failure = null;
+        try { renderer.close(); } catch (RuntimeException | Error next) { failure = next; }
+        try { if (mediaViews != null) mediaViews.close(); } catch (RuntimeException | Error next) {
+            if (failure == null) failure = next; else if (next != failure) failure.addSuppressed(next);
+        }
+        if (failure instanceof Error) throw (Error) failure;
+        if (failure instanceof RuntimeException) throw (RuntimeException) failure;
     }
 }

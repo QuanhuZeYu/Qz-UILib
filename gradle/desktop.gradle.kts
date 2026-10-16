@@ -28,13 +28,30 @@ tasks.named<JavaCompile>(desktopSources.compileJavaTaskName) {
     classpath = desktopSources.compileClasspath
 }
 
+val core21 = tasks.named<JavaCompile>("compileCore21Java")
+val font21 = tasks.named<JavaCompile>("compileFontAdapter21Java")
+val gl21 = tasks.named<JavaCompile>("compileGlRenderer21Java")
+val binding21 = tasks.named<JavaCompile>("compileLwjgl3Desktop21Java")
+val mainlineOutput = files(core21.flatMap { it.destinationDirectory }, font21.flatMap { it.destinationDirectory },
+    gl21.flatMap { it.destinationDirectory }, binding21.flatMap { it.destinationDirectory })
+val compileDesktop21Java by tasks.registering(JavaCompile::class) {
+    dependsOn(core21, font21, gl21, binding21)
+    source(desktopSources.java)
+    classpath = mainlineOutput + fontBindings + coreContentRuntime
+    destinationDirectory.set(layout.buildDirectory.dir("classes/java/desktop21"))
+    javaCompiler.set(javaToolchains.compilerFor { languageVersion.set(JavaLanguageVersion.of(21)) })
+    sourceCompatibility = "21"; targetCompatibility = "21"; options.release.set(21)
+    options.compilerArgs.add("-proc:none")
+}
 // fontNativeRuntime 沿 font-runtime.gradle.kts 的构建机 os/arch 选择 native；此分发不是跨平台包。
 // CPU 字体的隔离绑定资源仍只归 font-adapter，不从该输出重复嵌入桌面。
 val desktopJar by tasks.registering(ShadowJar::class) {
     group = "build"
-    description = "生成当前平台 Java8 独立桌面宿主及 GLFW/OpenGL bindings/native"
+    description = "生成当前平台 Java21 独立桌面宿主及 GLFW/OpenGL bindings/native"
     archiveClassifier.set("desktop")
-    from(desktopSources.output, glRendererSources.output, lwjgl3Sources.output)
+    dependsOn(compileDesktop21Java, gl21, binding21, tasks.named(desktopSources.processResourcesTaskName))
+    from(compileDesktop21Java.flatMap { it.destinationDirectory }, gl21.flatMap { it.destinationDirectory },
+        binding21.flatMap { it.destinationDirectory }, desktopSources.output.resourcesDir)
     configurations.set(listOf(fontNativeRuntime))
     minimizeJar.set(false)
     enableAutoRelocation.set(false)
@@ -52,7 +69,8 @@ val desktopJar by tasks.registering(ShadowJar::class) {
 val coreArtifact = tasks.named<Jar>("coreJar").flatMap { it.archiveFile }
 val adapterArtifact = tasks.named<Jar>("fontAdapterJar").flatMap { it.archiveFile }
 val desktopArtifact = desktopJar.flatMap { it.archiveFile }
-val desktopArtifacts = files(desktopArtifact, coreArtifact, adapterArtifact)
+val mediaArtifact = tasks.named<Jar>("mediaAdapterJar").flatMap { it.archiveFile }
+val desktopArtifacts = files(desktopArtifact, coreArtifact, adapterArtifact, mediaArtifact)
 val desktopScripts = layout.buildDirectory.dir("generated/desktop-launchers")
 val mac = System.getProperty("os.name").lowercase().contains("mac")
 
@@ -71,7 +89,7 @@ abstract class GenerateDesktopLaunchers : DefaultTask() {
         for ((name, desktopMain) in launchers) {
             directory.resolve("$name.bat").writeText(
                 "@echo off\r\nsetlocal\r\nset \"DESKTOP_JAVA=java\"\r\nif defined JAVA_HOME set \"DESKTOP_JAVA=%JAVA_HOME%\\bin\\java.exe\"\r\n\"%DESKTOP_JAVA%\" -Dfile.encoding=UTF-8 -Xmx1g -cp \"%~dp0..\\lib\\*\" $desktopMain %*\r\nexit /b %errorlevel%\r\n", Charsets.UTF_8)
-            // Java8 不使用 @argfile；lib 仅安装下方三个正式产物，允许目录含空格。
+            // Java21 使用通配类路径；lib 仅安装下方四个正式产物，允许目录含空格。
             directory.resolve(if (name == "qz-desktop") "$name.sh" else name).writeText(
                 "#!/bin/sh\nDESKTOP_HOME=\"\$(CDPATH= cd -- \"\$(dirname -- \"\$0\")/..\" && pwd)\"\nDESKTOP_JAVA=java\nif [ -n \"\$JAVA_HOME\" ]; then DESKTOP_JAVA=\"\$JAVA_HOME/bin/java\"; fi\nexec \"\$DESKTOP_JAVA\" "+ (if (mac) "-XstartOnFirstThread " else "") + "-Dfile.encoding=UTF-8 -Xmx1g -cp \"\$DESKTOP_HOME/lib/*\" $desktopMain \"\$@\"\n", Charsets.UTF_8)
         }
@@ -85,15 +103,15 @@ val generateDesktopLaunchers by tasks.registering(GenerateDesktopLaunchers::clas
 }
 val installDesktop by tasks.registering(Sync::class) {
     group = "distribution"
-    description = "安装当前平台 desktop/core/font-adapter 成品及 Java8 启动脚本"
-    dependsOn(desktopJar, tasks.named("coreJar"), tasks.named("fontAdapterJar"), generateDesktopLaunchers)
+    description = "安装当前平台 desktop/core/font-adapter 成品及 Java21 启动脚本"
+    dependsOn(desktopJar, tasks.named("coreJar"), tasks.named("fontAdapterJar"), tasks.named("mediaAdapterJar"), generateDesktopLaunchers)
     into(layout.buildDirectory.dir("install/desktop"))
     from(desktopArtifacts) { into("lib") }
     from(desktopScripts) { into("bin"); filePermissions { unix("rwxr-xr-x") } }
 }
 val desktopDist by tasks.registering(Zip::class) {
     group = "distribution"
-    description = "打包当前构建平台的独立桌面分发；使用系统 Java8 或 JAVA_HOME"
+    description = "打包当前构建平台的独立桌面分发；使用系统 Java21 或 JAVA_HOME"
     dependsOn(installDesktop)
     archiveClassifier.set("desktop-dist")
     destinationDirectory.set(layout.buildDirectory.dir("distributions"))
@@ -107,11 +125,14 @@ val desktopDist by tasks.registering(Zip::class) {
 // verification脚本随后创建testSupport；延迟取得输出，只接到测试消费者。
 val testApplicationOutput = files(provider { sourceSets.getByName("testSupport").output })
 val desktopTestSources = sourceSets.create("desktopTest") {
-    compileClasspath = testApplicationOutput + sourceSets.getByName("gallery").output + desktopSources.output + glRendererSources.output + lwjgl3Sources.output + coreSources.output + fontAdapterSources.output + fontBindings + coreContentRuntime
+    compileClasspath = testApplicationOutput + sourceSets.getByName("gallery").output + mainlineOutput + files(compileDesktop21Java.flatMap { it.destinationDirectory }) + sourceSets.getByName("mediaAdapter").output + sourceSets.getByName("mediaTest").output + fontBindings + coreContentRuntime
     runtimeClasspath = output + desktopArtifacts
 }
 tasks.named<JavaCompile>(desktopTestSources.compileJavaTaskName) {
-    dependsOn(tasks.named(desktopSources.classesTaskName), "testSupportClasses")
+    dependsOn(compileDesktop21Java, "mediaTestClasses", "testSupportClasses")
+    // 消费21生产class必须由现代编译器读取；测试自身仍可独立输出52。
+    javaCompiler.set(javaToolchains.compilerFor { languageVersion.set(JavaLanguageVersion.of(21)) })
+    options.release.set(8)
     sourceCompatibility = "1.8"
     targetCompatibility = "1.8"
     options.release.set(8)
@@ -123,6 +144,7 @@ val desktopTestJar by tasks.registering(ShadowJar::class) {
     description = "生成独立桌面验收消费者，仅测试定义，不嵌入任何生产依赖"
     archiveClassifier.set("desktop-test")
     from(desktopTestSources.output)
+    from(sourceSets.getByName("mediaTest").output)
     from(testApplicationOutput)
     from(sourceSets.getByName("gallery").output)
     configurations.set(emptyList())
@@ -139,10 +161,10 @@ fun desktopApplication(name: String, summary: String, verify: Boolean) = tasks.r
     description = summary
     dependsOn(installDesktop)
     mainClass.set(if (verify) "club.heiqi.uilib.host.desktop.DesktopVerification" else desktopMain)
-    // 测试只追加消费者 jar；所有生产类仍来自分发的三个正式 jar。
+    // 测试只追加消费者 jar；所有生产类仍来自分发的四个正式 jar。
     classpath = if (verify) files(desktopTestJar.flatMap { it.archiveFile }) + desktopArtifacts else desktopArtifacts
     if (verify) dependsOn(desktopTestJar)
-    javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(8)) })
+    javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(21)) })
     jvmArgs("-Dfile.encoding=UTF-8", "-Xmx1g")
     if (providers.gradleProperty("desktopHidden").isPresent) systemProperty("uilib.desktop.visible", "false")
     if (mac) jvmArgs("-XstartOnFirstThread")
