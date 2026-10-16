@@ -50,18 +50,18 @@ public final class PerformanceSamplesScenario extends TestApplication {
 
     private void strictThresholds() {
         // 每条阈值都含 -1、相等、+1 纳秒；0 纳秒也属于合法样本。
-        long[] frames = {50_000_000L, 16_666_667L, 0L, 33_333_334L, 16_666_666L,
-                50_000_001L, 33_333_333L, 16_666_668L, 49_999_999L, 33_333_332L};
-        long[] intervals = {33_333_332L, 49_999_999L, 16_666_668L, 33_333_333L,
-                50_000_001L, 16_666_666L, 33_333_334L, 0L, 16_666_667L, 50_000_000L};
+        long[] frames = {50_000_000L, 16_667_000L, 0L, 33_333_001L, 16_666_999L,
+                50_000_001L, 33_333_000L, 16_667_001L, 49_999_999L, 33_332_999L};
+        long[] intervals = {33_332_999L, 49_999_999L, 16_667_001L, 33_333_000L,
+                50_000_001L, 16_666_999L, 33_333_001L, 0L, 16_667_000L, 50_000_000L};
         PerformanceSamples samples = new PerformanceSamples(10);
         for (int index = 0; index < frames.length; index++) {
             samples.add(frames[index], intervals[index]);
         }
         assertSummary(samples.frame(), 10, 30_000_000d,
-                33_333_332L, 50_000_001L, 50_000_001L, 50_000_001L, 7, 4, 1);
+                33_332_999L, 50_000_001L, 50_000_001L, 50_000_001L, 7, 4, 1);
         assertSummary(samples.interval(), 10, 30_000_000d,
-                33_333_332L, 50_000_001L, 50_000_001L, 50_000_001L, 7, 4, 1);
+                33_332_999L, 50_000_001L, 50_000_001L, 50_000_001L, 7, 4, 1);
         System.out.println("JSON_THRESHOLD " + samples.toJson());
         require(Arrays.equals(samples.frames(), frames), "统计和报告改变了帧样本顺序");
         require(Arrays.equals(samples.intervals(), intervals), "统计和报告改变了帧间隔顺序");

@@ -8,8 +8,8 @@ import java.util.Arrays;
  * 实例由单个宿主线程持有，完成或中断状态由所属运行管理，不能由样本数推断。
  */
 public final class PerformanceSamples {
-    private static final long THRESHOLD_16 = 16_666_667L;
-    private static final long THRESHOLD_33 = 33_333_333L;
+    private static final long THRESHOLD_16 = 16_667_000L;
+    private static final long THRESHOLD_33 = 33_333_000L;
     private static final long THRESHOLD_50 = 50_000_000L;
 
     private final long[] frameNanos;

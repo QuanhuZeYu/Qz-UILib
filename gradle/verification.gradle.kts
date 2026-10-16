@@ -199,7 +199,12 @@ val minecraftScreenSwitchScenario = registerTestApplication("minecraftScreenSwit
     javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(8)) })
     jvmArgs("-Dfile.encoding=UTF-8", "-Djava.library.path=" + layout.buildDirectory.dir("lwjgl2-test/natives").get().asFile.absolutePath)
 }
-tasks.named("check") { dependsOn(minecraftScreenSwitchScenario) }
+val minecraftScreenCleanupScenario = registerTestApplication("minecraftScreenCleanupScenario", "MC正式session与输入资源双失败首错及幂等清理", "club.heiqi.uilib.ui.host.minecraft.MinecraftScreenCleanupScenario", useDefaultLauncher = false) {
+    dependsOn(tasks.named(lwjgl2TestSources.classesTaskName))
+    classpath = lwjgl2TestSources.runtimeClasspath
+    javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(8)) })
+}
+tasks.named("check") { dependsOn(minecraftScreenSwitchScenario, minecraftScreenCleanupScenario) }
 val minecraftFontShutdownScenario = registerTestApplication("minecraftFontShutdownScenario", "MC共享字体桥失败仍结束真实owner", "club.heiqi.uilib.ui.scene.integration.MinecraftFontShutdownScenario", useDefaultLauncher = false) {
     dependsOn(tasks.named(lwjgl2TestSources.classesTaskName), "extractLwjgl2TestNatives")
     classpath = lwjgl2TestSources.runtimeClasspath + sourceSets.getByName("patchedMc").output + sourceSets.getByName("main").compileClasspath.filter { !it.name.contains("jabel") }

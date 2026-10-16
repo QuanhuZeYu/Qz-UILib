@@ -24,6 +24,13 @@ public final class SettingsModel {
         public String declaration() { return declaration; }
     }
 
+    /** 同文案的两次成功仍是两个操作；呈现期限不改变业务结果。 */
+    static final class Feedback {
+        final String text;
+        final boolean success;
+        Feedback(String text, boolean success) { this.text = text; this.success = success; }
+    }
+
     private final SettingsConfiguration configuration;
     private final ReactiveDomain domain;
     private final Owner scope;
@@ -33,7 +40,7 @@ public final class SettingsModel {
     private final Signal<Boolean> externalChanged;
     private final Signal<String> fontError;
     private final Signal<String> fileError;
-    private final Signal<String> message;
+    private final Signal<Feedback> message;
     private final ReadableSignal<Boolean> dirty;
     private final ReadableSignal<Boolean> unsaved;
     private final ReadableSignal<String> error;
@@ -53,7 +60,7 @@ public final class SettingsModel {
         externalChanged = domain.signal(false);
         fontError = domain.signal("");
         fileError = domain.signal("");
-        message = domain.signal("");
+        message = domain.signal(null);
         dirty = domain.computed(scope, () -> !draft().equals(configuration.current()));
         unsaved = domain.computed(scope, () -> !configuration.current().equals(configuration.saved().get()));
         error = domain.computed(scope, () -> !fontError.get().isEmpty() ? fontError.get()
@@ -72,7 +79,12 @@ public final class SettingsModel {
     public ReadableSignal<String> error() { return error; }
     public ReadableSignal<String> fontError() { return fontError; }
     public ReadableSignal<String> fileError() { return fileError; }
-    public ReadableSignal<String> message() { return () -> configuration.resourceError().get().isEmpty() ? message.get() : ""; }
+    public ReadableSignal<String> message() {
+        return () -> { Feedback value = feedback().get(); return value == null ? "" : value.text; };
+    }
+    ReadableSignal<Feedback> feedback() {
+        return () -> configuration.resourceError().get().isEmpty() ? message.get() : null;
+    }
     public ReadableSignal<String> saveDisabledReason() { return saveDisabledReason; }
 
     private Snapshot draft() {
@@ -103,7 +115,7 @@ public final class SettingsModel {
     }
 
     private void synchronize() {
-        if (!configuration.resourceError().get().isEmpty()) message.set("");
+        if (!configuration.resourceError().get().isEmpty()) message.set(null);
         Snapshot current = configuration.current();
         configuration.saved().get();
         if (!current.equals(observed)) {
@@ -127,7 +139,7 @@ public final class SettingsModel {
     private void clearFeedback() {
         fontError.set("");
         fileError.set("");
-        message.set("");
+        message.set(null);
     }
 
     public void add(String declaration) {
@@ -223,7 +235,7 @@ public final class SettingsModel {
                 configuration.apply(submitted.candidates(), submitted.replace(), submitted.theme());
                 observed = configuration.current();
                 externalChanged.set(false);
-                message.set("已应用全部更改");
+                message.set(new Feedback("已应用全部更改", true));
             } catch (RuntimeException failure) { applicationFailure(failure); }
         }, failure -> { if (!scope.isDisposed()) applicationFailure(failure); });
     }
@@ -232,7 +244,7 @@ public final class SettingsModel {
         observed = configuration.current();
         boolean published = draft().equals(observed);
         if (published) externalChanged.set(false);
-        message.set("");
+        message.set(null);
         fontError.set((published ? "配置已发布，资源更新失败：" : "应用失败：") + reason(failure));
     }
 
@@ -241,12 +253,12 @@ public final class SettingsModel {
         domain.enqueue(() -> {
             if (scope.isDisposed()) return;
             synchronize();
-            if (dirty.get()) { message.set("先应用更改"); return; }
+            if (dirty.get()) { message.set(new Feedback("先应用更改", false)); return; }
             if (!unsaved.get()) return;
             clearFeedback();
             try {
                 configuration.save();
-                message.set("已保存到 " + configuration.path());
+                message.set(new Feedback("已保存到 " + configuration.path(), true));
             } catch (IOException | RuntimeException failure) { fileFailure("保存", failure); }
         }, failure -> { if (!scope.isDisposed()) fileFailure("保存后的通知", failure); });
     }
@@ -261,7 +273,7 @@ public final class SettingsModel {
                 configuration.reload();
                 observed = configuration.current();
                 restore(observed);
-                message.set("已从 " + configuration.path() + " 重新加载");
+                message.set(new Feedback("已从 " + configuration.path() + " 重新加载", true));
             } catch (IOException | RuntimeException failure) { fileFailure("重新加载", failure); }
         }, failure -> { if (!scope.isDisposed()) fileFailure("重新加载后的资源更新", failure); });
     }
@@ -269,7 +281,7 @@ public final class SettingsModel {
     private void fileFailure(String action, Throwable failure) {
         // load 可能已发布而同步观察者失败：更新观察基线，保留原草稿与真实保存基线。
         observed = configuration.current();
-        message.set("");
+        message.set(null);
         fileError.set(action + "失败：" + configuration.path() + " — " + reason(failure));
     }
 

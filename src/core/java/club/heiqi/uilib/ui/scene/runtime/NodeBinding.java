@@ -43,6 +43,14 @@ public interface NodeBinding {
         return new TransitionBinding(source, durationNanos, easing, apply);
     }
 
+    /** 短暂离散呈现：非null来源的新对象身份重新起期，到期发布null但不改来源。
+     * 同一来源身份到期后保持结束；初挂/重挂消费当前来源，null即时撤销。
+     * apply只更新呈现声明或所属呈现Signal；卸载结束观察与有限推进。 */
+    static <T> NodeBinding transientValue(ReadableSignal<T> source, long durationNanos,
+            BiConsumer<SceneNode, T> apply) {
+        return new TransientBinding<>(source, durationNanos, apply);
+    }
+
     /** 当前被动命中处于本节点逻辑子树时，停留后发布true；离开/卸载立即结束。
      * apply仅发布呈现值；命中、裁剪、模态及所属层资格沿唯一路由器。 */
     static NodeBinding hoverWithin(long enterDelayNanos, BiConsumer<SceneNode, Boolean> apply) {

@@ -504,15 +504,10 @@ public class MinecraftSceneScreen extends GuiScreen {
 
     @Override
     public void onGuiClosed() {
-        ScenePageSession opened = session;
-        Inputs closing = inputs;
+        MinecraftScreenResources closing = new MinecraftScreenResources(session, inputs);
         // 先断开旧输入联系，迟到ESC不能关闭新会话；原生桥在session释放后结束。
         session = null;
         inputs = null;
-        try {
-            if (opened != null) opened.close();
-        } finally {
-            if (closing != null) closing.close();
-        }
+        closing.close();
     }
 }

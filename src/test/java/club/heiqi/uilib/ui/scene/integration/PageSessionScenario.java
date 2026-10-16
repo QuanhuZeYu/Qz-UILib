@@ -31,6 +31,7 @@ public final class PageSessionScenario extends TestApplication {
 
     @Override
     protected void runTests() throws Exception {
+        scenario("离散呈现期限、同文案身份与挂载释放", this::transientPresentation);
         scenario(
                 "声明页面真实绑定输入与尺寸更新只构造一次",
                 () -> {
@@ -627,6 +628,51 @@ public final class PageSessionScenario extends TestApplication {
                             });
                     page.frame();
                 });
+    }
+
+    private static final class Success {
+        final String text;
+        Success(String text) { this.text = text; }
+    }
+
+    private void transientPresentation() {
+        ReactiveDomain domain = ReactiveDomain.direct();
+        domain.execute(() -> {
+            try (SceneRuntime runtime = new SceneRuntime(domain)) {
+                Signal<Success> result = domain.signal(null);
+                java.util.List<Success> presented = new java.util.ArrayList<>();
+                SceneNode node = new SceneNode().bind(NodeBinding.transientValue(result, 100,
+                        (n, value) -> presented.add(value)));
+                MountHandle mount = runtime.attach(null, node);
+                runtime.preparePresentation(0);
+                Success first = new Success("操作成功"), repeated = new Success("操作成功");
+                result.set(first); runtime.preparePresentation(10); runtime.preparePresentation(109);
+                require(presented.get(presented.size()-1) == first, "到期前成功提示消失");
+                // 旧期限已经到达，但来源在同批变成同文案新身份；不能先发布旧到期空值。
+                int before = presented.size();
+                result.set(repeated); runtime.preparePresentation(110);
+                require(presented.size() == before+1 && presented.get(before) == repeated,
+                        "同文案操作丢身份或旧期限清除了新提示");
+                runtime.preparePresentation(209);
+                require(presented.get(presented.size()-1) == repeated, "重复消息没有重新起完整期限");
+                runtime.preparePresentation(210);
+                require(presented.get(presented.size()-1) == null && result.get() == repeated,
+                        "到期没有清呈现或改写了业务来源");
+                int expired = presented.size(); runtime.preparePresentation(211); runtime.preparePresentation(300);
+                require(presented.size() == expired, "到期后仍永久推进或复活同一身份");
+                result.set(new Success("另一成功")); runtime.preparePresentation(301);
+                result.set(null); runtime.preparePresentation(302);
+                require(presented.get(presented.size()-1) == null, "空来源没有即时撤销");
+                result.set(new Success("卸载前成功")); runtime.preparePresentation(303);
+                mount.detach(); int detached = presented.size();
+                result.set(new Success("重挂当前结果")); runtime.preparePresentation(500);
+                require(presented.size() == detached, "卸载后仍有到期或来源回调");
+                runtime.attach(null, node); runtime.preparePresentation(500);
+                require(presented.get(presented.size()-1) == result.get(), "重挂没有消费当前结果");
+                runtime.close(); int closed = presented.size(); result.set(null);
+                require(presented.size() == closed, "关闭后仍观察业务来源");
+            }
+        });
     }
 
     public static void main(String[] args) throws Exception {

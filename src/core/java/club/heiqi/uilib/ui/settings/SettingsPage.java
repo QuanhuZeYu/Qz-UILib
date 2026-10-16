@@ -84,6 +84,7 @@ public final class SettingsPage implements ScenePage {
         }
         SceneNode text(String value,int em,boolean muted) { return text(() -> value,em,muted); }
         SceneNode text(ReadableSignal<String> value,int em,boolean muted) { return SettingsStyle.label(ctx,value,palette,em,muted); }
+        SceneNode pathText(ReadableSignal<String> value,int em,boolean muted) { return SettingsStyle.pathLabel(ctx,value,palette,em,muted); }
         SceneNode button(String value,Runnable action) { return button(() -> value,action,false,false); }
         SceneNode button(ReadableSignal<String> value,Runnable action,boolean primary,boolean ghost) { return SettingsStyle.button(ctx,value,palette,action,primary,ghost).view; }
         SceneNode actions(SceneNode... nodes) { SceneNode result=SettingsStyle.column(0).control(new SettingsLayout.WrapRow(8));for(SceneNode n:nodes)result.add(n);return result; }
@@ -111,8 +112,18 @@ public final class SettingsPage implements ScenePage {
             deck.bind(NodeBinding.children(() -> Collections.singletonList(section.get()==Section.APPEARANCE?appearance:
                     section.get()==Section.MINECRAFT?minecraft:file)));
             SceneNode content=SettingsStyle.column(24).add(pageHeading()).add(deck);
-            SceneNode feedback=text(() -> model.message().get(),13,true);
-            feedback.bind(NodeBinding.value(model.message(),(n,s) -> n.visible(!s.isEmpty())));content.add(feedback);
+            Signal<String> presentedMessage=ctx.domain().signal("");
+            ReadableSignal<SettingsModel.Feedback> result=model.feedback();
+            ReadableSignal<String> feedbackText=() -> {
+                SettingsModel.Feedback value=result.get();
+                return value!=null&&!value.success?value.text:presentedMessage.get();
+            };
+            SceneNode feedback=text(feedbackText,13,true);
+            // 成功期限只控制本次挂载的呈现；配置阶段、错误和模型结果不随时间改写。
+            feedback.bind(NodeBinding.transientValue(() -> {
+                SettingsModel.Feedback value=result.get();return value!=null&&value.success?value:null;
+            },3_000_000_000L,(n,value) -> presentedMessage.set(value==null?"":value.text)));
+            feedback.bind(NodeBinding.value(feedbackText,(n,s) -> n.visible(!s.isEmpty())));
             SceneNode external=SettingsStyle.surface(SettingsStyle.column(8).padding(16)
                     .add(text("当前生效配置已变化",14,false))
                     .add(text("你的草稿已保留。可以继续编辑并明确应用，或放弃编辑以同步当前值。",13,true))
@@ -121,7 +132,7 @@ public final class SettingsPage implements ScenePage {
             SceneNode body=SettingsLayout.form(content).size(Size.fill(1),Size.fill(1)).clip(true).scrollable(true);
             SceneNode shell=SettingsStyle.column(0).size(Size.fill(1),Size.fill(1))
                     .bind(NodeBinding.value(palette,(n,v) -> n.background(v.background)))
-                    .add(SettingsLayout.workspace(compact,toolbar,heading,navigation(),body,footer()));
+                    .add(SettingsLayout.workspace(compact,toolbar,heading,navigation(),body,footer(feedback)));
             SceneNode fonts=fontsDialog(),add=addDialog(),reload=confirmation(Dialog.RELOAD),close=confirmation(Dialog.CLOSE);
             ctx.own(fonts::destroy);ctx.own(add::destroy);ctx.own(reload::destroy);ctx.own(close::destroy);
             SceneNode overlay=SettingsStyle.column(0).size(Size.fill(1),Size.fill(1)).control(new SettingsLayout.Layers(false));
@@ -223,13 +234,13 @@ public final class SettingsPage implements ScenePage {
         }
         SceneNode sourcePreview(ReadableSignal<SettingsModel.Source> source) {
             SceneNode info=SettingsStyle.column(4).padding(12).add(text(() -> sourceName(source.get().declaration()),14,false))
-                    .add(text(() -> source.get().declaration(),12,true));
+                    .add(pathText(() -> source.get().declaration(),12,true));
             return SettingsStyle.surface(info,palette,false).size(Size.fill(1).bounds(0,560),Size.natural());
         }
         SceneNode sourceRow(ReadableSignal<SettingsModel.Source> source) {
             SceneNode info=SettingsStyle.column(4).add(text(() -> String.format(java.util.Locale.ROOT,"%02d",model.sources().get().indexOf(source.get())+1)
                     +"  "+sourceName(source.get().declaration()),14,false));
-            SceneNode declaration=text(() -> source.get().declaration(),12,true)
+            SceneNode declaration=pathText(() -> source.get().declaration(),12,true)
                     .textPolicy(new club.heiqi.uilib.ui.scene.text.TextPolicy(
                             club.heiqi.uilib.ui.scene.text.TextPolicy.Direction.LTR,
                             club.heiqi.uilib.ui.scene.text.TextPolicy.Wrap.EMERGENCY,"und",0,0));
@@ -278,7 +289,7 @@ public final class SettingsPage implements ScenePage {
         SceneNode filePage() {
             SceneNode card=SettingsStyle.column(14).add(text("配置来源",16,false))
                     .add(text("查看当前文件，以及运行状态和保存状态。",13,true));
-            card.add(text("文件路径",13,true)).add(text(configuration.path().toString(),14,false));
+            card.add(text("文件路径",13,true)).add(pathText(() -> configuration.path().toString(),14,false));
             card.add(SettingsStyle.line(palette)).add(text("文件格式：UTF-8 YAML",13,true));
             card.add(text(() -> model.unsaved().get()?"当前生效配置尚未保存":"当前生效配置与最近读取或保存的值一致",13,false));
             card.add(text("保存沿配置核心保留用户注释。",13,true));
@@ -291,8 +302,9 @@ public final class SettingsPage implements ScenePage {
                     +(configuration.hasMinecraft()?"\n\n接管原版文字绘制："+(configuration.current().replace()?"开启":"关闭"):""),13,true));
             return SettingsStyle.column(28).add(card).add(SettingsStyle.line(palette)).add(values);
         }
-        SceneNode footer() {
-            SceneNode status=SettingsStyle.column(5).add(text(this::state,13,false));
+        SceneNode footer(SceneNode feedback) {
+            // 全局操作的短暂结果与配置阶段同处固定栏，正文滚动不遮住反馈。
+            SceneNode status=SettingsStyle.column(5).add(text(this::state,13,false)).add(feedback);
             status.add(text(() -> model.dirty().get()?"应用全部分类的更改后，才能保存到文件。":model.unsaved().get()?"当前运行使用新的配置；保存后用于下次启动。":"可以继续编辑；应用与保存分别执行。",12,true));
             status.add(error(model.error()));
             SceneNode controls=actions(enabledButton(() -> "放弃编辑",model::discard,false,true,model.dirty()),
@@ -344,7 +356,7 @@ public final class SettingsPage implements ScenePage {
             SceneNode builtins=SettingsStyle.column(5).size(Size.fill(1),Size.fixed(220)).scrollable(true).clip(true);
             for(String declaration:configuration.builtinCandidates())builtins.add(button(() -> (selectedBuiltin.get().equals(declaration)?"● ":"")+sourceName(declaration),() -> selectedBuiltin.set(declaration),false,true).size(Size.fill(1),Size.natural()));
             builtins.bind(NodeBinding.value(fileSource,(n,file) -> n.visible(!file)));content.add(builtins);
-            SceneNode field=SceneTextField.create(ctx,path,() -> palette.get().theme(14,palette.get().text,9,false),
+            SceneNode field=SceneTextField.create(ctx,path,() -> palette.get().theme(SettingsTypography.pathStyle(14,palette.get().text),9,false),
                     () -> false,this::addFile,SceneTextField.SubmitPolicy.CONFIRM,() -> "C:/Fonts/Example.ttf",false);
             SceneNode file=SettingsStyle.column(8).add(text("文件路径",13,false)).add(SettingsStyle.field(field,palette))
                     .add(text("例如 C:/Fonts/Example.ttf；应用前会检查字体来源。",12,true));

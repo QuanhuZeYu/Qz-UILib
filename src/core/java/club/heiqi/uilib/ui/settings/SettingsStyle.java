@@ -59,6 +59,10 @@ final class SettingsStyle {
     static SceneNode label(ScenePageContext ctx,ReadableSignal<String> text,ReadableSignal<Palette> p,int em,boolean muted) {
         return SceneLabel.create(ctx,text,() -> p.get().theme(em,muted?p.get().muted:p.get().text,0,true));
     }
+    static SceneNode pathLabel(ScenePageContext ctx,ReadableSignal<String> text,ReadableSignal<Palette> p,int em,boolean muted) {
+        return SceneLabel.create(ctx,text,() -> p.get().theme(
+                SettingsTypography.pathStyle(em,muted?p.get().muted:p.get().text),0,true));
+    }
     static SceneNode heading(ScenePageContext ctx,ReadableSignal<String> text,ReadableSignal<Palette> p,int em) {
         return SceneLabel.create(ctx,text,() -> p.get().theme(SettingsTypography.style(em,p.get().text,600),0,true));
     }
@@ -129,7 +133,7 @@ final class SettingsStyle {
             for(SceneNode node=button;node!=null;node=node.parent())if(!node.enabled())return false;
             return true;
         }
-        boolean focused(){return button!=null&&button.runtime()!=null&&button.runtime().focusRouter().focused().get()==button;}
+        boolean focused(){return button!=null&&button.runtime()!=null&&button.runtime().focusRouter().focusVisible(button);}
         boolean hovered(SceneGeometryView g){return button!=null&&button.runtime()!=null&&button.runtime().pointerRouter().hovered(g)==button;}
         public void paint(SceneNode n,SceneGeometryView g,PaintPlanBuilder paint) {
             SceneGeometryView.Entry e=g.get(n);Palette p=colors.get();
@@ -160,7 +164,7 @@ final class SettingsStyle {
         Result layout(SceneNode n,Constraints c,SceneChildMeasurer m){m.measureChild(button,new Constraints(42,26));return new Result(44,28,Collections.singletonList(new ChildPlacements.Entry(button,new LayoutBox(1,1,42,26))));}
         public void paint(SceneNode n,SceneGeometryView g,PaintPlanBuilder paint){
             SceneGeometryView.Entry e=g.get(n);Palette p=colors.get();
-            boolean focus=button.runtime()!=null&&button.runtime().focusRouter().focused().get()==button;
+            boolean focus=button.runtime()!=null&&button.runtime().focusRouter().focusVisible(button);
             rounded(paint,e,focus?p.accent:checked.get()?p.primary:p.border,checked.get()?p.primary:p.hover,14);
             ScenePaintShapes.rounded(paint,new LayoutBox(e.box.x+(checked.get()?22:4),e.box.y+4,20,20),e.clip,checked.get()?p.onPrimary:p.muted,10);
         }
