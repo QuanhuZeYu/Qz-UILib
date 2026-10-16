@@ -2,7 +2,7 @@
 
 状态：已确认模块规格；本模块维护所属层空间、共同呈现、输入参与与结束合同。运行证据按实际场景与版本记录，不外推其他宿主。
 
-状态、生命周期及输入范围遵循[核心职责规格](<2026-10-07-uilib-core-contract-design.md>)；普通布局、动态身份、内容投影分别遵循[常规布局](<2026-10-13-uilib-layout-spec.md>)、[动态结构](<uilib-dynamic-structure-spec.md>)与[文本内容](<2026-10-07-uilib-text-content-spec.md>)合同。
+状态、生命周期及输入范围遵循[核心职责规格](<../2026-10-07-uilib-core-contract-design.md>)；普通布局、动态身份、内容投影分别遵循[常规布局](<2026-10-13-uilib-layout-spec.md>)、[动态结构](<uilib-dynamic-structure-spec.md>)与[文本内容](<../content/2026-10-07-uilib-text-content-spec.md>)合同。
 
 ## 1. 声明、拥有与普通流
 

@@ -1,12 +1,12 @@
 # UILib 虚拟集合候选专题
 
-状态：候选技术专题。[真实应用案例目标](<2026-10-14-uilib-modern-app-cases-spec.md>)是当前新能力规划入口。此前“只读标题/说明、单焦点、单选确认”的首版设想已经被真实案例方向替代，不作为待执行公共合同。
+状态：候选技术专题。[收件箱案例业务规格](<../examples/2026-10-14-uilib-modern-app-cases-spec.md>)与[媒体案例提案](<uilib-media-app-cases-proposal.md>)分别提供已认可案例和后续路线的设计输入。此前“只读标题/说明、单焦点、单选确认”的首版设想已经被真实案例方向替代，不作为待执行公共合同。
 
 ## 1. 定位
 
 虚拟化支撑收件箱、内容浏览等真实页面，目标是让昂贵节点、挂载绑定、测量与呈现围绕可见内容发生，同时保留全部业务条目的可达性。业务提供完整数据、稳定身份及 UI 声明，不计算可见范围或维护占位节点。
 
-采用[核心职责](<2026-10-07-uilib-core-contract-design.md>)、[动态结构](<uilib-dynamic-structure-spec.md>)与[布局](<2026-10-13-uilib-layout-spec.md>)合同。普通 repeat 的数据退出、折叠和裁剪不能直接当成虚拟化的离屏语义。
+采用[核心职责](<../2026-10-07-uilib-core-contract-design.md>)、[动态结构](<../scene/uilib-dynamic-structure-spec.md>)与[布局](<../scene/2026-10-13-uilib-layout-spec.md>)合同。普通 repeat 的数据退出、折叠和裁剪不能直接当成虚拟化的离屏语义。
 
 ## 2. 必须由案例回答的行为
 

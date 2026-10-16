@@ -1,12 +1,12 @@
 # MC宿主渲染优化规格
 
-状态：正式模块规格。平台兼容与授权边界遵循[核心规格](<2026-10-07-uilib-core-contract-design.md>)；原版字体入口遵循[字体规格第 4 节](<2026-10-07-uilib-font-renderer-spec.md>)。
+状态：正式模块规格。平台兼容与授权边界遵循[核心规格](<../2026-10-07-uilib-core-contract-design.md>)；原版字体入口遵循[字体规格第 4 节](<../content/2026-10-07-uilib-font-renderer-spec.md>)。
 
 ## 1. 目标与范围
 
 通过合批降低绘制提交、纹理切换和重复 GL 状态管理的开销，弥补 Unicode 整形、多字体和动态逻辑带来的性能成本。实际收益按 CPU/GPU 与慢帧测量，不以 draw call 减少直接宣称更快。
 
-本专题覆盖 UILib 在 MC 宿主的矩形、文本、图像回放及原版字体替代入口。scene 页面输出 PaintPlan；原版入口直接输出不可变文本绘制载荷，二者复用字体/排版服务、资源及同一批次构建/backend，不为原版调用创建 scene 节点或运行时。生产 backend 自有 shader、VAO/VBO，平台类型止于宿主边界。字体生成和性能门槛见[字体规格](2026-10-07-uilib-font-renderer-spec.md)。不自动扩展为原版世界区块、实体或任意第三方渲染器改造。
+本专题覆盖 UILib 在 MC 宿主的矩形、文本、图像回放及原版字体替代入口。scene 页面输出 PaintPlan；原版入口直接输出不可变文本绘制载荷，二者复用字体/排版服务、资源及同一批次构建/backend，不为原版调用创建 scene 节点或运行时。生产 backend 自有 shader、VAO/VBO，平台类型止于宿主边界。字体生成和性能门槛见[字体规格](<../content/2026-10-07-uilib-font-renderer-spec.md>)。不自动扩展为原版世界区块、实体或任意第三方渲染器改造。
 
 ## 2. 合批合同
 
@@ -54,7 +54,7 @@ scene backend 恢复进入态；原版适配入口遵守其可观察尾状态，
 
 ## 5. 无平台验证
 
-复用[统一测试应用](<2026-10-07-uilib-testing-spec.md>)和[字体规格第 5.5 节](<2026-10-07-uilib-font-renderer-spec.md>)的独立运行器，以生产合批器输出图像、批次轨迹与机器可读统计：
+复用[统一测试应用](<../verification/2026-10-07-uilib-testing-spec.md>)和[字体规格第 5.5 节](<../content/2026-10-07-uilib-font-renderer-spec.md>)的独立运行器，以生产合批器输出图像、批次轨迹与机器可读统计：
 
 - 无 GL 的真实集成覆盖复杂排版、候选、CPU 光栅与动态更新，用软件输出比较合批前后顺序及画面，检查屏障与容量拆批。
 - 独立 GL 集成复用生产 shader、上传及 backend，导出目标图像及异步计时，验证颜色、裁剪、透明、状态恢复与资源换代；先核查驱动能力，GL mock 不作为 GPU 证据。

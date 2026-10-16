@@ -66,7 +66,7 @@ val manualTestJar by tasks.registering(ReobfuscatedJar::class) {
 // ============================================================================
 // 内部开发工具（club.heiqi.uilib.internal.devtools）从正式产物排除；
 // 人工验收包在本脚本前段单独装配，不复制生产核心。
-// 测试应用与发行隔离要求见 specs/2026-10-07-uilib-testing-spec.md。
+// 测试应用与发行隔离要求见 specs/verification/2026-10-07-uilib-testing-spec.md。
 // ============================================================================
 val internalDevToolsPackagePath = "club/heiqi/uilib/internal/devtools"
 

@@ -19,7 +19,7 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
 
 /** 正式配置工作区；仅声明自有scene，配置权威与资源事实由SettingsConfiguration接入。
- * 视觉与操作合同见specs/2026-10-12-uilib-settings-page-design.md。 */
+ * 视觉与操作合同见specs/config/2026-10-12-uilib-settings-page-design.md。 */
 public final class SettingsPage implements ScenePage {
     private final SettingsConfiguration configuration;
     private final Runnable leave;

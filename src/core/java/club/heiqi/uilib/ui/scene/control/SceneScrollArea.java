@@ -18,7 +18,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
-/** 组合原有轴向视口与独立滚动条；行为见 specs/2026-10-16-uilib-scroll-area-spec.md。 */
+/** 组合原有轴向视口与独立滚动条；行为见 specs/scene/2026-10-16-uilib-scroll-area-spec.md。 */
 public final class SceneScrollArea {
     public enum Axes {
         NONE, HORIZONTAL, VERTICAL, BOTH;

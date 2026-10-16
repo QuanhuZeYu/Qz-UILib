@@ -4,7 +4,7 @@ import java.util.Arrays;
 
 /**
  * 性能压测的有界纳秒样本；宿主在帧计时区内只追加，运行边界再计算或导出。
- * 采样口径见 specs/2026-10-14-uilib-performance-testing-spec.md。
+ * 采样口径见 specs/verification/2026-10-14-uilib-performance-testing-spec.md。
  * 实例由单个宿主线程持有，完成或中断状态由所属运行管理，不能由样本数推断。
  */
 public final class PerformanceSamples {

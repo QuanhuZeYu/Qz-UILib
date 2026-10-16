@@ -34,7 +34,7 @@ import java.util.function.Consumer;
 
 /**
  * 正式单行字段；草稿、历史和提交归业务持有的独立状态，卸载只释放呈现绑定。 编辑边界见
- * specs/2026-10-07-uilib-editing-spec.md。
+ * specs/scene/2026-10-07-uilib-editing-spec.md。
  */
 public final class SceneTextField {
     public enum SubmitPolicy {

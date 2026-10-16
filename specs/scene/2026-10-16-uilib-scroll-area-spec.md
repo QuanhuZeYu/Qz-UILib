@@ -1,8 +1,8 @@
 # UILib 滚动区与滚动条规格
 
-状态：本轮用户指定 SimpleBar 参考后实施的模块设计。
+状态：已确认模块规格；采用用户指定的 SimpleBar 行为参考。
 
-遵循[核心职责规格](<2026-10-07-uilib-core-contract-design.md>)与[常规布局规格](<2026-10-13-uilib-layout-spec.md>)。行为参照 [SimpleBar 示例](https://grsmto.github.io/simplebar/examples/)，实现使用 UILib 自有 Scene、布局、信号、PaintCommand 和唯一输入路由。
+遵循[核心职责规格](<../2026-10-07-uilib-core-contract-design.md>)与[常规布局规格](<2026-10-13-uilib-layout-spec.md>)。行为参照 [SimpleBar 示例](https://grsmto.github.io/simplebar/examples/)，实现使用 UILib 自有 Scene、布局、信号、PaintCommand 和唯一输入路由。
 
 ## 1. 职责与声明
 
@@ -26,7 +26,7 @@
 
 内容缩短或窗口扩大时只限制到新范围；后续增长不恢复越界旧位置。先隐藏后显示、空内容与零尺寸均可正常结算。隐藏、禁用、卸载、范围失活和 ESC 结束原手势，恢复后不复活，物理尾部沿原路由吞掉。挂载期悬停和有限过渡随卸载释放。范围暂时归零只结束当前拖动/分页/淡出，不丢弃仍由正式悬停绑定持有的区域事实；恢复范围后继续消费当前事实。双轴拖动自动滚动按允许轴分别选择最近有效视口，沿各自同批范围推进；保留拖动到最近视口边界停止的语义，不套用滚轮的祖先接续。
 
-本轮不增加 DOM、浏览器滚动条替换、React/iframe 适配或全局书写方向系统；RTL 内容继续沿当前文本能力，不将浏览器 RTL scrollLeft 约定引入核心。
+本模块不增加 DOM、浏览器滚动条替换、React/iframe 适配或全局书写方向系统；RTL 内容继续沿当前文本能力，不将浏览器 RTL scrollLeft 约定引入核心。
 
 ## 4. 有限验收
 

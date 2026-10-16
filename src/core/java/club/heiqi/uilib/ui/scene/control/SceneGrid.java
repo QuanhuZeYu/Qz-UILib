@@ -18,7 +18,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
-/** 普通响应网格；子项身份沿现有声明，排列行为见 specs/2026-10-13-uilib-layout-spec.md。 */
+/** 普通响应网格；子项身份沿现有声明，排列行为见 specs/scene/2026-10-13-uilib-layout-spec.md。 */
 public final class SceneGrid {
     /** 不可变 logical px 策略；可用空间由核心提供，调用方无需计算列数或子盒。 */
     public static final class Policy {
