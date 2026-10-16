@@ -14,6 +14,7 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
 public final class ScenePointerRouter implements AutoCloseable {
     private final SceneRuntime runtime;
     private final SceneHitTester hits = new SceneHitTester();
+    private final SceneWheelRouting wheel;
     private final Set<Integer> buttons = new HashSet<>();
     private MountHandle owner;
     private Object ownerTarget;
@@ -82,6 +83,7 @@ public final class ScenePointerRouter implements AutoCloseable {
 
     ScenePointerRouter(SceneRuntime runtime) {
         this.runtime = runtime;
+        wheel = new SceneWheelRouting(runtime, hits);
     }
 
     /** owner是按下呈现的变化来源；所有释放出口只失效paint，保留物理尾部。 */
@@ -105,6 +107,7 @@ public final class ScenePointerRouter implements AutoCloseable {
         if (preparedGeometry != geometry) { hover.clear(); passive.clear(); preparedGeometry = geometry; }
         revalidate();
         if (owner != null && geometry.get(owner.node()) == null) cancelOwner();
+        wheel.prepare(geometry, runtime.inputNanos());
         publishHover(geometry);
     }
 
@@ -112,6 +115,7 @@ public final class ScenePointerRouter implements AutoCloseable {
      * 只检查当前owner及既有有效范围；失活随后恢复也不会复活本段。 */
     void revalidate() {
         runtime.domain().checkAccess();
+        wheel.revalidate();
         if (owner != null
                 && (!owner.active()
                         || !runtime.interactive(owner.node())
@@ -122,6 +126,9 @@ public final class ScenePointerRouter implements AutoCloseable {
     public void route(ScenePointerEvent event, SceneGeometryView geometry) {
         checkAccess();
         prepare(geometry);
+        if (event.kind == ScenePointerEvent.Kind.MOVE || event.kind == ScenePointerEvent.Kind.SCROLL)
+            wheel.pointerMoved(event.x, event.y);
+        else wheel.clear();
         updatePointerPosition(event);
         try {
             switch (event.kind) {
@@ -245,14 +252,7 @@ public final class ScenePointerRouter implements AutoCloseable {
     }
 
     private void routeScroll(ScenePointerEvent event, SceneGeometryView geometry) {
-        SceneNode scrolling = hits.hitScroll(runtime, geometry, event.x, event.y);
-        SceneNode boundary = scrolling == null ? null : geometry.layerBoundary(scrolling);
-        for (SceneNode node = scrolling; node != null; node = node == boundary ? null : node.parent()) {
-            SceneGeometryView.Entry entry = geometry.get(node);
-            if (entry == null || !entry.box.contains(event.x, event.y)
-                    || entry.clip != null && !entry.clip.contains(event.x, event.y)) continue;
-            if (runtime.dispatchControlScroll(node, event, geometry) || runtime.tryDispatchScroll(node, event.delta)) return;
-        }
+        wheel.route(event, geometry);
     }
 
     private void routeSyntheticActivation(ScenePointerEvent event, SceneGeometryView geometry) {
@@ -289,6 +289,7 @@ public final class ScenePointerRouter implements AutoCloseable {
      * 已采集第二DOWN不能因为中断批次而丢失，否则下一帧会误建owner。 */
     public void discardAfterFailure(ScenePointerEvent event) {
         runtime.domain().checkAccess();
+        wheel.clear();
         try { cancelOwner(); }
         finally {
             // 清理扩展失败也保留物理尾部，不能让第二键变成后来的新手势。
@@ -313,6 +314,7 @@ public final class ScenePointerRouter implements AutoCloseable {
     /** 当前范围的捕获可明确消费 ESC；保留物理占位，后续 MOVE/UP 不能复活。 */
     boolean cancelOnEscape() {
         checkAccess();
+        wheel.clear();
         revalidate();
         if (owner == null || owner.node().control() == null
                 || !owner.node().control().cancelCaptureOnEscape(owner.node())) return false;
@@ -334,6 +336,7 @@ public final class ScenePointerRouter implements AutoCloseable {
     @Override
     public void close() {
         runtime.domain().checkAccess();
+        wheel.clear();
         try { cancelOwner(); }
         finally {
             buttons.clear();

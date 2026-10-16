@@ -35,6 +35,8 @@ public final class DesktopScrollAreaVerification extends TestApplication {
         scenario("自动隐藏、悬停与强制轨道", this::visibility);
         scenario("隐藏禁用卸载及第二键尾部", this::cancellation);
         scenario("嵌套边界交接与双轴主轮轴", this::nested);
+        scenario("连续滚动不被移入指针的子区接走", this::continuousWheel);
+        scenario("连续滚轮的失活、重挂载与模态范围", this::wheelLifetime);
         scenario("独立滚动条的动态视口资格", this::standalone);
         scenario("共享参考页按钮、动态内容与切页保留", this::gallery);
         scenario("首帧所属层滚动条可拖动与聚焦", this::layerFirstFrame);
@@ -222,6 +224,108 @@ public final class DesktopScrollAreaVerification extends TestApplication {
             require(geometry(w, outer[0].viewport(SceneNode.Axis.COLUMN)).scrollOffset == 40, "内层边界后未交接外层");
             require(geometry(w, inner[0].viewport(SceneNode.Axis.ROW)).scrollOffset == 0, "纵向轮到边界后意外滚动横轴");
             save(w, "nested.png");
+        }
+    }
+    private void continuousWheel() throws Exception {
+        final SceneScrollArea.Area[] inner = {null}, outer = {null};
+        try (DesktopWindow w = DesktopWindow.openWithServices(output.resolve("continuous-wheel.yaml"), false, services -> context -> {
+            inner[0] = SceneScrollArea.create(context, new SceneNode().size(Size.fill(1), Size.fixed(700)).text("内部可滚动内容"),
+                    new SceneScrollArea.Options().autoHide(false));
+            inner[0].node().size(Size.fill(1), Size.fixed(180));
+            SceneNode content = new SceneNode().size(Size.fill(1), Size.natural()).gap(20)
+                    .add(new SceneNode().size(Size.fill(1), Size.fixed(250)).text("页面顶部"))
+                    .add(inner[0].node()).add(new SceneNode().size(Size.fill(1), Size.fixed(900)).text("页面后续内容"));
+            outer[0] = SceneScrollArea.create(context, content, new SceneScrollArea.Options().autoHide(false));
+            outer[0].node().size(Size.fixed(480), Size.fixed(400));
+            context.mountOwned(new SceneNode().size(Size.fill(1), Size.fill(1)).padding(30).add(outer[0].node()));
+        })) {
+            glfwSetWindowSize(w.handle(), 1000, 680); glfwSwapInterval(0); settle(w); DesktopTestInput in = new DesktopTestInput(w);
+            point(w, in, 180, 230);
+            wheel(w, in, -6);
+            require(hit(geometry(w, inner[0].node())).contains(180, 230), "滚动后内部区域没有进入固定指针位置");
+            wheel(w, in, -1);
+            int parentOffset = geometry(w, outer[0].viewport(SceneNode.Axis.COLUMN)).scrollOffset;
+            int childOffset = geometry(w, inner[0].viewport(SceneNode.Axis.COLUMN)).scrollOffset;
+            System.out.println("CONTINUOUS_WHEEL stationary=true outer=" + parentOffset + " inner=" + childOffset);
+            require(parentOffset == 140 && childOffset == 0, "连续滚动被新移入指针下方的子区域接走");
+            wheel(w, in, 1);
+            require(geometry(w, outer[0].viewport(SceneNode.Axis.COLUMN)).scrollOffset == 120
+                    && geometry(w, inner[0].viewport(SceneNode.Axis.COLUMN)).scrollOffset == 0, "连续反向重新落入子区");
+            point(w, in, 182, 232); wheel(w, in, -1);
+            require(geometry(w, outer[0].viewport(SceneNode.Axis.COLUMN)).scrollOffset == 140, "轻微指针抖动打断连续滚动");
+            // MC会在原地滚轮之前补同坐标MOVE，不能将它当作重新选区。
+            point(w, in, 182, 232); wheel(w, in, -1);
+            require(geometry(w, outer[0].viewport(SceneNode.Axis.COLUMN)).scrollOffset == 160, "同坐标MOVE重选了子区");
+            for (int shift = 4; shift <= 10; shift += 2) { point(w, in, 180 + shift, 230 + shift); wheel(w, in, -1); }
+            require(geometry(w, outer[0].viewport(SceneNode.Axis.COLUMN)).scrollOffset == 220
+                    && geometry(w, inner[0].viewport(SceneNode.Axis.COLUMN)).scrollOffset == 20, "缓慢累计移入子区不能切换目标");
+            advance(w, 450); wheel(w, in, -1);
+            require(geometry(w, inner[0].viewport(SceneNode.Axis.COLUMN)).scrollOffset == 40, "停顿后不能按当前位置滚动子区");
+            wheel(w, in, -1000); wheel(w, in, -1);
+            int innerEnd = geometry(w, inner[0].viewport(SceneNode.Axis.COLUMN)).scrollMaximum;
+            require(geometry(w, outer[0].viewport(SceneNode.Axis.COLUMN)).scrollOffset == 240, "内层边界未接续外层");
+            wheel(w, in, 1);
+            require(geometry(w, outer[0].viewport(SceneNode.Axis.COLUMN)).scrollOffset == 220
+                    && geometry(w, inner[0].viewport(SceneNode.Axis.COLUMN)).scrollOffset == innerEnd, "祖先接续后反向又被子区接走");
+            point(w, in, 240, 190); wheel(w, in, 1);
+            require(geometry(w, inner[0].viewport(SceneNode.Axis.COLUMN)).scrollOffset == innerEnd - 20, "主动移入子区不能立即切换");
+            System.out.println("CONTINUOUS_WHEEL reverse=true jitter=true unchangedMove=true accumulatedMove=true pauseReselect=true boundaryPromotion=true intentionalMove=true");
+        }
+    }
+    private void wheelLifetime() throws Exception {
+        final SceneScrollArea.Area[] inner = {null}, outer = {null}, modal = {null};
+        final Signal<Boolean>[] enabled = new Signal[1], attached = new Signal[1], showing = new Signal[1], ancestorModal = new Signal[1];
+        try (DesktopWindow w = DesktopWindow.openWithServices(output.resolve("wheel-lifetime.yaml"), false, services -> context -> {
+            enabled[0] = context.domain().signal(true); attached[0] = context.domain().signal(true); showing[0] = context.domain().signal(false);
+            ancestorModal[0] = context.domain().signal(false);
+            inner[0] = SceneScrollArea.create(context, new SceneNode().size(Size.fill(1), Size.fixed(700)), new SceneScrollArea.Options());
+            inner[0].node().size(Size.fill(1), Size.fixed(180));
+            SceneNode content = new SceneNode().size(Size.fill(1), Size.natural()).gap(20)
+                    .add(new SceneNode().size(Size.fill(1), Size.fixed(250))).add(inner[0].node())
+                    .add(new SceneNode().size(Size.fill(1), Size.fixed(900)));
+            outer[0] = SceneScrollArea.create(context, content, new SceneScrollArea.Options());
+            outer[0].node().size(Size.fixed(480), Size.fixed(400)).bind(NodeBinding.value(enabled[0], SceneNode::enabled));
+            SceneNode holder = new SceneNode().size(Size.fixed(480), Size.fixed(400))
+                    .bind(NodeBinding.value(ancestorModal[0], SceneNode::modal))
+                    .bind(NodeBinding.children(() -> attached[0].get() ? java.util.Collections.singletonList(outer[0].node()) : java.util.Collections.emptyList()));
+            context.own(outer[0].node()::destroy);
+            modal[0] = SceneScrollArea.create(context, new SceneNode().size(Size.fill(1), Size.fixed(900)), new SceneScrollArea.Options());
+            modal[0].node().size(Size.fixed(360), Size.fixed(300));
+            SceneNode layer = club.heiqi.uilib.ui.scene.control.SceneLayer.create(context,
+                    () -> new club.heiqi.uilib.ui.scene.control.SceneLayer.Policy(0, club.heiqi.uilib.ui.scene.control.SceneLayer.Participation.INTERACTIVE),
+                    (node, sourceBox, viewport, measured) -> new LayoutBox(30, 30, measured.width, measured.height), java.util.Collections.emptyList());
+            layer.size(Size.fixed(360), Size.fixed(300)).modal(true).bind(NodeBinding.value(showing[0], SceneNode::visible)).add(modal[0].node());
+            context.mountOwned(new SceneNode().size(Size.fill(1), Size.fill(1)).padding(30).add(holder).add(layer));
+        })) {
+            glfwSetWindowSize(w.handle(), 1000, 680); glfwSwapInterval(0); settle(w); DesktopTestInput in = new DesktopTestInput(w);
+            point(w, in, 180, 230); wheel(w, in, -6); wheel(w, in, -1);
+            require(geometry(w, outer[0].viewport(SceneNode.Axis.COLUMN)).scrollOffset == 140, "未建立外层连续滚动");
+            w.domain.execute(() -> ancestorModal[0].set(true)); w.frame(); wheel(w, in, -1);
+            int enteringInner = geometry(w, inner[0].viewport(SceneNode.Axis.COLUMN)).scrollOffset;
+            System.out.println("WHEEL_ANCESTOR_MODAL outer=" + geometry(w, outer[0].viewport(SceneNode.Axis.COLUMN)).scrollOffset + " inner=" + enteringInner);
+            require(enteringInner == 20, "现目标祖先变模态后仍沿旧范围连续滚动");
+            w.domain.execute(() -> ancestorModal[0].set(false)); w.frame(); wheel(w, in, -1);
+            require(geometry(w, inner[0].viewport(SceneNode.Axis.COLUMN)).scrollOffset == 40, "退出祖先模态仍沿旧联系");
+            w.domain.execute(() -> enabled[0].set(false)); w.frame(); w.domain.execute(() -> enabled[0].set(true)); w.frame();
+            wheel(w, in, -1);
+            require(geometry(w, outer[0].viewport(SceneNode.Axis.COLUMN)).scrollOffset == 140
+                    && geometry(w, inner[0].viewport(SceneNode.Axis.COLUMN)).scrollOffset == 60, "禁用后恢复复活了原滚轮目标");
+            wheel(w, in, -1000); wheel(w, in, -1);
+            in.focus.invoke(w.handle(), false); w.frame(); in.focus.invoke(w.handle(), true); w.frame();
+            wheel(w, in, 1);
+            int innerOffset = geometry(w, inner[0].viewport(SceneNode.Axis.COLUMN)).scrollOffset;
+            require(geometry(w, outer[0].viewport(SceneNode.Axis.COLUMN)).scrollOffset == 160
+                    && innerOffset == 500, "窗口失焦后复活旧滚轮消费者");
+            w.domain.execute(() -> attached[0].set(false)); w.frame(); w.domain.execute(() -> attached[0].set(true)); w.frame();
+            wheel(w, in, -6); wheel(w, in, -1);
+            require(geometry(w, outer[0].viewport(SceneNode.Axis.COLUMN)).scrollOffset == 140
+                    && geometry(w, inner[0].viewport(SceneNode.Axis.COLUMN)).scrollOffset == 0, "重挂载继承了旧会话");
+            w.domain.execute(() -> showing[0].set(true)); w.frame(); wheel(w, in, -1);
+            require(geometry(w, modal[0].viewport(SceneNode.Axis.COLUMN)).scrollOffset == 20
+                    && geometry(w, outer[0].viewport(SceneNode.Axis.COLUMN)).scrollOffset == 140, "新模态未接管滚轮或滚动泄漏后台");
+            w.domain.execute(() -> showing[0].set(false)); w.frame(); wheel(w, in, -1);
+            require(geometry(w, inner[0].viewport(SceneNode.Axis.COLUMN)).scrollOffset == 20, "模态结束后恢复了旧外层滚轮联系");
+            System.out.println("CONTINUOUS_WHEEL_LIFETIME disabled=true focusLost=true remount=true modalExclusive=true noRevival=true");
         }
     }
     private void standalone() throws Exception {
