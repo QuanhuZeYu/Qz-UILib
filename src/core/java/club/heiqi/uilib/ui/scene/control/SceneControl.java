@@ -173,6 +173,10 @@ public interface SceneControl {
         return false;
     }
 
+    /** 是否让普通滚轮推动节点的轴向滚动位置；复合双轴视口可指定主滚轮轴。
+     * 像素滚动、导航显露及范围计算不受影响，未消费事件仍由唯一路由交给祖先。 */
+    default boolean scrollsWithWheel(SceneNode node) { return true; }
+
     /** 内部内容视口参与正式滚轮命中，不要求外层布局盒成为滚动容器。 */
     default boolean scrollableContent() {
         return false;

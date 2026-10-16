@@ -178,6 +178,13 @@ val desktopDropSortVerify = desktopApplication("desktopDropSortVerify", "隐藏�
     mustRunAfter("desktopDraggableDeepVerify")
 } }
 tasks.named("check") { dependsOn(desktopDropSortVerify) }
+val desktopScrollArea = galleryApplication("desktopScrollArea", "打开 SimpleBar 参考滚动区案例").apply { configure { args("--scroll-area") } }
+val desktopScrollAreaVerify = desktopApplication("desktopScrollAreaVerify", "隐藏真实回调验收滚动条与双轴滚动", true).apply { configure {
+    mainClass.set("club.heiqi.uilib.host.desktop.DesktopScrollAreaVerification")
+    args(layout.buildDirectory.dir("reports/scroll-area-desktop").get().asFile.absolutePath)
+    mustRunAfter(desktopDropSortVerify)
+} }
+tasks.named("check") { dependsOn(desktopScrollAreaVerify) }
 val desktopMailboxPerformance = desktopApplication("desktopMailboxPerformance", "完整收件箱真实桌面计时", true).apply { configure {
     mainClass.set("club.heiqi.uilib.host.desktop.DesktopMailboxPerformance")
     systemProperty("uilib.version", project.version.toString())

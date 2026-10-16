@@ -30,6 +30,8 @@ public final class SceneEditEvent {
         DOWN,
         DOCUMENT_HOME,
         DOCUMENT_END,
+        PAGE_UP,
+        PAGE_DOWN,
         SUBMIT
     }
 

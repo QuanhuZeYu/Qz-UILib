@@ -32,7 +32,8 @@ public final class TestGallery implements ScenePage {
         SETTINGS("配置","管理字体、外观与当前宿主配置"),
         DRAGGABLE("拖拽","拾取、移动与释放普通内容"),
         DROPPABLE("接收区","选择有效目标并放下内容"),
-        SORTABLE("排序","重排列表、网格与跨容器内容");
+        SORTABLE("排序","重排列表、网格与跨容器内容"),
+        SCROLL_AREA("滚动区","浏览纵横内容、嵌套视口与动态滚动条");
         public final String title,purpose;
         Page(String title,String purpose){this.title=title;this.purpose=purpose;}
         String reference(){
@@ -41,6 +42,7 @@ public final class TestGallery implements ScenePage {
                 case DRAGGABLE:return "参考：dnd-kit / Draggable";
                 case DROPPABLE:return "参考：dnd-kit / Droppable";
                 case SORTABLE:return "参考：dnd-kit / Sortable";
+                case SCROLL_AREA:return "参考：SimpleBar / Examples";
                 default:return "参考：Shadcn Admin / Settings";
             }
         }
@@ -82,6 +84,7 @@ public final class TestGallery implements ScenePage {
                 case DRAGGABLE:page=DraggablePage.create(context,theme,() -> navigate.accept(Page.HOME));break;
                 case DROPPABLE:page=DroppablePage.create(context,theme,() -> navigate.accept(Page.HOME));break;
                 case SORTABLE:page=SortablePage.create(context,theme,() -> navigate.accept(Page.HOME));break;
+                case SCROLL_AREA:page=ScrollAreaPage.create(context,theme,() -> navigate.accept(Page.HOME));break;
                 case MAILBOX:page=club.heiqi.uilib.testing.gallery.mail.MailboxPage.create(context,theme,mode,
                         () -> navigate.accept(Page.HOME),() -> preview.set(dark.get()?ThemeMode.LIGHT:ThemeMode.DARK));break;
                 default:throw new AssertionError(id);

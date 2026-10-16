@@ -364,6 +364,8 @@ public final class DesktopWindow implements SceneHost, AutoCloseable {
                 case GLFW_KEY_DELETE: command = SceneEditEvent.Command.DELETE; break;
                 case GLFW_KEY_UP: command = SceneEditEvent.Command.UP; break;
                 case GLFW_KEY_DOWN: command = SceneEditEvent.Command.DOWN; break;
+                case GLFW_KEY_PAGE_UP: command = SceneEditEvent.Command.PAGE_UP; break;
+                case GLFW_KEY_PAGE_DOWN: command = SceneEditEvent.Command.PAGE_DOWN; break;
                 default: break;
             }
         }

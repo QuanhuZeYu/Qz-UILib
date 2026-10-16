@@ -313,6 +313,12 @@ public class MinecraftSceneScreen extends GuiScreen {
                 case Keyboard.KEY_BACK:
                     command = club.heiqi.uilib.ui.scene.input.SceneEditEvent.Command.BACKSPACE;
                     break;
+                case Keyboard.KEY_PRIOR:
+                    command = club.heiqi.uilib.ui.scene.input.SceneEditEvent.Command.PAGE_UP;
+                    break;
+                case Keyboard.KEY_NEXT:
+                    command = club.heiqi.uilib.ui.scene.input.SceneEditEvent.Command.PAGE_DOWN;
+                    break;
                 case Keyboard.KEY_DELETE:
                     command = club.heiqi.uilib.ui.scene.input.SceneEditEvent.Command.DELETE;
                     break;

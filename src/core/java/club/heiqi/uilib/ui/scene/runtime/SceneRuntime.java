@@ -42,6 +42,7 @@ public final class SceneRuntime implements AutoCloseable {
     }
 
     private final Map<SceneNode, ScrollPosition> scrolling = new IdentityHashMap<>();
+    private final SceneScrollObservers scrollObservers = new SceneScrollObservers();
     private final ScenePointerRouter pointerRouter;
     private final SceneFocusRouter focusRouter;
     private final ReactiveDomain domain;
@@ -754,6 +755,8 @@ public final class SceneRuntime implements AutoCloseable {
         inputGeometryReady = true;
         if (changed) focusRouter.rangeChanged();
         focusRouter.prepareScopes();
+        // 所属层资格必须消费本批输入几何；布局刚返回时尚无首帧层事实。
+        scrollObservers.publish(geometry, this::interactive, revision);
         pointerRouter.prepare(geometry);
     }
 
@@ -1046,6 +1049,17 @@ public final class SceneRuntime implements AutoCloseable {
         }
     }
 
+    /** 挂载扩展观察已发布的滚动事实；回调仅更新呈现，释放责任归观察者的挂载 Owner。
+     * null 表示视口当前不可呈现或不再滚动；不创建第二份位置权威，不在静止帧轮询几何。 */
+    public AutoCloseable observeScroll(SceneNode viewport, java.util.function.Consumer<SceneGeometryView.Entry> changed) {
+        domain.checkWrite(); checkAlive();
+        Objects.requireNonNull(viewport, "viewport"); Objects.requireNonNull(changed, "changed");
+        SceneGeometryView.Entry current = inputGeometryReady && inputGeometry != null && viewport.scrollable() && interactive(viewport)
+                ? inputGeometry.get(viewport) : null;
+        AutoCloseable observation = scrollObservers.observe(viewport, current, changed);
+        return () -> { domain.checkWrite(); observation.close(); };
+    }
+
     /** 控件的主动显露意图保持当前焦点；后续结算复用正式祖先显露和同一滚动位置。 */
     public void requestInputReveal(SceneNode node) {
         domain.checkWrite(); checkAlive();
@@ -1157,9 +1171,15 @@ public final class SceneRuntime implements AutoCloseable {
     }
 
     public void dispatchScroll(SceneNode node, int delta) {
+        tryDispatchScroll(node, delta);
+    }
+
+    /** 返回本层是否实际消费，供唯一 pointer router 在边界沿逻辑祖先接续。 */
+    boolean tryDispatchScroll(SceneNode node, int delta) {
         command();
-        if (!interactive(node)) return;
-        if (node.scrollable()) {
+        if (!interactive(node)) return false;
+        boolean consumed = false;
+        if (node.scrollable() && (node.control() == null || node.control().scrollsWithWheel(node))) {
             ScrollPosition position = scrolling.get(node);
             if (position != null) {
                 int next =
@@ -1173,13 +1193,15 @@ public final class SceneRuntime implements AutoCloseable {
                 if (next != position.value) {
                     position.value = next;
                     invalidateArrangement();
+                    consumed = true;
                 }
             }
         }
-        if (node.scrollAction() == null) return;
+        if (node.scrollAction() == null) return consumed;
         routing = true;
         try {
             node.scrollAction().accept(delta);
+            return true;
         } finally {
             routing = false;
         }
@@ -1222,6 +1244,7 @@ public final class SceneRuntime implements AutoCloseable {
             inputGeometryReady = false;
             inputReveal = null;
             inputFrames.clear();
+            scrollObservers.clear();
             disposed = true;
         }
         if (failure instanceof Error) throw (Error) failure;

@@ -14,6 +14,7 @@
 | 声明式页面与宿主生命周期 | [页面接入规格](<2026-10-07-uilib-page-host-spec.md>) |
 | 普通内容的指针拖拽与结束清理 | [Draggable 规格](<2026-10-15-uilib-draggable-spec.md>) |
 | 接收区域、候选与跨容器排序 | [Droppable 与 Sortable 规格](<2026-10-15-uilib-drop-sort-spec.md>) |
+| 滚动区、滚动条与嵌套滚轮 | [滚动设施规格](<2026-10-16-uilib-scroll-area-spec.md>) |
 | 横纵排列、响应网格与布局扩展 | [常规布局规格](<2026-10-13-uilib-layout-spec.md>) |
 | 所属层空间、共同呈现、输入参与与结束 | [所属层与输入范围规格](<2026-10-13-uilib-layer-input-spec.md>) |
 | 内部协作者职责与交接 | [内部协作职责规格](<2026-10-14-uilib-internal-responsibilities-spec.md>) |

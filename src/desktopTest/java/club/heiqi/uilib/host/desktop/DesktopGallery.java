@@ -25,7 +25,8 @@ public final class DesktopGallery {
                 services -> createGallery(services,mailbox?TestGallery.Page.MAILBOX:args.length>0&&"--draggable".equals(args[0])
                         ?TestGallery.Page.DRAGGABLE:args.length>0&&"--droppable".equals(args[0])
                                  ?TestGallery.Page.DROPPABLE:args.length>0&&"--sortable".equals(args[0])
-                                         ?TestGallery.Page.SORTABLE:TestGallery.Page.HOME))) {
+                                         ?TestGallery.Page.SORTABLE:args.length>0&&"--scroll-area".equals(args[0])
+                                                  ?TestGallery.Page.SCROLL_AREA:TestGallery.Page.HOME))) {
             if(smoke) {
                 glfwSetWindowSize(window.handle(),1400,900);
                 settle(window);

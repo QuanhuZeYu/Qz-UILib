@@ -7,9 +7,9 @@ import club.heiqi.uilib.ui.scene.runtime.BindingActivation;
 import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
 import java.util.function.BiConsumer;
 
-/** 与有限过渡一样，观测只读来源；迁移期间的焦点/临时归属不能成为集合声明的依赖。 */
-final class SceneSortableBindings {
-    private SceneSortableBindings() {}
+/** 观测只读声明来源；apply 读取的临时呈现不能反过来重启结构或有限时间线。 */
+final class SceneControlBindings {
+    private SceneControlBindings() {}
     static <V> NodeBinding declaration(ReadableSignal<V> source, BiConsumer<SceneNode, V> apply) {
         return (runtime, node, owner) -> new BindingActivation() {
             private V desired;

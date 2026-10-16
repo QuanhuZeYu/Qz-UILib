@@ -246,8 +246,13 @@ public final class ScenePointerRouter implements AutoCloseable {
 
     private void routeScroll(ScenePointerEvent event, SceneGeometryView geometry) {
         SceneNode scrolling = hits.hitScroll(runtime, geometry, event.x, event.y);
-        if (scrolling != null && !runtime.dispatchControlScroll(scrolling, event, geometry))
-            runtime.dispatchScroll(scrolling, event.delta);
+        SceneNode boundary = scrolling == null ? null : geometry.layerBoundary(scrolling);
+        for (SceneNode node = scrolling; node != null; node = node == boundary ? null : node.parent()) {
+            SceneGeometryView.Entry entry = geometry.get(node);
+            if (entry == null || !entry.box.contains(event.x, event.y)
+                    || entry.clip != null && !entry.clip.contains(event.x, event.y)) continue;
+            if (runtime.dispatchControlScroll(node, event, geometry) || runtime.tryDispatchScroll(node, event.delta)) return;
+        }
     }
 
     private void routeSyntheticActivation(ScenePointerEvent event, SceneGeometryView geometry) {
