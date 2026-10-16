@@ -76,6 +76,7 @@ public final class GlVideoResources implements AutoCloseable {
                     throw new IllegalArgumentException("视频超出GL纹理尺寸");
                 for (Slot slot : slots) if (image.key.equals(slot.key)) { frame.entries.put(image.key, new Entry(slot, lease)); break; }
             }
+            if (frame.leases.isEmpty()) retireIdle();
             for (MediaVideoFrame image : demand.values()) {
                 MediaFrameLease lease = frame.leases.get(image.key);
                 if (lease == null || frame.entries.containsKey(image.key) || !lease.active()) continue;
@@ -88,6 +89,17 @@ public final class GlVideoResources implements AutoCloseable {
             try { frame.close(); } catch (Throwable next) { if (next != failure) failure.addSuppressed(next); }
             throw failure;
         }
+    }
+    /** 无有效视频联系的新计划结束驻留；跨swap票据只保core租约，不持有这些GL槽。 */
+    private void retireIdle() {
+        Throwable failure=null;
+        for (Slot slot : slots) try { release(slot); }
+        catch (Throwable next) { if(failure==null)failure=next;else if(next!=failure)failure.addSuppressed(next); }
+        // 删除失败的槽继续保留真实id/bytes；不清表伪造归零。
+        slots.removeIf(slot -> slot.texture==0);
+        scratch=null;
+        if(failure instanceof Error)throw(Error)failure;
+        if(failure instanceof RuntimeException)throw(RuntimeException)failure;
     }
     private static boolean visible(PaintCommand command, LayoutBox viewport) {
         LayoutBox clip = command.clip == null ? viewport : command.clip.intersect(viewport);

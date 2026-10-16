@@ -5,6 +5,10 @@ import static club.heiqi.uilib.host.desktop.DesktopTestFrames.settle;
 import static club.heiqi.uilib.host.desktop.DesktopGalleryEvidence.*;
 
 import club.heiqi.uilib.testing.gallery.TestGallery;
+import club.heiqi.uilib.testing.gallery.GalleryMediaResources;
+import club.heiqi.uilib.host.media.IsolatedMediaAdapters;
+import club.heiqi.uilib.ui.media.MediaBudget;
+import club.heiqi.uilib.ui.media.MediaService;
 import club.heiqi.uilib.ui.scene.paint.PaintCommand;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -21,12 +25,14 @@ public final class DesktopGallery {
         boolean smoke=args.length>0&&"--mailbox-smoke".equals(args[0]);
         boolean mailbox=smoke||args.length>0&&"--mailbox".equals(args[0]);
         Files.createDirectories(output);
-        try(DesktopWindow window=DesktopWindow.openWithServices(output.resolve("gallery.yaml"),
+        try(GalleryMediaResources media=new GalleryMediaResources(new MediaService(IsolatedMediaAdapters.decoderFactory(),
+                        IsolatedMediaAdapters.audioSinkFactory(),MediaBudget.DEFAULT));
+                DesktopWindow window=DesktopWindow.openWithServices(output.resolve("gallery.yaml"),media.service(),true,
                 services -> createGallery(services,mailbox?TestGallery.Page.MAILBOX:args.length>0&&"--draggable".equals(args[0])
                         ?TestGallery.Page.DRAGGABLE:args.length>0&&"--droppable".equals(args[0])
                                  ?TestGallery.Page.DROPPABLE:args.length>0&&"--sortable".equals(args[0])
                                          ?TestGallery.Page.SORTABLE:args.length>0&&"--scroll-area".equals(args[0])
-                                                  ?TestGallery.Page.SCROLL_AREA:TestGallery.Page.HOME))) {
+                                                  ?TestGallery.Page.SCROLL_AREA:args.length>0&&"--media".equals(args[0])?TestGallery.Page.MEDIA:TestGallery.Page.HOME,media))) {
             if(smoke) {
                 glfwSetWindowSize(window.handle(),1400,900);
                 settle(window);
@@ -41,7 +47,15 @@ public final class DesktopGallery {
         }
     }
     static TestGallery createGallery(DesktopPageServices services,TestGallery.Page initial){
-        TestGallery gallery=new TestGallery(services::settings,initial);
+        return createGallery(services,initial,null);
+    }
+    static TestGallery createGallery(DesktopPageServices services,TestGallery.Page initial,GalleryMediaResources media){
+        return createGallery(services,initial,media,club.heiqi.uilib.testing.host.LocalMediaFiles::choose);
+    }
+    static TestGallery createGallery(DesktopPageServices services,TestGallery.Page initial,GalleryMediaResources media,
+            java.util.concurrent.Callable<club.heiqi.uilib.ui.media.MediaSource> chooser){
+        TestGallery gallery=new TestGallery(media==null?services::settings:media.environment(services.settings(),
+                club.heiqi.uilib.testing.host.LocalMediaFiles::resolve,chooser),initial);
         services.onCloseRequested(gallery::requestClose);services.onReloadRequested(gallery::requestReload);
         return gallery;
     }

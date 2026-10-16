@@ -125,6 +125,7 @@ val desktopDist by tasks.registering(Zip::class) {
 // verification脚本随后创建testSupport；延迟取得输出，只接到测试消费者。
 val testApplicationOutput = files(provider { sourceSets.getByName("testSupport").output })
 val desktopTestSources = sourceSets.create("desktopTest") {
+    java.srcDir("src/testHost/java")
     compileClasspath = testApplicationOutput + sourceSets.getByName("gallery").output + mainlineOutput + files(compileDesktop21Java.flatMap { it.destinationDirectory }) + sourceSets.getByName("mediaAdapter").output + sourceSets.getByName("mediaTest").output + fontBindings + coreContentRuntime
     runtimeClasspath = output + desktopArtifacts
 }
@@ -182,6 +183,12 @@ val runDesktopSettings = desktopApplication("runDesktopSettings", "以正式发�
 }
 val desktopVerify = desktopApplication("desktopVerify", "以正式发行组合运行有限真实窗口绘制交互与释放验收", true)
 val desktopGallery = galleryApplication("desktopGallery", "打开与MC和自动机共用的测试广场")
+val desktopMedia = galleryApplication("desktopMedia", "打开共享广场的媒体播放页").apply { configure { args("--media") } }
+val desktopGalleryMediaVerify = desktopApplication("desktopGalleryMediaVerify", "真实广场媒体输入、播放与离页关闭验收", true).apply { configure {
+    mainClass.set("club.heiqi.uilib.host.desktop.DesktopGalleryMediaVerification")
+    args(layout.buildDirectory.dir("reports/gallery-media").get().asFile.absolutePath)
+} }
+tasks.named("check") { dependsOn(desktopGalleryMediaVerify) }
 val desktopMailbox = galleryApplication("desktopMailbox", "直接打开与MC共用的收件箱案例").apply { configure {
     args("--mailbox")
 } }

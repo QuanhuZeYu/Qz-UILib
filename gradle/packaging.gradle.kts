@@ -10,10 +10,13 @@ import org.gradle.api.tasks.SourceSetContainer
 
 val sourceSets = extensions.getByType<SourceSetContainer>()
 // 显式人工测试附加包：与发布包分离，不进入 assemble/publish，真实实例自动安装 /qzcore。
+val mediaManualArtifact = tasks.named<Jar>("mediaAdapterLegacyJar").flatMap { it.archiveFile }
 val manualTestSources = sourceSets.create("manualTest") {
-    compileClasspath = sourceSets.getByName("main").output + sourceSets.getByName("core").output + sourceSets.getByName("fontAdapter").output + sourceSets.getByName("gallery").output + sourceSets.getByName("main").compileClasspath
+    java.srcDir("src/testHost/java")
+    compileClasspath = sourceSets.getByName("main").output + sourceSets.getByName("core").output + sourceSets.getByName("fontAdapter").output + sourceSets.getByName("gallery").output + files(mediaManualArtifact) + sourceSets.getByName("main").compileClasspath
 }
 tasks.named<JavaCompile>(manualTestSources.compileJavaTaskName) {
+    dependsOn("mediaAdapterLegacyJar")
     // 附加入口只有 Java 8 语法，不加载从业务 classpath 发现的编译处理器。
     options.compilerArgs.add("-proc:none")
     options.annotationProcessorPath = tasks.named<JavaCompile>("compileJava").get().options.annotationProcessorPath
@@ -27,6 +30,10 @@ val manualTestDevJar by tasks.registering(Zip::class) {
     destinationDirectory.set(layout.buildDirectory.dir("manual-test"))
     from(manualTestSources.output)
     from(sourceSets.getByName("gallery").output)
+}
+// 人工MC运行只追加独立legacy适配Jar；私有FFmpeg/OpenAL仍在其隔离运行时，不进入宿主顶层。
+listOf("runClient", "runServer").forEach { name ->
+    tasks.named<JavaExec>(name) { dependsOn("mediaAdapterLegacyJar"); classpath += files(mediaManualArtifact) }
 }
 val manualTestJar by tasks.registering(ReobfuscatedJar::class) {
     dependsOn(manualTestDevJar, tasks.named("reobfJar"))

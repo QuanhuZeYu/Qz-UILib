@@ -33,11 +33,13 @@ public final class TestGallery implements ScenePage {
         DRAGGABLE("拖拽","拾取、移动与释放普通内容"),
         DROPPABLE("接收区","选择有效目标并放下内容"),
         SORTABLE("排序","重排列表、网格与跨容器内容"),
-        SCROLL_AREA("滚动区","浏览纵横内容、嵌套视口与动态滚动条");
+        SCROLL_AREA("滚动区","浏览纵横内容、嵌套视口与动态滚动条"),
+        MEDIA("媒体播放","播放视频与音频、暂停和跳转");
         public final String title,purpose;
         Page(String title,String purpose){this.title=title;this.purpose=purpose;}
         String reference(){
             switch(this){
+                case MEDIA:return "参考：HTML video / 媒体控制";
                 case MAILBOX:return "参考：Gmail";
                 case DRAGGABLE:return "参考：dnd-kit / Draggable";
                 case DROPPABLE:return "参考：dnd-kit / Droppable";
@@ -63,7 +65,8 @@ public final class TestGallery implements ScenePage {
         ReadableSignal<ThemeMode> mode=context.domain().computed(context.scope(),() -> preview.get()==null?global.get():preview.get());
         ReadableSignal<Boolean> dark=context.domain().computed(context.scope(),() -> mode.get().isDark());
         ReadableSignal<SceneTheme> theme=context.domain().computed(context.scope(),() -> GalleryStyle.theme(dark.get()));
-        Consumer<Page> navigate=selected::set;
+        MediaPage media=new MediaPage(context,environment,theme);
+        Consumer<Page> navigate=target -> {if(selected.get()==Page.MEDIA&&target!=Page.MEDIA)media.stop();selected.set(target);};
         SceneNode shell=new SceneNode().size(Size.fill(1),Size.fill(1))
                 .bind(NodeBinding.value(dark,(n,value) -> n.background(value?GalleryStyle.DARK_BACKGROUND:GalleryStyle.LIGHT_BACKGROUND)));
         SceneNode header=new SceneNode().size(Size.fill(1),Size.natural()).padding(24).gap(12);
@@ -80,6 +83,7 @@ public final class TestGallery implements ScenePage {
             SceneNode page;
             switch(id){
                 case HOME:page=directory(context,theme,navigate);break;
+                case MEDIA:page=media.create(() -> navigate.accept(Page.HOME));break;
                 case SETTINGS:page=settingsPage.create(context);break;
                 case DRAGGABLE:page=DraggablePage.create(context,theme,() -> navigate.accept(Page.HOME));break;
                 case DROPPABLE:page=DroppablePage.create(context,theme,() -> navigate.accept(Page.HOME));break;

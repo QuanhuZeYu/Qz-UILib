@@ -85,7 +85,10 @@ final class FfmpegDecoder implements MediaDecoder {
                 check(av_dict_set(options,"live_start_index",Integer.toString(index),0),"live_start_index");
                 if(initial!=null){initialIo=new InitialPlaylistIo(initial);initialIo.attach(input);
                     check(av_dict_set(options,"protocol_whitelist","http,https,tcp,tls,crypto",0),"protocol_whitelist");}
-                int opened=avformat_open_input(input,source.uri.toString(),initial==null?null:av_find_input_format("hls"),options);
+                // file URI保留来源身份；native文件API需要平台路径，标准转换同时保留空格与Unicode语义。
+                String inputName="file".equalsIgnoreCase(source.uri.getScheme())
+                        ? java.nio.file.Paths.get(source.uri).toString() : source.uri.toString();
+                int opened=avformat_open_input(input,inputName,initial==null?null:av_find_input_format("hls"),options);
                 // FFmpeg失败会自行释放format并清空指针，计数在该真实释放边界同步。
                 if(input.isNull()) { released(FORMAT); ownsFormat=false; }
                 check(opened,"avformat_open_input");

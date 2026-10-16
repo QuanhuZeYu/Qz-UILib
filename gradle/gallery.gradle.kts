@@ -4,7 +4,7 @@ val coreSources = sourceSets.getByName("core")
 // 测试页面只看无平台core；缺失宿主能力在入口显式供给，不能通过MC开发类路径补齐。
 val gallerySources = sourceSets.create("gallery") {
     java.setSrcDirs(listOf("src/gallery/java"))
-    resources.setSrcDirs(listOf("src/gallery/resources"))
+    resources.setSrcDirs(listOf("src/gallery/resources", "src/mediaTest/resources"))
     compileClasspath = coreSources.output
     runtimeClasspath = output + compileClasspath
 }

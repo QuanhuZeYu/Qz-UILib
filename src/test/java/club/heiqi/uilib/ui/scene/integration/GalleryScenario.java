@@ -70,7 +70,13 @@ public final class GalleryScenario extends TestApplication {
                         public void typeText(String value) { session.edit(SceneEditEvent.text(value)); }
                         public void escape() { session.escape(() -> { throw new AssertionError("共享旅程意外关闭页面"); }); }
                     });
-                    System.out.println("GALLERY host=automatic run="+number+" sharedDeclaration=true sharedJourney=true realReferencesOnly=true");
+                    try(ScenePageSession mediaPage=ScenePageSession.open(domain,host,fonts,new TestGallery(() -> settings[0],TestGallery.Page.MEDIA))) {
+                        mediaPage.frame();
+                        require(host.paint.commands().stream().anyMatch(command -> command.kind==club.heiqi.uilib.ui.scene.paint.PaintCommand.Kind.TEXT
+                                && command.text.logicalText.contains("当前入口未提供媒体播放")),"无媒体旧入口没有清楚状态");
+                        require(host.paint.commands().stream().noneMatch(command -> command.kind==club.heiqi.uilib.ui.scene.paint.PaintCommand.Kind.VIDEO),"仅进入目录启动了媒体");
+                    }
+                    System.out.println("GALLERY host=automatic run="+number+" sharedDeclaration=true sharedJourney=true mediaOptional=true");
                 } finally { java.nio.file.Files.deleteIfExists(path);java.nio.file.Files.deleteIfExists(path.getParent()); }
             });
         }

@@ -11,6 +11,9 @@ val lwjgl2Sources = sourceSets.getByName("lwjgl2")
 val coreSources = sourceSets.getByName("core")
 val fontAdapterSources = sourceSets.getByName("fontAdapter")
 val glRendererSources = sourceSets.getByName("glRenderer")
+// MathSceneScenario与Lwjgl2HostScenario完整AST在Checkstyle默认worker堆发生真实OOM；
+// 统一该类worker的有界堆，保留全部文件与规则，不改变普通Test进程。
+tasks.withType<org.gradle.api.plugins.quality.Checkstyle>().configureEach { maxHeapSize = "2g" }
 
 // 保留真实LWJGL2应用仍需的native提取；退役截图入口及classpath导出链已移除。
 val lwjgl2NativeJars = configurations.named("compileClasspath").map { cfg ->
