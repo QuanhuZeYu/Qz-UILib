@@ -80,7 +80,7 @@ public final class DesktopGalleryMediaVerification extends TestApplication {
                     input.click("打开媒体播放");frames(2);
                     require(service.activeSessions()==0&&text("媒体播放"),"进入媒体页自动打开或未呈现");
                     input.click("内置示例");await(()->snapshot()!=null&&snapshot().statistics.presentedFrames>0&&snapshot().positionNanos>30_000_000L,"示例未actualswap/device播放");
-                    require(snapshot().muted,"示例没有初始静音");sample=Paths.get(media.exampleSource().uri);require(Files.exists(sample),"示例未提取");
+                    require(!snapshot().muted&&snapshot().volume>0,"显式打开媒体没有默认有声意图");input.click("静音");await(()->snapshot().muted,"主动静音未生效");sample=Paths.get(media.exampleSource().uri);require(Files.exists(sample),"示例未提取");
                     System.out.println("FILE source="+media.exampleSource()+" exists="+Files.exists(sample)+" nativeInput="+sample);
                     long firstSwaps=swaps;input.click("暂停");await(()->snapshot().state==MediaState.PAUSED,"暂停未生效");
                     type(fields().get(1),"0.01",true);input.click("取消静音");await(()->!snapshot().muted,"静音控制未生效");input.click("静音");

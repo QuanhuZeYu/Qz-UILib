@@ -68,11 +68,10 @@ final class MediaPage {
         if(service==null)throw new IllegalStateException("当前入口未提供媒体播放");
         stop();MediaSession opened=service.open(source,false);
         try {
-            opened.muted(true);
             SceneNode body=new SceneNode().size(Size.fill(1),Size.natural()).gap(12);
             body.add(SceneVideo.create(page,opened).size(Size.fill(1),Size.fixed(240)).background(0xFF09090B));
             body.add(SceneMediaControls.create(page,opened));
-            current=opened;content.set(Collections.singletonList(body));message.set("打开的媒体初始静音，可使用下方控制调整播放。");opened.play();
+            current=opened;content.set(Collections.singletonList(body));message.set("使用下方控制暂停播放、调整音量或定位。");opened.play();
         }catch(RuntimeException|Error failure){current=null;try{opened.close();}catch(Throwable next){failure.addSuppressed(next);}throw failure;}
     }
     void stop() {

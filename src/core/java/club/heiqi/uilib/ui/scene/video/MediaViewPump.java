@@ -3,6 +3,7 @@ package club.heiqi.uilib.ui.scene.video;
 import club.heiqi.uilib.ui.media.MediaVideoFrame;
 import club.heiqi.uilib.ui.media.MediaSnapshot;
 import club.heiqi.uilib.ui.media.MediaSession;
+import club.heiqi.uilib.ui.media.MediaFrameLease;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.reactive.ReactiveDomain;
@@ -51,10 +52,10 @@ public final class MediaViewPump implements AutoCloseable {
         public ReadableSignal<MediaSnapshot> snapshot() { return snapshot; }
         public ReadableSignal<MediaVideoFrame> frame() { return frame; }
         public ReadableSignal<Extent> extent() { return extent; }
-        private void publish(MediaSnapshot next) {
-            MediaVideoFrame before = frame.get(), after = next.video;
+        private void publish(MediaSnapshot next, MediaVideoFrame after) {
+            MediaVideoFrame before = frame.get();
             if (before == null ? after != null : after == null || !before.key.equals(after.key)) frame.set(after);
-            extent.set(extentOf(next));
+            extent.set(after == null ? new Extent(next.info.width, next.info.height) : new Extent(after.width, after.height));
             snapshot.set(next);
         }
     }
@@ -67,12 +68,20 @@ public final class MediaViewPump implements AutoCloseable {
         domain.checkWrite();
         if (view.domain != domain) throw new IllegalArgumentException("媒体视图与挂载域不一致");
         Registration registration = new Registration(view);
+        List<Registration> peers;
         synchronized (consumers) {
             if (closed) throw new IllegalStateException("媒体视图泵已关闭");
-            consumers.computeIfAbsent(view.session, ignored -> new ArrayList<>()).add(registration);
+            List<Registration> registrations = consumers.computeIfAbsent(view.session, ignored -> new ArrayList<>());
+            registrations.add(registration); peers = new ArrayList<>(registrations);
         }
-        try { view.publish(view.session.snapshot()); return registration; }
+        MediaSnapshot snapshot = view.session.snapshot();
+        Publication initial = null;
+        // 初次挂载也共借同key联系，不能让多个视图占满预算而饿住正式Prepared。
+        for (Registration peer : peers) { initial = peer.borrow(snapshot); if (initial != null) break; }
+        if (initial == null) initial = new Publication(view.session, snapshot);
+        try { registration.publish(initial); return registration; }
         catch (RuntimeException | Error failure) { registration.close(); throw failure; }
+        finally { initial.close(); }
     }
     public int activeConsumers() {
         synchronized (consumers) { int count = 0; for (List<Registration> list : consumers.values()) count += list.size(); return count; }
@@ -86,19 +95,43 @@ public final class MediaViewPump implements AutoCloseable {
                 active.put(entry.getKey(), new ArrayList<>(entry.getValue()));
         }
         for (Map.Entry<MediaSession, List<Registration>> entry : active.entrySet()) {
-            MediaSnapshot snapshot = entry.getKey().snapshot();
-            for (Registration registration : entry.getValue()) registration.offer(snapshot);
+            Publication next = new Publication(entry.getKey(), entry.getKey().snapshot());
+            try { for (Registration registration : entry.getValue()) registration.offer(next); }
+            finally { next.close(); }
         }
+    }
+    /** 同一会话一批发布只占一个精确租约；多个consumer与待执行动作共借，不复制像素。 */
+    private static final class Publication {
+        final MediaSnapshot snapshot;
+        final MediaFrameLease lease;
+        private int owners = 1;
+        Publication(MediaSession session, MediaSnapshot snapshot) {
+            this.snapshot = snapshot;
+            lease = snapshot.video == null ? null : session.retainPresentation(snapshot.video.key);
+        }
+        synchronized Publication retain() {
+            if (owners == 0) throw new IllegalStateException("媒体发布已释放");
+            owners++; return this;
+        }
+        boolean active() { return lease != null && lease.active(); }
+        synchronized void close() { if (--owners == 0 && lease != null) lease.close(); }
     }
     private final class Registration implements BindingActivation {
         final View view;
         private boolean active = true, scheduled;
-        private MediaSnapshot pending;
+        private Publication pending, published;
         Registration(View view) { this.view = view; }
-        void offer(MediaSnapshot value) {
+        private synchronized Publication borrow(MediaSnapshot value) {
+            if (!active || value.video == null) return null;
+            if (published != null && published.active() && published.lease.key.equals(value.video.key)) return published.retain();
+            if (pending != null && pending.active() && pending.lease.key.equals(value.video.key)) return pending.retain();
+            return null;
+        }
+        void offer(Publication value) {
             synchronized (this) {
                 if (!active) return;
-                pending = value;
+                Publication previous = pending; pending = value.retain();
+                if (previous != null) previous.close();
                 if (scheduled) return;
                 scheduled = true;
             }
@@ -106,14 +139,35 @@ public final class MediaViewPump implements AutoCloseable {
             view.domain.enqueue(() -> {
                 synchronized (this) {
                     scheduled = false;
-                    MediaSnapshot next = pending; pending = null;
-                    if (active && next != null) view.publish(next);
+                    Publication next = pending; pending = null;
+                    try { if (active && next != null) publish(next); }
+                    finally { if (next != null) next.close(); }
                 }
             });
         }
+        private synchronized void publish(Publication next) {
+            Publication selected = next.active() ? next : null;
+            // snapshot与retain之间仍可能前移；不发布已经失去联系的帧，保留上次同代有效呈现到下次pump。
+            if (selected == null && next.snapshot.video != null && published != null && published.active()
+                    && published.snapshot.generation == next.snapshot.generation) selected = published;
+            if (selected != null) selected.retain();
+            Publication previous = published;
+            try {
+                view.publish(next.snapshot, selected == null ? null : selected.snapshot.video);
+                published = selected;
+            } catch (RuntimeException | Error failure) {
+                if (selected != null) selected.close();
+                throw failure;
+            }
+            if (previous != null) previous.close();
+        }
         @Override public void refresh() {}
         @Override public void close() {
-            synchronized (this) { active = false; pending = null; }
+            synchronized (this) {
+                active = false;
+                if (pending != null) { pending.close(); pending = null; }
+                if (published != null) { published.close(); published = null; }
+            }
             synchronized (consumers) {
                 List<Registration> list = consumers.get(view.session);
                 if (list != null) { list.remove(this); if (list.isEmpty()) consumers.remove(view.session); }

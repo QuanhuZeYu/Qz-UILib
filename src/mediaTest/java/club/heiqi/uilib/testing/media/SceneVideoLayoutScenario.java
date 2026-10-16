@@ -72,7 +72,46 @@ public final class SceneVideoLayoutScenario extends TestApplication {
         require(actual.width == width && actual.height == height,
                 "正式布局外层尺寸 expected="+width+"x"+height+" actual="+actual.width+"x"+actual.height);
     }
+    private static void publishedFrameLifetime() throws Exception {
+        ReactiveDomain domain=ReactiveDomain.direct();
+        SceneTextMeasurer text=(value,style,width)->new TextLayout(0,0,style,Collections.emptyList());
+        try(MediaService service=new MediaService((source,cancel)->decoder(source),
+                budget->{throw new AssertionError("纯视频不应打开音频设备");},MediaBudget.DEFAULT);Host host=new Host()) {
+            MediaSession media=service.open(MediaSource.of(URI.create("fixture:wide")),false);
+            await(()->media.snapshot().video!=null);
+            try(ScenePageSession page=ScenePageSession.open(domain,host,text,ctx->{
+                for(int i=0;i<MediaBudget.DEFAULT.presentationLeases;i++)
+                    ctx.mountOwned(SceneVideo.create(ctx,media).size(Size.fixed(160),Size.fixed(80)));
+            })) {
+                page.frame();
+                MediaFrameKey published=host.plan.commands().stream().filter(c->c.kind==club.heiqi.uilib.ui.scene.paint.PaintCommand.Kind.VIDEO)
+                        .findFirst().get().video.frame.key;
+                try(club.heiqi.uilib.ui.media.MediaFrameLease prepared=service.retainPresentation(published)) {
+                    require(prepared!=null&&prepared.active(),"多consumer挂载占满租约预算，正式Prepared无法取得联系");
+                }
+                require(service.presented(published,System.nanoTime())!=null,"正式回执没有记录已发布帧");
+                media.play();await(()->!media.snapshot().video.key.equals(published));media.pause();
+                // 不泵新帧，模拟原片后台选帧已前进但宿主仍在重放缓存plan的真实窗口。
+                try(club.heiqi.uilib.ui.media.MediaFrameLease replay=service.retainPresentation(published)) {
+                    require(replay!=null&&replay.active(),"挂载视图的已呈现帧在后台前移后失去提交联系");
+                }
+                page.frame();
+                try(club.heiqi.uilib.ui.media.MediaFrameLease old=service.retainPresentation(published)) {
+                    require(old==null,"换帧发布后旧视图租约仍被持有");
+                }
+                MediaFrameKey next=host.plan.commands().stream().filter(c->c.kind==club.heiqi.uilib.ui.scene.paint.PaintCommand.Kind.VIDEO)
+                        .findFirst().get().video.frame.key;
+                service.presented(next,System.nanoTime());media.play();await(()->!media.snapshot().video.key.equals(next));media.pause();
+                page.close();
+                try(club.heiqi.uilib.ui.media.MediaFrameLease detached=service.retainPresentation(next)) {
+                    require(detached==null,"卸载没有释放最后发布帧的租约");
+                }
+                require(host.pump.activeConsumers()==0,"卸载仍有媒体consumer");
+            }
+        }
+    }
     @Override protected void runTests() throws Exception {
+        scenario("挂载发布帧在后台前移后可重放并在换帧卸载释放",SceneVideoLayoutScenario::publishedFrameLifetime);
         scenario("视频按正文约束推比例且只在extent变化重测", () -> {
             ReactiveDomain domain = ReactiveDomain.direct();
             SceneTextMeasurer text = (value,style,width) -> new TextLayout(0,0,style,Collections.emptyList());
