@@ -169,33 +169,45 @@ public final class SceneDragDrop<K> {
     }
     private void update(SourceRegistration<K> source, SceneGeometryView geometry, boolean keyboard, LayoutBox box, int x, int y) {
         if (!valid(source, geometry)) { if (source != null) source.cancel.run(); return; }
-        if (session != source) {
-            SourceRegistration<K> old = session;
-            if (old != null) old.cancel.run();
-            session = source; keyboardTarget = null;
-        }
+        continueSession(source);
+        Candidate<K> chosen = collisionTarget(candidates(source.key, source.node, geometry), box, x, y);
+        publish(new Snapshot<>(true, keyboard, source.key, chosen == null ? null : chosen.key, box, x, y));
+    }
+    private void continueSession(SourceRegistration<K> source) {
+        if (session == source) return;
+        SourceRegistration<K> old = session;
+        if (old != null) old.cancel.run();
+        session = source; keyboardTarget = null;
+    }
+    private Candidate<K> collisionTarget(List<Candidate<K>> candidates, LayoutBox box, int x, int y) {
         Candidate<K> chosen = null;
         double best = Double.NEGATIVE_INFINITY;
-        for (Candidate<K> candidate : candidates(source.key, source.node, geometry)) {
-            double score;
-            switch (collision) {
-                case POINTER: score = candidate.visibleBox.contains(x, y) ? 0 : Double.NEGATIVE_INFINITY; break;
-                case INTERSECTION:
-                    LayoutBox intersection = candidate.visibleBox.intersect(box);
-                    score = intersection.width == 0 || intersection.height == 0 ? Double.NEGATIVE_INFINITY
-                            : (double) intersection.width * intersection.height;
-                    break;
-                case CLOSEST_CENTER:
-                    double dx = (double) SceneDragSupport.centerX(candidate.box) - SceneDragSupport.centerX(box);
-                    double dy = (double) SceneDragSupport.centerY(candidate.box) - SceneDragSupport.centerY(box);
-                    score = -(dx * dx + dy * dy); break;
-                default: throw new AssertionError(collision);
-            }
-            if (score == Double.NEGATIVE_INFINITY) continue;
-            if (chosen == null || candidate.priority > chosen.priority || candidate.priority == chosen.priority
-                    && (score > best || score == best && candidate.order > chosen.order)) { chosen = candidate; best = score; }
+        for (Candidate<K> candidate : candidates) {
+            double score = collisionScore(candidate, box, x, y);
+            if (score != Double.NEGATIVE_INFINITY && preferred(candidate, chosen, score, best)) { chosen = candidate; best = score; }
         }
-        publish(new Snapshot<>(true, keyboard, source.key, chosen == null ? null : chosen.key, box, x, y));
+        return chosen;
+    }
+    private double collisionScore(Candidate<K> candidate, LayoutBox box, int x, int y) {
+        switch (collision) {
+            case POINTER: return candidate.visibleBox.contains(x, y) ? 0 : Double.NEGATIVE_INFINITY;
+            case INTERSECTION:
+                LayoutBox intersection = candidate.visibleBox.intersect(box);
+                return intersection.width == 0 || intersection.height == 0 ? Double.NEGATIVE_INFINITY
+                        : (double) intersection.width * intersection.height;
+            case CLOSEST_CENTER:
+                double dx = (double) SceneDragSupport.centerX(candidate.box) - SceneDragSupport.centerX(box);
+                double dy = (double) SceneDragSupport.centerY(candidate.box) - SceneDragSupport.centerY(box);
+                return -(dx * dx + dy * dy);
+            default: throw new AssertionError(collision);
+        }
+    }
+    /** 通用碰撞先比优先级，再比策略评分，最后按正式绘制序裁决。 */
+    private boolean preferred(Candidate<K> candidate, Candidate<K> chosen, double score, double best) {
+        if (chosen == null) return true;
+        if (candidate.priority != chosen.priority) return candidate.priority > chosen.priority;
+        if (score != best) return score > best;
+        return candidate.order > chosen.order;
     }
     private Runnable normalDrop(SourceRegistration<K> source, SceneGeometryView geometry, boolean keyboard, LayoutBox box, int x, int y) {
         if (session != source || source == null) return null;
@@ -210,32 +222,39 @@ public final class SceneDragDrop<K> {
     private LayoutBox keyboardTarget(SourceRegistration<K> source, SceneGeometryView geometry, SceneEditEvent.Command direction) {
         if (session != source || !valid(source, geometry)) return null;
         List<Candidate<K>> candidates = candidates(source.key, source.node, geometry);
-        Candidate<K> selected = null;
-        for (Candidate<K> candidate : candidates) if (Objects.equals(candidate.key, keyboardTarget)) { selected = candidate; break; }
+        Candidate<K> selected = candidate(candidates, keyboardTarget);
         // 键盘落点取可见部分中心，完整盒中心可能被纯 clip 裁掉且无法滚动显露。
         if (direction == null) {
             if (selected == null) keyboardTarget = null;
             return selected == null ? null : selected.visibleBox;
         }
         LayoutBox origin = selected == null ? state.get().box : selected.visibleBox;
+        Candidate<K> next = directionTarget(candidates, selected, origin, direction);
+        if (next == null) return selected == null ? null : selected.visibleBox;
+        keyboardTarget = next.key; runtime.requestInputReveal(next.node);
+        return next.visibleBox;
+    }
+    private Candidate<K> candidate(List<Candidate<K>> candidates, K key) {
+        for (Candidate<K> candidate : candidates) if (Objects.equals(candidate.key, key)) return candidate;
+        return null;
+    }
+    private Candidate<K> directionTarget(List<Candidate<K>> candidates, Candidate<K> selected,
+                                          LayoutBox origin, SceneEditEvent.Command direction) {
         Candidate<K> next = null;
         double best = Double.POSITIVE_INFINITY;
         boolean horizontal = direction == SceneEditEvent.Command.LEFT || direction == SceneEditEvent.Command.RIGHT;
         boolean positive = direction == SceneEditEvent.Command.RIGHT || direction == SceneEditEvent.Command.DOWN;
         for (Candidate<K> candidate : candidates) {
             if (candidate == selected) continue;
-            double dx = (double) SceneDragSupport.centerX(candidate.visibleBox) - SceneDragSupport.centerX(origin);
-            double dy = (double) SceneDragSupport.centerY(candidate.visibleBox) - SceneDragSupport.centerY(origin);
-            double primary = horizontal ? dx : dy, cross = horizontal ? dy : dx;
-            if (positive ? primary <= 0 : primary >= 0) continue;
-            // 半平面中优先同方向近邻；跨轴偏移参与评分，支持横纵布局和不等尺寸网格。
-            double score = primary * primary + 4 * cross * cross;
-            if (next == null || score < best || score == best && (candidate.priority > next.priority
-                    || candidate.priority == next.priority && candidate.order > next.order)) { next = candidate; best = score; }
+            double score = SceneDragSupport.directionScore(origin, candidate.visibleBox, horizontal, positive);
+            // 方向评分优先；平局才按优先级与绘制序，保持原方向导航合同。
+            if (score != Double.POSITIVE_INFINITY && directionPreferred(candidate, next, score, best)) { next = candidate; best = score; }
         }
-        if (next == null) return selected == null ? null : selected.visibleBox;
-        keyboardTarget = next.key; runtime.requestInputReveal(next.node);
-        return next.visibleBox;
+        return next;
+    }
+    private boolean directionPreferred(Candidate<K> candidate, Candidate<K> next, double score, double best) {
+        if (next == null || score < best) return true;
+        return score == best && preferred(candidate, next, 0, 0);
     }
     private SceneNode scrollSource(SourceRegistration<K> source, SceneGeometryView geometry) {
         if (session != source) return null;

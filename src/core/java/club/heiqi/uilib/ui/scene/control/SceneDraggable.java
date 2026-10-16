@@ -145,37 +145,9 @@ public final class SceneDraggable {
         if (state.bound) throw new IllegalArgumentException("拖动状态已有所属声明");
         Control control = new Control(context.runtime(), content, state, options);
         SceneNode node = new SceneNode().focusable(true).clickFocus(true).control(control).add(content);
-        // 静态声明没有 preview 时无需隐藏所属层；动态 options 保留切换预览的正式拥有。
-        if (withOverlay) {
-            SceneNode layer = SceneLayer.create(context, () -> new SceneLayer.Policy(0, SceneLayer.Participation.PASSIVE),
-                    (self, source, viewport, measured) -> {
-                        Snapshot current = state.snapshot.get();
-                        return new LayoutBox(SceneDragSupport.integer((long) source.x + node.padding() + current.deltaX),
-                                SceneDragSupport.integer((long) source.y + node.padding() + current.deltaY), measured.width, measured.height);
-                    }, Arrays.asList(state.snapshot, options));
-            layer.bind(NodeBinding.value(() -> state.snapshot.get().active && control.options().overlay != null, SceneNode::visible));
-            layer.bind(NodeBinding.ownedChildren(() -> {
-                SceneNode preview = control.options().overlay;
-                if (preview != null && (preview == content || SceneDragSupport.within(preview, content)))
-                    throw new IllegalArgumentException("overlay 必须是独立预览声明");
-                return preview == null ? Collections.emptyList() : Collections.singletonList(preview);
-            }));
-            node.add(layer);
-            control.layer = layer;
-        }
-        node.bind((runtime, self, owner) -> {
-            control.mounted = true;
-            state.cancelSession = () -> { control.dragBox = null; if (control.observer != null) control.observer.cancel(self); };
-            owner.own(() -> {
-                try { state.end(); }
-                finally {
-                    control.mounted = false;
-                    if (control.observer != null) control.observer.detach(self);
-                    control.observer = null; state.cancelSession = null;
-                }
-            });
-            return new BindingActivation() { public void refresh() {} public void close() {} };
-        });
+        // 静态无预览无需所属层；动态配置保留正式拥有与切换能力。
+        if (withOverlay) control.installOverlay(context, node);
+        control.bindLifecycle(node);
         node.bind(NodeBinding.value(options, (self, value) -> control.syncObserver(self, Objects.requireNonNull(value, "drag options"))));
         state.bound = true;
         return node;
@@ -193,6 +165,38 @@ public final class SceneDraggable {
         private LayoutBox dragBox;
         Control(SceneRuntime runtime, SceneNode content, State state, ReadableSignal<Options> source) {
             this.runtime = runtime; this.content = content; this.state = state; this.source = source;
+        }
+        void installOverlay(ScenePageContext context, SceneNode node) {
+            layer = SceneLayer.create(context, () -> new SceneLayer.Policy(0, SceneLayer.Participation.PASSIVE),
+                    (self, sourceBox, viewport, measured) -> {
+                        Snapshot current = state.snapshot.get();
+                        return new LayoutBox(SceneDragSupport.integer((long) sourceBox.x + node.padding() + current.deltaX),
+                                SceneDragSupport.integer((long) sourceBox.y + node.padding() + current.deltaY), measured.width, measured.height);
+                    }, Arrays.asList(state.snapshot, source));
+            layer.bind(NodeBinding.value(() -> state.snapshot.get().active && options().overlay != null, SceneNode::visible));
+            layer.bind(NodeBinding.ownedChildren(() -> {
+                SceneNode preview = options().overlay;
+                if (preview != null && (preview == content || SceneDragSupport.within(preview, content)))
+                    throw new IllegalArgumentException("overlay 必须是独立预览声明");
+                return preview == null ? Collections.emptyList() : Collections.singletonList(preview);
+            }));
+            node.add(layer);
+        }
+        void bindLifecycle(SceneNode node) {
+            node.bind((runtime, self, owner) -> {
+                mounted = true;
+                state.cancelSession = () -> { dragBox = null; if (observer != null) observer.cancel(self); };
+                owner.own(() -> unmount(self));
+                return new BindingActivation() { public void refresh() {} public void close() {} };
+            });
+        }
+        private void unmount(SceneNode node) {
+            try { state.end(); }
+            finally {
+                mounted = false;
+                if (observer != null) observer.detach(node);
+                observer = null; state.cancelSession = null;
+            }
         }
         Options options() { return Objects.requireNonNull(source.get(), "drag options"); }
         private void syncObserver(SceneNode node, Options options) {
@@ -278,52 +282,81 @@ public final class SceneDraggable {
             if (!valid(node, geometry)) { state.end(); return; }
             SceneGeometryView.Entry wrapper = geometry.get(node), sourceBox = geometry.get(sourceContent());
             if (wrapper == null || sourceBox == null) { state.end(); return; }
-            boolean sourceMoves = shift.scroller != null && SceneDragSupport.within(node, shift.scroller);
-            int sx = sourceMoves ? shift.x : 0, sy = sourceMoves ? shift.y : 0;
-            int baseX = SceneDragSupport.integer((long) wrapper.box.x + node.padding() + sx);
-            int baseY = SceneDragSupport.integer((long) wrapper.box.y + node.padding() + sy);
-            int width = sourceBox.box.width, height = sourceBox.box.height;
-            SceneGeometryView.Entry overlay = options().overlay == null ? null : geometry.get(layer);
-            if (overlay != null) { width = overlay.box.width; height = overlay.box.height; }
-            if (state.keyboard && observer != null) {
-                LayoutBox target = observer.keyboardTarget(node, geometry, null);
-                if (target != null) {
-                    state.keyboardX = SceneDragSupport.integer((long) SceneDragSupport.centerX(target) - baseX - width / 2);
-                    state.keyboardY = SceneDragSupport.integer((long) SceneDragSupport.centerY(target) - baseY - height / 2);
-                }
-            }
-            int rawX = state.keyboard ? state.keyboardX : SceneDragSupport.integer((long) state.pointerX - state.grabX - baseX);
-            int rawY = state.keyboard ? state.keyboardY : SceneDragSupport.integer((long) state.pointerY - state.grabY - baseY);
-            Options options = options();
-            boolean x = options.axis != Axis.Y, y = options.axis != Axis.X;
-            int dx = x ? SceneDragSupport.snap(rawX, options.gridX) : 0;
-            int dy = y ? SceneDragSupport.snap(rawY, options.gridY) : 0;
-            LayoutBox bounds = null;
-            if (options.bounds == Bounds.VIEWPORT) bounds = geometry.viewport();
-            else if (options.bounds == Bounds.PARENT) {
-                SceneGeometryView.Entry parent = node.parent() == null ? null : geometry.get(node.parent());
-                if (parent != null) {
-                    LayoutBox inner = SceneDragSupport.inner(parent);
-                    boolean moves = shift.scroller != null && shift.scroller != node.parent();
-                    bounds = new LayoutBox(SceneDragSupport.integer((long) inner.x + (moves ? sx : 0)),
-                            SceneDragSupport.integer((long) inner.y + (moves ? sy : 0)), inner.width, inner.height);
-                } else bounds = geometry.viewport();
-            }
-            if (bounds != null) {
-                if (x) dx = SceneDragSupport.integer((long) SceneDragSupport.clamp((long) baseX + dx, width, bounds.x, bounds.width) - baseX);
-                if (y) dy = SceneDragSupport.integer((long) SceneDragSupport.clamp((long) baseY + dy, height, bounds.y, bounds.height) - baseY);
-            }
-            state.publish(true, false, dx, dy);
-            int finalX = SceneDragSupport.integer((long) baseX + dx), finalY = SceneDragSupport.integer((long) baseY + dy);
-            if (options.overlay != null) {
-                LayoutBox viewport = geometry.viewport();
-                finalX = SceneDragSupport.clamp(finalX, width, viewport.x, viewport.width);
-                finalY = SceneDragSupport.clamp(finalY, height, viewport.y, viewport.height);
-            }
-            dragBox = new LayoutBox(finalX, finalY, width, height);
+            DragGeometry drag = new DragGeometry(node, geometry, shift, wrapper.box, sourceBox.box);
+            drag.alignKeyboard();
+            DragPosition position = drag.resolve();
+            state.publish(true, false, position.dx, position.dy);
+            dragBox = position.box;
             if (observer != null) observer.update(node, geometry, state.keyboard, dragBox,
                     state.keyboard ? SceneDragSupport.centerX(dragBox) : state.pointerX,
                     state.keyboard ? SceneDragSupport.centerY(dragBox) : state.pointerY);
+        }
+        /** 来源内容、槽基准与预览尺寸各有职责；求解只消费本次共同几何。 */
+        private final class DragGeometry {
+            private final SceneNode node;
+            private final SceneGeometryView geometry;
+            private final SceneDragSupport.AutoScroll.Shift shift;
+            private final Options options;
+            private final int baseX, baseY, width, height, scrollX, scrollY;
+            private final boolean allowX, allowY;
+            DragGeometry(SceneNode node, SceneGeometryView geometry, SceneDragSupport.AutoScroll.Shift shift,
+                         LayoutBox wrapper, LayoutBox content) {
+                this.node = node; this.geometry = geometry; this.shift = shift; options = options();
+                boolean sourceMoves = shift.scroller != null && SceneDragSupport.within(node, shift.scroller);
+                scrollX = sourceMoves ? shift.x : 0; scrollY = sourceMoves ? shift.y : 0;
+                baseX = SceneDragSupport.integer((long) wrapper.x + node.padding() + scrollX);
+                baseY = SceneDragSupport.integer((long) wrapper.y + node.padding() + scrollY);
+                SceneGeometryView.Entry overlay = options.overlay == null ? null : geometry.get(layer);
+                width = overlay == null ? content.width : overlay.box.width;
+                height = overlay == null ? content.height : overlay.box.height;
+                allowX = options.axis != Axis.Y; allowY = options.axis != Axis.X;
+            }
+            void alignKeyboard() {
+                if (!state.keyboard || observer == null) return;
+                LayoutBox target = observer.keyboardTarget(node, geometry, null);
+                if (target == null) return;
+                state.keyboardX = SceneDragSupport.integer((long) SceneDragSupport.centerX(target) - baseX - width / 2);
+                state.keyboardY = SceneDragSupport.integer((long) SceneDragSupport.centerY(target) - baseY - height / 2);
+            }
+            DragPosition resolve() {
+                int rawX = state.keyboard ? state.keyboardX : SceneDragSupport.integer((long) state.pointerX - state.grabX - baseX);
+                int rawY = state.keyboard ? state.keyboardY : SceneDragSupport.integer((long) state.pointerY - state.grabY - baseY);
+                LayoutBox bounds = bounds();
+                int dx = constrainedDelta(rawX, allowX, options.gridX, baseX, width, bounds, true);
+                int dy = constrainedDelta(rawY, allowY, options.gridY, baseY, height, bounds, false);
+                return new DragPosition(dx, dy, feedbackBox(dx, dy));
+            }
+            private LayoutBox bounds() {
+                if (options.bounds == Bounds.VIEWPORT) return geometry.viewport();
+                if (options.bounds != Bounds.PARENT) return null;
+                SceneGeometryView.Entry parent = node.parent() == null ? null : geometry.get(node.parent());
+                if (parent == null) return geometry.viewport();
+                LayoutBox inner = SceneDragSupport.inner(parent);
+                boolean moves = shift.scroller != null && shift.scroller != node.parent();
+                return new LayoutBox(SceneDragSupport.integer((long) inner.x + (moves ? scrollX : 0)),
+                        SceneDragSupport.integer((long) inner.y + (moves ? scrollY : 0)), inner.width, inner.height);
+            }
+            private int constrainedDelta(int raw, boolean allowed, int grid, int base, int size, LayoutBox bounds, boolean horizontal) {
+                if (!allowed) return 0;
+                int snapped = SceneDragSupport.snap(raw, grid);
+                if (bounds == null) return snapped;
+                return SceneDragSupport.integer((long) SceneDragSupport.clamp((long) base + snapped, size,
+                        horizontal ? bounds.x : bounds.y, horizontal ? bounds.width : bounds.height) - base);
+            }
+            private LayoutBox feedbackBox(int dx, int dy) {
+                int x = SceneDragSupport.integer((long) baseX + dx), y = SceneDragSupport.integer((long) baseY + dy);
+                if (options.overlay != null) {
+                    LayoutBox viewport = geometry.viewport();
+                    x = SceneDragSupport.clamp(x, width, viewport.x, viewport.width);
+                    y = SceneDragSupport.clamp(y, height, viewport.y, viewport.height);
+                }
+                return new LayoutBox(x, y, width, height);
+            }
+        }
+        private static final class DragPosition {
+            final int dx, dy;
+            final LayoutBox box;
+            DragPosition(int dx, int dy, LayoutBox box) { this.dx = dx; this.dy = dy; this.box = box; }
         }
         private void drop(SceneNode node, SceneGeometryView geometry) {
             Snapshot finalValue = state.snapshot.get();
@@ -345,31 +378,36 @@ public final class SceneDraggable {
         @Override public void pointer(SceneNode node, ScenePointerEvent event, SceneGeometryView geometry) {
             syncObserver(node, options());
             switch (event.kind) {
-                case DOWN:
-                    SceneGeometryView.Entry entry = geometry.get(sourceContent());
-                    if (entry == null) return;
-                    state.end(); state.keyboard = false; state.delayAllowed = true;
-                    state.startX = state.pointerX = event.x; state.startY = state.pointerY = event.y;
-                    state.grabX = event.x - entry.box.x; state.grabY = event.y - entry.box.y;
-                    state.pressedNanos = runtime.inputNanos();
-                    Options options = options();
-                    if (options.handles.length > 0 && !options.activationExplicit || options.distance == 0 && options.delayMillis == 0) activate(state.pressedNanos);
-                    else state.publish(false, true, 0, 0);
-                    update(node, geometry, SceneDragSupport.AutoScroll.Shift.NONE);
-                    break;
-                case MOVE:
-                    if (state.keyboard || !state.snapshot.get().active && !state.snapshot.get().pending) return;
-                    state.pointerX = event.x; state.pointerY = event.y;
-                    if (state.snapshot.get().pending) pending(runtime.inputNanos());
-                    update(node, geometry, SceneDragSupport.AutoScroll.Shift.NONE);
-                    break;
-                case UP:
-                    if (state.keyboard) return;
-                    state.pointerX = event.x; state.pointerY = event.y;
-                    update(node, geometry, SceneDragSupport.AutoScroll.Shift.NONE);
-                    drop(node, geometry); break;
+                case DOWN: beginPointer(node, event, geometry); break;
+                case MOVE: continuePointer(node, event, geometry); break;
+                case UP: finishPointer(node, event, geometry); break;
                 default: break;
             }
+        }
+        private void beginPointer(SceneNode node, ScenePointerEvent event, SceneGeometryView geometry) {
+            SceneGeometryView.Entry entry = geometry.get(sourceContent());
+            if (entry == null) return;
+            state.end(); state.keyboard = false; state.delayAllowed = true;
+            state.startX = state.pointerX = event.x; state.startY = state.pointerY = event.y;
+            state.grabX = event.x - entry.box.x; state.grabY = event.y - entry.box.y;
+            state.pressedNanos = runtime.inputNanos();
+            Options options = options();
+            if (options.handles.length > 0 && !options.activationExplicit || options.distance == 0 && options.delayMillis == 0) activate(state.pressedNanos);
+            else state.publish(false, true, 0, 0);
+            update(node, geometry, SceneDragSupport.AutoScroll.Shift.NONE);
+        }
+        private void continuePointer(SceneNode node, ScenePointerEvent event, SceneGeometryView geometry) {
+            Snapshot current = state.snapshot.get();
+            if (state.keyboard || !current.active && !current.pending) return;
+            state.pointerX = event.x; state.pointerY = event.y;
+            if (current.pending) pending(runtime.inputNanos());
+            update(node, geometry, SceneDragSupport.AutoScroll.Shift.NONE);
+        }
+        private void finishPointer(SceneNode node, ScenePointerEvent event, SceneGeometryView geometry) {
+            if (state.keyboard) return;
+            state.pointerX = event.x; state.pointerY = event.y;
+            update(node, geometry, SceneDragSupport.AutoScroll.Shift.NONE);
+            drop(node, geometry);
         }
         @Override public boolean edit(SceneNode node, SceneEditEvent event, SceneGeometryView geometry) {
             if (!SceneDragSupport.dragCommand(event)) return false;
@@ -383,37 +421,46 @@ public final class SceneDraggable {
         }
         private boolean editDrag(SceneNode node, SceneEditEvent event, SceneGeometryView geometry) {
             syncObserver(node, options());
-            Snapshot current = state.snapshot.get();
             switch (event.command) {
-                case ACTIVATE_ONLY: case SPACE:
-                    if (current.active || current.pending) { if (state.keyboard) { update(node, geometry, SceneDragSupport.AutoScroll.Shift.NONE); drop(node, geometry); } }
-                    else {
-                        state.end(); state.keyboard = true; activate(runtime.inputNanos());
-                        if (geometry != null) update(node, geometry, SceneDragSupport.AutoScroll.Shift.NONE);
-                    }
-                    return true;
-                case ESCAPE:
-                    if (!current.active && !current.pending || !state.keyboard) return false;
-                    state.end(); return true;
-                case LEFT: case RIGHT: case UP: case DOWN:
-                    if (!current.active || !state.keyboard) return false;
-                    if (observer != null && geometry != null) {
-                        Options options = options();
-                        boolean horizontal = event.command == SceneEditEvent.Command.LEFT || event.command == SceneEditEvent.Command.RIGHT;
-                        if (horizontal ? options.axis != Axis.Y : options.axis != Axis.X) {
-                            observer.keyboardTarget(node, geometry, event.command);
-                            update(node, geometry, SceneDragSupport.AutoScroll.Shift.NONE);
-                        }
-                        return true;
-                    }
-                    state.keyboardX = SceneDragSupport.integer((long) state.keyboardX
-                            + (event.command == SceneEditEvent.Command.LEFT ? -25 : event.command == SceneEditEvent.Command.RIGHT ? 25 : 0));
-                    state.keyboardY = SceneDragSupport.integer((long) state.keyboardY
-                            + (event.command == SceneEditEvent.Command.UP ? -25 : event.command == SceneEditEvent.Command.DOWN ? 25 : 0));
-                    if (geometry != null) update(node, geometry, SceneDragSupport.AutoScroll.Shift.NONE);
-                    return true;
+                case ACTIVATE_ONLY: case SPACE: return toggleKeyboard(node, geometry);
+                case ESCAPE: return cancelKeyboard();
+                case LEFT: case RIGHT: case UP: case DOWN: return navigateKeyboard(node, event.command, geometry);
                 default: return false;
             }
+        }
+        private boolean toggleKeyboard(SceneNode node, SceneGeometryView geometry) {
+            Snapshot current = state.snapshot.get();
+            if (!current.active && !current.pending) {
+                state.end(); state.keyboard = true; activate(runtime.inputNanos());
+                if (geometry != null) update(node, geometry, SceneDragSupport.AutoScroll.Shift.NONE);
+            } else if (state.keyboard) {
+                update(node, geometry, SceneDragSupport.AutoScroll.Shift.NONE);
+                drop(node, geometry);
+            }
+            return true;
+        }
+        private boolean cancelKeyboard() {
+            Snapshot current = state.snapshot.get();
+            if (!state.keyboard || !current.active && !current.pending) return false;
+            state.end(); return true;
+        }
+        private boolean navigateKeyboard(SceneNode node, SceneEditEvent.Command direction, SceneGeometryView geometry) {
+            if (!state.snapshot.get().active || !state.keyboard) return false;
+            if (observer == null || geometry == null) moveKeyboard(direction);
+            else if (!navigationAllowed(direction)) return true;
+            else observer.keyboardTarget(node, geometry, direction);
+            if (geometry != null) update(node, geometry, SceneDragSupport.AutoScroll.Shift.NONE);
+            return true;
+        }
+        private boolean navigationAllowed(SceneEditEvent.Command direction) {
+            boolean horizontal = direction == SceneEditEvent.Command.LEFT || direction == SceneEditEvent.Command.RIGHT;
+            return horizontal ? options().axis != Axis.Y : options().axis != Axis.X;
+        }
+        private void moveKeyboard(SceneEditEvent.Command direction) {
+            state.keyboardX = SceneDragSupport.integer((long) state.keyboardX
+                    + (direction == SceneEditEvent.Command.LEFT ? -25 : direction == SceneEditEvent.Command.RIGHT ? 25 : 0));
+            state.keyboardY = SceneDragSupport.integer((long) state.keyboardY
+                    + (direction == SceneEditEvent.Command.UP ? -25 : direction == SceneEditEvent.Command.DOWN ? 25 : 0));
         }
         @Override public long nextInputNanos(SceneNode node) {
             Snapshot current = state.snapshot.get(); Options options = options();

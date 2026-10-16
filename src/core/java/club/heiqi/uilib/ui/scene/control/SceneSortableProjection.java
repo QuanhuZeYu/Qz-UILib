@@ -13,35 +13,59 @@ final class SceneSortableProjection<T, K, C> {
     private SceneSortableSelection.Position<T, K, C> position;
     private long revision = -1;
     SceneSortableProjection(SceneSortableModel<T, K, C> model) { this.model = model; }
+
     void apply(SceneSortableInteraction.Feedback<T, K, C> feedback) {
         long next = model.revision.get();
         SceneSortableModel.RowEntry<T, K, C> row = feedback == null ? null : feedback.row;
         SceneSortableSelection.Position<T, K, C> target = feedback == null ? null : feedback.position;
-        if (revision == next && row == source && (target == position || target != null && target.same(position))) return;
+        if (unchanged(next, row, target)) return;
         revision = next; source = row; position = target;
-        Map<SceneSortableModel.ContainerEntry<T, K, C>, List<SceneSortableModel.RowEntry<T, K, C>>> order = new LinkedHashMap<>();
-        for (SceneSortableModel.ContainerEntry<T, K, C> container : model.containers.values())
-            order.put(container, new ArrayList<>(container.rows));
-        if (row != null && model.rows.get(row.key) == row && target != null && order.containsKey(target.container)) {
-            List<SceneSortableModel.RowEntry<T, K, C>> destination = order.get(target.container);
+        DisplayOrder order = new DisplayOrder();
+        order.insertSource(row, target);
+        order.relocateAll();
+        order.reconcileContainers();
+    }
+
+    private boolean unchanged(long next, SceneSortableModel.RowEntry<T, K, C> row,
+                              SceneSortableSelection.Position<T, K, C> target) {
+        return revision == next && row == source && (target == position || target != null && target.same(position));
+    }
+
+    /** 一次投影的完整顺序；不把临时顺序写回权威 rows 或 container。 */
+    private final class DisplayOrder {
+        private final Map<SceneSortableModel.ContainerEntry<T, K, C>, List<SceneSortableModel.RowEntry<T, K, C>>> containers = new LinkedHashMap<>();
+        DisplayOrder() {
+            for (SceneSortableModel.ContainerEntry<T, K, C> container : model.containers.values())
+                containers.put(container, new ArrayList<>(container.rows));
+        }
+        void insertSource(SceneSortableModel.RowEntry<T, K, C> row, SceneSortableSelection.Position<T, K, C> target) {
+            if (row == null || model.rows.get(row.key) != row || target == null) return;
+            List<SceneSortableModel.RowEntry<T, K, C>> destination = containers.get(target.container);
+            if (destination == null) return;
             SceneSortableModel.RowEntry<T, K, C> before = model.rows.get(target.before);
-            if (target.before == null || destination.contains(before)) {
-                for (List<SceneSortableModel.RowEntry<T, K, C>> rows : order.values()) rows.remove(row);
-                destination.add(before == null ? destination.size() : destination.indexOf(before), row);
+            if (target.before != null && !destination.contains(before)) return;
+            for (List<SceneSortableModel.RowEntry<T, K, C>> rows : containers.values()) rows.remove(row);
+            destination.add(before == null ? destination.size() : destination.indexOf(before), row);
+        }
+        void relocateAll() {
+            for (Map.Entry<SceneSortableModel.ContainerEntry<T, K, C>, List<SceneSortableModel.RowEntry<T, K, C>>> entry : containers.entrySet())
+                relocateRows(entry.getKey(), entry.getValue());
+        }
+        private void relocateRows(SceneSortableModel.ContainerEntry<T, K, C> container, List<SceneSortableModel.RowEntry<T, K, C>> rows) {
+            SceneNode parent = container.declaration.items;
+            for (SceneSortableModel.RowEntry<T, K, C> row : rows) {
+                row.placed.set(container);
+                if (row.node.parent() != parent) model.runtime.relocate(row.node, parent);
             }
         }
-        for (Map.Entry<SceneSortableModel.ContainerEntry<T, K, C>, List<SceneSortableModel.RowEntry<T, K, C>>> entry : order.entrySet()) {
-            for (SceneSortableModel.RowEntry<T, K, C> item : entry.getValue()) {
-                item.placed.set(entry.getKey());
+        void reconcileContainers() {
+            for (Map.Entry<SceneSortableModel.ContainerEntry<T, K, C>, List<SceneSortableModel.RowEntry<T, K, C>>> entry : containers.entrySet()) {
                 SceneNode parent = entry.getKey().declaration.items;
-                if (item.node.parent() != parent) model.runtime.relocate(item.node, parent);
+                List<SceneNode> children = new ArrayList<>();
+                for (SceneSortableModel.RowEntry<T, K, C> row : entry.getValue()) children.add(row.node);
+                model.runtime.reconcile(parent, children, parent, true);
+                entry.getKey().displayed = entry.getValue();
             }
-        }
-        for (Map.Entry<SceneSortableModel.ContainerEntry<T, K, C>, List<SceneSortableModel.RowEntry<T, K, C>>> entry : order.entrySet()) {
-            List<SceneNode> children = new ArrayList<>();
-            for (SceneSortableModel.RowEntry<T, K, C> item : entry.getValue()) children.add(item.node);
-            model.runtime.reconcile(entry.getKey().declaration.items, children, entry.getKey().declaration.items, true);
-            entry.getKey().displayed = entry.getValue();
         }
     }
 }

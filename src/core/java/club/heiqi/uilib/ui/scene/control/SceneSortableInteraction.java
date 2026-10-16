@@ -23,7 +23,7 @@ final class SceneSortableInteraction<T, K, C> {
     final Signal<Feedback<T, K, C>> feedback;
     private final SceneSortableModel<T, K, C> model;
     private final SceneSortableSelection<T, K, C> selection;
-    private SceneSortableModel.RowEntry<T, K, C> active, anchor;
+    private SceneSortableModel.RowEntry<T, K, C> active;
     private SceneSortableSelection.Position<T, K, C> position;
     private Object token;
     SceneSortableInteraction(SceneSortableModel<T, K, C> model) {
@@ -31,15 +31,41 @@ final class SceneSortableInteraction<T, K, C> {
     }
     void clear() {
         if (active != null) model.motion.finish();
-        active = anchor = null; position = null; token = null; feedback.set(null);
+        active = null; position = null; token = null; feedback.set(null);
     }
     private void clear(SceneSortableModel.RowEntry<T, K, C> row) { if (active == row) clear(); }
     private void publish(LayoutBox box) {
         Feedback<T, K, C> old = feedback.get();
-        if (old != null && old.row == active && (old.position == position || old.position != null && old.position.same(position))
+        if (old != null && old.row == active && SceneSortableSelection.same(old.position, position)
                 && old.box.x == box.x && old.box.y == box.y && old.box.width == box.width && old.box.height == box.height) return;
         Feedback<T, K, C> value = new Feedback<>(token, active, position, box);
         feedback.set(value); model.motion.show(value);
+    }
+    private boolean ownsSession(SceneSortableModel.RowEntry<T, K, C> row) {
+        SceneDragDrop.Snapshot<Object> scope = model.scope.snapshot().get();
+        return scope.active && Objects.equals(scope.source, new SceneSortableKeys.SourceKey<>(row.key));
+    }
+    private void begin(SceneSortableModel.RowEntry<T, K, C> row) {
+        if (active == row) return;
+        clear(); active = row; token = new Object();
+        position = new SceneSortableSelection.Position<>(row.container.get(), model.successor(row));
+    }
+    private SceneSortableSelection.Position<T, K, C> resolvePosition(SceneSortableModel.RowEntry<T, K, C> row,
+            SceneGeometryView geometry, boolean keyboard, int x, int y) {
+        if (!keyboard && !selection.occupies(row, position, geometry, x, y)) return selection.pointer(row, geometry, x, y);
+        return selection.valid(row, position, geometry) ? position : null;
+    }
+    private void navigate(SceneSortableModel.RowEntry<T, K, C> row, SceneGeometryView geometry, SceneEditEvent.Command direction) {
+        SceneSortableSelection.Position<T, K, C> next = selection.step(row, position, geometry, direction);
+        if (!SceneSortableSelection.same(position, next)) model.motion.geometryChanged(geometry);
+        model.motion.positionChanged(position, next);
+        if (next != position) model.runtime.requestInputReveal(row.node);
+        position = next;
+    }
+    private SceneSortable.Move<K, C> moveIntent(SceneSortableModel.RowEntry<T, K, C> row, SceneGeometryView geometry) {
+        if (active != row || !selection.valid(row, position, geometry) || model.rows.get(row.key) != row) return null;
+        if (position.container == row.container.get() && Objects.equals(position.before, model.successor(row))) return null;
+        return new SceneSortable.Move<>(row.key, position.container.key, position.before);
     }
     SceneDragSupport.Observer observer(SceneSortableModel.RowEntry<T, K, C> row, SceneDragSupport.Observer delegate) {
         return new SourceObserver(row, delegate);
@@ -63,27 +89,19 @@ final class SceneSortableInteraction<T, K, C> {
         @Override public void cancel(SceneNode node) { try { delegate.cancel(node); } finally { clear(row); } }
         @Override public void update(SceneNode node, SceneGeometryView geometry, boolean keyboard, LayoutBox box, int x, int y) {
             delegate.update(node, geometry, keyboard, box, x, y);
-            SceneDragDrop.Snapshot<Object> scope = model.scope.snapshot().get();
-            if (!scope.active || !Objects.equals(scope.source, new SceneSortableKeys.SourceKey<>(row.key))) { clear(row); return; }
-            if (active != row) {
-                clear(); active = anchor = row; token = new Object();
-                position = new SceneSortableSelection.Position<>(row.container.get(), model.successor(row));
-            }
-            model.motion.synchronize(geometry);
-            model.motion.remember(geometry);
-            SceneSortableSelection.Position<T, K, C> oldPosition = position;
-            if (!keyboard && !selection.occupies(row, position, geometry, x, y)) position = selection.pointer(row, geometry, x, y);
-            else if (!selection.valid(row, position, geometry)) position = null;
-            if (oldPosition != position && (oldPosition == null || !oldPosition.same(position))) model.motion.prepare();
+            if (!ownsSession(row)) { clear(row); return; }
+            begin(row);
+            model.motion.geometryChanged(geometry);
+            SceneSortableSelection.Position<T, K, C> next = resolvePosition(row, geometry, keyboard, x, y);
+            model.motion.positionChanged(position, next);
+            position = next;
             publish(box);
         }
         @Override public Runnable normalDrop(SceneNode node, SceneGeometryView geometry, boolean keyboard, LayoutBox box, int x, int y) {
             SceneSortable.Move<K, C> move = null;
             try {
                 update(node, geometry, keyboard, box, x, y);
-                if (active == row && selection.valid(row, position, geometry) && model.rows.get(row.key) == row
-                        && (position.container != row.container.get() || !Objects.equals(position.before, model.successor(row))))
-                    move = new SceneSortable.Move<>(row.key, position.container.key, position.before);
+                move = moveIntent(row, geometry);
                 // 委托 Scope 的正常结束及清理，丢弃其通用 Drop（本控件只发布 Move）。
                 delegate.normalDrop(node, geometry, keyboard, box, x, y);
             } finally { clear(row); }
@@ -92,13 +110,7 @@ final class SceneSortableInteraction<T, K, C> {
         }
         @Override public LayoutBox keyboardTarget(SceneNode node, SceneGeometryView geometry, SceneEditEvent.Command direction) {
             if (active != row) return null;
-            if (direction != null) {
-                SceneSortableSelection.Step<T, K, C> step = selection.step(row, position, anchor, geometry, direction);
-                if (position != step.position && (position == null || !position.same(step.position))) {
-                    model.motion.remember(geometry); model.motion.prepare();
-                }
-                position = step.position; anchor = step.anchor;
-            }
+            if (direction != null) navigate(row, geometry, direction);
             if (position == null || !selection.valid(row, position, geometry)) return null;
             SceneGeometryView.Entry entry = geometry.get(row.declaration.content);
             LayoutBox visible = SceneDragSupport.visibleBox(geometry, entry);
