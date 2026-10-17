@@ -80,6 +80,7 @@
 | 大列表更新和滚动性能 | [大列表性能目标](<proposals/2026-10-14-uilib-large-list-performance-spec.md>) | 证据驱动的热点选择与收益验收 |
 | 可交互长集合的候选机制 | [虚拟集合专题](<proposals/2026-10-14-uilib-virtual-list-spec.md>) | 离屏、可变行高、导航和生命周期的设计输入 |
 | 后续真实媒体案例 | [媒体案例提案](<proposals/uilib-media-app-cases-proposal.md>) | YouTube/Bilibili 候选路线，独立于收件箱认可范围 |
+| 完整的声明式弹性 UI 动效 | [动效体系草案](<proposals/2026-10-17-uilib-motion-spec.md>) | 已确认完整范围与默认启用方式；运动、布局、手势和存在性合同待审阅 |
 
 ## 如何维护单一权威
 
