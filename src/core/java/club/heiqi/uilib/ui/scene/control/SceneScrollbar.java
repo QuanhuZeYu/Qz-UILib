@@ -200,6 +200,7 @@ public final class SceneScrollbar {
         }
         @Override public void inputFrameCancelled(SceneNode node) { stop(); }
         @Override public boolean scrollableContent() { return true; }
+        @Override public SceneNode scrollMotionViewport(SceneNode node) { return viewport.node(); }
         @Override public SceneScrollResult scrollResult(SceneNode node, ScenePointerEvent event, SceneGeometryView geometry) {
             page.stop();
             return SceneScrollResult.moved(viewport.moveByPixels(SceneControlViewport.wheelPixels(event.delta, viewport.node().scrollStep())));

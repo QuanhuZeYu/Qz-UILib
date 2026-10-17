@@ -216,6 +216,7 @@ public final class ImageLwjgl2Scenario extends TestApplication {
                     color(179, 40, 0xffff0000);
                     color(155, 15, 0xffffffff);
                 });
+        scenario("HOST_ITEM全局alpha经过真实compat委托与原版改色后合成", this::hostOpacity);
         scenario("字体shaderdelegate进入原版flat纹理路径实际像素", () -> legacyPixels(false));
         scenario("legacy纹理matrixenv多unit及alpha污染实际像素", () -> legacyPixels(true));
         scenario("compat scope normal状态逐项对照", () -> scope(false));
@@ -248,6 +249,73 @@ public final class ImageLwjgl2Scenario extends TestApplication {
         glDrawArrays(GL_QUADS, 0, 4);
         glDisableClientState(GL_VERTEX_ARRAY);
         glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+    }
+
+    private void hostOpacity() throws Exception {
+        int texture = glGenTextures();
+        ImageContent item = new ImageContent(16, 16) {};
+        int[] calls = {0};
+        TextLayout text = fonts.layout("alpha 后续文字", new TextStyle("default", 18, 0xFF101010), W);
+        try (GlImageResources resources = new GlImageResources(gl, 1, 64)) {
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, texture);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+            ByteBuffer rgba = ByteBuffer.allocateDirect(16);
+            rgba.put(new byte[] {0, (byte) 255, (byte) 255, (byte) 255, 0, 0, 0, 0,
+                    0, (byte) 255, (byte) 255, (byte) 255, 0, 0, 0, 0}).flip();
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 2, 2, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
+            resources.hostItems(new GlImageResources.HostItems() {
+                public boolean supports(ImageContent content) { return content == item; }
+                public void render(ImagePlacement image, LayoutBox clip, int width, int height) {
+                    calls[0]++;
+                    try (ItemStateScope state = new ItemStateScope(gl)) {
+                        state.place(image, clip, width, height);
+                        // 此原版形态绘制会把glColor重新设为白；全局alpha必须在它之后合成。
+                        flatIcon(texture);
+                    }
+                }
+            });
+            GlPaintPlanRenderer consumer = fonts.createPlanRenderer(resources);
+            try {
+                for (float opacity : new float[] {1, .5f, .25f, 0}) {
+                    PaintPlan host = new PaintPlanBuilder().add(image(item, new LayoutBox(20, 20, 64, 64),
+                            ImageOptions.Fit.STRETCH, new LayoutBox(20, 20, 48, 64)))
+                            .build().presented(0, 0, opacity, null);
+                    PaintPlanBuilder b = new PaintPlanBuilder();
+                    for (PaintCommand command : host.commands()) b.add(command);
+                    b.add(PaintCommand.text(new LayoutBox(5, 100, 220, 40), null, text));
+                    for (int i = 0; i < 100; i++) {
+                        glDisable(GL_SCISSOR_TEST);
+                        glClearColor(1, 1, 1, 1);
+                        glClear(GL_COLOR_BUFFER_BIT);
+                        boolean ready;
+                        try (GlPaintPlanRenderer.Prepared prepared = fonts.prepare(consumer, b.build(), new LayoutBox(0, 0, W, H))) {
+                            prepared.render(FramebufferCoordinates.orthographic(W, H), H, false);
+                            ready = prepared.readyCount() == prepared.demandCount();
+                        }
+                        capture();
+                        if (ready) break;
+                        Thread.sleep(5);
+                    }
+                    int a = Math.round(255 * opacity);
+                    color(25, 25, 0xFF00FFFF | ((255 - a) << 16));
+                    color(60, 25, 0xFFFFFFFF);
+                    color(70, 25, 0xFFFFFFFF);
+                    int dark = 0;
+                    for (int y = 100; y < 140; y++) for (int x = 5; x < 230; x++)
+                        if ((pixels[y * W + x] & 0xffffff) < 0x606060) dark++;
+                    require(dark > 20, "透明物品后续文字缺失");
+                    if (opacity == 1) require(resources.retainedHostCaptureBytes() == 0, "旧不透明委托分配了合成面");
+                    else require(resources.retainedHostCaptureBytes() == 48L * 64 * 8, "旧宿主capture未按有效clip裁定预算");
+                    require(glGetInteger(GL_DRAW_FRAMEBUFFER_BINDING) == fbo, "物品alpha未恢复入口FBO");
+                    checkError("host alpha " + opacity);
+                    System.out.println("LWJGL2_HOST_OPACITY alpha=" + opacity + " pixel="
+                            + Integer.toHexString(pixels[25 * W + 25]) + " bytes=" + resources.retainedHostCaptureBytes());
+                }
+                require(calls[0] >= 4, "透明物品未实际重放宿主委托");
+            } finally { fonts.releasePlanRenderer(consumer); }
+        } finally { glDeleteTextures(texture); }
     }
 
     private void legacyPixels(boolean poison) throws Exception {

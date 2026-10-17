@@ -19,6 +19,10 @@ final class SceneWheelRouting {
     SceneWheelRouting(SceneRuntime runtime, SceneHitTester hits) { this.runtime = runtime; this.hits = hits; }
 
     void route(ScenePointerEvent event, SceneGeometryView geometry) {
+        if (event.scrollPhase == ScenePointerEvent.ScrollPhase.END) {
+            if (target != null && target.active()) runtime.scrollMotionRelease(target.node(), event);
+            return;
+        }
         if (event.delta == 0) return;
         long now = runtime.inputNanos();
         prepare(geometry, now);
@@ -27,11 +31,15 @@ final class SceneWheelRouting {
         boolean continuing = continuation(hit, geometry);
         SceneNode start = continuing ? target.node() : hit;
         int originX = continuing ? anchorX : event.x, originY = continuing ? anchorY : event.y;
-        clear();
+        if (continuing) clearLink(); else clear();
         if (start == null) return;
         SceneNode boundary = geometry.layerBoundary(start);
         MountHandle initial = runtime.captureMount(start);
+        for (SceneNode node = start; node != null; node = node == boundary ? null : node.parent()) runtime.cancelScrollMotion(node);
         MountHandle consumer = consume(start, boundary, event, geometry);
+        if (consumer != null) runtime.scrollMotionInput(consumer.node(), event);
+        else for (SceneNode node = start; node != null; node = node == boundary ? null : node.parent())
+            if (runtime.interactive(node) && runtime.scrollMotionBoundary(node, event)) break;
         remember(consumer == null ? initial : consumer, geometry, boundary, now, originX, originY);
     }
 
@@ -76,7 +84,11 @@ final class SceneWheelRouting {
                 || geometry.layerBoundary(target.node()) != layer || geometry.logicalScope(target.node()) != scope)) clear();
     }
 
-    void clear() { target = null; layer = null; scope = null; modal = null; }
+    void clear() {
+        if (target != null) runtime.endScrollMotionSequence(target.node());
+        clearLink();
+    }
+    private void clearLink() { target = null; layer = null; scope = null; modal = null; }
 
     private static boolean scrollable(SceneNode node) {
         return node.scrollable() || node.scrollAction() != null || node.control() != null && node.control().scrollableContent();

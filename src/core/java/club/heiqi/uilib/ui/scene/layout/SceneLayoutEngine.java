@@ -15,6 +15,12 @@ import java.util.Set;
 /** 先测内容，再按声明分配；固定尺寸不因父空间不足被缩小。 */
 public final class SceneLayoutEngine {
     private final SceneTextMeasurer text;
+    private SceneLayoutPresentation presentation;
+    private final Map<SceneNode, LayoutBox> allocatedBoxes = new IdentityHashMap<>();
+    private LayoutBox arrangementViewport;
+    private Size size(SceneNode node, SceneNode.Axis axis) {
+        return presentation == null ? (axis == SceneNode.Axis.ROW ? node.width() : node.height()) : presentation.size(node, axis);
+    }
     private final java.util.function.ToLongFunction<SceneNode> nodeMeasureRevision;
     private final java.util.function.ToIntFunction<SceneNode> scrollOffsets;
     private final Map<SceneNode, Map<Long, int[]>> measuredCache = new IdentityHashMap<>();
@@ -45,6 +51,7 @@ public final class SceneLayoutEngine {
         return batchChildren.computeIfAbsent(parent, key -> new SceneChildMeasurer() {
             private final List<SceneNode> flow = flowFor(key);
             public List<SceneNode> flowChildren() { return flow; }
+            public Size sizeIntent(SceneNode child, SceneNode.Axis axis) { return size(child, axis); }
             public MeasuredSize measureChild(SceneNode child, Constraints constraints) {
                 if (child.parent() != key) throw new IllegalArgumentException("只能测量直属子内容: parent=" + key.id() + " child=" + child.id());
                 if (layerPolicy(child) != null) throw new IllegalArgumentException("普通流不能测量所属层: parent=" + key.id() + " child=" + child.id());
@@ -80,6 +87,8 @@ public final class SceneLayoutEngine {
     /** 帧管线结束后释放跨批文字与本批事实，不持续持有已退出页面。 */
     public void clearCaches() {
         batchText.clear();
+        allocatedBoxes.clear();
+        arrangementViewport = null;
         presentedStyles.clear();
         measuredCache.clear();
         textCache.clear();
@@ -108,6 +117,7 @@ public final class SceneLayoutEngine {
     }
 
     public SceneGeometry layout(List<SceneNode> roots, int width, int height) {
+        presentation = null;
         // 无度量代际的旧入口不能假定字体资源稳定。
         batchText.clear();
         metricsKnown = false;
@@ -117,6 +127,12 @@ public final class SceneLayoutEngine {
     /** 字体、整体测量或视口换代结束旧请求；局部代际在访问节点时检查。 */
     public SceneGeometry layout(
             List<SceneNode> roots, int width, int height, long nextMetrics, long nextMeasure) {
+        return layout(roots, width, height, nextMetrics, nextMeasure, null);
+    }
+
+    public SceneGeometry layout(List<SceneNode> roots, int width, int height, long nextMetrics,
+            long nextMeasure, SceneLayoutPresentation current) {
+        presentation = current;
         retainMounted(roots);
         if (!metricsKnown || metricsRevision != nextMetrics) batchText.clear();
         else if (measureRevision != nextMeasure
@@ -135,6 +151,8 @@ public final class SceneLayoutEngine {
     }
 
     private SceneGeometry arrangeRoots(List<SceneNode> roots, int width, int height) {
+        allocatedBoxes.clear();
+        arrangementViewport = new LayoutBox(0, 0, width, height);
         activeText.clear();
         try {
             measuredCache.clear();
@@ -144,8 +162,8 @@ public final class SceneLayoutEngine {
             for (SceneNode root : roots) {
                 if (layerPolicy(root) != null) throw new IllegalArgumentException("所属层不能作为无来源根: node=" + root.id());
                 int[] desired = measure(root, width, height);
-                int w = cross(root.width(), desired[0], width),
-                        h = cross(root.height(), desired[1], height);
+                int w = cross(size(root, SceneNode.Axis.ROW), desired[0], width),
+                        h = cross(size(root, SceneNode.Axis.COLUMN), desired[1], height);
                 arrange(root, new LayoutBox(0, 0, w, h), null, entries);
             }
             LayoutBox viewport = new LayoutBox(0, 0, width, height);
@@ -296,17 +314,17 @@ public final class SceneLayoutEngine {
     private int[] measureUncached(SceneNode node, int availableWidth, int availableHeight) {
         if (!node.visible()) return new int[] {0, 0};
         int measuredWidth =
-                node.width().mode == Size.Mode.FIXED
-                        ? node.width().constrain(node.width().value)
-                        : node.width().constrain(availableWidth);
+                size(node, SceneNode.Axis.ROW).mode == Size.Mode.FIXED
+                        ? size(node, SceneNode.Axis.ROW).constrain(size(node, SceneNode.Axis.ROW).value)
+                        : size(node, SceneNode.Axis.ROW).constrain(availableWidth);
         int contentWidth = Math.max(0, measuredWidth - node.padding() * 2);
         // 自然高度尚未分配，不把父空间冒充自身高度；固定/fill 则携带真实有限约束。
         int measuredHeight =
-                node.height().mode == Size.Mode.FIXED
-                        ? node.height().constrain(node.height().value)
-                        : node.height().mode == Size.Mode.FILL
+                size(node, SceneNode.Axis.COLUMN).mode == Size.Mode.FIXED
+                        ? size(node, SceneNode.Axis.COLUMN).constrain(size(node, SceneNode.Axis.COLUMN).value)
+                        : size(node, SceneNode.Axis.COLUMN).mode == Size.Mode.FILL
                                         && availableHeight != Integer.MAX_VALUE
-                                ? node.height().constrain(availableHeight)
+                                ? size(node, SceneNode.Axis.COLUMN).constrain(availableHeight)
                                 : Integer.MAX_VALUE;
         int contentHeight =
                 measuredHeight == Integer.MAX_VALUE
@@ -317,15 +335,15 @@ public final class SceneLayoutEngine {
                     node.control().measure(node, new Constraints(contentWidth, contentHeight),
                             textFor(node), childrenFor(node)));
             return new int[] {
-                node.width()
+                size(node, SceneNode.Axis.ROW)
                         .constrain(
-                                node.width().mode == Size.Mode.FIXED
-                                        ? node.width().value
+                                size(node, SceneNode.Axis.ROW).mode == Size.Mode.FIXED
+                                        ? size(node, SceneNode.Axis.ROW).value
                                         : custom.width + node.padding() * 2),
-                node.height()
+                size(node, SceneNode.Axis.COLUMN)
                         .constrain(
-                                node.height().mode == Size.Mode.FIXED
-                                        ? node.height().value
+                                size(node, SceneNode.Axis.COLUMN).mode == Size.Mode.FIXED
+                                        ? size(node, SceneNode.Axis.COLUMN).value
                                         : custom.height + node.padding() * 2)
             };
         }
@@ -333,15 +351,15 @@ public final class SceneLayoutEngine {
         MeasuredSize flow = SceneFlowLayout.measure(node, new Constraints(contentWidth, contentHeight), childrenFor(node));
         int w = Math.max(lines.width, flow.width), h = Math.max(lines.height, flow.height);
         return new int[] {
-            node.width()
+            size(node, SceneNode.Axis.ROW)
                     .constrain(
-                            node.width().mode == Size.Mode.FIXED
-                                    ? node.width().value
+                            size(node, SceneNode.Axis.ROW).mode == Size.Mode.FIXED
+                                    ? size(node, SceneNode.Axis.ROW).value
                                     : w + node.padding() * 2),
-            node.height()
+            size(node, SceneNode.Axis.COLUMN)
                     .constrain(
-                            node.height().mode == Size.Mode.FIXED
-                                    ? node.height().value
+                            size(node, SceneNode.Axis.COLUMN).mode == Size.Mode.FIXED
+                                    ? size(node, SceneNode.Axis.COLUMN).value
                                     : h + node.padding() * 2)
         };
     }
@@ -350,6 +368,8 @@ public final class SceneLayoutEngine {
     public SceneGeometry captureSubtree(
             SceneNode root, LayoutBox allocated, LayoutBox ancestorClip, LayoutBox viewport) {
         rejectContentLayers(root, root, "paint capture");
+        allocatedBoxes.clear();
+        arrangementViewport = viewport;
         // 晚期备用捕获仅结算实际访问的节点，不能清掉其它主树节点的测量请求。
         activeText.clear();
         try {
@@ -376,6 +396,9 @@ public final class SceneLayoutEngine {
             List<SceneGeometryView.Entry> entries,
             boolean captureRoot) {
         if (!captureRoot && !node.visible()) return;
+        if (presentation != null) box = presentation.place(node, box);
+        box = new LayoutBox(box.x + Math.round(node.translationX()), box.y + Math.round(node.translationY()), box.width, box.height);
+        allocatedBoxes.put(node, box);
         LayoutBox clip=clipFor(node,box,ancestorClip);
         TextLayout lines=presentedText(node,box);
         int entryIndex=entries.size();
@@ -399,7 +422,8 @@ public final class SceneLayoutEngine {
     }
     private ChildPlacements childArrangement(SceneNode node,LayoutBox box) {
         return node.control()==null?SceneFlowLayout.arrange(node,box,childrenFor(node))
-                :requireControlResult(node,"arrange",node.control().arrange(node,box,childrenFor(node)));
+                :requireControlResult(node,"arrange",node.control().arrange(node,box,childrenFor(node),
+                        allocatedBoxes.get(node.parent()), arrangementViewport));
     }
     /** 先验证整个排列再进入子节点；任何失败都不能发布一部分正式几何。 */
     private long validateArrangement(SceneNode node,List<ChildPlacements.Entry> placements) {
@@ -413,8 +437,8 @@ public final class SceneLayoutEngine {
                 throw new IllegalArgumentException("普通排列不能包含所属层: parent="+node.id()+" control="
                         +(node.control()==null?"flow":node.control().getClass().getName())+" child="+child.child.id());
             if(!child.contentBox) {
-                validatePlacement(node,child.child,"width",child.relativeBox.width,child.child.width());
-                validatePlacement(node,child.child,"height",child.relativeBox.height,child.child.height());
+                validatePlacement(node,child.child,"width",child.relativeBox.width,size(child.child, SceneNode.Axis.ROW));
+                validatePlacement(node,child.child,"height",child.relativeBox.height,size(child.child, SceneNode.Axis.COLUMN));
             }
             extent=Math.max(extent,row?(long)child.relativeBox.x+child.relativeBox.width:(long)child.relativeBox.y+child.relativeBox.height);
         }
@@ -430,10 +454,11 @@ public final class SceneLayoutEngine {
     private void arrangePlacedChildren(SceneNode node,LayoutBox box,LayoutBox clip,List<ChildPlacements.Entry> placements,
             int scroll,List<SceneGeometryView.Entry> entries) {
         boolean row=node.axis()==SceneNode.Axis.ROW;
+        int bounce = node.runtime() == null ? 0 : node.runtime().scrollPresentationOffset(node);
         for(ChildPlacements.Entry child:placements) {
             LayoutBox relative=child.relativeBox;
-            arrange(child.child,new LayoutBox(box.x+relative.x-(row?scroll:0),
-                    box.y+relative.y-(row?0:scroll),relative.width,relative.height),clip,entries);
+            arrange(child.child,new LayoutBox(box.x+relative.x-(row?scroll-bounce:0),
+                    box.y+relative.y-(row?0:scroll-bounce),relative.width,relative.height),clip,entries);
         }
     }
 

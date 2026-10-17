@@ -89,6 +89,7 @@ fun registerTestApplication(taskName: String, summary: String, application: Stri
 
 // 场景使用正式生产模块输出，无平台编译边界由 core.gradle.kts 管理。
 val coreSceneDeclarations = listOf(
+    Triple("motionScenario", "解析运动与正式声明生命周期验收", "MotionScenario"),
     Triple("pointerInputScenario", "无平台真实scene指针手势验收", "PointerInputScenario"),
     Triple("sliderScenario", "滑杆预览/释放/动态范围与捕获取消", "SliderScenario"),
     Triple("tooltipScenario", "通用提示有限时序/范围/定位与原触发器验收", "TooltipScenario"),

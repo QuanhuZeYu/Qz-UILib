@@ -24,6 +24,28 @@ public interface GlApi {
 
     void glBindFramebuffer(int a, int b);
 
+    void glBindRenderbuffer(int target, int renderbuffer);
+
+    int glCheckFramebufferStatus(int target);
+
+    void glClearBufferfv(int buffer, int drawbuffer, float[] values);
+
+    void glClearBufferfi(int buffer, int drawbuffer, float depth, int stencil);
+
+    void glDeleteFramebuffers(int framebuffer);
+
+    void glDeleteRenderbuffers(int renderbuffer);
+
+    void glFramebufferTexture2D(int target, int attachment, int textureTarget, int texture, int level);
+
+    void glFramebufferRenderbuffer(int target, int attachment, int renderbufferTarget, int renderbuffer);
+
+    int glGenFramebuffers();
+
+    int glGenRenderbuffers();
+
+    void glRenderbufferStorage(int target, int format, int width, int height);
+
     void glBindSampler(int a, int b);
 
     void glBindTexture(int a, int b);

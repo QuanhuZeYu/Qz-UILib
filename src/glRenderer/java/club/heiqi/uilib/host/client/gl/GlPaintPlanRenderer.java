@@ -74,6 +74,8 @@ public final class GlPaintPlanRenderer implements AutoCloseable {
                         gl,
                         quadCapacity,
                         (resource, generation) -> {
+                            if (resource == GlHostItemCapture.RESOURCE)
+                                return images.resolveHostCapture(generation);
                             if (resource >= 0) return atlas.resolve(resource, generation);
                             if (replaying == null) throw new IllegalStateException("纹理引用没有所属回放");
                             return replaying.resolveTexture(resource, generation);
@@ -582,12 +584,26 @@ public final class GlPaintPlanRenderer implements AutoCloseable {
             if (image.content.kind
                     == club.heiqi.uilib.ui.scene.image.ImageContent.Kind.HOST_ITEM) {
                 boolean[] drawn = {false};
+                GlHostItemCapture.Capture[] captured = {null};
                 delegate(
                         () -> {
                             int[] viewport = new int[4];
                             gl.glGetIntegerv(GL_VIEWPORT, viewport);
-                            drawn[0] = images.renderHost(image, clip, viewport[2], height);
+                            if ((command.color >>> 24) == 255)
+                                drawn[0] = images.renderHost(image, clip, viewport[2], height);
+                            else {
+                                captured[0] = images.captureHost(image, clip, viewport[2], height);
+                                drawn[0] = captured[0] != null;
+                            }
                         });
+                if (drawn[0] && captured[0] != null && !captured[0].empty()) {
+                    LayoutBox box = captured[0].box;
+                    collector.add(new State(GlQuadRenderer.COLOR_PREMULT, GlHostItemCapture.RESOURCE,
+                                    captured[0].generation, clip),
+                            new Quad(box.x, box.y, box.width, box.height, 0, 1, 1, 0, 0, command.color));
+                    // 下一宿主物品可复用同一面；合成先提交，readyOverlay里的物品也不能覆盖它。
+                    collector.flush();
+                }
                 // 原图只执行一次；失败仅选择控件已冻结的同代片段，不重prepare或读live scene。
                 imageChoices.put(command, drawn[0] ? ImageChoice.READY : ImageChoice.FAILED);
                 drawPlan(drawn[0] ? command.readyOverlay : command.failedPaint);
@@ -610,7 +626,7 @@ public final class GlPaintPlanRenderer implements AutoCloseable {
                             1,
                             1,
                             0,
-                            0xFFFFFFFF));
+                            command.color));
             drawPlan(command.readyOverlay);
         }
 

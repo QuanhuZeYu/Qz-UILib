@@ -52,8 +52,69 @@ public final class SceneRuntime implements AutoCloseable {
     private final SceneFocusRouter focusRouter;
     private final ReactiveDomain domain;
     private final SceneTransitions transitions = new SceneTransitions();
+    private final SceneLayoutMotions layoutMotions = new SceneLayoutMotions(this);
+    private final ScenePresence presence = new ScenePresence(this);
+    private final SceneScrollMotions scrollMotions = new SceneScrollMotions(this);
+    void configureScrollMotion(SceneNode node, club.heiqi.uilib.ui.scene.motion.ScrollMotionOptions options) { scrollMotions.configure(node, options); }
+    void removeScrollMotion(SceneNode node) { scrollMotions.remove(node); }
+    public int scrollPresentationOffset(SceneNode node) { return scrollMotions.offset(node); }
+    void cancelScrollMotions() { scrollMotions.cancelAll(); }
+    private SceneNode scrollMotionViewport(SceneNode node) { return node.control() == null ? node : domain.readOnly(() -> node.control().scrollMotionViewport(node)); }
+    void endScrollMotionSequence(SceneNode node) { scrollMotions.endSequence(scrollMotionViewport(node)); }
+    void cancelScrollMotion(SceneNode node) { scrollMotions.cancel(scrollMotionViewport(node), true); }
+    void scrollMotionInput(SceneNode node, club.heiqi.uilib.ui.scene.input.ScenePointerEvent event) { scrollMotions.input(scrollMotionViewport(node), event); }
+    void scrollMotionRelease(SceneNode node, club.heiqi.uilib.ui.scene.input.ScenePointerEvent event) { scrollMotions.release(scrollMotionViewport(node), event); }
+    boolean scrollMotionBoundary(SceneNode node, club.heiqi.uilib.ui.scene.input.ScenePointerEvent event) { return scrollMotions.boundary(scrollMotionViewport(node), event); }
+    void declarePresence(SceneNode node, boolean present, club.heiqi.uilib.ui.scene.motion.PresenceOptions options) { presence.declare(node, present, options); }
+    void removePresence(SceneNode node) { presence.removeVisibility(node); }
+    AutoCloseable registerPresenceSource(SceneNode parent, Object scope) { return presence.registerSource(parent, scope); }
+    public float presenceOpacity(SceneNode node) { return presence.opacity(node); }
+    public List<SceneNode> presenceCaptureNodes() { return presence.captureNodes(); }
+    public void capturePresencePaint(Map<SceneNode, PresencePaint> plans, SceneGeometryView geometry) { presence.captured(plans, geometry); }
+    public club.heiqi.uilib.ui.scene.paint.PaintPlan retainedPresencePaint(SceneGeometryView geometry) { return presence.paint(geometry); }
+    boolean configureLayoutMotion(SceneNode node, boolean size, club.heiqi.uilib.ui.scene.motion.MotionSpec spec) {
+        checkMutation(); layoutMotions.configure(node, size, spec); return true;
+    }
+    void removeLayoutMotion(SceneNode node, boolean size) { layoutMotions.remove(node, size); }
+    public boolean hasLayoutMotion() { return layoutMotions.declared(); }
+    public boolean prepareLayoutSizes(SceneGeometryView target) { return layoutMotions.prepareSizes(target); }
+    public boolean prepareLayoutPositions(SceneGeometryView current) { return layoutMotions.preparePositions(current); }
+    public club.heiqi.uilib.ui.scene.layout.SceneLayoutPresentation layoutPresentation(boolean positions) { return layoutMotions.presentation(positions); }
+    public void publishLayoutGeometry(SceneGeometryView current) { layoutMotions.published(current); }
 
     SceneTransitions transitions() { return transitions; }
+    private final club.heiqi.uilib.ui.reactive.Signal<club.heiqi.uilib.ui.scene.motion.MotionPolicy> motionPolicy;
+    private Observation motionPolicySource;
+    private boolean motionPolicyDirty;
+    private final club.heiqi.uilib.ui.reactive.Signal<Long> interactionRevision;
+    private long interactionClock;
+    public ReadableSignal<Long> interactionRevision() { return interactionRevision; }
+    private final Map<SceneNode, Map<Object, Object>> motionChannels = new IdentityHashMap<>();
+
+    public ReadableSignal<club.heiqi.uilib.ui.scene.motion.MotionPolicy> motionPolicy() { return motionPolicy; }
+    /** 来源归页面挂载域；宿主偏好通过同一声明接入，不查询平台 API。 */
+    public void motionPolicy(ReadableSignal<club.heiqi.uilib.ui.scene.motion.MotionPolicy> source) {
+        command(); Objects.requireNonNull(source, "动效限制来源");
+        if (motionPolicySource != null) motionPolicySource.close();
+        motionPolicySource = domain.observe(owner,
+                () -> motionPolicy.set(Objects.requireNonNull(source.get(), "动效限制")),
+                () -> motionPolicyDirty = true);
+        motionPolicyDirty = true;
+    }
+    AutoCloseable claimMotion(SceneNode node, Object channel, Object driver) {
+        Map<Object, Object> channels = motionChannels.computeIfAbsent(node, ignored -> new java.util.HashMap<>());
+        if (channels.putIfAbsent(channel, driver) != null)
+            throw new IllegalArgumentException("重复运动通道: node=" + node.id() + " channel=" + channel);
+        return () -> { channels.remove(channel, driver); if (channels.isEmpty()) motionChannels.remove(node); };
+    }
+    /** 框架扩展的有限轨迹仍使用页面唯一时钟，停止后不再参与帧推进。 */
+    public AutoCloseable animate(java.util.function.LongPredicate step) {
+        domain.checkWrite();
+        SceneTransitions.Step active = step::test;
+        transitions.start(active);
+        return () -> transitions.stop(active);
+    }
+
     private final club.heiqi.uilib.ui.reactive.Signal<Integer> viewportWidth, viewportHeight;
     private final Owner owner;
     private final Map<SceneNode, Mount> mounts = new IdentityHashMap<>();
@@ -83,6 +144,8 @@ public final class SceneRuntime implements AutoCloseable {
     public SceneRuntime(ReactiveDomain domain) {
         this.domain = domain;
         domain.checkAccess();
+        interactionRevision = domain.signal(0L);
+        motionPolicy = domain.signal(club.heiqi.uilib.ui.scene.motion.MotionPolicy.NORMAL);
         viewportWidth = domain.signal(0);
         viewportHeight = domain.signal(0);
         owner = domain.owner();
@@ -135,6 +198,7 @@ public final class SceneRuntime implements AutoCloseable {
     /** 焦点资格声明变化不改变几何，仍立即释放已经失活的焦点。 */
     public void invalidateInteraction() {
         domain.checkAccess();
+        interactionRevision.set(++interactionClock);
         revision++;
         pointerRouter.revalidate();
         focusRouter.revalidate();
@@ -214,6 +278,8 @@ public final class SceneRuntime implements AutoCloseable {
         return mount.measureRevision;
     }
 
+    public void invalidateGeometry() { invalidateArrangement(); }
+
     private void invalidateArrangement() {
         domain.checkAccess();
         clearLogicalModal();
@@ -228,12 +294,14 @@ public final class SceneRuntime implements AutoCloseable {
     /** 结构/显隐/启用/模态变化才重验范围；普通文案和布局不触发重新选择。 */
     public void invalidateRange() {
         domain.checkAccess();
+        interactionRevision.set(++interactionClock);
         focusRouter.rangeChanged();
         invalidate();
     }
 
     public void invalidateRange(SceneNode origin) {
         domain.checkAccess();
+        interactionRevision.set(++interactionClock);
         focusRouter.rangeChanged();
         invalidate(origin);
     }
@@ -242,7 +310,8 @@ public final class SceneRuntime implements AutoCloseable {
         if (formerParent != null) invalidateRange(formerParent);
         else {
             // 移除根没有仍挂载的祖先；仍更新共同几何与输入范围，不能清理其他根的文字。
-            focusRouter.rangeChanged();
+            interactionRevision.set(++interactionClock);
+        focusRouter.rangeChanged();
             measureRevision++;
             invalidateArrangement();
         }
@@ -326,7 +395,7 @@ public final class SceneRuntime implements AutoCloseable {
     }
 
     private void validateSubtree(SceneNode node) {
-        if (node.destroyed() || node.runtime() != null)
+        if (node.destroyed() || node.retired() || node.runtime() != null)
             throw new IllegalArgumentException("子树已挂载或销毁");
         for (SceneNode child : node.children()) validateSubtree(child);
     }
@@ -475,6 +544,8 @@ public final class SceneRuntime implements AutoCloseable {
         command();
         mutation = true;
         try {
+            if (motionPolicyDirty) { motionPolicyDirty = false; motionPolicySource.refresh(); }
+            presence.syncPolicy();
             transitions.advance(frameNanos);
             do {
                 settleBindingDeclarations();
@@ -543,6 +614,9 @@ public final class SceneRuntime implements AutoCloseable {
     private void releaseSubtree(SceneNode node) {
         for (SceneNode bar : scrollDecorations.remove(node)) releaseScrollDecoration(bar);
         for (SceneNode child : node.children()) releaseSubtree(child);
+        scrollMotions.remove(node);
+        presence.release(node);
+        layoutMotions.release(node);
         mounts.remove(node);
         clearLogicalModal();
         scrolling.remove(node);
@@ -627,6 +701,10 @@ public final class SceneRuntime implements AutoCloseable {
     }
 
     public void reconcile(SceneNode parent, List<SceneNode> declared, Object scope, boolean owned) {
+        reconcile(parent, declared, scope, owned, null, null);
+    }
+    void reconcile(SceneNode parent, List<SceneNode> declared, Object scope, boolean owned,
+            club.heiqi.uilib.ui.scene.motion.PresenceOptions exits, Map<SceneNode, ?> keys) {
         checkMutation();
         if (!mounts.containsKey(parent)) throw new IllegalArgumentException("父节点未挂载");
         List<SceneNode> next = new ArrayList<>(declared);
@@ -635,7 +713,7 @@ public final class SceneRuntime implements AutoCloseable {
             adoptDeclaredOwnership(next, scope, owned);
             return;
         }
-        settleExitedChildren(parent, members, scope, owned);
+        settleExitedChildren(parent, members, scope, owned, exits, keys);
         attachDeclaredChildren(parent, next, scope, owned);
         publishChildrenOrder(parent, next, members);
     }
@@ -674,12 +752,13 @@ public final class SceneRuntime implements AutoCloseable {
     }
 
     /** 全部所属退出都完成清理后再暴露聚合异常，不接入后续新节点。 */
-    private void settleExitedChildren(SceneNode parent, Set<SceneNode> members, Object scope, boolean owned) {
+    private void settleExitedChildren(SceneNode parent, Set<SceneNode> members, Object scope, boolean owned,
+            club.heiqi.uilib.ui.scene.motion.PresenceOptions exits, Map<SceneNode, ?> keys) {
         Throwable failure = null;
         for (SceneNode child : new ArrayList<>(parent.children())) {
             if (members.contains(child) || !belongsToDeclaration(child, parent, scope)) continue;
             try {
-                removeDeclared(child, owned);
+                removeDeclared(child, owned, exits, scope, keys == null ? child : keys.get(child));
             } catch (RuntimeException | Error error) {
                 failure = collectFailure(failure, error);
             }
@@ -720,7 +799,10 @@ public final class SceneRuntime implements AutoCloseable {
         invalidateRange(parent);
     }
 
-    private void removeDeclared(SceneNode node, boolean owned) {
+    private void removeDeclared(SceneNode node, boolean owned) { removeDeclared(node, owned, null, null, null); }
+    private void removeDeclared(SceneNode node, boolean owned,
+            club.heiqi.uilib.ui.scene.motion.PresenceOptions exits, Object scope, Object key) {
+        boolean retained = owned && presence.retain(node, scope, key, exits);
         SceneNode formerParent = node.parent();
         Throwable failure = null;
         Mount mount = mounts.get(node);
@@ -731,7 +813,8 @@ public final class SceneRuntime implements AutoCloseable {
         }
         releaseSubtree(node);
         node.frameworkParent(this, null);
-        if (owned) {
+        if (retained) node.frameworkRetire(this);
+        else if (owned) {
             try {
                 destroySubtree(node);
             } catch (RuntimeException | Error error) {
@@ -1100,6 +1183,7 @@ public final class SceneRuntime implements AutoCloseable {
             position.declaration = entry.node.scrollOffset();
             position.value = entry.scrollOffset;
             position.maximum = entry.scrollMaximum;
+            scrollMotions.range(entry.node, entry);
         }
     }
 
@@ -1362,6 +1446,8 @@ public final class SceneRuntime implements AutoCloseable {
             inputGeometryReady = false;
             inputReveal = null;
             inputFrames.clear();
+            transitions.clear();
+            motionChannels.clear();
             scrollObservers.clear();
             disposed = true;
         }

@@ -86,6 +86,50 @@ public final class Lwjgl3GlApi implements GlApi {
         org.lwjgl.opengl.GL30C.glBindFramebuffer(a, b);
     }
 
+    public void glBindRenderbuffer(int target, int renderbuffer) {
+        org.lwjgl.opengl.GL30C.glBindRenderbuffer(target, renderbuffer);
+    }
+
+    public int glCheckFramebufferStatus(int target) {
+        return org.lwjgl.opengl.GL30C.glCheckFramebufferStatus(target);
+    }
+
+    public void glClearBufferfv(int buffer, int drawbuffer, float[] values) {
+        org.lwjgl.opengl.GL30C.glClearBufferfv(buffer, drawbuffer, values);
+    }
+
+    public void glClearBufferfi(int buffer, int drawbuffer, float depth, int stencil) {
+        org.lwjgl.opengl.GL30C.glClearBufferfi(buffer, drawbuffer, depth, stencil);
+    }
+
+    public void glDeleteFramebuffers(int framebuffer) {
+        org.lwjgl.opengl.GL30C.glDeleteFramebuffers(framebuffer);
+    }
+
+    public void glDeleteRenderbuffers(int renderbuffer) {
+        org.lwjgl.opengl.GL30C.glDeleteRenderbuffers(renderbuffer);
+    }
+
+    public void glFramebufferTexture2D(int target, int attachment, int textureTarget, int texture, int level) {
+        org.lwjgl.opengl.GL30C.glFramebufferTexture2D(target, attachment, textureTarget, texture, level);
+    }
+
+    public void glFramebufferRenderbuffer(int target, int attachment, int renderbufferTarget, int renderbuffer) {
+        org.lwjgl.opengl.GL30C.glFramebufferRenderbuffer(target, attachment, renderbufferTarget, renderbuffer);
+    }
+
+    public int glGenFramebuffers() {
+        return org.lwjgl.opengl.GL30C.glGenFramebuffers();
+    }
+
+    public int glGenRenderbuffers() {
+        return org.lwjgl.opengl.GL30C.glGenRenderbuffers();
+    }
+
+    public void glRenderbufferStorage(int target, int format, int width, int height) {
+        org.lwjgl.opengl.GL30C.glRenderbufferStorage(target, format, width, height);
+    }
+
     public void glBindSampler(int a, int b) {
         org.lwjgl.opengl.GL33C.glBindSampler(a, b);
     }

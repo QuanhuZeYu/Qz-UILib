@@ -96,7 +96,15 @@ public final class SceneTextArea {
                         Objects.requireNonNull(onSubmit, "onSubmit"),
                         Objects.requireNonNull(policy, "policy"),
                         Objects.requireNonNull(tabMode, "tabMode"),framed);
-        return SceneEditBindings.create(control, state, theme, readOnly, TextPolicy.NORMAL);
+        SceneNode node = SceneEditBindings.create(control, state, theme, readOnly, TextPolicy.NORMAL);
+        if (framed) {
+            control.fillMotion.install(node, () -> theme.get().feedbackMotion,
+                    self -> SceneControlMotion.enabled(self) ? theme.get().panel : theme.get().disabled);
+            control.edgeMotion.install(node, () -> theme.get().feedbackMotion,
+                    self -> SceneControlMotion.enabled(self) && self.runtime() != null
+                            && self.runtime().focusRouter().focused().get() == self ? theme.get().focus : theme.get().button, "control.edge");
+        }
+        return node;
     }
 
     private static final class Control implements SceneControl, SceneCompositionTarget {
@@ -105,6 +113,7 @@ public final class SceneTextArea {
         private final ReadableSignal<Boolean> readOnly;
         private final ReadableSignal<TabMode> tabMode;
         private final boolean framed;
+        private final SceneControlMotion fillMotion = new SceneControlMotion(), edgeMotion = new SceneControlMotion();
         private final SceneEditCommands commands;
         // 只通知呈现归属变化；不保存草稿、选区、会话或焦点权威。
         private final Signal<Boolean> viewChanged;
@@ -462,8 +471,8 @@ public final class SceneTextArea {
                             && node.runtime() != null
                             && node.runtime().focusRouter().focused().get() == node;
             if(framed) {
-                target.add(PaintCommand.rect(entry.box,entry.clip,enabled?colors.panel:colors.disabled));
-                border(target,entry.box,entry.clip,focused?colors.focus:colors.button);
+                target.add(PaintCommand.rect(entry.box,entry.clip,fillMotion.color(enabled?colors.panel:colors.disabled)));
+                border(target,entry.box,entry.clip,edgeMotion.color(focused?colors.focus:colors.button));
             }
             LayoutBox inner = inner(entry.box, node.padding());
             LayoutBox clip = entry.clip == null ? inner : entry.clip.intersect(inner);

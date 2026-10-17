@@ -20,6 +20,9 @@ public interface NodeBinding {
         return new RepeatBinding<>(source, key, declaration);
     }
 
+    static NodeBinding presence(ReadableSignal<Boolean> present,
+            ReadableSignal<club.heiqi.uilib.ui.scene.motion.PresenceOptions> options) { return new PresenceBinding(present, options); }
+
     /** 同页明确移动；null 目的地表示页面根，调用方仍持有根生命周期。 */
     static NodeBinding move(ReadableSignal<SceneNode> destination) {
         return new MoveBinding(destination);
@@ -28,6 +31,16 @@ public interface NodeBinding {
     /** 创建并拥有的子序列，退出生效自动销毁；可用于条件分支。 */
     static NodeBinding ownedChildren(ReadableSignal<List<SceneNode>> source) {
         return new ChildrenBinding(source, true);
+    }
+
+    /** 显式拥有集合退场；普通 ownedChildren 仍即时销毁。 */
+    static NodeBinding ownedChildren(ReadableSignal<List<SceneNode>> source,
+            ReadableSignal<club.heiqi.uilib.ui.scene.motion.PresenceOptions> exits) { return new ChildrenBinding(source, true, exits); }
+
+    static <T, K> NodeBinding repeat(ReadableSignal<List<T>> source, Function<T, K> key,
+            Function<ReadableSignal<T>, SceneNode> declaration,
+            ReadableSignal<club.heiqi.uilib.ui.scene.motion.PresenceOptions> exits) {
+        return new RepeatBinding<>(source, key, declaration, exits);
     }
 
     /** 显式引用调用方保留的逻辑树，退出仅解除挂载。 */
@@ -41,6 +54,51 @@ public interface NodeBinding {
     static NodeBinding transition(ReadableSignal<Float> source, long durationNanos,
             java.util.function.DoubleUnaryOperator easing, BiConsumer<SceneNode, Float> apply) {
         return new TransitionBinding(source, durationNanos, easing, apply);
+    }
+
+    /** 目标跟随；普通扩展映射自行声明呈现用途，空间策略服从用户减少动效限制。 */
+    static NodeBinding motion(ReadableSignal<Float> source,
+            ReadableSignal<club.heiqi.uilib.ui.scene.motion.MotionSpec> strategy,
+            BiConsumer<SceneNode, Float> apply) {
+        return motion(source, strategy, false, null, apply);
+    }
+
+    static NodeBinding scrollMotion(ReadableSignal<club.heiqi.uilib.ui.scene.motion.ScrollMotionOptions> options) {
+        return (runtime, node, owner) -> {
+            BindingActivation value = NodeBinding.value(() -> { runtime.motionPolicy().get(); return options.get(); },
+                    (self, policy) -> runtime.configureScrollMotion(self, policy)).activate(runtime, node, owner);
+            return new BindingActivation() {
+                public void refresh() { value.refresh(); }
+                public void close() { value.close(); runtime.removeScrollMotion(node); }
+            };
+        };
+    }
+
+    /** 作用于本容器直属普通流子项的重排。 */
+    static NodeBinding layoutPositions(ReadableSignal<club.heiqi.uilib.ui.scene.motion.MotionSpec> source) { return layoutMotion(source, false); }
+    /** 本节点当前动画尺寸真实参与父子分配。 */
+    static NodeBinding layoutSize(ReadableSignal<club.heiqi.uilib.ui.scene.motion.MotionSpec> source) { return layoutMotion(source, true); }
+    static NodeBinding layoutMotion(ReadableSignal<club.heiqi.uilib.ui.scene.motion.MotionSpec> source, boolean size) {
+        return (runtime, node, owner) -> {
+            AutoCloseable claim = runtime.claimMotion(node, size ? "layoutSize" : "layoutPositions", new Object());
+            owner.own(claim);
+            BindingActivation value = NodeBinding.value(() -> runtime.motionPolicy().get().resolve(source.get(), true),
+                    (self, spec) -> runtime.configureLayoutMotion(self, size, spec)).activate(runtime, node, owner);
+            return new BindingActivation() {
+                public void refresh() { value.refresh(); }
+                public void close() {
+                    value.close(); runtime.removeLayoutMotion(node, size);
+                    try { claim.close(); } catch (Exception failure) { throw new IllegalStateException("布局运动通道释放失败", failure); }
+                }
+            };
+        };
+    }
+
+    /** channel 标识实际呈现属性；框架拒绝同挂载重复驱动。 */
+    static NodeBinding motion(ReadableSignal<Float> source,
+            ReadableSignal<club.heiqi.uilib.ui.scene.motion.MotionSpec> strategy,
+            boolean spatial, Object channel, BiConsumer<SceneNode, Float> apply) {
+        return new MotionBinding(source, strategy, spatial, channel, apply);
     }
 
     /** 短暂离散呈现：非null来源的新对象身份重新起期，到期发布null但不改来源。

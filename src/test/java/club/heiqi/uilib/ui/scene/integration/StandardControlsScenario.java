@@ -189,6 +189,8 @@ public final class StandardControlsScenario extends TestApplication {
                         host,
                         host,
                         ctx -> {
+                            // 本场景检查即时按压，默认过渡由 MotionScenario 验证。
+                            ctx.motionPolicy(() -> club.heiqi.uilib.ui.scene.motion.MotionPolicy.OFF);
                             actionEnabled[0] = domain.signal(true);
                             button[0] =
                                     SceneButton.create(
@@ -336,6 +338,8 @@ public final class StandardControlsScenario extends TestApplication {
                         host,
                         host,
                         ctx -> {
+                            // 隔离主题、测量及身份合同，显式选择即时呈现。
+                            ctx.motionPolicy(() -> club.heiqi.uilib.ui.scene.motion.MotionPolicy.OFF);
                             builds[0]++;
                             dark[0] = domain.signal(false);
                             size[0] = domain.signal(18);
@@ -553,6 +557,7 @@ public final class StandardControlsScenario extends TestApplication {
                         host,
                         host,
                         ctx -> {
+                            ctx.motionPolicy(() -> club.heiqi.uilib.ui.scene.motion.MotionPolicy.OFF);
                             enabled[0] = domain.signal(true);
                             modal[0] = domain.signal(false);
                             button[0] =

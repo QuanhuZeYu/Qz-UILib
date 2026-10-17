@@ -7,6 +7,9 @@ public interface SceneChildMeasurer {
     /** 当批不可修改的可见普通流直属子集合，按逻辑顺序；不能跨批持有。 */
     java.util.List<SceneNode> flowChildren();
 
+    /** 当前分配使用的尺寸意图；目标测量沿原声明，显式尺寸动效沿当批框架投影。 */
+    default Size sizeIntent(SceneNode child, SceneNode.Axis axis) { return axis == SceneNode.Axis.ROW ? child.width() : child.height(); }
+
     /** 仅测量普通流直属子；所属层由核心按页面约束求解。 */
     MeasuredSize measureChild(SceneNode child, Constraints constraints);
 }

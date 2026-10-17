@@ -36,7 +36,10 @@ public final class SceneNode {
 
     private SceneNode parent;
     private SceneRuntime runtime;
-    private boolean destroyed;
+    private boolean destroyed, retired;
+    public boolean retired() { return retired; }
+    /** 显式结构退场结束活跃身份，资源可有限保留；同对象不可重新挂载。 */
+    public void frameworkRetire(SceneRuntime authority) { authority.checkMutation(); retired = true; }
     private Object logicalOwner;
     private boolean logicalOwned, transferred;
     private final List<AutoCloseable> resources = new ArrayList<>();
@@ -144,6 +147,35 @@ public final class SceneNode {
 
     private int padding, gap, scrollOffset, background;
     private int scrollStep = 20;
+    private club.heiqi.uilib.ui.scene.motion.MotionSpec feedbackMotion;
+    public club.heiqi.uilib.ui.scene.motion.MotionSpec feedbackMotion() { return feedbackMotion; }
+    /** 标准控件局部覆盖；null恢复当前主题角色。 */
+    public SceneNode feedbackMotion(club.heiqi.uilib.ui.scene.motion.MotionSpec value) {
+        writable(); feedbackMotion = value;
+        if (runtime != null) runtime.invalidateBinding(this);
+        return this;
+    }
+    private float opacity = 1, translationX, translationY;
+    public float opacity() { return opacity; }
+    public SceneNode opacity(float value) {
+        writable();
+        if (!Float.isFinite(value) || value < 0 || value > 1) throw new IllegalArgumentException("透明度须在0到1之间");
+        if (opacity != value) { opacity = value; if (runtime != null) runtime.invalidatePaint(); }
+        return this;
+    }
+    public float translationX() { return translationX; }
+    public float translationY() { return translationY; }
+    /** 呈现位移进入共同排列，不能仅改变绘制坐标。 */
+    public SceneNode translation(float x, float y) {
+        writable();
+        if (!Float.isFinite(x) || !Float.isFinite(y)) throw new IllegalArgumentException("呈现位移必须有限");
+        if (translationX != x || translationY != y) {
+            translationX = x; translationY = y;
+            if (runtime != null) runtime.invalidateGeometry();
+        }
+        return this;
+    }
+
     private boolean modal;
     private boolean clip, scrollable, visible = true;
     private boolean enabled = true;
@@ -515,7 +547,7 @@ public final class SceneNode {
     }
 
     private void writable() {
-        if (destroyed) throw new IllegalStateException("节点已销毁");
+        if (destroyed || retired) throw new IllegalStateException("节点已结束活跃身份");
         if (runtime != null) runtime.checkMutation();
     }
 

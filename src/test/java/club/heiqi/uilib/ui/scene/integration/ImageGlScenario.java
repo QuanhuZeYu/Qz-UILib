@@ -148,11 +148,12 @@ public final class ImageGlScenario extends TestApplication {
         images = own(new GlImageResources(gl, 16, 1024 * 1024));
         renderer = fonts.createPlanRenderer(images);
         onClose(() -> fonts.releasePlanRenderer(renderer));
-        int texture = glGenTextures(), fbo = glGenFramebuffers();
+        int texture = glGenTextures(), fbo = glGenFramebuffers(), depthStencil = glGenRenderbuffers();
         onClose(
                 () -> {
                     glBindFramebuffer(GL_FRAMEBUFFER, 0);
                     glDeleteFramebuffers(fbo);
+                    glDeleteRenderbuffers(depthStencil);
                     glDeleteTextures(texture);
                 });
         glBindTexture(GL_TEXTURE_2D, texture);
@@ -160,6 +161,10 @@ public final class ImageGlScenario extends TestApplication {
                 GL_TEXTURE_2D, 0, GL_RGBA8, W, H, 0, GL_RGBA, GL_UNSIGNED_BYTE, (ByteBuffer) null);
         glBindFramebuffer(GL_FRAMEBUFFER, fbo);
         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture, 0);
+        glBindRenderbuffer(GL_RENDERBUFFER, depthStencil);
+        glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, W, H);
+        glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, depthStencil);
+        glBindRenderbuffer(GL_RENDERBUFFER, 0);
         require(glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE, "FBO失败");
         glViewport(0, 0, W, H);
         System.out.println(
@@ -171,8 +176,238 @@ public final class ImageGlScenario extends TestApplication {
                         + glGetString(GL_VERSION));
     }
 
+    private void imageOpacity() throws Exception {
+        ImageContent half = solid(2, 2, 0xFF000080), invisible = solid(2, 2, 0xFF000000);
+        PaintPlanBuilder b = new PaintPlanBuilder();
+        b.add(PaintCommand.rect(new LayoutBox(10, 10, 150, 60), null, 0xFF0000FF));
+        PaintPlan images = new PaintPlanBuilder()
+                .add(image(half, new LayoutBox(10, 10, 60, 60), ImageOptions.Fit.STRETCH, null))
+                .add(image(invisible, new LayoutBox(90, 10, 60, 60), ImageOptions.Fit.STRETCH, null))
+                .build().presented(0, 0, .5f, null);
+        for (PaintCommand command : images.commands()) b.add(command);
+        clear();
+        render(b.build());
+        color(30, 30, 0xFF4000BF);
+        color(110, 30, 0xFF0000FF);
+        save("motion-image-alpha.png");
+        // 一次上传只准主图一张，后图为pending；超出单图预算为failed，三个分支均消费已投影alpha。
+        try (GlImageResources resources = new GlImageResources(new Lwjgl3GlApi(), 4, 1024, 16, 1,
+                (identity, pending, failure) -> {})) {
+            GlPaintPlanRenderer consumer = fonts.createPlanRenderer(resources);
+            try {
+                PaintPlanBuilder branches = new PaintPlanBuilder();
+                for (int i = 0; i < 3; i++) branches.add(image(
+                        solid(i == 2 ? 3 : 2, i == 2 ? 3 : 2, 0xFF0000FF),
+                        new LayoutBox(10 + i * 90, 10, 70, 60), ImageOptions.Fit.STRETCH, null));
+                PaintPlan plan = branches.build().presented(0, 0, .5f, null);
+                clear();
+                try (GlPaintPlanRenderer.Prepared prepared = fonts.prepare(consumer, plan, new LayoutBox(0, 0, W, H))) {
+                    prepared.render(FramebufferCoordinates.orthographic(W, H), H, false);
+                }
+                capture();
+                color(30, 30, 0xFFFF7F7F);
+                color(120, 30, 0xFFFFE57F);
+                color(210, 30, 0xFFAA7FD4);
+                System.out.println("IMAGE_OPACITY_PASS ready=true pending=true failed=true sourceAlpha=true zeroAlpha=true");
+            } finally { fonts.releasePlanRenderer(consumer); }
+        }
+    }
+
+    private void hostCaptureBudget() throws Exception {
+        String[] failure = {null};
+        boolean[] unsupported = {false};
+        int[] calls = {0};
+        ImageContent host = new ImageContent(16, 16) {};
+        try (GlImageResources resources = new GlImageResources(new Lwjgl3GlApi(), 1, 64, 64, 1,
+                new GlImageResources.Listener() {
+                    public void presentation(long identity, boolean pending, String error) {}
+                    public void failure(long identity, String stage, boolean missing, String diagnostic) {
+                        failure[0] = diagnostic;
+                        unsupported[0] = missing;
+                    }
+                }, 8)) {
+            resources.hostItems(new GlImageResources.HostItems() {
+                public boolean supports(ImageContent content) { return content == host; }
+                public void render(ImagePlacement image, LayoutBox clip, int width, int height) {
+                    calls[0]++;
+                    int[] saved = new int[4]; glGetIntegerv(GL_SCISSOR_BOX, saved);
+                    boolean enabled = glIsEnabled(GL_SCISSOR_TEST);
+                    try {
+                        glEnable(GL_SCISSOR_TEST);
+                        glScissor((int) image.x, height - (int) image.y - (int) image.height,
+                                (int) image.width, (int) image.height);
+                        glClearBufferfv(GL_COLOR, 0, new float[] {1, 0, 0, 1});
+                    } finally {
+                        glScissor(saved[0], saved[1], saved[2], saved[3]);
+                        if (!enabled) glDisable(GL_SCISSOR_TEST);
+                    }
+                }
+            });
+            GlPaintPlanRenderer consumer = fonts.createPlanRenderer(resources);
+            try {
+                for (float alpha : new float[] {1, .5f}) {
+                    PaintPlan plan = new PaintPlanBuilder().add(image(host, new LayoutBox(10, 10, 40, 40),
+                            ImageOptions.Fit.STRETCH, null)).build().presented(0, 0, alpha, null);
+                    clear();
+                    try (GlPaintPlanRenderer.Prepared prepared = fonts.prepare(consumer, plan, new LayoutBox(0, 0, W, H))) {
+                        prepared.render(FramebufferCoordinates.orthographic(W, H), H, false);
+                    }
+                    capture();
+                    color(20, 20, alpha == 1 ? 0xFFFF0000 : 0xFFAA7FD4);
+                }
+                require(calls[0] == 1 && resources.retainedHostCaptureBytes() == 0
+                        && failure[0] != null && failure[0].contains("budget=8") && !unsupported[0],
+                        "合成超预算未按真实图像失败报告，或给旧委托新增预算前提");
+                System.out.println("HOST_CAPTURE_BUDGET_PASS alpha1Direct=true alphaPartialFailed=true diagnostic=" + failure[0]);
+            } finally { fonts.releasePlanRenderer(consumer); }
+        }
+    }
+
+    private void hostOpacity() throws Exception {
+        Lwjgl3GlApi gl = new Lwjgl3GlApi();
+        ImageContent first = new ImageContent(16, 16) {}, second = new ImageContent(16, 16) {};
+        TextLayout text = fonts.layout("Host 后续文字 Text", new TextStyle("default", 18, 0xFF101010), 340);
+        PaintCommand afterText = PaintCommand.text(new LayoutBox(10, 110, 340, 40), null, text);
+        PaintPlan textPlan = new PaintPlanBuilder().add(afterText).build();
+        for (int i = 0; i < 80; i++) {
+            clear(); render(textPlan);
+            if (glyphsReady) break;
+            Thread.sleep(5);
+        }
+        require(glyphsReady, "物品透明度验收的后续文字未ready");
+        int[] reference = pixels.clone(), calls = {0}, capturedIds = new int[3];
+        boolean[] fail = {false};
+        int caller = glGetInteger(GL_DRAW_FRAMEBUFFER_BINDING);
+        GlPaintPlanRenderer child = fonts.createPlanRenderer();
+        try (GlImageResources resources = new GlImageResources(gl, 1, 64)) {
+            resources.hostItems(new GlImageResources.HostItems() {
+                public boolean supports(ImageContent content) { return content == first || content == second; }
+                public void render(ImagePlacement image, LayoutBox clip, int width, int height) {
+                    calls[0]++;
+                    if (glGetInteger(GL_DRAW_FRAMEBUFFER_BINDING) != caller) {
+                        require(glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE,
+                                "物品捕获面不完整");
+                        capturedIds[0] = glGetInteger(GL_DRAW_FRAMEBUFFER_BINDING);
+                        capturedIds[1] = glGetFramebufferAttachmentParameteri(GL_DRAW_FRAMEBUFFER,
+                                GL_COLOR_ATTACHMENT0, GL_FRAMEBUFFER_ATTACHMENT_OBJECT_NAME);
+                        capturedIds[2] = glGetFramebufferAttachmentParameteri(GL_DRAW_FRAMEBUFFER,
+                                GL_DEPTH_ATTACHMENT, GL_FRAMEBUFFER_ATTACHMENT_OBJECT_NAME);
+                        require(capturedIds[2] != 0, "物品捕获缺少深度/模板面");
+                    } else {
+                        require(width == W && height == H, "不透明委托的旧framebuffer尺寸改变");
+                    }
+                    // 真实宿主委托可任意设色并叠画：整组只在最终合成时乘一次全局alpha。
+                    LayoutBox body = new LayoutBox((int) image.x, (int) image.y,
+                            (int) image.width * 3 / 4, (int) image.height);
+                    PaintPlan plan = new PaintPlanBuilder()
+                            .add(PaintCommand.rect(body, clip, image.content == first ? 0xFFFF0000 : 0xFF00FF00))
+                            .add(PaintCommand.rect(new LayoutBox(body.x, body.y, body.width, body.height / 2),
+                                    clip, image.content == first ? 0x8000FF00 : 0x80FF0000)).build();
+                    fonts.withDelegatedConsumer(() -> {
+                        try (GlPaintPlanRenderer.Prepared prepared = fonts.prepare(child, plan,
+                                new LayoutBox(0, 0, width, height))) {
+                            prepared.render(FramebufferCoordinates.orthographic(width, height), height, false);
+                        }
+                    });
+                    if (fail[0]) throw new IllegalStateException("host capture delegate failed");
+                }
+            });
+            GlPaintPlanRenderer consumer = fonts.createPlanRenderer(resources);
+            try {
+                glStencilMask(-1);
+                glClearBufferfi(GL_DEPTH_STENCIL, 0, 1, 1);
+                glEnable(GL_SCISSOR_TEST);
+                glScissor(45, H - 70, 5, 60);
+                glClearBufferiv(GL_STENCIL, 0, new int[] {0});
+                glDisable(GL_SCISSOR_TEST);
+                glEnable(GL_STENCIL_TEST);
+                glStencilFunc(GL_EQUAL, 1, -1);
+                glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
+                for (float alpha : new float[] {1, .5f, .25f, 0, .5f}) {
+                    PaintPlanBuilder b = new PaintPlanBuilder();
+                    b.add(PaintCommand.rect(new LayoutBox(10, 10, 180, 60), null, 0xFF0000FF));
+                    PaintPlan host = new PaintPlanBuilder()
+                            .add(image(first, new LayoutBox(10, 10, 80, 60), ImageOptions.Fit.STRETCH, null))
+                            .add(image(second, new LayoutBox(110, 10, 80, 60), ImageOptions.Fit.STRETCH, null))
+                            .build().presented(0, 0, alpha, null);
+                    for (PaintCommand command : host.commands()) b.add(command);
+                    b.add(PaintCommand.rect(new LayoutBox(30, 45, 10, 10), null, 0xFFFFFFFF));
+                    b.add(afterText);
+                    int before = calls[0];
+                    int[] viewport = new int[4]; glGetIntegerv(GL_VIEWPORT, viewport);
+                    glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+                    glDepthMask(false);
+                    glStencilMaskSeparate(GL_FRONT, 0x35);
+                    glStencilMaskSeparate(GL_BACK, 0x57);
+                    clear();
+                    glColorMask(true, true, true, false);
+                    try (GlPaintPlanRenderer.Prepared prepared = fonts.prepare(consumer, b.build(), new LayoutBox(0, 0, W, H))) {
+                        prepared.render(FramebufferCoordinates.orthographic(W, H), H, false);
+                    }
+                    int[] after = new int[4], mask = new int[4];
+                    glGetIntegerv(GL_VIEWPORT, after);
+                    glGetIntegerv(GL_COLOR_WRITEMASK, mask);
+                    require(glGetInteger(GL_DRAW_FRAMEBUFFER_BINDING) == caller
+                            && glGetInteger(GL_READ_FRAMEBUFFER_BINDING) == 0
+                            && Arrays.equals(viewport, after) && !glGetBoolean(GL_DEPTH_WRITEMASK)
+                            && glGetInteger(GL_STENCIL_WRITEMASK) == 0x35
+                            && glGetInteger(GL_STENCIL_BACK_WRITEMASK) == 0x57
+                            && Arrays.equals(mask, new int[] {1, 1, 1, 0})
+                            && glIsEnabled(GL_STENCIL_TEST) && glGetInteger(GL_STENCIL_FUNC) == GL_EQUAL
+                            && glGetInteger(GL_STENCIL_REF) == 1,
+                            "物品透明度污染caller FBO/viewport/masks");
+                    glColorMask(true, true, true, true);
+                    glBindFramebuffer(GL_READ_FRAMEBUFFER, caller);
+                    capture();
+                    int a = Math.round(255 * alpha);
+                    color(20, 50, 0xFF000000 | (a << 16) | (255 - a));
+                    color(120, 50, 0xFF000000 | (a << 8) | (255 - a));
+                    color(20, 20, 0xFF000000 | (Math.round(127 * a / 255f) << 16)
+                            | (Math.round(128 * a / 255f) << 8) | (255 - a));
+                    color(80, 20, 0xFF0000FF);
+                    color(180, 20, 0xFF0000FF);
+                    color(35, 50, 0xFFFFFFFF);
+                    color(47, 20, 0xFFFFFFFF);
+                    require(calls[0] - before == 2, "物品被静态冻结或重复绘制");
+                    for (int y = 110; y < 155; y++) for (int x = 10; x < 350; x++)
+                        require(pixels[y * W + x] == reference[y * W + x], "透明物品污染后续文字像素");
+                    if (alpha == 1) require(resources.retainedHostCaptureBytes() == 0, "不透明物品新增capture前提");
+                    else require(resources.retainedHostCaptureBytes() == 80L * 60 * 8, "物品capture占用不受可见区域约束");
+                    if (alpha == .5f) save("motion-host-alpha.png");
+                    System.out.println("HOST_OPACITY alpha=" + alpha + " pixel=" + Integer.toHexString(pixels[50 * W + 20])
+                            + " delegates=" + (calls[0] - before) + " bytes=" + resources.retainedHostCaptureBytes());
+                }
+                fail[0] = true;
+                PaintPlan failed = new PaintPlanBuilder().add(image(first, new LayoutBox(10, 10, 80, 60),
+                        ImageOptions.Fit.STRETCH, null)).build().presented(0, 0, .5f, null);
+                clear();
+                try (GlPaintPlanRenderer.Prepared prepared = fonts.prepare(consumer, failed, new LayoutBox(0, 0, W, H))) {
+                    prepared.render(FramebufferCoordinates.orthographic(W, H), H, false);
+                }
+                capture();
+                color(20, 20, 0xFFAA7FD4);
+                require(glGetInteger(GL_DRAW_FRAMEBUFFER_BINDING) == caller, "host异常未恢复caller FBO");
+                System.out.println("HOST_CAPTURE_FAILURE_PASS partialDrawDiscarded=true failedBranchAlpha=true");
+            } finally { fonts.releasePlanRenderer(consumer); }
+        } finally {
+            fonts.releasePlanRenderer(child);
+            glColorMask(true, true, true, true);
+            glDepthMask(true);
+            glStencilMask(-1);
+            glDisable(GL_STENCIL_TEST);
+            glStencilFunc(GL_ALWAYS, 0, -1);
+            glBindFramebuffer(GL_READ_FRAMEBUFFER, caller);
+        }
+        require(!glIsFramebuffer(capturedIds[0]) && !glIsTexture(capturedIds[1]) && !glIsRenderbuffer(capturedIds[2]),
+                "物品合成资源未随owner关闭");
+        require(glGetError() == GL_NO_ERROR, "物品合成留下GLerror");
+    }
+
     @Override
     protected void runTests() throws Exception {
+        scenario("motion普通IMAGE及pending failed ready实际alpha", this::imageOpacity);
+        scenario("motion HOST_ITEM整组合成原序动态及后续文字像素", this::hostOpacity);
+        scenario("motion物品合成预算失败不限制原不透明委托", this::hostCaptureBudget);
         scenario(
                 "真实contain cover stretch native及ancestorclip",
                 () -> {

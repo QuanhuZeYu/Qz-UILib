@@ -33,6 +33,7 @@ public final class SceneDraggable {
 
     /** 不可变链式声明；每次配置返回副本，外部策略 Signal 可在挂载后替换。 */
     public static final class Options {
+        private club.heiqi.uilib.ui.scene.motion.MotionSpec releaseMotion;
         private Axis axis = Axis.BOTH;
         private Bounds bounds = Bounds.NONE;
         private int gridX, gridY, distance, tolerance;
@@ -47,11 +48,17 @@ public final class SceneDraggable {
         private double autoScrollSpeed = 1.0;
         public Options() {}
         private Options(Options value) {
+            releaseMotion = value.releaseMotion;
             axis = value.axis; bounds = value.bounds; gridX = value.gridX; gridY = value.gridY;
             distance = value.distance; tolerance = value.tolerance; delayMillis = value.delayMillis;
             handles = value.handles; overlay = value.overlay; onDrop = value.onDrop; activationExplicit = value.activationExplicit;
             observer = value.observer; autoScroll = value.autoScroll; autoScrollSpeed = value.autoScrollSpeed;
             sourceAnchor = value.sourceAnchor; preserveSlot = value.preserveSlot; sourceContent = value.sourceContent;
+        }
+        public Options releaseMotion(club.heiqi.uilib.ui.scene.motion.MotionSpec value) {
+            Objects.requireNonNull(value, "释放策略");
+            if (value.kind == club.heiqi.uilib.ui.scene.motion.MotionSpec.Kind.DECAY) throw new IllegalArgumentException("回槽使用目标跟随策略，自由惯性归显式滚动释放");
+            Options next = new Options(this); next.releaseMotion = value; return next;
         }
         public Options axis(Axis value) { Options next = new Options(this); next.axis = Objects.requireNonNull(value, "axis"); return next; }
         public Options bounds(Bounds value) { Options next = new Options(this); next.bounds = Objects.requireNonNull(value, "bounds"); return next; }
@@ -170,20 +177,29 @@ public final class SceneDraggable {
         private final State state;
         private final ReadableSignal<Options> source;
         private final Object bodyTarget = new Object();
+        private final SceneDragRelease release;
+        private long releaseEventTime;
+        private LayoutBox releaseBounds;
         private SceneNode layer;
         private boolean mounted;
         private SceneDragSupport.Observer observer;
         Control(SceneRuntime runtime, SceneNode content, State state, ReadableSignal<Options> source) {
             this.runtime = runtime; this.content = content; this.state = state; this.source = source;
+            release = new SceneDragRelease(runtime);
         }
         void installOverlay(ScenePageContext context, SceneNode node) {
             layer = SceneLayer.create(context, () -> new SceneLayer.Policy(0, SceneLayer.Participation.PASSIVE),
                     (self, sourceBox, viewport, measured) -> {
-                        Offset current = state.preferred.get();
-                        return new LayoutBox(SceneDragSupport.integer((long) sourceBox.x + node.padding() + current.x),
-                                SceneDragSupport.integer((long) sourceBox.y + node.padding() + current.y), measured.width, measured.height);
-                    }, Arrays.asList(state.snapshot, state.preferred, source));
-            layer.bind(NodeBinding.value(() -> state.snapshot.get().active && options().overlay != null, SceneNode::visible));
+                        Offset current = release.active.get() ? new Offset(release.x(), release.y()) : state.preferred.get();
+                        int x = SceneDragSupport.integer((long) sourceBox.x + node.padding() + current.x);
+                        int y = SceneDragSupport.integer((long) sourceBox.y + node.padding() + current.y);
+                        if (release.active.get() && releaseBounds != null) {
+                            x = SceneDragSupport.clamp(x, measured.width, releaseBounds.x, releaseBounds.width);
+                            y = SceneDragSupport.clamp(y, measured.height, releaseBounds.y, releaseBounds.height);
+                        }
+                        return new LayoutBox(x, y, measured.width, measured.height);
+                    }, Arrays.asList(state.snapshot, state.preferred, source, release.active));
+            layer.bind(NodeBinding.value(() -> (state.snapshot.get().active || release.active.get()) && options().overlay != null, SceneNode::visible));
             layer.bind(NodeBinding.ownedChildren(() -> {
                 SceneNode preview = options().overlay;
                 if (preview != null && (preview == content || SceneDragSupport.within(preview, content)))
@@ -193,6 +209,12 @@ public final class SceneDraggable {
             node.add(layer);
         }
         void bindLifecycle(SceneNode node) {
+            node.bind(NodeBinding.value(() -> {
+                runtime.motionPolicy().get(); runtime.interactionRevision().get();
+                return options().releaseMotion;
+            }, (self, motion) -> {
+                if (motion == null || !runtime.interactive(self)) release.stop(); else release.policy(motion);
+            }));
             node.bind((runtime, self, owner) -> {
                 mounted = true;
                 state.cancelSession = () -> { if (observer != null) observer.cancel(self); };
@@ -201,7 +223,7 @@ public final class SceneDraggable {
             });
         }
         private void unmount(SceneNode node) {
-            try { state.end(); }
+            try { release.stop(); state.end(); }
             finally {
                 mounted = false;
                 if (observer != null) observer.detach(node);
@@ -233,22 +255,32 @@ public final class SceneDraggable {
                     && SceneDragSupport.within(node, anchor) && geometry.get(node) != null
                     && SceneDragSupport.visible(geometry, anchor);
         }
-        @Override public List<ReadableSignal<?>> arrangementDependencies(SceneNode node) { return Arrays.asList(state.snapshot, state.preferred, source); }
+        @Override public List<ReadableSignal<?>> arrangementDependencies(SceneNode node) { return Arrays.asList(state.snapshot, state.preferred, source, release.active); }
         @Override public MeasuredSize measure(SceneNode node, Constraints body, SceneTextMeasurer text) { return new MeasuredSize(0, 0); }
         @Override public MeasuredSize measure(SceneNode node, Constraints body, SceneTextMeasurer text, SceneChildMeasurer children) {
             return SceneFlowLayout.measure(node, body, children);
         }
         @Override public ChildPlacements arrange(SceneNode node, LayoutBox box, SceneChildMeasurer children) {
+            return arrange(node, box, children, null, null);
+        }
+        @Override public ChildPlacements arrange(SceneNode node, LayoutBox box, SceneChildMeasurer children,
+                LayoutBox parentAllocation, LayoutBox viewport) {
+            Options currentOptions = options();
+            releaseBounds = currentOptions.bounds == Bounds.NONE ? null : currentOptions.bounds == Bounds.VIEWPORT
+                    ? viewport : parentAllocation == null ? viewport : SceneControlPaint.inner(parentAllocation, node.parent().padding());
             ChildPlacements ordinary = SceneFlowLayout.arrange(node, box, children);
             Snapshot current = state.snapshot.get();
-            if (!current.active || options().overlay != null || options().preserveSlot) return ordinary;
-            Offset offset = state.preferred.get();
+            if ((!current.active && !release.active.get()) || options().overlay != null || options().preserveSlot) return ordinary;
+            Offset offset = release.active.get() ? new Offset(release.x(), release.y()) : state.preferred.get();
             List<ChildPlacements.Entry> placed = new ArrayList<>();
             for (ChildPlacements.Entry entry : ordinary.entries()) {
                 LayoutBox child = entry.relativeBox;
-                placed.add(new ChildPlacements.Entry(entry.child, new LayoutBox(
-                        SceneDragSupport.integer((long) child.x + offset.x),
-                        SceneDragSupport.integer((long) child.y + offset.y), child.width, child.height)));
+                int x = SceneDragSupport.integer((long) child.x + offset.x), y = SceneDragSupport.integer((long) child.y + offset.y);
+                if (release.active.get() && releaseBounds != null) {
+                    x = SceneDragSupport.integer((long) SceneDragSupport.clamp((long) box.x + x, child.width, releaseBounds.x, releaseBounds.width) - box.x);
+                    y = SceneDragSupport.integer((long) SceneDragSupport.clamp((long) box.y + y, child.height, releaseBounds.y, releaseBounds.height) - box.y);
+                }
+                placed.add(new ChildPlacements.Entry(entry.child, new LayoutBox(x, y, child.width, child.height)));
             }
             return new ChildPlacements(placed);
         }
@@ -403,12 +435,15 @@ public final class SceneDraggable {
                             state.keyboard ? SceneDragSupport.centerY(dragBox) : state.pointerY);
                 }
             } finally { state.end(); }
+            if (normal && options().releaseMotion != null && !options().preserveSlot)
+                release.release(finalValue.deltaX, finalValue.deltaY, options().releaseMotion, releaseEventTime);
             // 两种会话均已清理；回调抛错及迟到 UP 都不能重新提交。
             if (receiving != null) receiving.run();
             if (normal && action != null) action.accept(finalValue);
         }
         @Override public void pointer(SceneNode node, ScenePointerEvent event, SceneGeometryView geometry) {
             syncObserver(node, options());
+            releaseEventTime = event.timeNanos;
             switch (event.kind) {
                 case DOWN: beginPointer(node, event, geometry); break;
                 case MOVE: continuePointer(node, event, geometry); break;
@@ -419,6 +454,7 @@ public final class SceneDraggable {
         private void beginPointer(SceneNode node, ScenePointerEvent event, SceneGeometryView geometry) {
             SceneGeometryView.Entry entry = geometry.get(sourceContent());
             if (entry == null) return;
+            release.begin();
             state.end(); state.keyboard = false; state.delayAllowed = true;
             state.startX = state.pointerX = event.x; state.startY = state.pointerY = event.y;
             state.grabX = event.x - entry.box.x; state.grabY = event.y - entry.box.y;
@@ -427,6 +463,7 @@ public final class SceneDraggable {
             if (options.handles.length > 0 && !options.activationExplicit || options.distance == 0 && options.delayMillis == 0) activate(state.pressedNanos);
             else state.publish(false, true, 0, 0);
             update(node, geometry, SceneDragSupport.AutoScroll.Shift.NONE);
+            Offset point = state.preferred.get(); release.sample(point.x, point.y, event.timeNanos);
         }
         private void continuePointer(SceneNode node, ScenePointerEvent event, SceneGeometryView geometry) {
             Snapshot current = state.snapshot.get();
@@ -434,6 +471,7 @@ public final class SceneDraggable {
             state.pointerX = event.x; state.pointerY = event.y;
             if (current.pending) pending(runtime.inputNanos());
             update(node, geometry, SceneDragSupport.AutoScroll.Shift.NONE);
+            Offset point = state.preferred.get(); release.sample(point.x, point.y, event.timeNanos);
         }
         @Override public void preparePointerRelease(SceneNode node, ScenePointerEvent event, SceneGeometryView geometry) {
             syncObserver(node, options());
@@ -471,7 +509,16 @@ public final class SceneDraggable {
         private boolean toggleKeyboard(SceneNode node, SceneGeometryView geometry) {
             Snapshot current = state.snapshot.get();
             if (!current.active && !current.pending) {
+                Offset takeover = new Offset(0, 0);
+                if (release.active.get() && geometry != null) {
+                    LayoutBox currentBox = feedbackBox(node, geometry);
+                    SceneGeometryView.Entry slot = geometry.get(node);
+                    if (currentBox != null && slot != null) takeover = new Offset(
+                            currentBox.x - slot.box.x - node.padding(), currentBox.y - slot.box.y - node.padding());
+                }
+                release.begin();
                 state.end(); state.keyboard = true; activate(runtime.inputNanos());
+                state.keyboardX = takeover.x; state.keyboardY = takeover.y; state.preferred.set(takeover);
                 if (geometry != null) update(node, geometry, SceneDragSupport.AutoScroll.Shift.NONE);
             } else if (state.keyboard) {
                 if (options().preserveSlot && options().overlay == null) update(node, geometry, SceneDragSupport.AutoScroll.Shift.NONE);
@@ -537,8 +584,8 @@ public final class SceneDraggable {
         @Override public boolean cancelCaptureOnEscape(SceneNode node) {
             Snapshot current = state.snapshot.get(); return !state.keyboard && (current.active || current.pending);
         }
-        @Override public void captureLost(SceneNode node) { state.end(); }
-        @Override public void inputFrameCancelled(SceneNode node) { state.end(); }
+        @Override public void captureLost(SceneNode node) { release.stop(); state.end(); }
+        @Override public void inputFrameCancelled(SceneNode node) { release.stop(); state.end(); }
         @Override public void paint(SceneNode node, SceneGeometryView geometry, PaintPlanBuilder paint) {}
     }
 }

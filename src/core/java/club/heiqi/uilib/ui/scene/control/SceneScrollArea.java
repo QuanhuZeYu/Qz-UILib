@@ -26,10 +26,12 @@ public final class SceneScrollArea {
     }
     /** 容器只声明轴和组合策略，条自身的策略委托给SceneScrollbar.Options。 */
     public static final class Options {
+        private club.heiqi.uilib.ui.scene.motion.ScrollMotionOptions motion;
         private Axes axes = Axes.VERTICAL, forceVisible = Axes.NONE;
         private SceneScrollbar.Options bars = new SceneScrollbar.Options();
         public Options() {}
-        private Options(Options from) { axes = from.axes; forceVisible = from.forceVisible; bars = from.bars; }
+        private Options(Options from) { motion = from.motion; axes = from.axes; forceVisible = from.forceVisible; bars = from.bars; }
+        public Options motion(club.heiqi.uilib.ui.scene.motion.ScrollMotionOptions value) { Options next = new Options(this); next.motion = value; return next; }
         public Options axes(Axes value) { Options next = new Options(this); next.axes = Objects.requireNonNull(value, "axes"); return next; }
         public Options forceVisible(Axes value) { Options next = new Options(this); next.forceVisible = Objects.requireNonNull(value, "forceVisible"); return next; }
         public Options autoHide(boolean value) { Options next = new Options(this); next.bars = bars.autoHide(value); return next; }
@@ -74,6 +76,8 @@ public final class SceneScrollArea {
             SceneNode vertical = new SceneNode().size(Size.natural(), Size.fill(1)).axis(SceneNode.Axis.COLUMN).clip(true).add(content);
             SceneNode horizontal = new SceneNode().size(Size.fill(1), Size.fill(1)).axis(SceneNode.Axis.ROW).clip(true)
                     .control(new Horizontal(vertical, axes)).add(vertical);
+            horizontal.bind(club.heiqi.uilib.ui.scene.motion.SceneMotion.scroll(() -> options.get().motion));
+            vertical.bind(club.heiqi.uilib.ui.scene.motion.SceneMotion.scroll(() -> options.get().motion));
             SceneNode root = new SceneNode().size(Size.fill(1), Size.fill(1)).clip(true);
             root.bind(SceneControlBindings.declaration(options, (node, next) -> configure(next, horizontal, vertical)));
             SceneNode xBar = bar(context, root, horizontal, SceneNode.Axis.ROW, options, theme);

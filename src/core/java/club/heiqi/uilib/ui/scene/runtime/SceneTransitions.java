@@ -14,6 +14,7 @@ final class SceneTransitions {
     long now() { return now; }
     void start(Step step) { active.add(step); }
     void stop(Step step) { active.remove(step); }
+    void clear() { active.clear(); }
 
     void advance(long frameNanos) {
         // 已排队的输入批次保留原时刻；外部current()先准备时不能让时钟倒退。

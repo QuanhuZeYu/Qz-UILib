@@ -134,6 +134,8 @@ public final class IncrementalMeasurementScenario extends TestApplication {
         Page() { this((page, context) -> {}); }
         Page(java.util.function.BiConsumer<Page, ScenePageContext> decorate) {
             session = ScenePageSession.open(domain, host, requests, context -> {
+                // 此夹具隔离测量/静态缓存；首次焦点的默认反馈过渡由MotionScenario独立验收。
+                context.motionPolicy(() -> club.heiqi.uilib.ui.scene.motion.MotionPolicy.OFF);
                 value = domain.signal("初始文案");
                 style = domain.signal(new TextStyle("default", 18, 0xff223344));
                 background = domain.signal(0xffeeeeee);
@@ -390,7 +392,10 @@ public final class IncrementalMeasurementScenario extends TestApplication {
         ClosedPage(Object pipeline, SceneNode root) { this.pipeline = pipeline; this.root = new WeakReference<>(root); }
     }
     private ClosedPage closedPage() {
-        Page page = new Page();
+        Page page = new Page((current, context) -> current.root.bind(
+                club.heiqi.uilib.ui.scene.motion.SceneMotion.presence(() -> true,
+                        () -> new club.heiqi.uilib.ui.scene.motion.PresenceOptions(
+                                club.heiqi.uilib.ui.scene.motion.MotionSpec.instant()))));
         ClosedPage[] closed = {null};
         page.domain.execute(() -> closed[0] = new ClosedPage(page.session.pipeline(), page.root));
         page.close();

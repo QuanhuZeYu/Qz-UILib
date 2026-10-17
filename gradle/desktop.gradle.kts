@@ -198,6 +198,11 @@ val desktopDropSortVerify = desktopApplication("desktopDropSortVerify", "隐藏�
     args(layout.buildDirectory.dir("reports/drop-sort-desktop").get().asFile.absolutePath)
     mustRunAfter("desktopDraggableDeepVerify")
 } }
+val desktopMotionVerify = desktopApplication("desktopMotionVerify", "真实桌面验收共享声明式动效与连续帧", true).apply { configure {
+    mainClass.set("club.heiqi.uilib.host.desktop.DesktopMotionVerification")
+    args(providers.gradleProperty("motionOutput").getOrElse(layout.buildDirectory.dir("reports/motion-desktop").get().asFile.absolutePath))
+    mustRunAfter("desktopScrollAreaVerify")
+} }
 val desktopScrollAreaVerify = desktopApplication("desktopScrollAreaVerify", "隐藏真实回调验收滚动条与双轴滚动", true).apply { configure {
     mainClass.set("club.heiqi.uilib.host.desktop.DesktopScrollAreaVerification")
     args(layout.buildDirectory.dir("reports/scroll-area-desktop").get().asFile.absolutePath)
@@ -253,7 +258,7 @@ listOf("desktopPerformance", "desktopPerformanceBenchmark").forEach { taskName -
 }
 // 专项场景仍可按任务名定位；日常验收与 check 统一通过聚合入口取得相同覆盖。
 val galleryChecks = listOf(desktopGalleryVerify, desktopGalleryResultScenario, desktopSettingsVerify,
-    desktopDraggableVerify, desktopDraggableDeepVerify, desktopDropSortVerify, desktopScrollAreaVerify, desktopGalleryMediaVerify, desktopTooltipVerify, desktopLiveMediaVerify, desktopNetworkMediaVerify)
+    desktopDraggableVerify, desktopDraggableDeepVerify, desktopDropSortVerify, desktopScrollAreaVerify, desktopMotionVerify, desktopGalleryMediaVerify, desktopTooltipVerify, desktopLiveMediaVerify, desktopNetworkMediaVerify)
 galleryChecks.forEach { task -> task.configure { group = null } }
 val galleryVerify by tasks.registering {
     group = "verification"

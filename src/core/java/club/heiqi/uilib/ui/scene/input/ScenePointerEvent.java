@@ -20,13 +20,27 @@ public final class ScenePointerEvent {
     public final int button;
 
     public final int x, y, delta;
+    /** 采集时刻；速度估计使用事件间隔，不以同帧结算间隔代替。 */
+    public final long timeNanos;
+    public enum ScrollPhase { DISCRETE, UPDATE, END, MOMENTUM }
+    public final ScrollPhase scrollPhase;
 
     private ScenePointerEvent(Kind kind, int button, int x, int y, int delta) {
+        this(kind, button, x, y, delta, System.nanoTime(), ScrollPhase.DISCRETE);
+    }
+    private ScenePointerEvent(Kind kind, int button, int x, int y, int delta, long timeNanos, ScrollPhase phase) {
+        this.timeNanos = timeNanos; this.scrollPhase = java.util.Objects.requireNonNull(phase, "滚动输入阶段");
         this.kind = kind;
         this.button = button;
         this.x = x;
         this.y = y;
         this.delta = delta;
+    }
+
+    public ScenePointerEvent at(long timeNanos) { return new ScenePointerEvent(kind, button, x, y, delta, timeNanos, scrollPhase); }
+    /** 宿主明确提供直接滚动序列；MOMENTUM 表示已有动量，不能重复合成。 */
+    public static ScenePointerEvent scrollGesture(int x, int y, int delta, ScrollPhase phase, long timeNanos) {
+        return new ScenePointerEvent(Kind.SCROLL, -1, x, y, delta, timeNanos, phase);
     }
 
     /** 按下只建立手势所有权，不发布click。 */

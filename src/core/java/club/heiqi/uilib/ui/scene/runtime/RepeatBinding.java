@@ -18,16 +18,24 @@ final class RepeatBinding<T, K> implements NodeBinding {
     private static final class State<T, K> {
         final Map<K, Signal<T>> values = new LinkedHashMap<>();
         final Map<K, SceneNode> nodes = new LinkedHashMap<>();
+        final Map<SceneNode, K> keys = new java.util.IdentityHashMap<>();
     }
 
     private final ReadableSignal<List<T>> source;
     private final Function<T, K> key;
     private final Function<ReadableSignal<T>, SceneNode> declaration;
+    private final ReadableSignal<club.heiqi.uilib.ui.scene.motion.PresenceOptions> exits;
 
     RepeatBinding(
             ReadableSignal<List<T>> source,
             Function<T, K> key,
             Function<ReadableSignal<T>, SceneNode> declaration) {
+        this(source, key, declaration, null);
+    }
+    RepeatBinding(ReadableSignal<List<T>> source, Function<T, K> key,
+            Function<ReadableSignal<T>, SceneNode> declaration,
+            ReadableSignal<club.heiqi.uilib.ui.scene.motion.PresenceOptions> exits) {
+        this.exits = exits;
         this.source = source;
         this.key = key;
         this.declaration = declaration;
@@ -36,7 +44,7 @@ final class RepeatBinding<T, K> implements NodeBinding {
     private static void releaseUnattached(State<?, ?> state) {
         Throwable failure = null;
         for (SceneNode entry : state.nodes.values()) {
-            if (entry.logicalOwner() == state && entry.runtime() == null) {
+            if (entry.logicalOwner() == state && entry.runtime() == null && !entry.retired()) {
                 try {
                     entry.destroy();
                 } catch (RuntimeException | Error error) {
@@ -57,6 +65,8 @@ final class RepeatBinding<T, K> implements NodeBinding {
             node.own(() -> releaseUnattached(created));
             return created;
         });
+        AutoCloseable registration = exits == null ? () -> {} : runtime.registerPresenceSource(node, state);
+        owner.own(registration);
         Observation observation =
                 runtime.domain()
                         .observe(
@@ -81,14 +91,16 @@ final class RepeatBinding<T, K> implements NodeBinding {
                                                     throw new IllegalArgumentException("条目声明不可拥有: " + node.id() + " / " + identity);
                                                 created.frameworkOwnership(runtime, state);
                                                 state.nodes.put(identity, created);
+                                                state.keys.put(created, identity);
                                             } else cell.set(value);
                                             SceneNode entry = state.nodes.get(identity);
                                             // 已明确迁移的条目不再被旧集合重新取得或销毁。
                                             if (entry.logicalOwner() == state) next.add(entry);
                                         }
-                                        runtime.reconcile(node, next, state);
+                                        runtime.reconcile(node, next, state, true, exits == null ? null : exits.get(), state.keys);
                                         state.values.keySet().retainAll(keys);
                                         state.nodes.keySet().retainAll(keys);
+                                        state.keys.keySet().retainAll(state.nodes.values());
                                     } catch (RuntimeException | Error failure) {
                                         try {
                                             releaseUnattached(state);
@@ -107,7 +119,11 @@ final class RepeatBinding<T, K> implements NodeBinding {
 
             @Override
             public void close() {
-                observation.close();
+                try { observation.close(); } finally {
+                    try { registration.close(); }
+                    catch (RuntimeException | Error failure) { throw failure; }
+                    catch (Exception failure) { throw new IllegalStateException("退场集合释放失败", failure); }
+                }
             }
         };
     }

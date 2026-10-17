@@ -136,7 +136,7 @@ public final class SceneFramePipeline implements AutoCloseable {
         this.host = host;
         this.text=measurer;
         this.layout = new SceneLayoutEngine(measurer, runtime::scrollOffset, runtime::nodeMeasureRevision);
-        this.paint = new ScenePaintCollector(layout, measurer);
+        this.paint = new ScenePaintCollector(runtime, layout, measurer);
     }
 
     /** 宿主在域外按采集顺序递交typed输入，所有物理按钮均需递交。 */
@@ -379,6 +379,7 @@ public final class SceneFramePipeline implements AutoCloseable {
                                 router.discardAfterFailure(ScenePointerEvent.cancel());
                             } finally {
                                 presentation = null;
+                                paint.clear();
                                 layout.clearCaches();
                             }
                         });
@@ -395,6 +396,16 @@ public final class SceneFramePipeline implements AutoCloseable {
                                                 h,
                                                 metricsRevision,
                                                 runtime.wholeMeasureRevision()));
+        if (runtime.hasLayoutMotion()) {
+            SceneGeometry target = geometry;
+            boolean sizes = runtime.prepareLayoutSizes(target);
+            SceneGeometry allocated = sizes ? runtime.domain().readOnly(() -> layout.layout(runtime.roots(), w, h,
+                    metricsRevision, runtime.wholeMeasureRevision(), runtime.layoutPresentation(false))) : target;
+            boolean positions = runtime.prepareLayoutPositions(allocated);
+            geometry = positions ? runtime.domain().readOnly(() -> layout.layout(runtime.roots(), w, h,
+                    metricsRevision, runtime.wholeMeasureRevision(), runtime.layoutPresentation(true))) : allocated;
+            runtime.publishLayoutGeometry(geometry);
+        }
         // 布局只读，唯一runtime记录在布局返回后发布；显露重排也复用这一入口。
         runtime.prepareScrollPositions(geometry);
         return geometry;
@@ -465,6 +476,7 @@ public final class SceneFramePipeline implements AutoCloseable {
                 || metrics != nextMetrics
                 || System.nanoTime() >= paint.nextPaintNanos()) {
             PaintPlan paint = runtime.domain().readOnly(() -> this.paint.collect(geometry, nextMetrics));
+            runtime.capturePresencePaint(this.paint.presenceSnapshots(), geometry);
             presentation = new ScenePresentation(++generation, geometry, paint);
             revision = runtime.revision();
             geometryRevision = runtime.geometryRevision();

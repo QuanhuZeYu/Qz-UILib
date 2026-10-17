@@ -15,6 +15,7 @@ public final class ImagePlacement {
         this.height = height;
     }
 
+    public ImagePlacement translated(int dx, int dy) { return new ImagePlacement(content, x + dx, y + dy, width, height); }
     public static ImagePlacement fit(ImageContent content, LayoutBox box, ImageOptions options) {
         float width = content.width, height = content.height;
         if (options.fit == ImageOptions.Fit.STRETCH) {

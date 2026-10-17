@@ -22,6 +22,7 @@ import java.util.Objects;
 abstract class SceneSymbolControl implements SceneControl {
     final ReadableSignal<SceneTheme> theme;
     private final boolean showLabel;
+    private final SceneControlMotion motion = new SceneControlMotion();
     SceneSymbolControl(ReadableSignal<SceneTheme> theme, boolean showLabel) {
         this.theme = Objects.requireNonNull(theme); this.showLabel = showLabel;
     }
@@ -39,6 +40,7 @@ abstract class SceneSymbolControl implements SceneControl {
             int gap=control.showLabel?t.gap:0;
             if(n.gap()!=gap)n.gap(gap);
         }));
+        control.motion.install(node, () -> control.theme.get().feedbackMotion, self -> SceneControlMotion.target(self, control.theme.get()));
         return node;
     }
     static SceneNode graphic(ScenePageContext page, SceneSymbolControl control) {
@@ -67,7 +69,7 @@ abstract class SceneSymbolControl implements SceneControl {
         boolean hover = enabled && node.runtime().pointerRouter().hovered(geometry) == node;
         boolean pressed = enabled && node.runtime().pointerRouter().pressed(node);
         if(node.clickAction()!=null) club.heiqi.uilib.ui.scene.paint.ScenePaintShapes.rounded(target,e.box,e.clip,
-                !enabled?style.disabled:pressed?style.pressed:hover?style.hover:style.button,Math.min(e.box.width,e.box.height)/2);
+                motion.color(!enabled?style.disabled:pressed?style.pressed:hover?style.hover:style.button),Math.min(e.box.width,e.box.height)/2);
         if (enabled && node.runtime().focusRouter().focusVisible(node)) SceneControlPaint.border(target,e.box,e.clip,style.focus);
         LayoutBox inner = SceneControlPaint.inner(e.box,node.padding());
         int side = Math.min(symbolSize(node),Math.min(inner.width,inner.height));

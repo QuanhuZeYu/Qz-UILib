@@ -51,11 +51,11 @@ public class SceneAppearance {
             hover=dark?0xff27272a:0xfff4f4f5;
         }
         public SceneTheme editorTheme() {
-            return new SceneTheme(textStyle.withColor(text),0,0,0x409494a3,0,text,0,muted,primary,onPrimary,11,8);
+            return new SceneTheme(textStyle.withColor(text),0,0,0x409494a3,0,text,0,muted,primary,onPrimary,11,8).withMotion(source.feedbackMotion, source.spatialMotion);
         }
         public SceneTheme theme(float scale,int color,int padding) {
             return new SceneTheme(textStyle.withEm(textStyle.logicalEm*scale).withColor(color),
-                    0,0,0,0,0,0,muted,primary,onPrimary,padding,8);
+                    0,0,0,0,0,0,muted,primary,onPrimary,padding,8).withMotion(source.feedbackMotion, source.spatialMotion);
         }
     }
     protected final ScenePageContext page;
@@ -145,7 +145,19 @@ public class SceneAppearance {
             for(SceneNode at=target.runtime().pointerRouter().hovered(geometry);at!=null;at=at.parent())if(at==target)return true;
             return false;
         }
-        public void paint(SceneNode n,SceneGeometryView geometry,PaintPlanBuilder paint){
+        int fill(SceneNode node) {
+            Palette p = colors.get(); boolean active = enabled();
+            SceneNode hit = target == null || target.runtime() == null ? null : target.runtime().pointerRouter().hoverTarget().get();
+            boolean hover = false;
+            for (SceneNode at = hit; at != null; at = at.parent()) if (at == target) { hover = true; break; }
+            boolean pressed = target != null && target.runtime() != null && target.runtime().pointerRouter().pressedTarget().get() == target;
+            int fill = role == Role.PRIMARY ? p.primary : role == Role.GHOST || role == Role.ENTRY ? 0 : p.background;
+            if (role == Role.ENTRY && selected.get()) fill = p.hover;
+            if ((hover || pressed) && active) fill = role == Role.PRIMARY ? p.muted : p.hover;
+            return active ? fill : p.surface;
+        }
+        public void paint(SceneNode n,SceneGeometryView geometry,PaintPlanBuilder paint){ paint(n, geometry, paint, fill(n)); }
+        void paint(SceneNode n,SceneGeometryView geometry,PaintPlanBuilder paint,int animatedFill){
             SceneGeometryView.Entry e=geometry.get(n);if(e==null)return;
             Palette p=colors.get();boolean active=enabled();
             boolean focused=target!=null&&target.runtime()!=null&&target.runtime().focusRouter().focusVisible(target);
@@ -154,6 +166,7 @@ public class SceneAppearance {
             if(role==Role.ENTRY&&selected.get())fill=p.hover;
             if(hovered(geometry)&&active||pressed&&active)fill=role==Role.PRIMARY?p.muted:p.hover;
             if(!active)fill=p.surface;
+            fill=animatedFill;
             int edge=focused?p.muted:role==Role.OUTLINE||role==Role.FIELD||role==Role.PANEL||role==Role.CARD?p.border:fill;
             if(role==Role.PANEL){
                 for(int spread=6;spread>=2;spread-=2)ScenePaintShapes.rounded(paint,

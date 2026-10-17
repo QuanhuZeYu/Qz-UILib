@@ -29,6 +29,16 @@ public final class GlTokens {
     public static final int GL_DEPTH_RANGE = 2928;
     public static final int GL_DEPTH_TEST = 2929;
     public static final int GL_DEPTH_WRITEMASK = 2930;
+    public static final int GL_COLOR = 6144;
+    public static final int GL_COLOR_ATTACHMENT0 = 36064;
+    public static final int GL_DEPTH_STENCIL = 34041;
+    public static final int GL_DEPTH24_STENCIL8 = 35056;
+    public static final int GL_DEPTH_STENCIL_ATTACHMENT = 33306;
+    public static final int GL_FRAMEBUFFER_COMPLETE = 36053;
+    public static final int GL_READ_FRAMEBUFFER = 36008;
+    public static final int GL_READ_FRAMEBUFFER_BINDING = 36010;
+    public static final int GL_RENDERBUFFER = 36161;
+    public static final int GL_RENDERBUFFER_BINDING = 36007;
     public static final int GL_DRAW_FRAMEBUFFER = 36009;
     public static final int GL_DRAW_FRAMEBUFFER_BINDING = 36006;
     public static final int GL_ELEMENT_ARRAY_BUFFER = 34963;

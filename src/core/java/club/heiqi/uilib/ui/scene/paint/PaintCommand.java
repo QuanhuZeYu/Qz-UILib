@@ -211,6 +211,27 @@ public final class PaintCommand {
                 Objects.requireNonNull(video, "video"));
     }
 
+    PaintCommand presented(int dx, int dy, float opacity, LayoutBox limit,
+            java.util.Map<PaintCommand, PaintCommand> mapped) {
+        PaintCommand existing = mapped.get(this);
+        if (existing != null) return existing;
+        LayoutBox moved = new LayoutBox(box.x + dx, box.y + dy, box.width, box.height);
+        LayoutBox clipped = clip == null ? null : new LayoutBox(clip.x + dx, clip.y + dy, clip.width, clip.height);
+        if (limit != null) clipped = clipped == null ? limit : clipped.intersect(limit);
+        PaintPlan pending = pendingPaint == null ? null : pendingPaint.presented(dx, dy, opacity, limit, mapped);
+        PaintPlan failed = failedPaint == pendingPaint ? pending
+                : failedPaint == null ? null : failedPaint.presented(dx, dy, opacity, limit, mapped);
+        PaintPlan ready = readyOverlay == null ? null : readyOverlay.presented(dx, dy, opacity, limit, mapped);
+        PaintCommand branch = branchSource == null ? null : branchSource.presented(dx, dy, opacity, limit, mapped);
+        Line movedLine = line == null ? null : new Line(line.x0 + dx, line.y0 + dy, line.x1 + dx, line.y1 + dy, line.thickness);
+        PaintCommand result = new PaintCommand(kind, moved, clipped,
+                club.heiqi.uilib.ui.scene.motion.SceneMotion.alpha(color, opacity),
+                text == null ? null : text.withOpacity(opacity), image == null ? null : image.translated(dx, dy),
+                pending, failed, ready, branch, movedLine, video == null ? null : video.translated(dx, dy));
+        mapped.put(this, result);
+        return result;
+    }
+
     public static PaintCommand rect(LayoutBox box, LayoutBox clip, int color) {
         return new PaintCommand(Kind.RECT, box, clip, color, null, null, null, null, null);
     }

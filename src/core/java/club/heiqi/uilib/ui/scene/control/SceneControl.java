@@ -113,6 +113,11 @@ public interface SceneControl {
      */
     ChildPlacements arrange(SceneNode node, LayoutBox allocated, SceneChildMeasurer children);
 
+    /** 框架同批父分配与根视口，供明确的空间约束使用；既有控件沿原排列入口。
+     * 这些值仅在本次调用有效，不能成为跨批布局或输入权威。 */
+    default ChildPlacements arrange(SceneNode node, LayoutBox allocated, SceneChildMeasurer children,
+            LayoutBox parentAllocation, LayoutBox viewport) { return arrange(node, allocated, children); }
+
     /** 内容受实际文字区域限制后的不可变定位；不回写文本或几何。 */
     default club.heiqi.uilib.ui.scene.text.TextLayout presentText(
             SceneNode node,
@@ -198,6 +203,9 @@ public interface SceneControl {
 
     /** 专用内容像素移动；返回实际位移，runtime统一按变化失效共同几何。 */
     default int scrollByPixels(SceneNode node, SceneNode.Axis axis, int pixels, SceneGeometryView geometry) { return 0; }
+
+    /** 代理滚动控件明确其实际视口，用于显式释放运动；输入所有权仍留原消费者。 */
+    default SceneNode scrollMotionViewport(SceneNode node) { return node; }
 
     /** 正式结果区分消费与变化；旧扩展的boolean按既有“消费即变化”语义接入。 */
     default SceneScrollResult scrollResult(SceneNode node,

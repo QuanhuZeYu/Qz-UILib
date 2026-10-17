@@ -12,6 +12,7 @@ public final class VideoPlacement {
     private VideoPlacement(MediaVideoFrame frame, float x, float y, float width, float height) {
         this.frame = frame; this.x = x; this.y = y; this.width = width; this.height = height;
     }
+    public VideoPlacement translated(int dx, int dy) { return new VideoPlacement(frame, x + dx, y + dy, width, height); }
     public static VideoPlacement fit(MediaVideoFrame frame, LayoutBox box, Fit fit, float alignX, float alignY) {
         Objects.requireNonNull(frame, "frame"); Objects.requireNonNull(box, "box"); Objects.requireNonNull(fit, "fit");
         if (!Float.isFinite(alignX) || !Float.isFinite(alignY) || alignX < 0 || alignX > 1 || alignY < 0 || alignY > 1)

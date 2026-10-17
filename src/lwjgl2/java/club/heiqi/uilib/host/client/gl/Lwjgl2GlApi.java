@@ -63,6 +63,52 @@ public final class Lwjgl2GlApi implements GlApi {
         org.lwjgl.opengl.GL30.glBindFramebuffer(a, b);
     }
 
+    public void glBindRenderbuffer(int target, int renderbuffer) {
+        org.lwjgl.opengl.GL30.glBindRenderbuffer(target, renderbuffer);
+    }
+
+    public int glCheckFramebufferStatus(int target) {
+        return org.lwjgl.opengl.GL30.glCheckFramebufferStatus(target);
+    }
+
+    public void glClearBufferfv(int buffer, int drawbuffer, float[] values) {
+        floats.clear();
+        floats.put(values).flip();
+        org.lwjgl.opengl.GL30.glClearBuffer(buffer, drawbuffer, floats);
+    }
+
+    public void glClearBufferfi(int buffer, int drawbuffer, float depth, int stencil) {
+        org.lwjgl.opengl.GL30.glClearBufferfi(buffer, drawbuffer, depth, stencil);
+    }
+
+    public void glDeleteFramebuffers(int framebuffer) {
+        org.lwjgl.opengl.GL30.glDeleteFramebuffers(framebuffer);
+    }
+
+    public void glDeleteRenderbuffers(int renderbuffer) {
+        org.lwjgl.opengl.GL30.glDeleteRenderbuffers(renderbuffer);
+    }
+
+    public void glFramebufferTexture2D(int target, int attachment, int textureTarget, int texture, int level) {
+        org.lwjgl.opengl.GL30.glFramebufferTexture2D(target, attachment, textureTarget, texture, level);
+    }
+
+    public void glFramebufferRenderbuffer(int target, int attachment, int renderbufferTarget, int renderbuffer) {
+        org.lwjgl.opengl.GL30.glFramebufferRenderbuffer(target, attachment, renderbufferTarget, renderbuffer);
+    }
+
+    public int glGenFramebuffers() {
+        return org.lwjgl.opengl.GL30.glGenFramebuffers();
+    }
+
+    public int glGenRenderbuffers() {
+        return org.lwjgl.opengl.GL30.glGenRenderbuffers();
+    }
+
+    public void glRenderbufferStorage(int target, int format, int width, int height) {
+        org.lwjgl.opengl.GL30.glRenderbufferStorage(target, format, width, height);
+    }
+
     public void glBindSampler(int a, int b) {
         if (org.lwjgl.opengl.GLContext.getCapabilities().OpenGL33)
             org.lwjgl.opengl.GL33.glBindSampler(a, b);

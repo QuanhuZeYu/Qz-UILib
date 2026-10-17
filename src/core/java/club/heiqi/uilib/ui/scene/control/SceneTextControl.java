@@ -28,6 +28,7 @@ final class SceneTextControl implements SceneControl {
     private final boolean button;
     private final ReadableSignal<SceneIconButton.Symbol> leadingIcon;
     private SceneAppearance.Surface modernSurface;
+    private final SceneControlMotion motion = new SceneControlMotion();
     private TextLayout source, presented;
     private int presentWidth, presentHeight;
 
@@ -67,6 +68,12 @@ final class SceneTextControl implements SceneControl {
                             target.style(value.textStyle);
                             if (button && target.padding()!=value.padding) target.padding(value.padding);
                         }));
+        if (button) {
+            SceneTextControl control = (SceneTextControl) node.control();
+            control.motion.install(node, () -> theme.get().feedbackMotion,
+                    self -> control.modernSurface == null ? SceneControlMotion.target(self, theme.get())
+                            : control.modernSurface.fill(self));
+        }
         return node;
     }
 
@@ -132,7 +139,7 @@ final class SceneTextControl implements SceneControl {
             enabled &= cursor.enabled();
         boolean focused =
                 enabled && runtime != null && runtime.focusRouter().focusVisible(node);
-        if(modernSurface!=null)modernSurface.paint(node,geometry,target);
+        if(modernSurface!=null)modernSurface.paint(node,geometry,target,motion.color(modernSurface.fill(node)));
         else if (button) {
             boolean hovered =
                     enabled && runtime != null && runtime.pointerRouter().hovered(geometry) == node;
@@ -141,7 +148,7 @@ final class SceneTextControl implements SceneControl {
                     !enabled
                             ? style.disabled
                             : pressed ? style.pressed : hovered ? style.hover : style.button;
-            target.add(PaintCommand.rect(entry.box, entry.clip, color));
+            target.add(PaintCommand.rect(entry.box, entry.clip, motion.color(color)));
             if (focused) border(target, entry.box, entry.clip, style.focus);
         }
         LayoutBox inner = inner(entry.box, node.padding());

@@ -79,7 +79,7 @@ public final class ImageServiceScenario extends TestApplication {
         }
     }
     private void crossModalCapture() throws Exception {
-        for (boolean modalRoot : new boolean[] {true, false}) {
+        for (float alpha : new float[] {1f, .5f}) for (boolean modalRoot : new boolean[] {true, false}) {
             SharedImageService s = service();
             SoftwareSceneScenario.SoftwareHost host = new SoftwareSceneScenario.SoftwareHost();
             java.util.List<String> calls = new java.util.ArrayList<>();
@@ -94,6 +94,7 @@ public final class ImageServiceScenario extends TestApplication {
                         .add(new SceneNode().size(Size.fixed(20), Size.fixed(10)).control(sibling));
                 image[0] = SceneImage.create(s, domain.signal(ImageSource.bitmap(pixels(16, 16))),
                         domain.signal(ImageOptions.defaults().size(Size.fixed(40), Size.fixed(30))), placeholder[0]);
+                image[0].opacity(alpha);
                 ctx.mount(image[0]);
             })) {
                 for (int i = 0; i < 40; i++) { s.drain(); page.frame();
@@ -108,12 +109,12 @@ public final class ImageServiceScenario extends TestApplication {
                         && page.pipeline().current().geometry.get(content[0]) != null, "上传占位主geometry未触达"));
                 PaintCommand command = host.last.commands().stream().filter(c -> c.kind == PaintCommand.Kind.IMAGE).findFirst().get();
                 require(command.pendingPaint != null && command.failedPaint == command.pendingPaint
-                        && command.pendingPaint.commands().stream().filter(c -> c.color == parent.color).count() == 1
-                        && command.pendingPaint.commands().stream().filter(c -> c.color == child.color).count() == 1,
+                        && command.pendingPaint.commands().stream().filter(c -> c.color == opacityColor(parent.color, alpha)).count() == 1
+                        && command.pendingPaint.commands().stream().filter(c -> c.color == opacityColor(child.color, alpha)).count() == 1,
                         "跨modal组备用计划未捕获完整P/C子树");
                 require(host.last.commands().stream().noneMatch(c -> c.kind == PaintCommand.Kind.RECT
-                        && (c.color == parent.color || c.color == child.color || c.color == parent.color + 1
-                        || c.color == child.color + 1 || c.color == parent.color + 2 || c.color == child.color + 2)),
+                        && (c.color == opacityColor(parent.color, alpha) || c.color == opacityColor(child.color, alpha) || c.color == opacityColor(parent.color + 1, alpha)
+                        || c.color == opacityColor(child.color + 1, alpha) || c.color == opacityColor(parent.color + 2, alpha) || c.color == opacityColor(child.color + 2, alpha))),
                         "备用内容或after/overlay越过IMAGE条件无条件泄漏");
                 require(parent.prepared == 1 && parent.painted == 1 && parent.after == 1 && parent.overlays == 1
                         && child.prepared == 1 && child.painted == 1 && child.after == 1 && child.overlays == 1,
@@ -124,21 +125,22 @@ public final class ImageServiceScenario extends TestApplication {
                         "备用子树afterChildren在跨modal组之前闭合: " + calls);
                 if (!modalRoot) for (CaptureProbe probe : new CaptureProbe[] {ancestor, sibling}) {
                     require(probe.prepared == 1 && probe.painted == 1 && probe.after == 1 && probe.overlays == 1, "深层备用容器调用未恰次");
-                    require(command.pendingPaint.commands().stream().filter(c -> c.color == probe.color).count() == 1
-                            && command.pendingPaint.commands().stream().filter(c -> c.color == probe.color + 1).count() == 1
-                            && host.last.commands().stream().noneMatch(c -> c.color == probe.color || c.color == probe.color + 1 || c.color == probe.color + 2),
+                    require(command.pendingPaint.commands().stream().filter(c -> c.color == opacityColor(probe.color, alpha)).count() == 1
+                            && command.pendingPaint.commands().stream().filter(c -> c.color == opacityColor(probe.color + 1, alpha)).count() == 1
+                            && host.last.commands().stream().noneMatch(c -> c.color == opacityColor(probe.color, alpha) || c.color == opacityColor(probe.color + 1, alpha) || c.color == opacityColor(probe.color + 2, alpha)),
                             "深层备用容器或普通兄弟未保持IMAGE条件所属");
                 }
                 PaintCommand overlay = host.last.commands().stream().filter(c -> c.kind == PaintCommand.Kind.IMAGE_BRANCH_OVERLAY).findFirst().get();
                 require(overlay.branchSource == command && overlay.pendingPaint == overlay.failedPaint
                         && overlay.readyOverlay == null
-                        && overlay.pendingPaint.commands().stream().filter(c -> c.color == parent.color + 2).count() == 1
-                        && overlay.pendingPaint.commands().stream().filter(c -> c.color == child.color + 2).count() == 1,
+                        && overlay.pendingPaint.commands().stream().filter(c -> c.color == opacityColor(parent.color + 2, alpha)).count() == 1
+                        && overlay.pendingPaint.commands().stream().filter(c -> c.color == opacityColor(child.color + 2, alpha)).count() == 1,
                         "备用overlay未沿同一IMAGE pending/failed选择");
                 System.out.println("IMAGE MODAL CAPTURE rootModal=" + modalRoot + " calls=" + calls + " main=" + host.last.commands().size());
             }
         }
     }
+    private static int opacityColor(int color, float alpha) { return club.heiqi.uilib.ui.scene.motion.SceneMotion.alpha(color, alpha); }
     static ImageContent pixels(int w, int h) {
         return new ImageContent(w, h, new byte[w * h * 4]);
     }
@@ -910,6 +912,8 @@ public final class ImageServiceScenario extends TestApplication {
                                     host,
                                     host,
                                     c -> {
+                                        // 此场景隔离整页遮挡与权威hover；默认过渡另由MotionScenario验证。
+                                        c.motionPolicy(() -> club.heiqi.uilib.ui.scene.motion.MotionPolicy.OFF);
                                         shown[0] = domain.signal(false);
                                         SceneNode placeholder =
                                                 club.heiqi.uilib.ui.scene.control.SceneButton

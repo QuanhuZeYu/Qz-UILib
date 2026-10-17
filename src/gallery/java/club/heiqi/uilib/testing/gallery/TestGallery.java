@@ -34,6 +34,7 @@ public final class TestGallery implements ScenePage {
         DROPPABLE("接收区","选择有效目标并放下内容"),
         SORTABLE("排序","重排列表、网格与跨容器内容"),
         SCROLL_AREA("滚动区","浏览纵横内容、嵌套视口与动态滚动条"),
+        MOTION("动效","状态、展开、重排与手势释放的自然接续"),
         MEDIA("媒体播放","播放视频与音频、暂停和跳转"),
         TOOLTIP("Tooltip","悬停与键盘提示、方向避让和完整说明");
         public final String title,purpose;
@@ -47,6 +48,7 @@ public final class TestGallery implements ScenePage {
                 case DROPPABLE:return "参考：dnd-kit / Droppable";
                 case SORTABLE:return "参考：dnd-kit / Sortable";
                 case SCROLL_AREA:return "参考：SimpleBar / Examples";
+                case MOTION:return "参考：shadcn / 声明式动效";
                 default:return "参考：Shadcn Admin / Settings";
             }
         }
@@ -55,12 +57,14 @@ public final class TestGallery implements ScenePage {
     private final Page initial;
     private Signal<Page> selected;
     private SettingsPage settingsPage;
+    private MotionPage motionPage;
+    public MotionPage motionPage(){return motionPage;}
     public TestGallery(GalleryEnvironment environment){this(environment,Page.HOME);}
     public TestGallery(GalleryEnvironment environment,Page initial){this.environment=environment;this.initial=initial;}
     @Override public void build(ScenePageContext context) {
         selected=context.domain().signal(initial);
         settingsPage=new SettingsPage(environment.settings(),() -> selected.set(Page.HOME));
-        context.own(() -> {selected=null;settingsPage=null;});
+        context.own(() -> {selected=null;settingsPage=null;motionPage=null;});
         Signal<ThemeMode> preview=context.domain().signal(null);
         ReadableSignal<ThemeMode> global=context.themeMode();
         context.domain().effect(context.scope(),() -> {global.get();preview.set(null);});
@@ -68,6 +72,8 @@ public final class TestGallery implements ScenePage {
         ReadableSignal<Boolean> dark=context.domain().computed(context.scope(),() -> mode.get().isDark());
         ReadableSignal<SceneTheme> theme=context.domain().computed(context.scope(),() -> GalleryStyle.theme(dark.get()));
         MediaPage media=new MediaPage(context,environment,theme);
+        motionPage=new MotionPage(context,theme,() -> preview.set(dark.get()?ThemeMode.LIGHT:ThemeMode.DARK));
+        context.motionPolicy(() -> selected.get()==Page.MOTION?motionPage.policy().get():club.heiqi.uilib.ui.scene.motion.MotionPolicy.NORMAL);
         Consumer<Page> navigate=target -> {if(selected.get()==Page.MEDIA&&target!=Page.MEDIA)media.stop();selected.set(target);};
         SceneNode shell=new SceneNode().size(Size.fill(1),Size.fill(1))
                 .bind(NodeBinding.value(dark,(n,value) -> n.background(value?GalleryStyle.DARK_BACKGROUND:GalleryStyle.LIGHT_BACKGROUND)));
@@ -89,6 +95,7 @@ public final class TestGallery implements ScenePage {
                 case DROPPABLE:page=DroppablePage.create(context,theme,() -> navigate.accept(Page.HOME));break;
                 case SORTABLE:page=SortablePage.create(context,theme,() -> navigate.accept(Page.HOME));break;
                 case SCROLL_AREA:page=ScrollAreaPage.create(context,theme,() -> navigate.accept(Page.HOME));break;
+                case MOTION:page=motionPage.create(() -> navigate.accept(Page.HOME));break;
                 case TOOLTIP:page=TooltipPage.create(context,theme,() -> navigate.accept(Page.HOME));break;
                 case MAILBOX:page=club.heiqi.uilib.testing.gallery.mail.MailboxPage.create(context,theme,mode,
                         () -> navigate.accept(Page.HOME),() -> preview.set(dark.get()?ThemeMode.LIGHT:ThemeMode.DARK));break;
@@ -116,7 +123,7 @@ public final class TestGallery implements ScenePage {
         SceneNode root=new SceneNode().size(Size.fill(1),Size.fill(1)).padding(28).gap(24).scrollable(true);
         root.add(GalleryStyle.header(context,theme,"探索场景","从日常应用到细节交互，选择一个场景开始体验。",null));
         root.add(group(context,theme,navigate,"应用体验","完整的工作流程，共同的界面语言。",Page.MAILBOX,Page.SETTINGS,Page.MEDIA));
-        root.add(group(context,theme,navigate,"交互组件","拖动、放置、排序与滚动，在真实内容里试一试。",Page.DRAGGABLE,Page.DROPPABLE,Page.SORTABLE,Page.SCROLL_AREA,Page.TOOLTIP));
+        root.add(group(context,theme,navigate,"交互组件","拖动、放置、排序与滚动，在真实内容里试一试。",Page.DRAGGABLE,Page.DROPPABLE,Page.SORTABLE,Page.SCROLL_AREA,Page.MOTION,Page.TOOLTIP));
         return root;
     }
     private static SceneNode group(ScenePageContext context,ReadableSignal<SceneTheme> theme,Consumer<Page> navigate,String title,String description,Page... entries){

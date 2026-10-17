@@ -46,6 +46,7 @@ public final class GlImageResources implements GlQuadRenderer.ResourceProvider, 
     }
 
     private HostItems hostItems;
+    private final GlHostItemCapture hostCapture;
 
     public void hostItems(HostItems adapter) {
         check();
@@ -67,6 +68,30 @@ public final class GlImageResources implements GlQuadRenderer.ResourceProvider, 
             listener.failure(image.content.identity, "item-render", false, failure.toString());
             return false;
         }
+    }
+
+    GlHostItemCapture.Capture captureHost(
+            club.heiqi.uilib.ui.scene.image.ImagePlacement image,
+            club.heiqi.uilib.ui.scene.layout.LayoutBox clip, int width, int height) {
+        check();
+        try {
+            return hostCapture.capture(image, clip, width, height, hostItems);
+        } catch (RuntimeException failure) {
+            active.failed.add(image.content.identity);
+            listener.failure(image.content.identity, "item-render", false, failure.toString());
+            return null;
+        }
+    }
+
+    GlQuadRenderer.Texture resolveHostCapture(long generation) {
+        check();
+        return hostCapture.resolve(generation);
+    }
+
+    /** 透明物品独立的临时GPU占用；不挤占普通图片的纹理/上传预算。 */
+    public long retainedHostCaptureBytes() {
+        check();
+        return hostCapture.retainedBytes();
     }
 
     private long bytes;
@@ -94,6 +119,12 @@ public final class GlImageResources implements GlQuadRenderer.ResourceProvider, 
             long uploadBytes,
             int uploadCalls,
             Listener listener) {
+        this(gl, maxTextures, maxBytes, uploadBytes, uploadCalls, listener, 32L * 1024 * 1024);
+    }
+
+    /** 仅透明物品按需分配合成面；预算包含RGBA8与深度/模板，普通不透明委托不分配。 */
+    public GlImageResources(GlApi gl, int maxTextures, long maxBytes, long uploadBytes,
+            int uploadCalls, Listener listener, long hostCaptureBytes) {
         if (uploadBytes < 4 || uploadCalls < 1) throw new IllegalArgumentException("无效上传预算");
         this.uploadBytes = uploadBytes;
         this.uploadCalls = uploadCalls;
@@ -102,6 +133,7 @@ public final class GlImageResources implements GlQuadRenderer.ResourceProvider, 
         this.gl = Objects.requireNonNull(gl, "gl");
         this.maxTextures = maxTextures;
         this.maxBytes = maxBytes;
+        hostCapture = new GlHostItemCapture(gl, hostCaptureBytes);
     }
 
     private void check() {
@@ -311,6 +343,7 @@ public final class GlImageResources implements GlQuadRenderer.ResourceProvider, 
         if (closed) return;
         check();
         if (active != null) throw new IllegalStateException("先结束图像Frame");
+        hostCapture.close();
         for (Resident resident : cache.values()) gl.glDeleteTextures(resident.texture);
         cache.clear();
         bytes = 0;

@@ -18,8 +18,14 @@ final class ChildrenBinding implements NodeBinding {
 
     private final ReadableSignal<List<SceneNode>> source;
     private final boolean owned;
+    private final ReadableSignal<club.heiqi.uilib.ui.scene.motion.PresenceOptions> exits;
 
     ChildrenBinding(ReadableSignal<List<SceneNode>> source, boolean owned) {
+        this(source, owned, null);
+    }
+    ChildrenBinding(ReadableSignal<List<SceneNode>> source, boolean owned,
+            ReadableSignal<club.heiqi.uilib.ui.scene.motion.PresenceOptions> exits) {
+        this.exits = exits;
         this.source = source;
         this.owned = owned;
     }
@@ -27,16 +33,28 @@ final class ChildrenBinding implements NodeBinding {
     @Override
     public BindingActivation activate(SceneRuntime runtime, SceneNode node, Owner owner) {
         State state = (State) node.declarationState(this, State::new);
-        return NodeBinding.value(source, (parent, children) -> {
+        AutoCloseable registration = exits == null ? () -> {} : runtime.registerPresenceSource(node, state);
+        owner.own(registration);
+        BindingActivation value = NodeBinding.value(source, (parent, children) -> {
             List<SceneNode> next = new ArrayList<>();
             for (SceneNode child : children) {
                 if (state.associated.contains(child) && child.transferred()
                         && child.logicalOwner() != state) continue;
                 next.add(child);
             }
-            runtime.reconcile(parent, next, state, owned);
+            runtime.reconcile(parent, next, state, owned, exits == null ? null : exits.get(), null);
             state.associated.clear();
             state.associated.addAll(children);
         }).activate(runtime, node, owner);
+        return new BindingActivation() {
+            public void refresh() { value.refresh(); }
+            public void close() {
+                try { value.close(); } finally {
+                    try { registration.close(); }
+                    catch (RuntimeException | Error failure) { throw failure; }
+                    catch (Exception failure) { throw new IllegalStateException("退场声明释放失败", failure); }
+                }
+            }
+        };
     }
 }

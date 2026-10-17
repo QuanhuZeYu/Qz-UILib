@@ -675,6 +675,26 @@ public final class TextLayout {
 
     /** 字体服务可保留本次已经解析的基础样式实例；其余定位属性必须等价。 */
     public TextLayout withColors(TextStyle baseStyle, java.util.function.IntUnaryOperator colorAt) {
+        return withColors(baseStyle, colorAt, value -> value);
+    }
+
+    /** 只投影绘制 alpha，富文本前景与高亮分别保持原颜色，不重新整形。 */
+    public TextLayout withOpacity(float opacity) {
+        if (opacity == 1) return this;
+        java.util.NavigableMap<Integer, Integer> colors = new java.util.TreeMap<>();
+        for (Line line : lines) {
+            for (Glyph glyph : line.glyphs()) colors.put(glyph.logicalStart,
+                    glyph.resolvedStyle == null ? style.color : glyph.resolvedStyle.color);
+            for (Cluster cluster : line.clusters()) colors.put(cluster.logicalStart, cluster.style.color);
+        }
+        return withColors(style.withColor(club.heiqi.uilib.ui.scene.motion.SceneMotion.alpha(style.color, opacity)), offset -> {
+            java.util.Map.Entry<Integer, Integer> color = colors.floorEntry(offset);
+            return club.heiqi.uilib.ui.scene.motion.SceneMotion.alpha(color == null ? style.color : color.getValue(), opacity);
+        }, color -> club.heiqi.uilib.ui.scene.motion.SceneMotion.alpha(color, opacity));
+    }
+
+    private TextLayout withColors(TextStyle baseStyle, java.util.function.IntUnaryOperator colorAt,
+            java.util.function.IntUnaryOperator highlightColor) {
         Objects.requireNonNull(baseStyle, "baseStyle");
         if (!style.sameLayout(baseStyle))
             throw new IllegalArgumentException("颜色绑定不能改变定位样式");
@@ -724,7 +744,7 @@ public final class TextLayout {
                 }
             }
             for (Decoration d : line.decorations()) {
-                int color = d.kind == Decoration.Kind.HIGHLIGHT ? d.color : colorAt.applyAsInt(d.logicalStart);
+                int color = d.kind == Decoration.Kind.HIGHLIGHT ? highlightColor.applyAsInt(d.color) : colorAt.applyAsInt(d.logicalStart);
                 if (d.color == color) decorations.add(d);
                 else {
                     changed = true;

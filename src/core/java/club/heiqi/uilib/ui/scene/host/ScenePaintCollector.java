@@ -21,11 +21,17 @@ import java.util.Set;
 /** 消费已准备几何，收集控件与备用内容；输入结算、布局发布及呈现代际仍归帧管线。 */
 final class ScenePaintCollector {
     private final SceneLayoutEngine layout;
+    private final club.heiqi.uilib.ui.scene.runtime.SceneRuntime runtime;
+    private final Map<SceneNode, club.heiqi.uilib.ui.scene.runtime.PresencePaint> presenceSnapshots = new IdentityHashMap<>();
+    private SceneNode capturePresenceRoot;
+    Map<SceneNode, club.heiqi.uilib.ui.scene.runtime.PresencePaint> presenceSnapshots() { return presenceSnapshots; }
+    void clear() { presenceSnapshots.clear(); capturePresenceRoot = null; }
     private final SceneTextMeasurer text;
     private long nextPaintNanos=Long.MAX_VALUE;
     long nextPaintNanos() { return nextPaintNanos; }
 
-    ScenePaintCollector(SceneLayoutEngine layout, SceneTextMeasurer text) {
+    ScenePaintCollector(club.heiqi.uilib.ui.scene.runtime.SceneRuntime runtime, SceneLayoutEngine layout, SceneTextMeasurer text) {
+        this.runtime = runtime;
         this.layout = layout;
         this.text = text;
     }
@@ -40,6 +46,31 @@ final class ScenePaintCollector {
             append(content, layers.content);
             append(overlay, layers.overlay);
         }
+        presenceSnapshots.clear();
+        for (SceneNode node : runtime.presenceCaptureNodes()) {
+            if (geometry.get(node) == null) continue;
+            List<SceneGeometryView.Entry> subtree = new ArrayList<>();
+            for (SceneGeometryView.Entry entry : geometry.sourceOrdered()) if (inSubtree(entry.node, node)) subtree.add(entry);
+            SceneGeometryView intrinsic = intrinsicCapture(node, subtree, geometry);
+            List<club.heiqi.uilib.ui.scene.runtime.PresencePaint.Part> parts = new ArrayList<>(), overlays = new ArrayList<>();
+            capturePresenceRoot = node;
+            try {
+                Set<SceneNode> capturedPresence = identitySet();
+                for (SceneGeometryView.Group group : geometry.groups()) {
+                    List<SceneGeometryView.Entry> entries = new ArrayList<>();
+                    for (SceneGeometryView.Entry entry : group.entries) if (inSubtree(entry.node, node)) entries.add(intrinsic.get(entry.node));
+                    if (entries.isEmpty()) continue;
+                    PaintLayers layer = collectEntries(entries, intrinsic, metricsRevision, capturedPresence, node.parent());
+                    boolean escaped = group.layer != null && inSubtree(group.layer, node);
+                    parts.add(new club.heiqi.uilib.ui.scene.runtime.PresencePaint.Part(layer.content, escaped));
+                    overlays.add(new club.heiqi.uilib.ui.scene.runtime.PresencePaint.Part(layer.overlay, escaped));
+                }
+                parts.addAll(overlays);
+                presenceSnapshots.put(node, new club.heiqi.uilib.ui.scene.runtime.PresencePaint(parts));
+            }
+            finally { capturePresenceRoot = null; }
+        }
+        append(content, runtime.retainedPresencePaint(geometry));
         // 控件内容保持树序；overlay在全页内容之后保持原overlay树序。
         append(content, overlay.build());
         return content.build();
@@ -57,6 +88,11 @@ final class ScenePaintCollector {
     private PaintLayers collectEntries(
             List<SceneGeometryView.Entry> ordered, SceneGeometryView geometry,
             long metricsRevision, Set<SceneNode> captured) {
+        return collectEntries(ordered, geometry, metricsRevision, captured, null);
+    }
+
+    private PaintLayers collectEntries(List<SceneGeometryView.Entry> ordered, SceneGeometryView geometry,
+            long metricsRevision, Set<SceneNode> captured, SceneNode opacityStop) {
         PaintPlanBuilder content = new PaintPlanBuilder(), overlay = new PaintPlanBuilder();
         Map<SceneNode, PaintPlan> childOverlays = new IdentityHashMap<>();
         ArrayDeque<SceneNode> open = new ArrayDeque<>();
@@ -64,10 +100,12 @@ final class ScenePaintCollector {
             if (insideCaptured(entry.node, captured)) continue;
             // 只消费已定位条目；按祖先关系关闭内容栈，不重走children补出幻影。
             while (!open.isEmpty() && !inSubtree(entry.node, open.peek()))
-                paintAfterChildren(open.pop(), geometry, content);
+                paintAfterChildren(open.pop(), geometry, content, opacityStop);
             open.push(entry.node);
             if (entry.node.control() == null) {
-                paintUncontrolled(entry, content);
+                PaintPlanBuilder own = new PaintPlanBuilder();
+                paintUncontrolled(entry, own);
+                append(content, opacity(entry.node, own.build(), opacityStop));
                 continue;
             }
             entry.node.control().preparePaint(entry.node, geometry, text, metricsRevision);
@@ -76,18 +114,21 @@ final class ScenePaintCollector {
             entry.node.control().paint(entry.node, geometry, own,
                     fallback == null ? null : fallback.content);
             PaintPlan ownPlan = own.build();
-            append(content, ownPlan);
+            PaintPlan.Presentation projection = projection(entry.node, opacityStop);
+            append(content, projection.apply(ownPlan));
             if (!entry.node.control().paintChildren(entry.node))
                 for (SceneNode child : entry.node.children()) captured.add(child);
             if (fallback != null && !fallback.overlay.commands().isEmpty())
-                childOverlays.put(entry.node, branchOverlay(ownPlan, fallback));
+                childOverlays.put(entry.node, projection.apply(branchOverlay(ownPlan, fallback)));
         }
-        while (!open.isEmpty()) paintAfterChildren(open.pop(), geometry, content);
+        while (!open.isEmpty()) paintAfterChildren(open.pop(), geometry, content, opacityStop);
         for (SceneGeometryView.Entry entry : ordered) {
             if (insideCaptured(entry.node, captured)) continue;
             if(entry.node.runtime()!=null)entry.node.runtime().paintTooltip(entry.node,overlay);
             if(entry.node.control()==null)continue;
-            entry.node.control().paintOverlay(entry.node, geometry, overlay, text);
+            PaintPlanBuilder ownOverlay = new PaintPlanBuilder();
+            entry.node.control().paintOverlay(entry.node, geometry, ownOverlay, text);
+            append(overlay, opacity(entry.node, ownOverlay.build(), opacityStop));
             PaintPlan childOverlay = childOverlays.get(entry.node);
             if (childOverlay != null) append(overlay, childOverlay);
             LayoutBox visible=entry.clip==null?entry.box:entry.box.intersect(entry.clip);
@@ -117,7 +158,41 @@ final class ScenePaintCollector {
         for (SceneGeometryView.Entry candidate : source)
             if (inSubtree(candidate.node, child)) entries.add(candidate);
         // 每次备用捕获独立消费子树，不继承外层已标记的captured根。
-        return collectEntries(entries, context, metricsRevision, identitySet());
+        return collectEntries(entries, context, metricsRevision, identitySet(), entry.node);
+    }
+
+    /** 退场片段只冻结自身裁剪；祖先视口在回放时按当前几何裁决，不能随内容一起平移。 */
+    private static SceneGeometryView intrinsicCapture(SceneNode root, List<SceneGeometryView.Entry> entries, SceneGeometryView current) {
+        Map<SceneNode, SceneGeometryView.Entry> intrinsic = new IdentityHashMap<>();
+        for (SceneGeometryView.Entry entry : entries) {
+            LayoutBox clip = null;
+            SceneNode boundary = current.layerBoundary(entry.node);
+            for (SceneNode at = entry.node; at != null && at != root.parent(); at = at.parent()) {
+                if (!at.clip() && !at.scrollable()) { if (at == boundary) break; else continue; }
+                SceneGeometryView.Entry ancestor = current.get(at);
+                if (ancestor == null) continue;
+                LayoutBox own = ancestor.box;
+                clip = clip == null ? own : clip.intersect(own);
+                if (at == boundary) break;
+            }
+            intrinsic.put(entry.node, new SceneGeometryView.Entry(entry.node, entry.box, clip, entry.text, entry.scrollOffset, entry.scrollMaximum));
+        }
+        return new SceneGeometryView() {
+            public Entry get(SceneNode node) { Entry own = intrinsic.get(node); return own == null ? current.get(node) : own; }
+            // 输入与遮挡仍用原批完整范围，只有本片段绘制的get使用内在裁剪。
+            public List<Entry> ordered() { return current.ordered(); }
+            public List<Entry> sourceOrdered() {
+                List<Entry> source = new ArrayList<>();
+                for (Entry entry : current.sourceOrdered()) source.add(get(entry.node));
+                return source;
+            }
+            public LayoutBox viewport() { return current.viewport(); }
+            public SceneNode activeModal() { return current.activeModal(); }
+            public SceneNode layerBoundary(SceneNode node) { return current.layerBoundary(node); }
+            public SceneNode logicalScope(SceneNode node) { return current.logicalScope(node); }
+            public boolean layerSourceAvailable(SceneNode node) { return current.layerSourceAvailable(node); }
+            public club.heiqi.uilib.ui.scene.control.SceneLayer.Policy layerPolicy(SceneNode node) { return current.layerPolicy(node); }
+        };
     }
 
     private static SceneGeometryView fallbackGeometry(
@@ -163,9 +238,21 @@ final class ScenePaintCollector {
                 Math.max(0, entry.box.height - padding * 2)), entry.clip, entry.text));
     }
 
-    private static void paintAfterChildren(
-            SceneNode node, SceneGeometryView geometry, PaintPlanBuilder target) {
-        if (node.control() != null) node.control().paintAfterChildren(node, geometry, target);
+    private void paintAfterChildren(
+            SceneNode node, SceneGeometryView geometry, PaintPlanBuilder target, SceneNode opacityStop) {
+        if (node.control() != null) {
+            PaintPlanBuilder own = new PaintPlanBuilder();
+            node.control().paintAfterChildren(node, geometry, own);
+            append(target, opacity(node, own.build(), opacityStop));
+        }
+    }
+
+    private PaintPlan opacity(SceneNode node, PaintPlan plan, SceneNode stop) { return projection(node, stop).apply(plan); }
+    private PaintPlan.Presentation projection(SceneNode node, SceneNode stop) {
+        float opacity = 1;
+        for (SceneNode at = node; at != stop && at != null; at = at.parent())
+            opacity *= at.opacity() * (at == capturePresenceRoot ? 1 : runtime.presenceOpacity(at));
+        return PaintPlan.presentation(0, 0, opacity, null);
     }
 
     private static void append(PaintPlanBuilder target, PaintPlan plan) {

@@ -11,6 +11,7 @@
 | 需要查清的责任 | 唯一归属 | 维护范围 |
 | --- | --- | --- |
 | 内部协作者如何交接 | [内部协作职责](<scene/2026-10-14-uilib-internal-responsibilities-spec.md>) | 挂载、帧协调、布局、绘制与编辑协作者的职责 |
+| 状态、布局和手势如何连续运动 | [声明式弹性 UI 动效](<scene/2026-10-17-uilib-motion-spec.md>) | 通用策略、统一时间、布局呈现、显式存在性与手势释放 |
 | 普通容器如何排列 | [常规布局](<scene/2026-10-13-uilib-layout-spec.md>) | 横纵排列、响应网格与自定义容器接入 |
 | 增删、重排、折叠和移动是否延续节点 | [动态结构](<scene/uilib-dynamic-structure-spec.md>) | 稳定对应关系、拥有、退出及同页明确移动 |
 | 浮层如何锚定、裁剪和参与输入 | [所属层与输入范围](<scene/2026-10-13-uilib-layer-input-spec.md>) | 来源空间、呈现序、层边界与有效输入 |
@@ -26,7 +27,7 @@
 | 需要查清的责任 | 唯一归属 | 维护范围 |
 | --- | --- | --- |
 | 语言资料与翻译结果从哪里来 | [语言与翻译](<content/2026-10-07-uilib-localization-spec.md>) | 独立资源流、选择/重载、键和参数、文案派生 |
-| 标准控件如何呈现与过渡 | [主题与标准控件](<content/2026-10-07-uilib-theme-spec.md>) | 全局主题、控件文案/焦点线索、复选/图标、有限过渡和被动悬停 |
+| 标准控件如何呈现与过渡 | [主题与标准控件](<content/2026-10-07-uilib-theme-spec.md>) | 全局主题、控件文案/焦点线索、复选/图标、默认动效角色和被动悬停 |
 | 共同文本和自有标签如何解释 | [文本内容与富文本](<content/2026-10-07-uilib-text-content-spec.md>) | 共同内容、文本几何、链接身份、PLAIN/RICH_TAGS 与 DSL |
 | Markdown 文档如何解释 | [Markdown 文档](<content/uilib-markdown-spec.md>) | 固定 VS Code 参照、文档/HTML/frontmatter、公式入口与明确差异 |
 | 公式内部如何解析和布局 | [数学内容与排版](<content/uilib-math-content-spec.md>) | 公式语法、数学盒、嵌入、宏和完整交付范围 |
@@ -80,7 +81,6 @@
 | 大列表更新和滚动性能 | [大列表性能目标](<proposals/2026-10-14-uilib-large-list-performance-spec.md>) | 证据驱动的热点选择与收益验收 |
 | 可交互长集合的候选机制 | [虚拟集合专题](<proposals/2026-10-14-uilib-virtual-list-spec.md>) | 离屏、可变行高、导航和生命周期的设计输入 |
 | 后续真实媒体案例 | [媒体案例提案](<proposals/uilib-media-app-cases-proposal.md>) | YouTube/Bilibili 候选路线，独立于收件箱认可范围 |
-| 完整的声明式弹性 UI 动效 | [动效体系草案](<proposals/2026-10-17-uilib-motion-spec.md>) | 已确认完整范围与默认启用方式；运动、布局、手势和存在性合同待审阅 |
 
 ## 如何维护单一权威
 

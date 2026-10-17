@@ -5,7 +5,12 @@ import club.heiqi.uilib.ui.scene.text.TextStyle;
 
 /** 标准控件的不可变主题值；字号派生用withTextStyle保留其余样式。 */
 public final class SceneTheme {
+    private static final club.heiqi.uilib.ui.scene.motion.MotionSpec DEFAULT_FEEDBACK =
+            club.heiqi.uilib.ui.scene.motion.MotionSpec.tween(140_000_000L, club.heiqi.uilib.ui.scene.motion.MotionSpec.SMOOTH);
+    private static final club.heiqi.uilib.ui.scene.motion.MotionSpec DEFAULT_SPATIAL =
+            club.heiqi.uilib.ui.scene.motion.MotionSpec.spring(.28, .82);
     public final TextStyle textStyle;
+    public final club.heiqi.uilib.ui.scene.motion.MotionSpec feedbackMotion, spatialMotion;
     public final int panel, button, hover, pressed, focus, disabled, disabledText;
     public final int tooltip, tooltipText, padding, gap;
 
@@ -22,6 +27,16 @@ public final class SceneTheme {
             int tooltipText,
             int padding,
             int gap) {
+        this(textStyle, panel, button, hover, pressed, focus, disabled, disabledText, tooltip,
+                tooltipText, padding, gap,
+                DEFAULT_FEEDBACK, DEFAULT_SPATIAL);
+    }
+
+    private SceneTheme(TextStyle textStyle, int panel, int button, int hover, int pressed, int focus,
+            int disabled, int disabledText, int tooltip, int tooltipText, int padding, int gap,
+            club.heiqi.uilib.ui.scene.motion.MotionSpec feedback, club.heiqi.uilib.ui.scene.motion.MotionSpec spatial) {
+        this.feedbackMotion = Objects.requireNonNull(feedback, "主题反馈动效");
+        this.spatialMotion = Objects.requireNonNull(spatial, "主题空间动效");
         this.textStyle = Objects.requireNonNull(textStyle, "textStyle");
         if (padding < 0 || gap < 0) throw new IllegalArgumentException("主题间距不能为负");
         this.panel = panel;
@@ -69,6 +84,12 @@ public final class SceneTheme {
                 8);
     }
 
+    public SceneTheme withMotion(club.heiqi.uilib.ui.scene.motion.MotionSpec feedback,
+            club.heiqi.uilib.ui.scene.motion.MotionSpec spatial) {
+        return new SceneTheme(textStyle, panel, button, hover, pressed, focus, disabled, disabledText,
+                tooltip, tooltipText, padding, gap, feedback, spatial);
+    }
+
     public SceneTheme withTextStyle(TextStyle style) {
         return new SceneTheme(
                 style,
@@ -82,6 +103,6 @@ public final class SceneTheme {
                 tooltip,
                 tooltipText,
                 padding,
-                gap);
+                gap, feedbackMotion, spatialMotion);
     }
 }

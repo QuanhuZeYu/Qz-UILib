@@ -95,8 +95,8 @@ public final class SceneGrid {
                     int slot = baseWidth + (column < remainder ? 1 : 0);
                     MeasuredSize intrinsic = children.measureChild(child,
                             new Constraints(slot, Integer.MAX_VALUE));
-                    widths[column] = child.width().mode == Size.Mode.FILL
-                            ? child.width().constrain(slot) : intrinsic.width;
+                    widths[column] = children.sizeIntent(child, SceneNode.Axis.ROW).mode == Size.Mode.FILL
+                            ? children.sizeIntent(child, SceneNode.Axis.ROW).constrain(slot) : intrinsic.width;
                     // 未确定行高时不给 FILL 高度分配父剩余空间；真实高度按最终合法宽度求解。
                     MeasuredSize actual = children.measureChild(child,
                             new Constraints(widths[column], Integer.MAX_VALUE));
@@ -106,8 +106,8 @@ public final class SceneGrid {
                 int x = 0;
                 for (int column = 0; column < count; column++) {
                     SceneNode child = visible.get(start + column);
-                    int height = child.height().mode == Size.Mode.FILL
-                            ? child.height().constrain(rowHeight) : heights[column];
+                    int height = children.sizeIntent(child, SceneNode.Axis.COLUMN).mode == Size.Mode.FILL
+                            ? children.sizeIntent(child, SceneNode.Axis.COLUMN).constrain(rowHeight) : heights[column];
                     if (placed != null) placed.add(new ChildPlacements.Entry(child,
                             new LayoutBox(padding + x, padding + y, widths[column], height)));
                     // 最后一行沿完整网格的槽宽，硬子项溢出不改变下一列位置。

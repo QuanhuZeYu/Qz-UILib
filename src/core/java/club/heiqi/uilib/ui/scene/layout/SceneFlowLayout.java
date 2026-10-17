@@ -22,18 +22,18 @@ public final class SceneFlowLayout {
         }
         int gaps = Math.max(0, nodes.size() - 1) * node.gap();
         // 有限高度的 COLUMN 在测量期也分配 FILL，才能向父自然宽传播图像等真实比例。
-        int[] allocated = row ? allocate(nodes, measured, Math.max(0, body.availableWidth - gaps), true)
+        int[] allocated = row ? allocate(children, nodes, measured, Math.max(0, body.availableWidth - gaps), true)
                 : body.availableHeight != Integer.MAX_VALUE
-                    ? allocate(nodes, measured, Math.max(0, body.availableHeight - gaps), false) : null;
+                    ? allocate(children, nodes, measured, Math.max(0, body.availableHeight - gaps), false) : null;
         int sum = 0, maximum = 0;
         for (int i = 0; i < nodes.size(); i++) {
             SceneNode child = nodes.get(i);
             int ah = row ? body.availableHeight : allocated == null ? Integer.MAX_VALUE : allocated[i];
             MeasuredSize h = children.measureChild(child, new Constraints(body.availableWidth, ah));
-            int cw = row ? allocated[i] : cross(child.width(), h.width, body.availableWidth);
+            int cw = row ? allocated[i] : cross(children.sizeIntent(child, SceneNode.Axis.ROW), h.width, body.availableWidth);
             MeasuredSize actual = children.measureChild(child, new Constraints(cw, ah));
             int ch = !row && allocated != null ? allocated[i]
-                    : child.height().constrain(child.height().mode == Size.Mode.FIXED ? child.height().value : actual.height);
+                    : children.sizeIntent(child, SceneNode.Axis.COLUMN).constrain(children.sizeIntent(child, SceneNode.Axis.COLUMN).mode == Size.Mode.FIXED ? children.sizeIntent(child, SceneNode.Axis.COLUMN).value : actual.height);
             sum += row ? cw : ch;
             maximum = Math.max(maximum, row ? ch : cw);
         }
@@ -48,7 +48,7 @@ public final class SceneFlowLayout {
             MeasuredSize m = children.measureChild(child, new Constraints(iw, row ? ih : Integer.MAX_VALUE));
             measured.add(new int[] {m.width, m.height});
         }
-        int[] allocated = allocate(nodes, measured, Math.max(0, (row ? iw : ih)
+        int[] allocated = allocate(children, nodes, measured, Math.max(0, (row ? iw : ih)
                 - Math.max(0, nodes.size() - 1) * node.gap()), row);
         List<ChildPlacements.Entry> placed = new ArrayList<>();
         int cursor = 0;
@@ -56,9 +56,9 @@ public final class SceneFlowLayout {
             SceneNode child = nodes.get(i);
             int ah = row ? ih : allocated[i];
             MeasuredSize h = children.measureChild(child, new Constraints(iw, ah));
-            int cw = row ? allocated[i] : cross(child.width(), h.width, iw);
+            int cw = row ? allocated[i] : cross(children.sizeIntent(child, SceneNode.Axis.ROW), h.width, iw);
             MeasuredSize actual = children.measureChild(child, new Constraints(cw, ah));
-            int ch = row ? cross(child.height(), actual.height, ih) : allocated[i];
+            int ch = row ? cross(children.sizeIntent(child, SceneNode.Axis.COLUMN), actual.height, ih) : allocated[i];
             placed.add(new ChildPlacements.Entry(child, new LayoutBox(node.padding() + (row ? cursor : 0),
                     node.padding() + (row ? 0 : cursor), cw, ch)));
             cursor += allocated[i] + node.gap();
@@ -67,12 +67,12 @@ public final class SceneFlowLayout {
     }
     /** 有界水位分配：固定占用保留，触及边界的填充退出，余数沿子序分配。 */
     static int[] allocate(
-            List<SceneNode> nodes, List<int[]> measured, int available, boolean row) {
+            SceneChildMeasurer children, List<SceneNode> nodes, List<int[]> measured, int available, boolean row) {
         int[] result = new int[nodes.size()];
         List<Integer> active = new ArrayList<>();
         int remaining = available;
         for (int i = 0; i < nodes.size(); i++) {
-            Size size = row ? nodes.get(i).width() : nodes.get(i).height();
+            Size size = row ? children.sizeIntent(nodes.get(i), SceneNode.Axis.ROW) : children.sizeIntent(nodes.get(i), SceneNode.Axis.COLUMN);
             if (size.mode == Size.Mode.FILL) active.add(i);
             else {
                 result[i] =
@@ -87,7 +87,7 @@ public final class SceneFlowLayout {
             long minimum = 0, maximum = 0;
             double upper = 0;
             for (int i : active) {
-                Size size = row ? nodes.get(i).width() : nodes.get(i).height();
+                Size size = row ? children.sizeIntent(nodes.get(i), SceneNode.Axis.ROW) : children.sizeIntent(nodes.get(i), SceneNode.Axis.COLUMN);
                 minimum += size.min;
                 maximum += size.max;
                 upper = Math.max(upper, (double) size.max / size.value);
@@ -98,7 +98,7 @@ public final class SceneFlowLayout {
             for (int step = 0; step < 80; step++) {
                 double water = (lower + upper) / 2, total = 0;
                 for (int i : active) {
-                    Size size = row ? nodes.get(i).width() : nodes.get(i).height();
+                    Size size = row ? children.sizeIntent(nodes.get(i), SceneNode.Axis.ROW) : children.sizeIntent(nodes.get(i), SceneNode.Axis.COLUMN);
                     total += Math.max(size.min, Math.min(size.max, water * size.value));
                 }
                 if (total < target) lower = water;
@@ -107,7 +107,7 @@ public final class SceneFlowLayout {
             long fixed = 0, freeWeights = 0;
             List<Integer> free = new ArrayList<>();
             for (int i : active) {
-                Size size = row ? nodes.get(i).width() : nodes.get(i).height();
+                Size size = row ? children.sizeIntent(nodes.get(i), SceneNode.Axis.ROW) : children.sizeIntent(nodes.get(i), SceneNode.Axis.COLUMN);
                 double share = upper * size.value;
                 if (share <= size.min) {
                     result[i] = size.min;
@@ -122,14 +122,14 @@ public final class SceneFlowLayout {
             }
             // 水位只用于识别约束区间；自由项用整数有理分配，避免浮点整数边界错分余数。
             for (int i : free) {
-                Size size = row ? nodes.get(i).width() : nodes.get(i).height();
+                Size size = row ? children.sizeIntent(nodes.get(i), SceneNode.Axis.ROW) : children.sizeIntent(nodes.get(i), SceneNode.Axis.COLUMN);
                 result[i] = size.constrain((int) ((target - fixed) * size.value / freeWeights));
             }
             long distributed = 0;
             for (int i : active) distributed += result[i];
             long rest = target - distributed;
             for (int i : active) {
-                Size size = row ? nodes.get(i).width() : nodes.get(i).height();
+                Size size = row ? children.sizeIntent(nodes.get(i), SceneNode.Axis.ROW) : children.sizeIntent(nodes.get(i), SceneNode.Axis.COLUMN);
                 if (rest > 0 && result[i] < size.max) {
                     result[i]++;
                     rest--;

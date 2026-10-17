@@ -45,6 +45,9 @@ public final class ScenePageContext {
     public ReadableSignal<ThemeMode> themeMode() { return themeMode; }
     public ReadableSignal<SceneTheme> theme() { return theme; }
 
+    public ReadableSignal<club.heiqi.uilib.ui.scene.motion.MotionPolicy> motionPolicy() { return runtime.motionPolicy(); }
+    public void motionPolicy(ReadableSignal<club.heiqi.uilib.ui.scene.motion.MotionPolicy> source) { runtime.motionPolicy(source); }
+
     /** 显式选择本页唯一来源，绑定归页面；共享流仅在明确 own 时才由页面关闭。 */
     public LocalizationBinding localization(LocalizationSource source) {
         domain.checkWrite();

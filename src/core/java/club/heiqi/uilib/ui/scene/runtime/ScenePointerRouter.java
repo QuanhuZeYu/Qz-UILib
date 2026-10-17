@@ -13,6 +13,9 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
  * owner失活只释放目标，物理集合继续保留；因此第二键尾部不能变成新手势。 */
 public final class ScenePointerRouter implements AutoCloseable {
     private final SceneRuntime runtime;
+    private final club.heiqi.uilib.ui.reactive.Signal<SceneNode> hoverTarget, pressedTarget;
+    public club.heiqi.uilib.ui.reactive.ReadableSignal<SceneNode> hoverTarget() { return hoverTarget; }
+    public club.heiqi.uilib.ui.reactive.ReadableSignal<SceneNode> pressedTarget() { return pressedTarget; }
     private final SceneHitTester hits = new SceneHitTester();
     private final SceneWheelRouting wheel;
     private final Set<Integer> buttons = new HashSet<>();
@@ -44,6 +47,7 @@ public final class ScenePointerRouter implements AutoCloseable {
         hoverNodes.put(node, hoverNodes.getOrDefault(node, 0) + 1); passive.clear(); return interest;
     }
     private void publishHover(SceneGeometryView geometry) {
+        hoverTarget.set(hovered(geometry));
         if(hoverInterests.isEmpty())return;
         SceneNode target = closed || !positionKnown ? null : passive.within(geometry);
         for(HoverInterest interest:new java.util.ArrayList<>(hoverInterests)) {
@@ -114,6 +118,8 @@ public final class ScenePointerRouter implements AutoCloseable {
 
     ScenePointerRouter(SceneRuntime runtime) {
         this.runtime = runtime;
+        hoverTarget = runtime.domain().signal(null);
+        pressedTarget = runtime.domain().signal(null);
         wheel = new SceneWheelRouting(runtime, hits);
     }
 
@@ -121,6 +127,7 @@ public final class ScenePointerRouter implements AutoCloseable {
     private void setOwner(MountHandle target) {
         if (owner == target) return;
         owner = target;
+        pressedTarget.set(target == null ? null : target.node());
         if (target == null) ownerTarget = null;
         runtime.invalidatePaint();
     }
@@ -168,6 +175,7 @@ public final class ScenePointerRouter implements AutoCloseable {
     public void route(ScenePointerEvent event, SceneGeometryView geometry) {
         checkAccess();
         prepare(geometry);
+        if (event.kind == ScenePointerEvent.Kind.DOWN || event.kind == ScenePointerEvent.Kind.CANCEL) runtime.cancelScrollMotions();
         if (event.kind == ScenePointerEvent.Kind.MOVE || event.kind == ScenePointerEvent.Kind.SCROLL)
             wheel.pointerMoved(event.x, event.y);
         else wheel.clear();
