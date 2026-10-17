@@ -70,6 +70,13 @@ val manualTestJar by tasks.registering(ReobfuscatedJar::class) {
 }
 
 
+// 测试广场的 Desktop 消费者和 MC 附加包在显式入口聚合，继续与 assemble/publish 隔离。
+val galleryBuild by tasks.registering {
+    group = "build"
+    description = "构建统一测试广场的 Desktop 运行组合与 MC 人工附加包"
+    dependsOn("installDesktop", "desktopTestJar", manualTestJar)
+}
+
 // ============================================================================
 // 内部开发工具（club.heiqi.uilib.internal.devtools）从正式产物排除；
 // 人工验收包在本脚本前段单独装配，不复制生产核心。

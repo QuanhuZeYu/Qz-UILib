@@ -171,50 +171,32 @@ fun desktopApplication(name: String, summary: String, verify: Boolean) = tasks.r
     if (mac) jvmArgs("-XstartOnFirstThread")
     workingDir(layout.buildDirectory.dir("install/desktop"))
 }
-// 人工入口统一装配当前共享广场，仍只在测试消费者 jar 中携带页面和样本。
-fun galleryApplication(name: String, summary: String) = desktopApplication(name, summary, true).apply { configure {
-    group = "application"
-    mainClass.set("club.heiqi.uilib.host.desktop.DesktopGallery")
-} }
-val desktopRun = galleryApplication("desktopRun", "打开当前共享测试广场的场景目录，不启动MC")
+// 人工功能入口只打开共享目录；具体案例由广场导航选择。
 val runDesktopSettings = desktopApplication("runDesktopSettings", "以正式发行组合打开共享配置页，不启动MC", false).apply { configure {
     mainClass.set(desktopSettingsMain)
 }
 }
 val desktopVerify = desktopApplication("desktopVerify", "以正式发行组合运行有限真实窗口绘制交互与释放验收", true)
-val desktopGallery = galleryApplication("desktopGallery", "打开与MC和自动机共用的测试广场")
-val desktopMedia = galleryApplication("desktopMedia", "打开共享广场的媒体播放页").apply { configure { args("--media") } }
+val desktopGallery = desktopApplication("desktopGallery", "打开统一测试广场，在目录选择邮箱、配置、交互或媒体案例", true).apply { configure {
+    group = "application"
+    mainClass.set("club.heiqi.uilib.host.desktop.DesktopGallery")
+} }
 val desktopGalleryMediaVerify = desktopApplication("desktopGalleryMediaVerify", "真实广场媒体输入、播放与离页关闭验收", true).apply { configure {
     mainClass.set("club.heiqi.uilib.host.desktop.DesktopGalleryMediaVerification")
     args(layout.buildDirectory.dir("reports/gallery-media").get().asFile.absolutePath)
-} }
-tasks.named("check") { dependsOn(desktopGalleryMediaVerify) }
-val desktopMailbox = galleryApplication("desktopMailbox", "直接打开与MC共用的收件箱案例").apply { configure {
-    args("--mailbox")
-} }
-val desktopDraggable = galleryApplication("desktopDraggable", "打开用户参考的原生Draggable案例").apply { configure {
-    args("--draggable")
-} }
-val desktopDroppable = galleryApplication("desktopDroppable", "打开原生Droppable接收区案例").apply { configure {
-    args("--droppable")
-} }
-val desktopSortable = galleryApplication("desktopSortable", "打开原生Sortable多布局排序案例").apply { configure {
-    args("--sortable")
 } }
 val desktopDropSortVerify = desktopApplication("desktopDropSortVerify", "隐藏真实回调验收接收区与多布局排序", true).apply { configure {
     mainClass.set("club.heiqi.uilib.host.desktop.DesktopDropSortVerification")
     args(layout.buildDirectory.dir("reports/drop-sort-desktop").get().asFile.absolutePath)
     mustRunAfter("desktopDraggableDeepVerify")
 } }
-tasks.named("check") { dependsOn(desktopDropSortVerify) }
-val desktopScrollArea = galleryApplication("desktopScrollArea", "打开 SimpleBar 参考滚动区案例").apply { configure { args("--scroll-area") } }
 val desktopScrollAreaVerify = desktopApplication("desktopScrollAreaVerify", "隐藏真实回调验收滚动条与双轴滚动", true).apply { configure {
     mainClass.set("club.heiqi.uilib.host.desktop.DesktopScrollAreaVerification")
     args(layout.buildDirectory.dir("reports/scroll-area-desktop").get().asFile.absolutePath)
     mustRunAfter(desktopDropSortVerify)
 } }
-tasks.named("check") { dependsOn(desktopScrollAreaVerify) }
 val desktopMailboxPerformance = desktopApplication("desktopMailboxPerformance", "完整收件箱真实桌面计时", true).apply { configure {
+    group = "benchmark"
     mainClass.set("club.heiqi.uilib.host.desktop.DesktopMailboxPerformance")
     systemProperty("uilib.version", project.version.toString())
     systemProperty("mailbox.paged", providers.gradleProperty("mailboxPaged").getOrElse("true"))
@@ -249,9 +231,9 @@ val desktopDraggableDeepVerify = desktopApplication("desktopDraggableDeepVerify"
     args(layout.buildDirectory.dir("reports/desktop-draggable-deep").get().asFile.absolutePath)
     mustRunAfter(desktopDraggableVerify)
 } }
-tasks.named("check") { dependsOn(desktopDraggableVerify,desktopDraggableDeepVerify) }
 listOf("desktopPerformance", "desktopPerformanceBenchmark").forEach { taskName ->
     desktopApplication(taskName, "独立性能压测广场与有限真实Desktop基线", true).configure {
+        group = if (taskName == "desktopPerformance") "application" else "benchmark"
         mainClass.set("club.heiqi.uilib.host.desktop.DesktopPerformance")
         systemProperty("uilib.version", project.version.toString())
         args(if (taskName == "desktopPerformanceBenchmark") "--benchmark" else "--manual",
@@ -261,8 +243,18 @@ listOf("desktopPerformance", "desktopPerformanceBenchmark").forEach { taskName -
             providers.gradleProperty("performanceFrames").getOrElse("120"))
     }
 }
-tasks.named("check") { dependsOn(desktopVerify, desktopGalleryVerify, desktopGalleryResultScenario, desktopSettingsVerify) }
+// 专项场景仍可按任务名定位；日常验收与 check 统一通过聚合入口取得相同覆盖。
+val galleryChecks = listOf(desktopGalleryVerify, desktopGalleryResultScenario, desktopSettingsVerify,
+    desktopDraggableVerify, desktopDraggableDeepVerify, desktopDropSortVerify, desktopScrollAreaVerify, desktopGalleryMediaVerify)
+galleryChecks.forEach { task -> task.configure { group = null } }
+val galleryVerify by tasks.registering {
+    group = "verification"
+    description = "统一验收测试广场的目录、邮箱、配置、交互、媒体与释放"
+    dependsOn(galleryChecks)
+}
+tasks.named("check") { dependsOn(desktopVerify, galleryVerify) }
 val desktopDraggableBenchmark = desktopApplication("desktopDraggableBenchmark", "隐藏真实GL窗口有限拖拽压测", true).apply { configure {
+    group = "benchmark"
     mainClass.set("club.heiqi.uilib.host.desktop.DesktopDraggablePerformance")
     systemProperty("uilib.version", project.version.toString())
     systemProperty("drag.revision", providers.gradleProperty("dragRevision").getOrElse("unknown"))

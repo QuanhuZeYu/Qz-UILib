@@ -22,25 +22,21 @@ public final class DesktopGallery {
             DesktopGalleryVerification.verify(output,args);
             return;
         }
-        boolean smoke=args.length>0&&"--mailbox-smoke".equals(args[0]);
-        boolean mailbox=smoke||args.length>0&&"--mailbox".equals(args[0]);
+        boolean smoke=args.length>0&&"--smoke".equals(args[0]);
+        if(args.length>0&&!smoke)throw new IllegalArgumentException("使用无参数打开统一广场；有限验收使用 --smoke 或 --verify。");
         Files.createDirectories(output);
         try(GalleryMediaResources media=new GalleryMediaResources(new MediaService(IsolatedMediaAdapters.decoderFactory(),
                         IsolatedMediaAdapters.audioSinkFactory(),MediaBudget.DEFAULT));
                 DesktopWindow window=DesktopWindow.openWithServices(output.resolve("gallery.yaml"),media.service(),true,
-                services -> createGallery(services,mailbox?TestGallery.Page.MAILBOX:args.length>0&&"--draggable".equals(args[0])
-                        ?TestGallery.Page.DRAGGABLE:args.length>0&&"--droppable".equals(args[0])
-                                 ?TestGallery.Page.DROPPABLE:args.length>0&&"--sortable".equals(args[0])
-                                         ?TestGallery.Page.SORTABLE:args.length>0&&"--scroll-area".equals(args[0])
-                                                  ?TestGallery.Page.SCROLL_AREA:args.length>0&&"--media".equals(args[0])?TestGallery.Page.MEDIA:TestGallery.Page.HOME,media))) {
+                services -> createGallery(services,TestGallery.Page.HOME,media))) {
             if(smoke) {
                 glfwSetWindowSize(window.handle(),1400,900);
                 settle(window);
-                if(window.lastPlan.commands().stream().noneMatch(c -> c.kind==PaintCommand.Kind.TEXT&&"QZ Mail".equals(c.text.logicalText)))
-                    throw new AssertionError("独立测试启动器没有进入收件箱");
-                saveGeometry(window,output.resolve("mailbox-launcher.geometry.json"));
-                screenshot(window,output.resolve("mailbox-launcher.png"),0xfff8fafd);
-                System.out.println("MAILBOX_LAUNCHER directEntry=true actualPixels=true sharedGallery=true");
+                if(window.lastPlan.commands().stream().noneMatch(c -> c.kind==PaintCommand.Kind.TEXT&&"QZ / 场景工作台".equals(c.text.logicalText)))
+                    throw new AssertionError("统一启动器没有进入广场目录");
+                saveGeometry(window,output.resolve("gallery-launcher.geometry.json"));
+                screenshot(window,output.resolve("gallery-launcher.png"),0xfffafafa);
+                System.out.println("GALLERY_LAUNCHER directory=true actualPixels=true sharedGallery=true");
                 return;
             }
             while(!window.shouldClose())window.frame();
