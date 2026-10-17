@@ -101,6 +101,15 @@ public final class MediaSession implements AutoCloseable {
     }
     public void muted(boolean value) {synchronized(lock){ensureOpen();muted=value;lock.notifyAll();}}
     public void source(MediaSource source) {Objects.requireNonNull(source,"source");synchronized(lock){ensureOpen();change(source,0,false);}}
+    /** 在新来源的共同时间线上开始，播放/暂停、音量和静音意图沿用同一会话。 */
+    public void source(MediaSource source,long positionNanos) {
+        Objects.requireNonNull(source,"source");if(positionNanos<0)throw new IllegalArgumentException("来源起始位置必须非负");
+        synchronized(lock){
+            ensureOpen();if(positionNanos==0){change(source,0,false);return;}
+            change(source,positionNanos,true);
+            sourceToken.cancelled=true;sourceToken=new Token();sourceVersion++;info=MediaInfo.UNKNOWN;
+        }
+    }
     public void seek(long nanos) {
         synchronized(lock){
             ensureOpen(); if(info.seekable==null||!info.seekable.contains(nanos)) throw new IllegalArgumentException("定位目标不在当前可定位范围内");
@@ -496,7 +505,8 @@ public final class MediaSession implements AutoCloseable {
             // 暂停定位结算本代已准备且停止的输出；播放定位仍以真实设备消费为准。
             boolean seekAudioReady=playIntent?audioActive:!info.hasAudio||audioPosition!=null
                     &&!audioPosition.playing&&(audioPosition.queuedBuffers>0||tail);
-            if(seeking&&(!info.hasVideo||seekPresented)&&seekAudioReady)seeking=false;
+            // 换来源并定位时轨道尚未发现；UNKNOWN不能按“没有音视频”提前完成本代定位。
+            if(seeking&&info.ready&&(!info.hasVideo||seekPresented)&&seekAudioReady)seeking=false;
             expirePresentations(now);
             if(eof&&drainedAudio&&drainedVideo){state=MediaState.ENDED;seeking=false;}
             else if(seeking)state=MediaState.SEEKING;

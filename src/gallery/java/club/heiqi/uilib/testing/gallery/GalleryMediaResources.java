@@ -11,20 +11,31 @@ import java.nio.file.StandardCopyOption;
 /** 一次测试宿主拥有的媒体服务与按需示例文件；共享广场不依赖任何native绑定。 */
 public final class GalleryMediaResources implements AutoCloseable {
     private final MediaService service;
+    private final club.heiqi.uilib.ui.media.MediaResolver networkResolver;
     private Path sample;
     private boolean closed;
-    public GalleryMediaResources(MediaService service) { this.service=java.util.Objects.requireNonNull(service,"service"); }
+    public GalleryMediaResources(MediaService service) { this(service,null); }
+    public GalleryMediaResources(MediaService service,club.heiqi.uilib.ui.media.MediaResolver networkResolver) {
+        this.service=java.util.Objects.requireNonNull(service,"service");this.networkResolver=networkResolver;
+    }
     public GalleryEnvironment environment(club.heiqi.uilib.ui.settings.SettingsConfiguration settings) {
         return environment(settings,text->MediaSource.of(java.net.URI.create(text.trim())),
                 java.nio.file.Paths.get(System.getProperty("user.home", ".")));
     }
     public GalleryEnvironment environment(club.heiqi.uilib.ui.settings.SettingsConfiguration settings,
             java.util.function.Function<String,MediaSource> resolver,Path initialDirectory) {
+        return environment(settings,resolver,initialDirectory,null);
+    }
+    public GalleryEnvironment environment(club.heiqi.uilib.ui.settings.SettingsConfiguration settings,
+            java.util.function.Function<String,MediaSource> resolver,Path initialDirectory,
+            club.heiqi.uilib.ui.scene.image.ImageService images) {
         java.util.Objects.requireNonNull(resolver,"resolver");
         java.util.Objects.requireNonNull(initialDirectory,"initialDirectory");
         return new GalleryEnvironment() {
             @Override public club.heiqi.uilib.ui.settings.SettingsConfiguration settings() { return settings; }
             @Override public MediaService media() { return service(); }
+            @Override public club.heiqi.uilib.ui.media.MediaResolver mediaResolver() { return networkResolver; }
+            @Override public club.heiqi.uilib.ui.scene.image.ImageService images() { return images; }
             @Override public MediaSource resolveSource(String text) { return resolver.apply(text); }
             @Override public Path initialMediaDirectory() { return initialDirectory; }
             @Override public MediaSource exampleSource() throws IOException { return GalleryMediaResources.this.exampleSource(); }

@@ -69,6 +69,9 @@ final class FfmpegDecoder implements MediaDecoder {
         this(source,cancellation,null,null,0);
     }
     FfmpegDecoder(MediaSource source,MediaCancellation cancellation,HlsSourceContext context,byte[] initial,int index) throws Exception {
+        this(source,cancellation,context,initial,index,false);
+    }
+    FfmpegDecoder(MediaSource source,MediaCancellation cancellation,HlsSourceContext context,byte[] initial,int index,boolean sharedTimeline) throws Exception {
         this.cancellation=cancellation;this.sourceContext=context;
         try {
             cancellation.check();
@@ -83,6 +86,13 @@ final class FfmpegDecoder implements MediaDecoder {
             AVDictionary options=new AVDictionary(null);
             try {
                 check(av_dict_set(options,"live_start_index",Integer.toString(index),0),"live_start_index");
+                if(!source.headers.isEmpty()){
+                    StringBuilder headers=new StringBuilder();
+                    source.headers.forEach((name,value)->headers.append(name).append(": ").append(value).append("\r\n"));
+                    check(av_dict_set(options,"headers",headers.toString(),0),"headers");
+                }
+                if("http".equalsIgnoreCase(source.uri.getScheme())||"https".equalsIgnoreCase(source.uri.getScheme()))
+                    check(av_dict_set(options,"rw_timeout","10000000",0),"rw_timeout");
                 if(initial!=null){initialIo=new InitialPlaylistIo(initial);initialIo.attach(input);
                     check(av_dict_set(options,"protocol_whitelist","http,https,tcp,tls,crypto",0),"protocol_whitelist");}
                 // file URI保留来源身份；native文件API需要平台路径，标准转换同时保留空格与Unicode语义。
@@ -95,7 +105,8 @@ final class FfmpegDecoder implements MediaDecoder {
             } finally { av_dict_free(options); }
             check(avformat_find_stream_info(input,(PointerPointer)null),"avformat_find_stream_info");
             cancellation.check();
-            originNanos=input.start_time()==AV_NOPTS_VALUE ? 0 : Math.multiplyExact(input.start_time(),1000L);
+            // 分轨声明共享时间线；不能逐轨减掉不同的首PTS而抹去真实音视频偏移。
+            originNanos=sharedTimeline||input.start_time()==AV_NOPTS_VALUE ? 0 : Math.multiplyExact(input.start_time(),1000L);
             if(sourceContext!=null)originNanos=sourceContext.anchor(originNanos);
             for (int i=0;i<input.nb_streams();i++) {
                 int type=input.streams(i).codecpar().codec_type();

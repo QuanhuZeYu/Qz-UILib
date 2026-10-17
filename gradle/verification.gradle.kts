@@ -685,6 +685,26 @@ listOf(8,21).forEach { version ->
     }
     tasks.named("check") { dependsOn(application) }
 }
+listOf(8,21).forEach { version ->
+    val application=registerTestApplication(if(version==8) "mediaNetworkLegacyScenario" else "mediaNetworkScenario", "真实HTTP请求头与分轨尾部定位Java$version", "club.heiqi.uilib.testing.media.MediaNetworkScenario") {
+        dependsOn(if(version==8) "mediaTestLegacyJar" else "mediaTestJar",if(version==8) "coreLegacyJar" else "coreJar",if(version==8) "mediaAdapterLegacyJar" else "mediaAdapterJar")
+        javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(version)) })
+        classpath=if(version==8)files(mediaTestLegacyArtifact,coreArtifact,mediaLegacyArtifact) else files(mediaTestArtifact,mainlineCoreArtifact,mediaArtifact)
+    }
+    tasks.named("check") { dependsOn(application) }
+}
+val bilibiliResolverScenario=registerTestApplication("bilibiliResolverScenario", "Bilibili来源事实与有限响应回归", "club.heiqi.uilib.host.media.bilibili.BilibiliResolverScenario") {
+    dependsOn("mediaTestJar","coreJar","mediaAdapterJar")
+    javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(21)) })
+    classpath=files(mediaTestArtifact,mainlineCoreArtifact,mediaArtifact)
+}
+tasks.named("check") { dependsOn(bilibiliResolverScenario) }
+registerTestApplication("bilibiliSourceProbe", "独立公网Bilibili解析与真实解码", "club.heiqi.uilib.testing.media.BilibiliSourceProbe") {
+    dependsOn("mediaTestJar","coreJar","mediaAdapterJar")
+    javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(21)) })
+    classpath=files(mediaTestArtifact,mainlineCoreArtifact,mediaArtifact)
+    args(providers.gradleProperty("bilibiliVideo").getOrElse("BV1GJ411x7h7"),providers.gradleProperty("bilibiliLive").getOrElse("https://live.bilibili.com/6"))
+}
 val desktopMediaVerify=tasks.register<JavaExec>("desktopMediaVerify") {
     group="verification"
     dependsOn("installDesktop","desktopTestJar")

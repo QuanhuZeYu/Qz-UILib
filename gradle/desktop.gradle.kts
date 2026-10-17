@@ -179,6 +179,16 @@ val desktopLiveMediaVerify = desktopApplication("desktopLiveMediaVerify", "自�
     mainClass.set("club.heiqi.uilib.host.desktop.DesktopMediaUxVerification")
     args(layout.buildDirectory.dir("reports/media-ux").get().asFile.absolutePath)
 } }
+val desktopNetworkMediaVerify = desktopApplication("desktopNetworkMediaVerify", "受控网络来源分P清晰度与过时结果实机验收", true).apply { configure {
+    mainClass.set("club.heiqi.uilib.host.desktop.DesktopNetworkMediaVerification")
+    args(layout.buildDirectory.dir("reports/network-media-desktop").get().asFile.absolutePath)
+} }
+val desktopBilibiliVerify = desktopApplication("desktopBilibiliVerify", "独立公网Bilibili点播与直播真实交互验收", true).apply { configure {
+    mainClass.set("club.heiqi.uilib.host.desktop.DesktopBilibiliVerification")
+    args(layout.buildDirectory.dir("reports/bilibili-desktop").get().asFile.absolutePath,
+        providers.gradleProperty("bilibiliVideo").getOrElse("BV1GJ411x7h7"),
+        providers.gradleProperty("bilibiliLive").getOrElse("https://live.bilibili.com/6"))
+} }
 val desktopTooltipVerify = desktopApplication("desktopTooltipVerify", "真实回调与GPU验收通用Tooltip", true).apply { configure {
     mainClass.set("club.heiqi.uilib.host.desktop.DesktopTooltipVerification")
     args(layout.buildDirectory.dir("reports/tooltip-desktop").get().asFile.absolutePath)
@@ -243,7 +253,7 @@ listOf("desktopPerformance", "desktopPerformanceBenchmark").forEach { taskName -
 }
 // 专项场景仍可按任务名定位；日常验收与 check 统一通过聚合入口取得相同覆盖。
 val galleryChecks = listOf(desktopGalleryVerify, desktopGalleryResultScenario, desktopSettingsVerify,
-    desktopDraggableVerify, desktopDraggableDeepVerify, desktopDropSortVerify, desktopScrollAreaVerify, desktopGalleryMediaVerify, desktopTooltipVerify, desktopLiveMediaVerify)
+    desktopDraggableVerify, desktopDraggableDeepVerify, desktopDropSortVerify, desktopScrollAreaVerify, desktopGalleryMediaVerify, desktopTooltipVerify, desktopLiveMediaVerify, desktopNetworkMediaVerify)
 galleryChecks.forEach { task -> task.configure { group = null } }
 val galleryVerify by tasks.registering {
     group = "verification"

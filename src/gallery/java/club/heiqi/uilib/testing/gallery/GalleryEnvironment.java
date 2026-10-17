@@ -11,6 +11,8 @@ public interface GalleryEnvironment {
     default club.heiqi.uilib.ui.media.MediaSource resolveSource(String text) {
         return club.heiqi.uilib.ui.media.MediaSource.of(java.net.URI.create(text.trim()));
     }
+    default club.heiqi.uilib.ui.media.MediaResolver mediaResolver() { return null; }
+    default club.heiqi.uilib.ui.scene.image.ImageService images() { return null; }
     /** 宿主只提供文件事实入口；选择界面由共享页面的正式 SceneFilePicker 承担。 */
     default java.nio.file.Path initialMediaDirectory() {
         return java.nio.file.Paths.get(System.getProperty("user.home", ".")).toAbsolutePath().normalize();

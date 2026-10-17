@@ -26,7 +26,7 @@ public final class DesktopGallery {
         if(args.length>0&&!smoke)throw new IllegalArgumentException("使用无参数打开统一广场；有限验收使用 --smoke 或 --verify。");
         Files.createDirectories(output);
         try(GalleryMediaResources media=new GalleryMediaResources(new MediaService(IsolatedMediaAdapters.decoderFactory(),
-                        IsolatedMediaAdapters.audioSinkFactory(),MediaBudget.DEFAULT));
+                        IsolatedMediaAdapters.audioSinkFactory(),MediaBudget.DEFAULT),new club.heiqi.uilib.host.media.bilibili.BilibiliResolver());
                 DesktopWindow window=DesktopWindow.openWithServices(output.resolve("gallery.yaml"),media.service(),true,
                 services -> createGallery(services,TestGallery.Page.HOME,media))) {
             if(smoke) {
@@ -48,7 +48,7 @@ public final class DesktopGallery {
     static TestGallery createGallery(DesktopPageServices services,TestGallery.Page initial,GalleryMediaResources media){
         TestGallery gallery=new TestGallery(media==null?services::settings:media.environment(services.settings(),
                 club.heiqi.uilib.testing.host.LocalMediaFiles::resolve,
-                club.heiqi.uilib.testing.host.LocalMediaFiles.initialDirectory()),initial);
+                club.heiqi.uilib.testing.host.LocalMediaFiles.initialDirectory(),services.images()),initial);
         services.onCloseRequested(gallery::requestClose);services.onReloadRequested(gallery::requestReload);
         return gallery;
     }

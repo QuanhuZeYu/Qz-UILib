@@ -12,14 +12,15 @@ import club.heiqi.uilib.ui.media.MediaService;
 public final class CoreLoopScreen extends MinecraftSceneScreen {
     public CoreLoopScreen(TestGallery.Page initial) {
         this(initial,new GalleryMediaResources(new MediaService(IsolatedMediaAdapters.decoderFactory(),
-                IsolatedMediaAdapters.audioSinkFactory(),MediaBudget.DEFAULT)));
+                IsolatedMediaAdapters.audioSinkFactory(),MediaBudget.DEFAULT),new club.heiqi.uilib.host.media.bilibili.BilibiliResolver()));
     }
     private CoreLoopScreen(TestGallery.Page initial,GalleryMediaResources media) {
         super(MinecraftApplicationConfiguration.settings().domain(),context -> {
             context.own(media);
             new TestGallery(media.environment(MinecraftApplicationConfiguration.settings(),
                     club.heiqi.uilib.testing.host.LocalMediaFiles::resolve,
-                    club.heiqi.uilib.testing.host.LocalMediaFiles.initialDirectory()),initial).build(context);
+                    club.heiqi.uilib.testing.host.LocalMediaFiles.initialDirectory(),
+                     club.heiqi.uilib.host.client.image.MinecraftImageServices.shared().images()),initial).build(context);
         },media.service());
     }
     @Override public boolean doesGuiPauseGame(){return false;}

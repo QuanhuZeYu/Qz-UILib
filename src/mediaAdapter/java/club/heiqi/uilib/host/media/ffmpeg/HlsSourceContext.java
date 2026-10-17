@@ -102,7 +102,8 @@ final class HlsSourceContext implements MediaDecoderSource {
         check(cancellation);
         if(source.uri.toString().length()>MAX_URL)throw new IOException("媒体URL超过预算");
         HttpURLConnection connection=(HttpURLConnection)source.uri.toURL().openConnection();
-        connection.setConnectTimeout(2000);connection.setReadTimeout(2000);connection.setRequestProperty("Cache-Control","no-cache");
+        connection.setConnectTimeout(5000);connection.setReadTimeout(5000);connection.setRequestProperty("Cache-Control","no-cache");
+        source.headers.forEach(connection::setRequestProperty);
         byte[] bytes;
         try {
             int status=connection.getResponseCode();
