@@ -32,9 +32,9 @@ gradle.rootProject {
     // 等项目声明完成，使用真实sourceSet和JavaCompile类路径，避免复制宿主依赖表。
     gradle.projectsEvaluated {
         val sets = target.extensions.getByType<SourceSetContainer>()
-        val production = listOf("core", "fontAdapter", "glRenderer", "lwjgl2", "lwjgl3", "desktop", "main")
+        val production = listOf("core", "fontAdapter", "mediaAdapter", "glRenderer", "lwjgl2", "lwjgl3", "desktop", "main")
             .map(sets::getByName)
-        val tests = listOf("gallery", "testSupport", "test", "desktopTest", "manualTest", "lwjgl2Test")
+        val tests = listOf("gallery", "testSupport", "test", "mediaTest", "desktopTest", "manualTest", "lwjgl2Test")
             .map(sets::getByName)
         val all = production + tests
         // SDL专项是独立JavaCompile，不属于sourceSet；来源、输出和依赖沿该任务读取。

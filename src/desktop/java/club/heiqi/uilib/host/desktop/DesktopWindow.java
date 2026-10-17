@@ -64,8 +64,7 @@ public final class DesktopWindow implements SceneHost, AutoCloseable {
     private String title;
     private SettingsConfiguration settingsConfiguration;
     private ThemeConfiguration themeConfiguration;
-    private SettingsPage settingsPage;
-    private boolean pendingSettingsClose, pendingSettingsReload;
+    private boolean pendingClose, pendingReload;
     private DesktopPageServices pageServices;
     ConfigSession configuration;
     ConfigKey<List<String>> fontCandidates;
@@ -203,7 +202,9 @@ public final class DesktopWindow implements SceneHost, AutoCloseable {
         pageServices=new DesktopPageServices(images.images(),settingsConfiguration,configuration,this::reloadImmediatelyUnchecked);
         ScenePage content=factory==null?supplied:Objects.requireNonNull(factory.apply(pageServices),"content page");
         if (settings) {
-            settingsPage = new SettingsPage(settingsConfiguration, this::leaveSettings);
+            SettingsPage settingsPage = new SettingsPage(settingsConfiguration, this::completeWindowClose);
+            pageServices.onCloseRequested(ignored -> settingsPage.requestClose());
+            pageServices.onReloadRequested(ignored -> settingsPage.requestReload());
             content = settingsPage;
         }
         page = own(ScenePageSession.open(domain, this, fonts, content));
@@ -263,7 +264,7 @@ public final class DesktopWindow implements SceneHost, AutoCloseable {
     }
     public void reloadConfiguration() throws IOException {
         check();
-        if (settingsPage!=null||pageServices.handlesReload()){pendingSettingsReload=true;return;}
+        if (pageServices.handlesReload()){pendingReload=true;return;}
         reloadImmediately();
     }
     private void reloadImmediately() throws IOException {
@@ -293,7 +294,7 @@ public final class DesktopWindow implements SceneHost, AutoCloseable {
         glfwSetWindowContentScaleCallback(window, (w, x, y) -> { revision++; updateDimensions(); });
         glfwSetWindowCloseCallback(window, w -> {
             // GLFW已置关闭标记；确认期间必须继续帧循环，只有leave才真正置true。
-            if(settingsPage!=null||pageServices.handlesClose())glfwSetWindowShouldClose(w,false);
+            if(pageServices.handlesClose())glfwSetWindowShouldClose(w,false);
             requestClose();
         });
         double[] x = new double[1], y = new double[1];
@@ -439,19 +440,7 @@ public final class DesktopWindow implements SceneHost, AutoCloseable {
         fonts.beginPresentation(++presentation);
         try { page.frame(); } finally { fonts.endPresentation(); }
         if (closed || window == 0) return;
-        // 原生关闭/快捷键先等本批已采集输入结算，避免确认读取旧草稿。
-        // 意图一次性消费；关闭与重载同时到达时优先保留离开确认。
-        if (pendingSettingsClose || pendingSettingsReload) {
-            boolean close = pendingSettingsClose;
-            pendingSettingsClose = pendingSettingsReload = false;
-            if (!shouldClose()) {
-                if(close){
-                    if(settingsPage!=null)settingsPage.requestClose();else pageServices.closeRequested(this::leaveSettings);
-                } else {
-                    if(settingsPage!=null)settingsPage.requestReload();else pageServices.reloadRequested();
-                }
-            }
-        }
+        dispatchPageRequests();
         glfwSwapBuffers(window);
         mediaPresentations = renderer.completePresentation(System.nanoTime());
         } catch (RuntimeException | Error failure) {
@@ -459,15 +448,24 @@ public final class DesktopWindow implements SceneHost, AutoCloseable {
             throw failure;
         }
     }
+    /** 本批输入结算后一次性转交页面；关闭与重载同时到达时优先离开确认。 */
+    private void dispatchPageRequests() {
+        if (!pendingClose && !pendingReload) return;
+        boolean close = pendingClose;
+        pendingClose = pendingReload = false;
+        if (shouldClose()) return;
+        if (close) pageServices.closeRequested(this::completeWindowClose);
+        else pageServices.reloadRequested();
+    }
     private long presentation;
     public boolean shouldClose() { return closed || glfwWindowShouldClose(window); }
     public void requestClose() {
         check();
         page.pointer(ScenePointerEvent.cancel());
-        if(settingsPage!=null||pageServices.handlesClose())pendingSettingsClose=true;
+        if(pageServices.handlesClose())pendingClose=true;
         else glfwSetWindowShouldClose(window, true);
     }
-    private void leaveSettings() {
+    private void completeWindowClose() {
         check();
         // 确认后的真实关闭只结束窗口；持久化始终由页面显式保存承担。
         glfwSetWindowShouldClose(window, true);

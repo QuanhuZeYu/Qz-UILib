@@ -122,90 +122,121 @@ public final class MediaSession implements AutoCloseable {
         videos.clear();pcm.clear();decodedAhead.clear();records.clear();current=null;leases=0;videoTimeBlocked=false;
         videoBytes=videoNanos=audioBytes=audioNanos=aheadBytes=aheadNanos=0;
     }
-    private void decodeLoop(){
-        long seen=0,handleVersion=-1;MediaDecoderSource handle=null;boolean refreshFailed=false;
-        try { for(;;){
-            long gen,seekTarget,selectedVersion;boolean selectedSeeking;MediaSource selected;Token operation,lifetime;
-            synchronized(lock){
-                if(!closed&&seen==generation)waitForChange(refreshFailed?0:sourceWait(handle));
-                if(closed)return;
-                gen=generation;seekTarget=target;selected=source;operation=token;selectedSeeking=seeking;
-                selectedVersion=sourceVersion;lifetime=sourceToken;
-            }
-            if(seen==gen){
-                if(refreshFailed)continue;
-                try { refreshSource(handle,selectedVersion,lifetime); }
-                catch(Throwable error){refreshFailed=true;synchronized(lock){if(sourceVersion==selectedVersion&&!lifetime.cancelled)fail(selected,"source-refresh",error);}}
-                continue;
-            }
-            seen=gen;refreshFailed=false;
-            if(handleVersion!=selectedVersion){
-                if(handle!=null){try{handle.close();}catch(Throwable error){synchronized(lock){recordCleanup(error);}}handle=null;}
-                handleVersion=selectedVersion;
-            }
-            MediaDecoder decoder=null;Throwable problem=null;String stage="open";
+    private void decodeLoop(){new DecoderOwner().run();}
+
+    /** 锁内捕获的一次操作身份；不是另一份可写播放状态，迟到结果仍由 valid 裁决。 */
+    private final class DecodeOperation {
+        final long gen=generation,seekTarget=target,version=sourceVersion;
+        final MediaSource selected=source;
+        final Token operation=token,lifetime=sourceToken;
+        final boolean selectedSeeking=seeking;
+        String stage="open";
+    }
+    /** 来源句柄跨同来源定位复用，只由原 decoder 线程持有和释放。 */
+    private final class DecoderOwner {
+        private long seen,handleVersion=-1;
+        private MediaDecoderSource handle;
+        private boolean refreshFailed;
+
+        void run(){
             try{
-                if(handle==null)handle=decoders.openSource(selected,lifetime);
-                decoder=handle.open(seekTarget,selectedSeeking,operation);operation.check();
-                synchronized(lock){if(valid(gen,operation)){
-                    if(!selectedSeeking){seekTarget=handle.initialPositionNanos();target=position=seekTarget;decodedVideoEnd=decodedAudioEnd=seekTarget;}
-                    MediaInfo facts=decoder.info();qualifyVideo(facts);info=facts;
-                }}
-                stage="decode";boolean inputConsumed=false;
                 for(;;){
-                    stage="source-refresh";refreshSource(handle,selectedVersion,lifetime);operation.check();stage="decode";
-                    MediaDecodeRequest request;
+                    DecodeOperation work;
                     synchronized(lock){
-                        if(!valid(gen,operation))throw new CancellationException();
-                        long frameBytes=qualifyVideo(info);
-                        boolean storage=videos.size()+(current==null?0:1)<budget.videoFrames&&videoBytes+frameBytes<=budget.videoBytes;
-                        boolean time=remainingVideoNanos()+nextVideoDuration()<=budget.videoNanos;
-                        videoTimeBlocked=info.hasVideo&&storage&&!time;
-                        boolean v=info.hasVideo&&storage&&time&&!hasDeferredTrack(true);
-                        boolean a=info.hasAudio&&!hasDeferredTrack(false)&&pcm.size()<budget.audioBlocks
-                                &&audioBytes+lastAudioBytes<=budget.audioBytes&&audioNanos+lastAudioDuration<=budget.audioNanos;
-                        MediaDecoded delayed=takeDecodedAhead(seekTarget);
-                        if(delayed!=null){
-                            if(delayed.video)enqueueVideo(delayed,gen,seekTarget,operation);else enqueueAudio(delayed,gen,seekTarget,operation);
-                            continue;
-                        }
-                        if(inputConsumed){
-                            if(decodedAhead.isEmpty()){eof=true;lock.notifyAll();break;}
-                            waitForChange(0);continue;
-                        }
-                        if(!v&&!a){waitForChange(sourceWait(handle));continue;}
-                        request=new MediaDecodeRequest(v,a,budget.deferredBytes,budget.deferredPackets,budget.deferredNanos);
+                        if(!closed&&seen==generation)waitForChange(refreshFailed?0:sourceWait(handle));
+                        if(closed)return;
+                        work=new DecodeOperation();
                     }
-                    operation.check();MediaDecoded item=decoder.read(request);operation.check();
-                    MediaInfo facts=decoder.info();MediaDecoderBuffering held=decoder.buffering();MediaInputState terminal=decoder.inputState();
-                    synchronized(lock){
-                        if(!valid(gen,operation))break;
-                        qualifyVideo(facts);info=facts;acceptInput(terminal);
-                        stats[18]=Math.max(stats[18],held.bytes);stats[19]=Math.max(stats[19],held.packets);stats[20]=Math.max(stats[20],held.nanos);
-                        if(item==null){inputConsumed=true;audioInputEnded=true;audioInputEnd=Math.max(audioInputEnd,decodedAudioEnd);lock.notifyAll();continue;}
-                        if(item==MediaDecoded.YIELD){waitForChange(2);continue;}
-                        if(item.video&&(item.data.remaining()>budget.videoBytes||item.durationNanos>budget.videoNanos)
-                                ||!item.video&&(item.data.remaining()>budget.audioBytes||item.durationNanos>budget.audioNanos
-                                ||item.data.remaining()>budget.deviceBytes||item.durationNanos>budget.deviceNanos))
-                            throw new IllegalStateException("单个解码项超过输出预算");
-                        if(!item.video){decodedAudioEnd=Math.max(decodedAudioEnd,item.presentationNanos+item.durationNanos);
-                            lastAudioBytes=item.data.remaining();lastAudioDuration=item.durationNanos;}
-                        if(canQueueDecoded(item,seekTarget)){
-                            if(item.video)enqueueVideo(item,gen,seekTarget,operation);else enqueueAudio(item,gen,seekTarget,operation);
-                        }else deferDecoded(item);
-                    }
+                    if(seen==work.gen){refresh(work);continue;}
+                    seen=work.gen;refreshFailed=false;
+                    selectSource(work.version);
+                    decode(work);
                 }
-            }catch(Throwable error){if(!(error instanceof CancellationException)&&!operation.cancelled){problem=error;refreshFailed=true;}}
-            finally{
+            }finally{if(handle!=null)try{handle.close();}catch(Throwable error){synchronized(lock){cleanupFailure=MediaService.combine(cleanupFailure,error);recordCleanup(error);}}}
+        }
+        private void refresh(DecodeOperation work){
+            if(refreshFailed)return;
+            try{refreshSource(handle,work.version,work.lifetime);}
+            catch(Throwable error){
+                refreshFailed=true;
+                synchronized(lock){if(sourceVersion==work.version&&!work.lifetime.cancelled)fail(work.selected,"source-refresh",error);}
+            }
+        }
+        private void selectSource(long version){
+            if(handleVersion==version)return;
+            if(handle!=null){try{handle.close();}catch(Throwable error){synchronized(lock){recordCleanup(error);}}handle=null;}
+            handleVersion=version;
+        }
+        private void decode(DecodeOperation work){
+            MediaDecoder decoder=null;Throwable problem=null;
+            try{
+                if(handle==null)handle=decoders.openSource(work.selected,work.lifetime);
+                decoder=handle.open(work.seekTarget,work.selectedSeeking,work.operation);work.operation.check();
+                long seekTarget=initializeGeneration(work,decoder);
+                work.stage="decode";
+                decodeItems(work,decoder,seekTarget);
+            }catch(Throwable error){
+                if(!(error instanceof CancellationException)&&!work.operation.cancelled){problem=error;refreshFailed=true;}
+            }finally{
                 if(decoder!=null)try{decoder.close();}catch(Throwable next){
                     problem=MediaService.combine(problem,next);synchronized(lock){cleanupFailure=MediaService.combine(cleanupFailure,next);}
                 }
                 if(problem!=null)synchronized(lock){
-                    if(valid(gen,operation))fail(selected,stage,problem);
+                    if(valid(work.gen,work.operation))fail(work.selected,work.stage,problem);
                     else if(closed&&failure!=null)MediaService.combine(failure.cause,problem);
                 }
             }
-        }} finally {if(handle!=null)try{handle.close();}catch(Throwable error){synchronized(lock){cleanupFailure=MediaService.combine(cleanupFailure,error);recordCleanup(error);}}}
+        }
+        private long initializeGeneration(DecodeOperation work,MediaDecoder decoder){
+            long seekTarget=work.seekTarget;
+            synchronized(lock){if(valid(work.gen,work.operation)){
+                if(!work.selectedSeeking){seekTarget=handle.initialPositionNanos();target=position=seekTarget;decodedVideoEnd=decodedAudioEnd=seekTarget;}
+                MediaInfo facts=decoder.info();qualifyVideo(facts);info=facts;
+            }}
+            return seekTarget;
+        }
+        private void decodeItems(DecodeOperation work,MediaDecoder decoder,long seekTarget)throws Exception{
+            boolean inputConsumed=false;
+            for(;;){
+                work.stage="source-refresh";refreshSource(handle,work.version,work.lifetime);work.operation.check();work.stage="decode";
+                MediaDecodeRequest request;
+                synchronized(lock){
+                    if(!valid(work.gen,work.operation))throw new CancellationException();
+                    boolean video=requestVideo(),audio=requestAudio();
+                    MediaDecoded delayed=takeDecodedAhead(seekTarget);
+                    if(delayed!=null){enqueueDecoded(delayed,work.gen,seekTarget,work.operation);continue;}
+                    if(inputConsumed){
+                        if(decodedAhead.isEmpty()){eof=true;lock.notifyAll();break;}
+                        waitForChange(0);continue;
+                    }
+                    if(!video&&!audio){waitForChange(sourceWait(handle));continue;}
+                    request=new MediaDecodeRequest(video,audio,budget.deferredBytes,budget.deferredPackets,budget.deferredNanos);
+                }
+                work.operation.check();MediaDecoded item=decoder.read(request);work.operation.check();
+                MediaInfo facts=decoder.info();MediaDecoderBuffering held=decoder.buffering();MediaInputState terminal=decoder.inputState();
+                synchronized(lock){
+                    if(!valid(work.gen,work.operation))break;
+                    qualifyVideo(facts);info=facts;acceptInput(terminal);
+                    stats[18]=Math.max(stats[18],held.bytes);stats[19]=Math.max(stats[19],held.packets);stats[20]=Math.max(stats[20],held.nanos);
+                    if(item==null){inputConsumed=true;audioInputEnded=true;audioInputEnd=Math.max(audioInputEnd,decodedAudioEnd);lock.notifyAll();}
+                    else if(item==MediaDecoded.YIELD)waitForChange(2);
+                    else acceptDecoded(item,work.gen,seekTarget,work.operation);
+                }
+            }
+        }
+    }
+    private void acceptDecoded(MediaDecoded item,long gen,long seekTarget,Token operation){
+        if(item.video&&(item.data.remaining()>budget.videoBytes||item.durationNanos>budget.videoNanos)
+                ||!item.video&&(item.data.remaining()>budget.audioBytes||item.durationNanos>budget.audioNanos
+                ||item.data.remaining()>budget.deviceBytes||item.durationNanos>budget.deviceNanos))
+            throw new IllegalStateException("单个解码项超过输出预算");
+        if(!item.video){decodedAudioEnd=Math.max(decodedAudioEnd,item.presentationNanos+item.durationNanos);
+            lastAudioBytes=item.data.remaining();lastAudioDuration=item.durationNanos;}
+        if(canQueueDecoded(item,seekTarget))enqueueDecoded(item,gen,seekTarget,operation);
+        else deferDecoded(item);
+    }
+    private void enqueueDecoded(MediaDecoded item,long gen,long seekTarget,Token operation){
+        if(item.video)enqueueVideo(item,gen,seekTarget,operation);else enqueueAudio(item,gen,seekTarget,operation);
     }
     private long sourceWait(MediaDecoderSource handle){
         if(resumePositionNanos>=0)return 1;
@@ -241,11 +272,26 @@ public final class MediaSession implements AutoCloseable {
             audioInputEnded=true;audioInputEnd=terminal.audioEndNanos;if(changed)lock.notifyAll();
         }
     }
+    /** 准入与唤醒共用同一容量政策；调用者在会话锁内传入估算或实际待入队大小。 */
+    private boolean videoStorageAvailable(long bytes){
+        return videos.size()+(current==null?0:1)<budget.videoFrames&&videoBytes+bytes<=budget.videoBytes;
+    }
+    private boolean videoTimeAvailable(long duration){return remainingVideoNanos()+duration<=budget.videoNanos;}
+    private boolean videoFits(long bytes,long duration){return videoStorageAvailable(bytes)&&videoTimeAvailable(duration);}
+    private boolean audioFits(long bytes,long duration){
+        return pcm.size()<budget.audioBlocks&&audioBytes+bytes<=budget.audioBytes&&audioNanos+duration<=budget.audioNanos;
+    }
+    private boolean requestVideo(){
+        long bytes=qualifyVideo(info);
+        boolean storage=videoStorageAvailable(bytes),time=videoTimeAvailable(nextVideoDuration());
+        videoTimeBlocked=info.hasVideo&&storage&&!time;
+        return info.hasVideo&&storage&&time&&!hasDeferredTrack(true);
+    }
+    private boolean requestAudio(){return info.hasAudio&&!hasDeferredTrack(false)&&audioFits(lastAudioBytes,lastAudioDuration);}
     private boolean canQueueDecoded(MediaDecoded item,long seekTarget){
         if(item.presentationNanos+item.durationNanos<=seekTarget)return true;
-        if(item.video)return videos.size()+(current==null?0:1)<budget.videoFrames&&videoBytes+item.data.remaining()<=budget.videoBytes
-                &&remainingVideoNanos()+item.durationNanos<=budget.videoNanos;
-        return pcm.size()<budget.audioBlocks&&audioBytes+item.data.remaining()<=budget.audioBytes&&audioNanos+item.durationNanos<=budget.audioNanos;
+        if(item.video)return videoFits(item.data.remaining(),item.durationNanos);
+        return audioFits(item.data.remaining(),item.durationNanos);
     }
     private MediaDecoded takeDecodedAhead(long seekTarget){
         boolean seenVideo=false,seenAudio=false;Iterator<MediaDecoded> iterator=decodedAhead.iterator();
@@ -296,8 +342,7 @@ public final class MediaSession implements AutoCloseable {
         if(item.presentationNanos+item.durationNanos<=seekTarget&&item.presentationNanos<seekTarget){stats[4]++;return;}
         long bytes=(long)item.width*item.height*4;
         if(bytes>budget.videoBytes||item.durationNanos>budget.videoNanos)throw new IllegalStateException("单个视频帧超过预算");
-        while(valid(gen,operation)&&(videos.size()+(current==null?0:1)>=budget.videoFrames||videoBytes+bytes>budget.videoBytes
-                ||remainingVideoNanos()+item.durationNanos>budget.videoNanos)){
+        while(valid(gen,operation)&&!videoFits(bytes,item.durationNanos)){
             videoTimeBlocked=true;waitForChange(0);
         }
         if(!valid(gen,operation))return;
@@ -315,7 +360,7 @@ public final class MediaSession implements AutoCloseable {
         long duration=(long)(data.remaining()/(item.channels*2))*1_000_000_000L/item.sampleRate;
         if(data.remaining()>budget.audioBytes||duration>budget.audioNanos||data.remaining()>budget.deviceBytes||duration>budget.deviceNanos)
             throw new IllegalStateException("单个PCM块超过预算");
-        while(valid(gen,operation)&&(pcm.size()>=budget.audioBlocks||audioBytes+data.remaining()>budget.audioBytes||audioNanos+duration>budget.audioNanos))waitForChange(0);
+        while(valid(gen,operation)&&!audioFits(data.remaining(),duration))waitForChange(0);
         if(!valid(gen,operation))return;
         MediaPcm block=new MediaPcm(gen,pts,item.sampleRate,item.channels,data);pcm.add(block);audioBytes+=block.bytes();audioNanos+=block.durationNanos;stats[1]++;
         stats[8]=Math.max(stats[8],audioBytes);stats[9]=Math.max(stats[9],pcm.size());stats[10]=Math.max(stats[10],audioNanos);lock.notifyAll();
@@ -335,98 +380,137 @@ public final class MediaSession implements AutoCloseable {
         }
         return deadline==Long.MAX_VALUE?0:Math.max(1,(deadline-now+999_999L)/1_000_000L);
     }
-    private void outputLoop(){
-        MediaAudioSink sink=null;MediaAudioPosition measured=null;
-        long seen=0,anchor=0,base=0;boolean clockRunning=false,appliedPlay=false;double appliedGain=Double.NaN;
-        try{
-            for(;;){
-                long gen,seekTarget;MediaInfo facts;boolean failed,desired;double gain;
-                synchronized(lock){if(closed)break;gen=generation;seekTarget=target;facts=info;failed=failure!=null;gain=muted?0:volume;desired=outputPlay();}
-                try{
-                    if(seen!=gen){
-                        if(sink!=null){MediaAudioSink old=sink;sink=null;closeAudio(old);}
-                        measured=null;appliedGain=Double.NaN;appliedPlay=false;
-                        seen=gen;clockRunning=false;base=seekTarget;anchor=System.nanoTime();
-                    }
-                    if(failed){
-                        if(sink!=null){MediaAudioSink old=sink;sink=null;closeAudio(old);}
-                        synchronized(lock){if(!closed&&generation==gen)waitForChange(0);}continue;
-                    }
-                    if(facts.hasAudio){
-                        if(sink==null){sink=audio.open(budget);sink.reset(gen,seekTarget);}
-                        boolean refresh;
+    private void outputLoop(){new OutputOwner().run();}
+
+    /** 仅原 output 线程持有设备与时钟映射；会话事实仍只在 lock 内结算。 */
+    private final class OutputOwner {
+        private MediaAudioSink sink;
+        private MediaAudioPosition measured;
+        private long seen,anchor,base;
+        private boolean clockRunning,appliedPlay;
+        private double appliedGain=Double.NaN;
+
+        void run(){
+            try{
+                for(;;){
+                    long gen,seekTarget;MediaInfo facts;boolean failed;
+                    synchronized(lock){if(closed)break;gen=generation;seekTarget=target;facts=info;failed=failure!=null;}
+                    try{
+                        startGeneration(gen,seekTarget);
+                        if(failed){
+                            closeSink();
+                            synchronized(lock){if(!closed&&generation==gen)waitForChange(0);}
+                            continue;
+                        }
+                        if(facts.hasAudio&&!updateAudio(gen,seekTarget))continue;
                         synchronized(lock){
-                            if(closed||generation!=gen)continue;
-                            desired=outputPlay();gain=muted?0:volume;
-                            refresh=measured==null||desired!=appliedPlay||gain!=appliedGain||measured.playing
-                                    ||desired&&measured.queuedBuffers>0||queueMayFit(measured);
+                            if(closed||generation!=gen||failure!=null)continue;
+                            long now=System.nanoTime();
+                            boolean tail=advanceClock(facts,now);
+                            if(videoTimeBlocked&&videoTimeAvailable(nextVideoDuration()))lock.notifyAll();
+                            while(!videos.isEmpty()&&(videos.peek().presentationNanos<=position||(current==null&&!playIntent)))select(videos.remove());
+                            settlePlayback(tail,now);
+                            // 时间线、选帧、状态和等待保持原有连续锁区间，不发布中间结果。
+                            waitForChange(nextWait(now));
                         }
-                        if(refresh){
-                            measured=sink.position();boolean queued=false;
-                            for(int i=0;i<budget.deviceBuffers;i++){
-                                MediaPcm block;synchronized(lock){if(closed||generation!=gen)break;block=pcm.peek();}
-                                if(block==null||!sink.queue(block))break;
-                                queued=true;
-                                synchronized(lock){if(generation==gen&&pcm.peek()==block){pcm.remove();audioBytes-=block.bytes();audioNanos-=block.durationNanos;lock.notifyAll();}}
-                            }
-                            // 设备open/queue可阻塞；播放前成对重读意图和增益，不能把旧gain配上新play。
-                            synchronized(lock){if(closed||generation!=gen)continue;desired=outputPlay();gain=muted?0:volume;}
-                            if(gain!=appliedGain){sink.gain(gain);appliedGain=gain;}
-                            if(desired!=appliedPlay||desired&&(queued||!measured.playing&&measured.queuedBuffers>0))sink.playing(desired);
-                            appliedPlay=desired;measured=sink.position();
-                        }
-                    }
-                    synchronized(lock){
-                        if(closed||generation!=gen||failure!=null)continue;
-                        long now=System.nanoTime();boolean tail=false;
-                        if(facts.hasAudio&&measured!=null){
-                            audioPosition=measured;position=Math.max(position,measured.positionNanos);sampled=measured.sampledNanos;
-                            outputReady|=measured.queuedBuffers>0;stats[11]=Math.max(stats[11],measured.queuedBytes);
-                            stats[12]=Math.max(stats[12],measured.queuedBuffers);stats[13]=Math.max(stats[13],measured.queuedNanos);
-                            if(measured.playing&&stats[15]==0)stats[15]=sampled;
-                            // 音轨输入终结已证实且其PCM已解码覆盖端点、实际耗尽，才独立推进视频尾部。
-                            tail=audioInputEnded&&audioInputEnd>=0&&decodedAudioEnd>=audioInputEnd&&!hasDeferredAudio()&&pcm.isEmpty()
-                                    &&measured.queuedBuffers==0&&measured.positionNanos>=measured.queuedEndNanos
-                                    &&info.hasVideo&&decodedVideoEnd>measured.queuedEndNanos;
-                            if(tail&&outputPlay()){
-                                if(!clockRunning){base=position;anchor=now;clockRunning=true;}
-                                position=Math.max(position,Math.min(decodedVideoEnd,base+now-anchor));sampled=now;
-                            }else{clockRunning=false;base=position;anchor=now;}
-                        }else{
-                            boolean available=info.ready&&(current!=null||!videos.isEmpty());
-                            if(outputPlay()&&available){
-                                if(!clockRunning){base=position;anchor=now;clockRunning=true;}
-                                position=Math.max(position,Math.min(decodedVideoEnd,base+now-anchor));
-                                if(position>=decodedVideoEnd&&!eof){base=position;anchor=now;clockRunning=false;}
-                            }else{clockRunning=false;base=position;anchor=now;}
-                            sampled=now;outputReady=available;
-                        }
-                        if(videoTimeBlocked&&remainingVideoNanos()+nextVideoDuration()<=budget.videoNanos)lock.notifyAll();
-                        while(!videos.isEmpty()&&(videos.peek().presentationNanos<=position||(current==null&&!playIntent)))select(videos.remove());
-                        boolean audioActive=!info.hasAudio||audioPosition!=null&&audioPosition.playing||tail;
-                        boolean drainedAudio=!info.hasAudio||audioPosition!=null&&audioPosition.queuedBuffers==0&&audioPosition.positionNanos>=audioPosition.queuedEndNanos;
-                        // 已接受的闭区间末端可以没有目标画面；EOF 是终态事实，不伪造提交或定位恢复。
-                        boolean endpoint=eof&&seeking&&videos.isEmpty()&&current==null&&info.seekable!=null&&target==info.seekable.endNanos;
-                        boolean drainedVideo=!info.hasVideo||endpoint||videos.isEmpty()&&current!=null&&position>=current.presentationNanos+current.durationNanos;
-                        // 暂停定位结算的是已准备且停止的本代输出；播放定位仍以真实设备消费为准。
-                        boolean seekAudioReady=playIntent?audioActive:!info.hasAudio||audioPosition!=null
-                                &&!audioPosition.playing&&(audioPosition.queuedBuffers>0||tail);
-                        if(seeking&&(!info.hasVideo||seekPresented)&&seekAudioReady)seeking=false;
-                        expirePresentations(now);
-                        if(eof&&drainedAudio&&drainedVideo){state=MediaState.ENDED;seeking=false;}
-                        else if(seeking)state=MediaState.SEEKING;
-                        else if(!info.ready)state=MediaState.LOADING;
-                        else if(!outputPlay())state=outputReady?MediaState.PAUSED:MediaState.READY;
-                        else if(audioActive&&outputReady&&(info.hasAudio||position<decodedVideoEnd))state=MediaState.PLAYING;
-                        else state=MediaState.BUFFERING;
-                        boolean commandDue=info.hasAudio&&(sink==null||appliedPlay!=outputPlay()||appliedGain!=(muted?0:volume)||queueMayFit(measured));
-                        boolean advancing=outputPlay()&&state!=MediaState.ENDED&&(state!=MediaState.BUFFERING||audioPosition!=null&&audioPosition.playing);
-                        // 无输出推进时只等待命令/数据通知或确切的呈现元数据退休期限。
-                        waitForChange(commandDue||advancing?2:presentationWait(now));
-                    }
-                }catch(Throwable error){synchronized(lock){if(!closed&&generation==gen)fail(source,"audio/output",error);}}
+                    }catch(Throwable error){synchronized(lock){if(!closed&&generation==gen)fail(source,"audio/output",error);}}
+                }
+            }finally{if(sink!=null)try{closeAudio(sink);}catch(Throwable ignored){}}
+        }
+        private void startGeneration(long gen,long seekTarget)throws Exception{
+            if(seen==gen)return;
+            closeSink();
+            measured=null;appliedGain=Double.NaN;appliedPlay=false;
+            seen=gen;clockRunning=false;base=seekTarget;anchor=System.nanoTime();
+        }
+        private void closeSink()throws Exception{
+            if(sink==null)return;
+            MediaAudioSink old=sink;sink=null;closeAudio(old);
+        }
+        /** native open/queue/position/gain/play 全在锁外，阻塞返回后重新核验代际与意图。 */
+        private boolean updateAudio(long gen,long seekTarget)throws Exception{
+            if(sink==null){sink=audio.open(budget);sink.reset(gen,seekTarget);}
+            boolean desired,refresh;double gain;
+            synchronized(lock){
+                if(closed||generation!=gen)return false;
+                desired=outputPlay();gain=muted?0:volume;
+                refresh=measured==null||desired!=appliedPlay||gain!=appliedGain||measured.playing
+                        ||desired&&measured.queuedBuffers>0||queueMayFit(measured);
             }
-        }finally{if(sink!=null)try{closeAudio(sink);}catch(Throwable ignored){}}
+            if(!refresh)return true;
+            measured=sink.position();
+            boolean queued=queueAudio(gen);
+            // 设备open/queue可阻塞；播放前成对重读意图和增益，不能把旧gain配上新play。
+            synchronized(lock){if(closed||generation!=gen)return false;desired=outputPlay();gain=muted?0:volume;}
+            if(gain!=appliedGain){sink.gain(gain);appliedGain=gain;}
+            if(desired!=appliedPlay||desired&&(queued||!measured.playing&&measured.queuedBuffers>0))sink.playing(desired);
+            appliedPlay=desired;measured=sink.position();
+            return true;
+        }
+        private boolean queueAudio(long gen)throws Exception{
+            boolean queued=false;
+            for(int i=0;i<budget.deviceBuffers;i++){
+                MediaPcm block;synchronized(lock){if(closed||generation!=gen)break;block=pcm.peek();}
+                if(block==null||!sink.queue(block))break;
+                queued=true;
+                synchronized(lock){if(generation==gen&&pcm.peek()==block){pcm.remove();audioBytes-=block.bytes();audioNanos-=block.durationNanos;lock.notifyAll();}}
+            }
+            return queued;
+        }
+        private boolean advanceClock(MediaInfo facts,long now){
+            if(facts.hasAudio&&measured!=null){
+                audioPosition=measured;position=Math.max(position,measured.positionNanos);sampled=measured.sampledNanos;
+                outputReady|=measured.queuedBuffers>0;stats[11]=Math.max(stats[11],measured.queuedBytes);
+                stats[12]=Math.max(stats[12],measured.queuedBuffers);stats[13]=Math.max(stats[13],measured.queuedNanos);
+                if(measured.playing&&stats[15]==0)stats[15]=sampled;
+                boolean tail=audioTail();
+                if(tail&&outputPlay()){advanceMonotonic(now);sampled=now;}
+                else pauseClock(now);
+                return tail;
+            }
+            boolean available=info.ready&&(current!=null||!videos.isEmpty());
+            if(outputPlay()&&available){
+                advanceMonotonic(now);
+                if(position>=decodedVideoEnd&&!eof)pauseClock(now);
+            }else pauseClock(now);
+            sampled=now;outputReady=available;
+            return false;
+        }
+        /** 音轨输入终结且PCM已覆盖端点并实际耗尽，才独立推进视频尾部。 */
+        private boolean audioTail(){
+            return audioInputEnded&&audioInputEnd>=0&&decodedAudioEnd>=audioInputEnd&&!hasDeferredAudio()&&pcm.isEmpty()
+                    &&measured.queuedBuffers==0&&measured.positionNanos>=measured.queuedEndNanos
+                    &&info.hasVideo&&decodedVideoEnd>measured.queuedEndNanos;
+        }
+        private void advanceMonotonic(long now){
+            if(!clockRunning){base=position;anchor=now;clockRunning=true;}
+            position=Math.max(position,Math.min(decodedVideoEnd,base+now-anchor));
+        }
+        private void pauseClock(long now){clockRunning=false;base=position;anchor=now;}
+        private void settlePlayback(boolean tail,long now){
+            boolean audioActive=!info.hasAudio||audioPosition!=null&&audioPosition.playing||tail;
+            boolean drainedAudio=!info.hasAudio||audioPosition!=null&&audioPosition.queuedBuffers==0&&audioPosition.positionNanos>=audioPosition.queuedEndNanos;
+            // 已接受的闭区间末端可以没有目标画面；EOF不伪造提交或定位恢复。
+            boolean endpoint=eof&&seeking&&videos.isEmpty()&&current==null&&info.seekable!=null&&target==info.seekable.endNanos;
+            boolean drainedVideo=!info.hasVideo||endpoint||videos.isEmpty()&&current!=null&&position>=current.presentationNanos+current.durationNanos;
+            // 暂停定位结算本代已准备且停止的输出；播放定位仍以真实设备消费为准。
+            boolean seekAudioReady=playIntent?audioActive:!info.hasAudio||audioPosition!=null
+                    &&!audioPosition.playing&&(audioPosition.queuedBuffers>0||tail);
+            if(seeking&&(!info.hasVideo||seekPresented)&&seekAudioReady)seeking=false;
+            expirePresentations(now);
+            if(eof&&drainedAudio&&drainedVideo){state=MediaState.ENDED;seeking=false;}
+            else if(seeking)state=MediaState.SEEKING;
+            else if(!info.ready)state=MediaState.LOADING;
+            else if(!outputPlay())state=outputReady?MediaState.PAUSED:MediaState.READY;
+            else if(audioActive&&outputReady&&(info.hasAudio||position<decodedVideoEnd))state=MediaState.PLAYING;
+            else state=MediaState.BUFFERING;
+        }
+        private long nextWait(long now){
+            boolean commandDue=info.hasAudio&&(sink==null||appliedPlay!=outputPlay()||appliedGain!=(muted?0:volume)||queueMayFit(measured));
+            boolean advancing=outputPlay()&&state!=MediaState.ENDED&&(state!=MediaState.BUFFERING||audioPosition!=null&&audioPosition.playing);
+            // 无输出推进时只等待命令/数据通知或确切的呈现元数据退休期限。
+            return commandDue||advancing?2:presentationWait(now);
+        }
     }
     private void closeAudio(MediaAudioSink sink)throws Exception{
         try{sink.close();}catch(Throwable next){

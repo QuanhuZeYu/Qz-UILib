@@ -90,11 +90,6 @@ val coreJar by tasks.registering(ShadowJar::class) {
     configurations.set(listOf(coreContentRuntime))
     minimizeJar.set(false)
     enableAutoRelocation.set(false)
-    relocate("com.ibm.icu", "club.heiqi.uilib.shadow.com.ibm.icu")
-    relocate("org.yaml.snakeyaml", "club.heiqi.uilib.shadow.org.yaml.snakeyaml")
-    relocate("org.commonmark", "club.heiqi.uilib.shadow.org.commonmark")
-    relocate("org.jsoup", "club.heiqi.uilib.shadow.org.jsoup")
-    relocate("org.nibor.autolink", "club.heiqi.uilib.shadow.org.nibor.autolink")
     exclude("META-INF/versions/**", "META-INF/*.SF", "META-INF/*.RSA", "META-INF/*.DSA", "module-info.class")
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 }
@@ -112,11 +107,6 @@ val coreLegacyJar by tasks.registering(ShadowJar::class) {
     from(coreSources.output)
     configurations.set(listOf(coreContentRuntime))
     minimizeJar.set(false); enableAutoRelocation.set(false)
-    relocate("com.ibm.icu", "club.heiqi.uilib.shadow.com.ibm.icu")
-    relocate("org.yaml.snakeyaml", "club.heiqi.uilib.shadow.org.yaml.snakeyaml")
-    relocate("org.commonmark", "club.heiqi.uilib.shadow.org.commonmark")
-    relocate("org.jsoup", "club.heiqi.uilib.shadow.org.jsoup")
-    relocate("org.nibor.autolink", "club.heiqi.uilib.shadow.org.nibor.autolink")
     exclude("META-INF/versions/**", "META-INF/*.SF", "META-INF/*.RSA", "META-INF/*.DSA", "module-info.class")
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 }
@@ -124,13 +114,5 @@ val fontAdapterLegacyJar by tasks.registering(Jar::class) {
     group = "build"
     archiveClassifier.set("font-adapter-java8")
     from(fontAdapterSources.output)
-}
-// 宿主的内容依赖统一由核心产物供给，不重复携带；开发运行使用未重定位输出。
-tasks.named<ShadowJar>("shadowJar") {
-    relocate("com.ibm.icu", "club.heiqi.uilib.shadow.com.ibm.icu")
-    relocate("org.yaml.snakeyaml", "club.heiqi.uilib.shadow.org.yaml.snakeyaml")
-    relocate("org.commonmark", "club.heiqi.uilib.shadow.org.commonmark")
-    relocate("org.jsoup", "club.heiqi.uilib.shadow.org.jsoup")
-    relocate("org.nibor.autolink", "club.heiqi.uilib.shadow.org.nibor.autolink")
 }
 tasks.named("assemble") { dependsOn(coreJar, fontAdapterJar, coreLegacyJar, fontAdapterLegacyJar) }
