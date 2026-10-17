@@ -43,11 +43,13 @@ public final class DesktopSettingsVerification extends TestApplication {
         String[] args=arguments();
         output=args.length==0?Paths.get("settings-report"):Paths.get(args[0]);Files.createDirectories(output);
         path=output.resolve("settings.yaml");Files.deleteIfExists(path);
+    }
+    @Override protected void runTests() throws Exception {
+        scenario("字体浏览回填、嵌套ESC与显式添加应用保存",this::fontPicker);
         w=own(DesktopWindow.openSettings(path));
         glfwSetWindowSize(w.handle(),1440,1000);settle(w);input=new DesktopTestInput(w);
         original=current(w);before=Files.readAllBytes(path);
-    }
-    @Override protected void runTests() throws Exception {
+
         scenario("统一外观首屏与主题草稿预览",this::appearanceDraft);
         scenario("字体排序、应用与真实文件保存",this::applyAndSave);
         scenario("显式重载、资源错误与保存事实",this::reloadAndErrors);
@@ -59,6 +61,33 @@ public final class DesktopSettingsVerification extends TestApplication {
         scenario("短暂反馈重复身份、焦点与真实路径字形",this::presentationContract);
     }
 
+    private void fontPicker()throws Exception{
+        Path directory=Files.createTempDirectory("uilib 字体 +浏览"),font=directory.resolve("字体 +sample.ttf"),config=output.resolve("font-picker.yaml");Files.deleteIfExists(config);
+        try{
+            try(java.io.InputStream source=getClass().getResourceAsStream("/assets/qz_uilib/fonts/math-text/sans/NotoSans-Regular.ttf")){require(source!=null,"缺少可移植的实际字体");Files.copy(source,font);}
+            try(DesktopWindow window=DesktopWindow.openSettings(config)){
+                DesktopTestInput keys=new DesktopTestInput(window);settle(window);List<String> initial=current(window);byte[] saved=Files.readAllBytes(config);
+                keys.click("管理字体来源");keys.click("+ 添加来源");keys.click("本地字体文件");settle(window);
+                SceneNode field=activeFields(window).get(0);typeInto(window,keys,field,font.toString(),false);
+                keys.click("浏览字体文件");settle(window);require(hasText(window,"选择文件"),"字体没有使用正式选择器");
+                keys.key.invoke(window.handle(),GLFW_KEY_ESCAPE,0,GLFW_PRESS,0);keys.key.invoke(window.handle(),GLFW_KEY_ESCAPE,0,GLFW_RELEASE,0);window.frame();
+                require(hasText(window,"添加字体来源")&&!hasText(window,"选择文件")&&activeFields(window).get(0)==field,"内层ESC关闭了添加框或重建草稿");
+                window.domain.execute(()->require(((club.heiqi.uilib.ui.scene.edit.SceneCompositionTarget)field.control()).compositionState().snapshot().get().text.equals(font.toString()),"取消选择覆盖了原路径草稿"));
+                keys.click("浏览字体文件");settle(window);SceneNode pickerField=activeFields(window).get(0);typeInto(window,keys,pickerField,directory.toString(),true);
+                long until=System.nanoTime()+5_000_000_000L;while(!hasText(window,font.getFileName().toString())&&System.nanoTime()<until){window.frame();Thread.sleep(5);}
+                keys.click(font.getFileName().toString());keys.click("选择文件");until=System.nanoTime()+5_000_000_000L;while(hasText(window,"选择文件")&&System.nanoTime()<until){window.frame();Thread.sleep(5);}
+                require(!hasText(window,"选择文件")&&hasText(window,"添加字体来源")&&current(window).equals(initial)&&java.util.Arrays.equals(saved,Files.readAllBytes(config)),"回填自动追加、应用或保存");
+                window.domain.execute(()->require(((club.heiqi.uilib.ui.scene.edit.SceneCompositionTarget)field.control()).compositionState().snapshot().get().text.equals(font.toString()),"选择结果未回填路径草稿"));
+                keys.click("添加到末尾");require(current(window).equals(initial)&&hasText(window,"有待应用修改"),"显式追加提前应用");keys.click("完成字体编辑");keys.click("应用全部更改");settle(window);
+                require(current(window).contains("file:"+font)&&java.util.Arrays.equals(saved,Files.readAllBytes(config)),"应用未发布字体或自动保存");keys.click("保存到文件");settle(window);require(!java.util.Arrays.equals(saved,Files.readAllBytes(config)),"显式保存未写真实文件");
+                screenshot(window,output.resolve("font-picker-applied.png"));
+            }
+            try(DesktopWindow window=DesktopWindow.openSettings(config)){settle(window);require(current(window).contains("file:"+font),"字体来源重开未恢复");}
+            System.out.println("FONT_PICKER sharedScenePicker=true cancelPreservesDraft=true nestedEscape=true fillOnly=true explicitAppendApplySave=true reopened=true actualCallbacks=true");
+        }finally{Files.deleteIfExists(font);Files.deleteIfExists(directory);}
+    }
+    private static List<SceneNode> activeFields(DesktopWindow window){List<SceneNode> nodes=new ArrayList<>();window.domain.execute(()->{for(SceneGeometryView.Entry entry:geometry(window).ordered())if(entry.node.control() instanceof club.heiqi.uilib.ui.scene.edit.SceneCompositionTarget&&window.page.runtime().interactive(entry.node))nodes.add(entry.node);});return nodes;}
+    private static void typeInto(DesktopWindow window,DesktopTestInput input,SceneNode field,String value,boolean enter){input.moveTo(field);input.mouse.invoke(window.handle(),0,GLFW_PRESS,0);input.mouse.invoke(window.handle(),0,GLFW_RELEASE,0);input.key.invoke(window.handle(),GLFW_KEY_A,0,GLFW_PRESS,GLFW_MOD_CONTROL);value.codePoints().forEach(cp->input.character.invoke(window.handle(),cp));if(enter)input.key.invoke(window.handle(),GLFW_KEY_ENTER,0,GLFW_PRESS,0);window.frame();}
     private void appearanceDraft() throws Exception {
         require(!original.isEmpty(),"默认字体候选为空");
         require(visible(w,"管理字体来源")&&visible(w,"浅色外观")&&visible(w,"深色外观")&&visible(w,"文字样本"),"默认首屏未完整呈现统一外观表单");

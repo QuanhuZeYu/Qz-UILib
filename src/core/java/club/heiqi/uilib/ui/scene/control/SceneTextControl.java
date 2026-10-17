@@ -28,8 +28,8 @@ final class SceneTextControl implements SceneControl {
     private final boolean button;
     private final ReadableSignal<SceneIconButton.Symbol> leadingIcon;
     private SceneAppearance.Surface modernSurface;
-    private TextLayout source, presented, tooltipSource, tooltipLayout;
-    private int presentWidth, presentHeight, tooltipWidth;
+    private TextLayout source, presented;
+    private int presentWidth, presentHeight;
 
     private SceneTextControl(
             ReadableSignal<SceneTheme> theme, SceneTextPolicy policy, boolean button,
@@ -162,80 +162,11 @@ final class SceneTextControl implements SceneControl {
         target.add(PaintCommand.text(inner, clip, paint));
     }
 
-    @Override
-    public void paintOverlay(
-            SceneNode node,
-            SceneGeometryView geometry,
-            PaintPlanBuilder target,
-            SceneTextMeasurer measurer) {
-        // 即时被动提示：只在正文省略时显示，不注册输入、不改变焦点或正文布局。
-        SceneRuntime runtime = node.runtime();
-        SceneGeometryView.Entry entry = geometry.get(node);
-        if (runtime == null
-                || entry == null
-                || !runtime.interactive(node)
-                || source == null
-                || presented == source
-                || entry.text != presented) return;
-        if (runtime.pointerRouter().hovered(geometry) != node
-                && !runtime.focusRouter().focusVisible(node)) return;
-        LayoutBox viewport = geometry.viewport();
-        if (viewport.width == 0 || viewport.height == 0) return;
-        LayoutBox visible = entry.box.intersect(viewport);
-        if (entry.clip != null) visible = visible.intersect(entry.clip);
-        if (visible.width == 0 || visible.height == 0) return;
-        SceneTheme style = theme.get();
-        int padding = Math.min(style.padding, Math.min(viewport.width, viewport.height) / 2);
-        int width = Math.max(0, viewport.width - padding * 2);
-        if (tooltipSource != source || tooltipWidth != width) {
-            tooltipSource = source;
-            tooltipWidth = width;
-            String fullText =
-                    source.originalText == null ? source.logicalText : source.originalText;
-            tooltipLayout =
-                    measurer.layout(
-                            fullText,
-                            source.style,
-                            width,
-                            new TextPolicy(
-                                    TextPolicy.Direction.AUTO,
-                                    TextPolicy.Wrap.EMERGENCY,
-                                    "und",
-                                    0,
-                                    0));
-        }
-        float textWidth = 0, textHeight = 0;
-        for (TextLayout.Line line : tooltipLayout.lines()) {
-            textWidth = Math.max(textWidth, SceneTextPresentation.right(line));
-            textHeight = Math.max(textHeight, SceneTextPresentation.bottom(line));
-        }
-        int w = (int) Math.min(viewport.width, Math.ceil(textWidth) + padding * 2L);
-        int h = (int) Math.min(viewport.height, Math.ceil(textHeight) + padding * 2L);
-        int x = clamp(entry.box.x, viewport.x, viewport.x + viewport.width - w);
-        long below = (long) entry.box.y + entry.box.height + style.gap;
-        long desired =
-                below + h <= (long) viewport.y + viewport.height
-                        ? below
-                        : (long) entry.box.y - style.gap - h;
-        int y =
-                (int)
-                        Math.max(
-                                viewport.y,
-                                Math.min((long) viewport.y + viewport.height - h, desired));
-        LayoutBox box = new LayoutBox(x, y, w, h);
-        target.add(PaintCommand.rect(box, viewport, style.tooltip));
-        LayoutBox inner = inner(box, padding);
-        // 完整源文保留，极长内容只裁剪到viewport；不声称任意文案都能放入单屏。
-        target.add(
-                PaintCommand.text(
-                        inner,
-                        inner.intersect(viewport),
-                        tooltipLayout.withStyle(tooltipLayout.style.withColor(style.tooltipText))));
+    @Override public SceneTooltip.Hint tooltip(SceneNode node,SceneGeometryView geometry){
+        SceneGeometryView.Entry entry=geometry.get(node);
+        if(source==null||presented==source||entry==null||entry.text!=presented)return null;
+        String full=source.originalText==null?source.logicalText:source.originalText;
+        return new SceneTooltip.Hint(SceneTooltip.Content.text(full),new SceneTooltip.Options().width(Float.MAX_VALUE),theme.get());
     }
-
-    private static int clamp(int value, int min, int max) {
-        return Math.max(min, Math.min(max, value));
-    }
-
 
 }

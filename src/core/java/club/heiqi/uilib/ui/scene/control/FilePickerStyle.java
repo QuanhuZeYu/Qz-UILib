@@ -18,7 +18,14 @@ final class FilePickerStyle extends SceneAppearance {
         SceneNode button=SceneButton.createWithIcon(page,()->entry.get().name(),()->colors.get().theme(1,colors.get().text,10),
                 activate,SceneTextPolicy.ELLIPSIS_SINGLE_LINE,()->entry.get().directory?SceneIconButton.Symbol.FOLDER:SceneIconButton.Symbol.FILE)
                 .size(Size.fill(1),Size.natural());
-        return column(0).control(new Surface(colors,Role.ENTRY,button,selected)).add(button);
+        return column(0).control(new Surface(colors,Role.ENTRY,button,selected)).add(button)
+                .add(ellipsis(()->metadata(entry.get()),.76f,true).padding(4));
+    }
+    private static String metadata(FilePickerDirectory.Entry entry){
+        String type=entry.directory?"文件夹":entry.type().isEmpty()?"文件":entry.type().toUpperCase(java.util.Locale.ROOT)+" 文件";
+        String size=entry.directory?"":entry.size<0?" · 大小未知":String.format(java.util.Locale.ROOT," · %,.0f B",(double)entry.size);
+        String date=entry.modified<0?"":" · "+java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(java.time.ZoneId.systemDefault()).format(java.time.Instant.ofEpochMilli(entry.modified));
+        return type+size+date;
     }
     SceneNode centered(SceneNode panel) {
         panel.bind(NodeBinding.value(colors,(n,p)->n.size(Size.fill(1).bounds(0,Math.round(p.source.textStyle.logicalEm*58)),

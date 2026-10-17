@@ -258,6 +258,9 @@ public interface SceneControl {
         return false;
     }
 
+    /** 自动提示只声明当前事实；显式绑定优先，由页面协调统一触发与呈现。 */
+    default SceneTooltip.Hint tooltip(SceneNode node,SceneGeometryView geometry){return null;}
+
     /** 被动提示在内容末端绘制，不创建命中/布局节点。 */
     default void paintOverlay(
             SceneNode node,

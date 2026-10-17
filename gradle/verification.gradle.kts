@@ -90,6 +90,8 @@ fun registerTestApplication(taskName: String, summary: String, application: Stri
 // 场景使用正式生产模块输出，无平台编译边界由 core.gradle.kts 管理。
 val coreSceneDeclarations = listOf(
     Triple("pointerInputScenario", "无平台真实scene指针手势验收", "PointerInputScenario"),
+    Triple("sliderScenario", "滑杆预览/释放/动态范围与捕获取消", "SliderScenario"),
+    Triple("tooltipScenario", "通用提示有限时序/范围/定位与原触发器验收", "TooltipScenario"),
     Triple("focusInputScenario", "无平台真实scene焦点归属与生命周期验收", "FocusInputScenario"),
     Triple("focusScopeScenario", "无平台真实scene范围进入与焦点恢复验收", "FocusScopeScenario"),
     Triple("focusNavigationScenario", "无平台真实scene焦点导航与键盘适配验收", "FocusNavigationScenario"),
@@ -133,6 +135,12 @@ val coreSceneApplications = coreSceneDeclarations.associate { (taskName, summary
     }
 }
 tasks.named("check") { dependsOn(coreSceneApplications.filterKeys { it != "coreStateScenario" }.values) }
+val filePickerScenario = registerTestApplication("filePickerScenario", "真实目录有序分页与旧确认隔离", "club.heiqi.uilib.ui.scene.control.FilePickerScenario") {
+    dependsOn(tasks.named("testClasses"))
+    classpath = coreSources.output + sourceSets.getByName("test").output + coreContentRuntime
+}
+tasks.named("check") { dependsOn(filePickerScenario) }
+
 // 富文本生产闭环独立编译，只接正式字体适配及 native 依赖，不扩大核心 MC 类路径。
 val richTextClasses = layout.buildDirectory.dir("classes/rich-text")
 val compileRichTextScenario by tasks.registering(JavaCompile::class) {

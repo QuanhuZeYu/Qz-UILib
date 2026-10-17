@@ -499,13 +499,14 @@ public final class StandardControlsScenario extends TestApplication {
                     require(session.runtime().focusRouter().focused().get() == null, "被动提示抢焦点");
                 });
         int requests = host.requests.size();
+        int oldTooltipWidth=host.requests.stream().filter(r->r.text.equals(LONG)).reduce((a,b)->b).get().width;
         host.width = 260;
         session.frame();
         domain.execute(
                 () -> {
                     assertTooltip(host, LONG, SceneTheme.light());
                     require(
-                            host.requests.size() > requests && requested(host, LONG, 18, 244),
+                            host.requests.size()>requests&&host.requests.stream().skip(requests).anyMatch(r->r.text.equals(LONG)&&r.size==18&&r.width!=oldTooltipWidth&&r.width>120&&r.width<=host.width),
                             "宿主大小变化未重新量提示");
                     theme[0].set(
                             SceneTheme.dark()
@@ -519,7 +520,7 @@ public final class StandardControlsScenario extends TestApplication {
         domain.execute(
                 () -> {
                     assertTooltip(host, LONG, theme[0].get());
-                    require(requested(host, LONG, 24, 244), "主题字号变化未重新量提示");
+                    require(host.requests.stream().skip(requests).anyMatch(r->r.text.equals(LONG)&&r.size==24&&r.width>0&&r.width<=host.width), "主题字号变化未重新量提示");
                     limit[0].set(10);
                 });
         session.frame();

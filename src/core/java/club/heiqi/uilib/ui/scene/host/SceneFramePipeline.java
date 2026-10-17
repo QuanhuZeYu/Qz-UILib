@@ -23,6 +23,7 @@ public final class SceneFramePipeline implements AutoCloseable {
     private final SceneHost host;
     private final SceneLayoutEngine layout;
     private final ScenePaintCollector paint;
+    private final SceneTextMeasurer text;
 
     private enum InputKind { POINTER, NAVIGATION, EDIT, FOCUS_LOST, ESCAPE }
 
@@ -133,6 +134,7 @@ public final class SceneFramePipeline implements AutoCloseable {
     public SceneFramePipeline(SceneRuntime runtime, SceneHost host, SceneTextMeasurer measurer) {
         this.runtime = runtime;
         this.host = host;
+        this.text=measurer;
         this.layout = new SceneLayoutEngine(measurer, runtime::scrollOffset, runtime::nodeMeasureRevision);
         this.paint = new ScenePaintCollector(layout, measurer);
     }
@@ -453,6 +455,7 @@ public final class SceneFramePipeline implements AutoCloseable {
             // 同步产生的呈现依赖仍沿原结算入口收敛，失败复用同一 activeInput 取消记录。
             if (beforeInput != runtime.revision()) return prepare(frameNanos, activeInput, false);
         }
+        runtime.prepareTooltips(prepared,text,nextMetrics);
         final SceneGeometry geometry = prepared;
         if (presentation == null
                 || revision != runtime.revision()

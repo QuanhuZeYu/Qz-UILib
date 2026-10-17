@@ -175,6 +175,14 @@ val desktopGalleryMediaVerify = desktopApplication("desktopGalleryMediaVerify", 
     mainClass.set("club.heiqi.uilib.host.desktop.DesktopGalleryMediaVerification")
     args(layout.buildDirectory.dir("reports/gallery-media").get().asFile.absolutePath)
 } }
+val desktopLiveMediaVerify = desktopApplication("desktopLiveMediaVerify", "自包含真实直播窗口、音频、过期与恢复验收", true).apply { configure {
+    mainClass.set("club.heiqi.uilib.host.desktop.DesktopMediaUxVerification")
+    args(layout.buildDirectory.dir("reports/media-ux").get().asFile.absolutePath)
+} }
+val desktopTooltipVerify = desktopApplication("desktopTooltipVerify", "真实回调与GPU验收通用Tooltip", true).apply { configure {
+    mainClass.set("club.heiqi.uilib.host.desktop.DesktopTooltipVerification")
+    args(layout.buildDirectory.dir("reports/tooltip-desktop").get().asFile.absolutePath)
+} }
 val desktopDropSortVerify = desktopApplication("desktopDropSortVerify", "隐藏真实回调验收接收区与多布局排序", true).apply { configure {
     mainClass.set("club.heiqi.uilib.host.desktop.DesktopDropSortVerification")
     args(layout.buildDirectory.dir("reports/drop-sort-desktop").get().asFile.absolutePath)
@@ -235,7 +243,7 @@ listOf("desktopPerformance", "desktopPerformanceBenchmark").forEach { taskName -
 }
 // 专项场景仍可按任务名定位；日常验收与 check 统一通过聚合入口取得相同覆盖。
 val galleryChecks = listOf(desktopGalleryVerify, desktopGalleryResultScenario, desktopSettingsVerify,
-    desktopDraggableVerify, desktopDraggableDeepVerify, desktopDropSortVerify, desktopScrollAreaVerify, desktopGalleryMediaVerify)
+    desktopDraggableVerify, desktopDraggableDeepVerify, desktopDropSortVerify, desktopScrollAreaVerify, desktopGalleryMediaVerify, desktopTooltipVerify, desktopLiveMediaVerify)
 galleryChecks.forEach { task -> task.configure { group = null } }
 val galleryVerify by tasks.registering {
     group = "verification"

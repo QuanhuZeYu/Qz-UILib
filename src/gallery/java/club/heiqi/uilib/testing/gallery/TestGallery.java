@@ -34,12 +34,14 @@ public final class TestGallery implements ScenePage {
         DROPPABLE("接收区","选择有效目标并放下内容"),
         SORTABLE("排序","重排列表、网格与跨容器内容"),
         SCROLL_AREA("滚动区","浏览纵横内容、嵌套视口与动态滚动条"),
-        MEDIA("媒体播放","播放视频与音频、暂停和跳转");
+        MEDIA("媒体播放","播放视频与音频、暂停和跳转"),
+        TOOLTIP("Tooltip","悬停与键盘提示、方向避让和完整说明");
         public final String title,purpose;
         Page(String title,String purpose){this.title=title;this.purpose=purpose;}
         String reference(){
             switch(this){
                 case MEDIA:return "参考：HTML video / 媒体控制";
+                case TOOLTIP:return "参考：shadcn Base / Tooltip";
                 case MAILBOX:return "参考：Gmail";
                 case DRAGGABLE:return "参考：dnd-kit / Draggable";
                 case DROPPABLE:return "参考：dnd-kit / Droppable";
@@ -87,6 +89,7 @@ public final class TestGallery implements ScenePage {
                 case DROPPABLE:page=DroppablePage.create(context,theme,() -> navigate.accept(Page.HOME));break;
                 case SORTABLE:page=SortablePage.create(context,theme,() -> navigate.accept(Page.HOME));break;
                 case SCROLL_AREA:page=ScrollAreaPage.create(context,theme,() -> navigate.accept(Page.HOME));break;
+                case TOOLTIP:page=TooltipPage.create(context,theme,() -> navigate.accept(Page.HOME));break;
                 case MAILBOX:page=club.heiqi.uilib.testing.gallery.mail.MailboxPage.create(context,theme,mode,
                         () -> navigate.accept(Page.HOME),() -> preview.set(dark.get()?ThemeMode.LIGHT:ThemeMode.DARK));break;
                 default:throw new AssertionError(id);
@@ -113,7 +116,7 @@ public final class TestGallery implements ScenePage {
         SceneNode root=new SceneNode().size(Size.fill(1),Size.fill(1)).padding(28).gap(24).scrollable(true);
         root.add(GalleryStyle.header(context,theme,"探索场景","从日常应用到细节交互，选择一个场景开始体验。",null));
         root.add(group(context,theme,navigate,"应用体验","完整的工作流程，共同的界面语言。",Page.MAILBOX,Page.SETTINGS,Page.MEDIA));
-        root.add(group(context,theme,navigate,"交互组件","拖动、放置、排序与滚动，在真实内容里试一试。",Page.DRAGGABLE,Page.DROPPABLE,Page.SORTABLE,Page.SCROLL_AREA));
+        root.add(group(context,theme,navigate,"交互组件","拖动、放置、排序与滚动，在真实内容里试一试。",Page.DRAGGABLE,Page.DROPPABLE,Page.SORTABLE,Page.SCROLL_AREA,Page.TOOLTIP));
         return root;
     }
     private static SceneNode group(ScenePageContext context,ReadableSignal<SceneTheme> theme,Consumer<Page> navigate,String title,String description,Page... entries){

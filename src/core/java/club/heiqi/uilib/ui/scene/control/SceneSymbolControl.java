@@ -22,11 +22,6 @@ import java.util.Objects;
 abstract class SceneSymbolControl implements SceneControl {
     final ReadableSignal<SceneTheme> theme;
     private final boolean showLabel;
-    private TextLayout tooltip;
-    private String tooltipName;
-    private club.heiqi.uilib.ui.scene.text.TextStyle tooltipStyle;
-    private int tooltipWidth = -1;
-    private long metrics = -1;
     SceneSymbolControl(ReadableSignal<SceneTheme> theme, boolean showLabel) {
         this.theme = Objects.requireNonNull(theme); this.showLabel = showLabel;
     }
@@ -83,29 +78,7 @@ abstract class SceneSymbolControl implements SceneControl {
             target.add(PaintCommand.text(label,e.clip,e.text.withStyle(e.text.style.withColor(enabled ? node.style().color : style.disabledText))));
         }
     }
-    @Override public void preparePaint(SceneNode node, SceneGeometryView geometry, SceneTextMeasurer text, long revision) {
-        if (metrics != revision) { metrics = revision; tooltip = null; }
-    }
-    @Override public void paintOverlay(SceneNode node, SceneGeometryView geometry, PaintPlanBuilder target, SceneTextMeasurer text) {
-        if (showLabel || node.runtime() == null || !node.runtime().interactive(node)) return;
-        if (node.runtime().pointerRouter().hovered(geometry) != node && !node.runtime().focusRouter().focusVisible(node)) return;
-        SceneGeometryView.Entry e = geometry.get(node); if (e == null) return;
-        LayoutBox viewport = geometry.viewport(); LayoutBox visible = e.box.intersect(viewport);
-        if (e.clip != null) visible = visible.intersect(e.clip);
-        if (visible.width == 0 || visible.height == 0) return;
-        SceneTheme t = theme.get(); int padding = Math.min(t.padding,Math.min(viewport.width,viewport.height)/2);
-        int width = Math.max(0,viewport.width-padding*2);
-        if (tooltip == null || !node.text().equals(tooltipName) || !node.style().equals(tooltipStyle) || tooltipWidth != width) {
-            tooltipName=node.text(); tooltipStyle=node.style(); tooltipWidth=width;
-            tooltip=text.layout(node.text(),node.style(),width);
-        }
-        int w=Math.min(viewport.width,tooltip.width+padding*2), h=Math.min(viewport.height,tooltip.height+padding*2);
-        int x=Math.max(viewport.x,Math.min(e.box.x,viewport.x+viewport.width-w));
-        int y=e.box.y+e.box.height+t.gap;
-        if ((long)y+h > (long)viewport.y+viewport.height) y=e.box.y-t.gap-h;
-        y=Math.max(viewport.y,Math.min(y,viewport.y+viewport.height-h));
-        LayoutBox box=new LayoutBox(x,y,w,h);
-        target.add(PaintCommand.rect(box,viewport,t.tooltip));
-        target.add(PaintCommand.text(SceneControlPaint.inner(box,padding),box.intersect(viewport),tooltip.withStyle(tooltip.style.withColor(t.tooltipText))));
+    @Override public SceneTooltip.Hint tooltip(SceneNode node,SceneGeometryView geometry){
+        return showLabel||node.clickAction()==null||node.text().isEmpty()?null:new SceneTooltip.Hint(SceneTooltip.Content.text(node.text()),new SceneTooltip.Options(),theme.get());
     }
 }

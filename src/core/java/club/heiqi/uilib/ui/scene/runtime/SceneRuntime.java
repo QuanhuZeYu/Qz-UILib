@@ -47,6 +47,7 @@ public final class SceneRuntime implements AutoCloseable {
     private final Map<SceneNode, ScrollPosition> scrolling = new IdentityHashMap<>();
     private final SceneScrollObservers scrollObservers = new SceneScrollObservers();
     private final SceneScrollDecorations scrollDecorations;
+    private final SceneTooltipCoordinator tooltips;
     private final ScenePointerRouter pointerRouter;
     private final SceneFocusRouter focusRouter;
     private final ReactiveDomain domain;
@@ -88,6 +89,7 @@ public final class SceneRuntime implements AutoCloseable {
         pointerRouter = new ScenePointerRouter(this);
         focusRouter = new SceneFocusRouter(this);
         scrollDecorations = new SceneScrollDecorations(this);
+        tooltips=new SceneTooltipCoordinator(this);
     }
 
     /** 宿主根可用空间的响应事实，不表示任意子节点的最终分配盒。 */
@@ -102,6 +104,11 @@ public final class SceneRuntime implements AutoCloseable {
         viewportWidth.set(width);
         viewportHeight.set(height);
     }
+
+    SceneTooltipCoordinator tooltips(){return tooltips;}
+    /** 正式几何与文本准备齐备后更新被动提示，绘制不推进状态。 */
+    public void prepareTooltips(SceneGeometryView geometry,club.heiqi.uilib.ui.scene.text.SceneTextMeasurer text,long metrics){tooltips.prepare(geometry,text,metrics);}
+    public void paintTooltip(SceneNode source,club.heiqi.uilib.ui.scene.paint.PaintPlanBuilder target){tooltips.paint(source,target);}
 
     public ReactiveDomain domain() {
         return domain;
@@ -1260,6 +1267,7 @@ public final class SceneRuntime implements AutoCloseable {
                         club.heiqi.uilib.ui.scene.input.SceneEditEvent.Command.ESCAPE,
                         false,
                         null))) return true;
+        if(tooltips.dismiss())return true;
         SceneNode modal = activeModal();
         if (modal != null && locallyInteractive(modal) && escape(modal)) return true;
         for (SceneNode root : roots)
@@ -1323,6 +1331,7 @@ public final class SceneRuntime implements AutoCloseable {
         command();
         // 扩展失焦回调也属于关闭错误边界，不能阻断挂载与Owner资源的完整收尾。
         Throwable failure = null;
+        tooltips.close();
         try {
             pointerRouter.close();
         } catch (RuntimeException | Error e) {

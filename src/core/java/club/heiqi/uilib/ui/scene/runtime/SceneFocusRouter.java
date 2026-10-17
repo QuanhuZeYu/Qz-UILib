@@ -75,6 +75,11 @@ public final class SceneFocusRouter {
         return true;
     }
 
+    /** 控件的显式键盘导航意图复用唯一owner，并只为本意图显露目标；普通request仍不追焦。 */
+    public boolean navigateTo(MountHandle target){
+        runtime.domain().checkWrite();Objects.requireNonNull(target);if(!local(target)||!target.node().focusable())return false;keyboardInput();if(!request(target))return false;pendingReveal=owner;return true;
+    }
+
     /** 按spec6.2当前范围的逻辑前序循环；调用方先结算声明。返回是否有有效候选，
      * 单项仍返回true但不重复通知，无焦点正向取首项/反向取末项；不激活控件。 */
     public boolean navigate(boolean backward) {

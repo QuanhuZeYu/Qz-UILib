@@ -59,7 +59,7 @@ public final class SettingsPage implements ScenePage {
     private final class View {
         final ScenePageContext ctx;
         final SettingsModel model;
-        final Signal<Boolean> fileSource;
+        final Signal<Boolean> fileSource,fontPicking;
         final Signal<Section> section;
         final Signal<Dialog> dialog;
         final Signal<String> selectedBuiltin;
@@ -71,7 +71,7 @@ public final class SettingsPage implements ScenePage {
         final String defaultSample="每一种语言，都值得被认真呈现。\nGood typography makes a difference.";
         View(ScenePageContext ctx) {
             this.ctx=ctx;model=new SettingsModel(configuration,ctx.scope());
-            fileSource=ctx.domain().signal(false);
+            fileSource=ctx.domain().signal(false);fontPicking=ctx.domain().signal(false);
             compact=ctx.domain().computed(ctx.scope(),() -> ctx.viewportWidth().get()<SettingsLayout.COMPACT_WIDTH);
             navigationOpen=ctx.domain().signal(false);
             ctx.domain().effect(ctx.scope(),() -> {compact.get();navigationOpen.set(false);});
@@ -325,7 +325,7 @@ public final class SettingsPage implements ScenePage {
             if(model.dirty().get()||model.unsaved().get()){confirmedLeave=action;dialog.set(Dialog.CLOSE);}
             else {confirmedLeave=null;action.run();}
         }
-        void cancelDialog(){confirmedLeave=null;dialog.set(dialog.get()==Dialog.ADD?Dialog.FONTS:Dialog.NONE);}
+        void cancelDialog(){fontPicking.set(false);confirmedLeave=null;dialog.set(dialog.get()==Dialog.ADD?Dialog.FONTS:Dialog.NONE);}
         void discardAndLeave(){
             Runnable action=confirmedLeave;confirmedLeave=null;dialog.set(Dialog.NONE);
             model.discard();action.run();
@@ -358,7 +358,7 @@ public final class SettingsPage implements ScenePage {
             builtins.bind(NodeBinding.value(fileSource,(n,file) -> n.visible(!file)));content.add(builtins);
             SceneNode field=SceneTextField.create(ctx,path,() -> palette.get().theme(SettingsTypography.pathStyle(14,palette.get().text),9,false),
                     () -> false,this::addFile,SceneTextField.SubmitPolicy.CONFIRM,() -> "C:/Fonts/Example.ttf",false);
-            SceneNode file=SettingsStyle.column(8).add(text("文件路径",13,false)).add(SettingsStyle.field(field,palette))
+            SceneNode file=SettingsStyle.column(8).add(actions(text("文件路径",13,false),button("浏览字体文件",()->fontPicking.set(true)))).add(SettingsStyle.field(field,palette))
                     .add(text("例如 C:/Fonts/Example.ttf；应用前会检查字体来源。",12,true));
             file.bind(NodeBinding.value(fileSource,SceneNode::visible));content.add(file);
             content.add(error(() -> path.snapshot().get().error==null?model.fontError().get():path.snapshot().get().error));
@@ -367,7 +367,14 @@ public final class SettingsPage implements ScenePage {
                 if(fileSource.get())addFile(path.request(true));
                 else if(!selectedBuiltin.get().isEmpty()){model.add(selectedBuiltin.get());if(model.fontError().get().isEmpty())dialog.set(Dialog.FONTS);}
             },true,false)));
-            return modal(content).initialFocus(cancel.target);
+            SceneNode result=modal(content).initialFocus(cancel.target);
+            SceneNode pickerOwner=new SceneNode().size(Size.fill(1),Size.fill(1)).bind(NodeBinding.repeat(()->fontPicking.get()?java.util.Collections.singletonList(true):java.util.Collections.emptyList(),value->value,item->
+                    club.heiqi.uilib.ui.scene.control.SceneFilePicker.create(ctx,fontDirectory(),()->palette.get().theme(14,palette.get().text,10,false),new club.heiqi.uilib.ui.scene.control.SceneFilePicker.Options().filter("字体文件","ttf,otf,ttc,woff,woff2"),selected->{path.reset(selected.toString());fontPicking.set(false);},()->fontPicking.set(false))));
+            result.add(pickerOwner);return result;
+        }
+        java.nio.file.Path fontDirectory(){
+            String raw=path.snapshot().get().text.trim();try{if(!raw.isEmpty()){java.nio.file.Path candidate=java.nio.file.Paths.get(raw).toAbsolutePath().normalize();if(candidate.getParent()!=null)return candidate.getParent();}}catch(IllegalArgumentException ignored){}
+            return java.nio.file.Paths.get(System.getProperty("user.home",".")).toAbsolutePath().normalize();
         }
         void addFile(SceneEditState.Submission submission) {
             String value=submission.text.trim();

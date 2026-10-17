@@ -62,6 +62,13 @@ public interface NodeBinding {
         return new HoverBinding(enabled,enterDelayNanos,apply);
     }
 
+    /** 补充说明依原触发器挂载，不建立焦点、点击或另一棵呈现树。 */
+    static NodeBinding tooltip(ReadableSignal<club.heiqi.uilib.ui.scene.control.SceneTooltip.Content> content,
+            ReadableSignal<club.heiqi.uilib.ui.scene.control.SceneTooltip.Options> options,
+            ReadableSignal<club.heiqi.uilib.ui.scene.control.SceneTheme> theme){
+        return new TooltipBinding(content,options,theme);
+    }
+
     static <T> NodeBinding value(ReadableSignal<T> source, BiConsumer<SceneNode, T> apply) {
         return (runtime, node, owner) -> {
             Observation observation =

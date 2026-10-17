@@ -11,6 +11,8 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
+import java.util.PriorityQueue;
+import java.util.Comparator;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.Future;
@@ -28,20 +30,24 @@ final class FilePickerDirectory implements AutoCloseable {
     static final class Entry {
         final Path path;
         final boolean directory;
-        Entry(Path path, boolean directory) { this.path = path; this.directory = directory; }
+        final long size,modified;
+        Entry(Path path,boolean directory){this(path,directory,-1,-1);}
+        Entry(Path path,boolean directory,long size,long modified){this.path=path;this.directory=directory;this.size=size;this.modified=modified;}
+        String type(){if(directory)return "目录";String name=name();int dot=name.lastIndexOf('.');return dot<0?"":name.substring(dot+1).toLowerCase(java.util.Locale.ROOT);}
         String name() { return path.getFileName() == null ? path.toString() : path.getFileName().toString(); }
     }
     static final class Result {
         final long request, page;
         final Path directory, selected, verified;
-        final boolean roots, next;
+        final boolean roots, previous, next;
         final List<Entry> entries;
         final String error;
-        Result(long request, long page, Path directory, boolean roots, boolean next,
-                List<Entry> entries, Path selected, Path verified, String error) {
+        final FilePickerQuery query;
+        Result(long request, long page, Path directory, boolean roots, boolean previous, boolean next,
+                List<Entry> entries, Path selected, Path verified, String error,FilePickerQuery query) {
             this.request = request; this.page = page; this.directory = directory;
-            this.roots = roots; this.next = next; this.entries = Collections.unmodifiableList(entries);
-            this.selected = selected; this.verified = verified; this.error = error;
+            this.roots = roots; this.previous=previous; this.next = next; this.entries = Collections.unmodifiableList(entries);
+            this.selected = selected; this.verified = verified; this.error = error;this.query=query;
         }
     }
     private interface Read { Result run() throws IOException; }
@@ -56,50 +62,64 @@ final class FilePickerDirectory implements AutoCloseable {
             thread.setDaemon(true); return thread;
         });
     }
-    void browse(long request, Path directory, long page) {
-        submit(request, () -> list(request, directory, page, null));
+    void browse(long request, Path directory, FilePickerQuery query) {
+        submit(request, () -> list(request, directory, query, null));
     }
     void locate(long request, Path path) {
         submit(request, () -> {
             BasicFileAttributes attributes = Files.readAttributes(path, BasicFileAttributes.class);
-            if (attributes.isDirectory()) return list(request, path, 0, null);
+            if (attributes.isDirectory()) return list(request, path, FilePickerQuery.first(), null);
             if (!attributes.isRegularFile()) throw new IOException("请选择目录或普通文件");
             Path parent = path.getParent();
             if (parent == null) throw new IOException("文件没有可浏览的上级目录");
-            return list(request, parent, 0, path);
+            return list(request, parent, FilePickerQuery.around(new Entry(path,false,attributes.size(),attributes.lastModifiedTime().toMillis())), path);
         });
     }
     void verify(long request, Path path) {
         submit(request, () -> {
             if (!Files.readAttributes(path, BasicFileAttributes.class).isRegularFile())
                 throw new IOException("请选择存在的普通文件");
-            return new Result(request, 0, null, false, false, Collections.emptyList(), null, path, null);
+            return new Result(request, 0, null, false, false, false, Collections.emptyList(), null, path, null,null);
         });
     }
-    void roots(long request, FileSystem fileSystem, long page) {
-        submit(request, () -> collect(request, null, true, page, fileSystem.getRootDirectories().iterator(), null));
+    void roots(long request, FileSystem fileSystem, FilePickerQuery query) {
+        submit(request, () -> collect(request, null, true, query, fileSystem.getRootDirectories().iterator(), null));
     }
-    private Result list(long request, Path directory, long page, Path selected) throws IOException {
+    private Result list(long request, Path directory, FilePickerQuery query, Path selected) throws IOException {
         checkCancelled();
-        // 每次进入、刷新或翻页重新取得事实；仅保留当前批及一个“还有下一批”的判断。
         try (DirectoryStream<Path> stream = Files.newDirectoryStream(directory)) {
-            return collect(request, directory, false, page, stream.iterator(), selected);
+            return collect(request, directory, false, query, stream.iterator(), selected);
         }
     }
-    private Result collect(long request, Path directory, boolean roots, long page,
-            Iterator<Path> paths, Path selected) {
-        long offset = Math.multiplyExact(page, (long) PAGE_SIZE), skipped = 0;
-        List<Entry> entries = new ArrayList<>(PAGE_SIZE);
-        while (paths.hasNext()) {
+    private Result collect(long request,Path directory,boolean roots,FilePickerQuery query,Iterator<Path> paths,Path selected){
+        Comparator<Entry> order=query.order;
+        boolean backwards=query.direction==FilePickerQuery.Direction.PREVIOUS;
+        int limit=PAGE_SIZE+1;
+        PriorityQueue<Entry> candidates=new PriorityQueue<>(limit,backwards?order:order.reversed());
+        long before=0;boolean opposite=false;
+        while(paths.hasNext()){
             checkCancelled();
-            Path path = paths.next().toAbsolutePath().normalize();
-            if (skipped < offset) { skipped++; continue; }
-            if (entries.size() == PAGE_SIZE)
-                return new Result(request, page, directory, roots, true, entries, selected, null, null);
-            entries.add(new Entry(path, roots || Files.isDirectory(path)));
+            Path path=paths.next().toAbsolutePath().normalize();
+            Entry entry;
+            try{BasicFileAttributes attributes=Files.readAttributes(path,BasicFileAttributes.class);entry=new Entry(path,roots||attributes.isDirectory(),attributes.size(),attributes.lastModifiedTime().toMillis());}
+            catch(IOException|SecurityException inaccessible){boolean directoryEntry=roots;try{directoryEntry|=Files.isDirectory(path);}catch(SecurityException unknownKind){/* 属性失败仍可显示未知项，不把无权读取伪装为0。 */}entry=new Entry(path,directoryEntry);}
+            if(!roots&&!query.accepts(entry))continue;
+            int compared=query.boundary==null?1:order.compare(entry,query.boundary);
+            if(compared<0)before++;
+            boolean eligible=query.boundary==null||backwards&&compared<0
+                    ||!backwards&&(compared>0||query.direction==FilePickerQuery.Direction.AROUND&&compared==0);
+            if(!eligible){opposite=true;continue;}
+            if(candidates.size()<limit)candidates.add(entry);
+            else if(backwards?order.compare(entry,candidates.peek())>0:order.compare(entry,candidates.peek())<0){
+                candidates.poll();candidates.add(entry);
+            }
         }
         checkCancelled();
-        return new Result(request, page, directory, roots, false, entries, selected, null, null);
+        List<Entry> entries=new ArrayList<>(candidates);entries.sort(order);
+        boolean more=entries.size()>PAGE_SIZE;
+        if(more)entries.remove(backwards?0:entries.size()-1);
+        long page=query.direction==FilePickerQuery.Direction.AROUND?before/PAGE_SIZE:query.page;
+        return new Result(request,page,directory,roots,backwards?more:opposite,backwards?opposite:more,entries,selected,null,null,query);
     }
     void cancelRead() {
         if (latest != null) latest.cancel(true);
@@ -119,7 +139,7 @@ final class FilePickerDirectory implements AutoCloseable {
                 if (closed.get() || Thread.currentThread().isInterrupted()) return;
                 String reason = failure.getMessage();
                 if (reason == null || reason.isEmpty()) reason = failure.getClass().getSimpleName();
-                publish(new Result(request, 0, null, false, false, Collections.emptyList(), null, null, reason));
+                publish(new Result(request, 0, null, false, false, false, Collections.emptyList(), null, null, reason,null));
             }
         });
     }

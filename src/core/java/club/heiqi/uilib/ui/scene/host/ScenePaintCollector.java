@@ -84,7 +84,9 @@ final class ScenePaintCollector {
         }
         while (!open.isEmpty()) paintAfterChildren(open.pop(), geometry, content);
         for (SceneGeometryView.Entry entry : ordered) {
-            if (insideCaptured(entry.node, captured) || entry.node.control() == null) continue;
+            if (insideCaptured(entry.node, captured)) continue;
+            if(entry.node.runtime()!=null)entry.node.runtime().paintTooltip(entry.node,overlay);
+            if(entry.node.control()==null)continue;
             entry.node.control().paintOverlay(entry.node, geometry, overlay, text);
             PaintPlan childOverlay = childOverlays.get(entry.node);
             if (childOverlay != null) append(overlay, childOverlay);

@@ -20,6 +20,7 @@ public final class ScenePointerRouter implements AutoCloseable {
     private Object ownerTarget;
     private int x, y;
     private boolean closed, positionKnown;
+    private long positionRevision;
     private final HoverProjection hover = new HoverProjection(), passive = new HoverProjection();
     private SceneGeometryView preparedGeometry;
     private final java.util.Set<HoverInterest> hoverInterests = new java.util.LinkedHashSet<>();
@@ -87,6 +88,25 @@ public final class ScenePointerRouter implements AutoCloseable {
         return closed || !positionKnown ? null : passive.get(geometry, true);
     }
 
+    long positionRevision(){return positionRevision;}
+    SceneNode tooltipHovered(SceneGeometryView geometry){
+        if(closed||!positionKnown)return null;
+        return passive.within(geometry);
+    }
+    /** 只观察已发布的提示矩形与连接走廊；不赋予输入资格，也不改变click/wheel命中。 */
+    boolean observesTooltip(club.heiqi.uilib.ui.scene.layout.LayoutBox anchor,club.heiqi.uilib.ui.scene.layout.LayoutBox popup){
+        if(closed||!positionKnown)return false;
+        if(popup.contains(x,y))return true;
+        if(popup.y+popup.height<=anchor.y||popup.y>=anchor.y+anchor.height){
+            int lo=Math.min(popup.y+popup.height,anchor.y+anchor.height),hi=Math.max(popup.y,anchor.y);
+            int left=Math.min(popup.x,anchor.x),right=Math.max(popup.x+popup.width,anchor.x+anchor.width);
+            return y>=lo&&y<=hi&&x>=left&&x<=right;
+        }
+        int lo=Math.min(popup.x+popup.width,anchor.x+anchor.width),hi=Math.max(popup.x,anchor.x);
+        int top=Math.min(popup.y,anchor.y),bottom=Math.max(popup.y+popup.height,anchor.y+anchor.height);
+        return x>=lo&&x<=hi&&y>=top&&y<=bottom;
+    }
+
     public boolean pressed(SceneNode node) {
         runtime.domain().checkAccess();
         return !closed && owner != null && owner.active() && owner.node() == node;
@@ -152,6 +172,8 @@ public final class ScenePointerRouter implements AutoCloseable {
             wheel.pointerMoved(event.x, event.y);
         else wheel.clear();
         updatePointerPosition(event);
+        if(event.kind==ScenePointerEvent.Kind.MOVE||event.kind==ScenePointerEvent.Kind.CANCEL)positionRevision++;
+        if(event.kind==ScenePointerEvent.Kind.DOWN||event.kind==ScenePointerEvent.Kind.SYNTHETIC_ACTIVATION)runtime.tooltips().pointerPressed();
         try {
             switch (event.kind) {
                 case DOWN:

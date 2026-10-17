@@ -53,7 +53,7 @@ SceneChildMeasurer.flowChildren 提供当批不可修改的可见普通流直属
 
 INTERACTIVE 子树沿标准控件既有 click/focus/scroll/edit 规则参与；出现或重排不形成新的 Tab 循环、不重新执行范围初始焦点、不抢文字目标。显式 modal 才形成范围转换，进入与返回沿核心第 6.3.1 节。
 
-PASSIVE 整个逻辑子树仅绘制，对下层指针透明，不成为 hover、手势、滚轮、焦点、键盘/文本或 ESC 目标。祖先 PASSIVE 继续约束嵌套 INTERACTIVE；子树内 modal 声明不合法，隐藏或来源无有效呈现也须诊断实际 layer/modal 声明位置。
+PASSIVE 整个逻辑子树仅绘制，对下层指针透明，不成为 hover、手势、滚轮、焦点、键盘/文本或 ESC 目标。Tooltip 的指针移入保持是唯一路由器对当前已发布几何的只读观察，不将提示内容变为 hover 输入目标、不新增手势 owner；其 ESC 关闭由来源所属有效范围的页面协调者按核心第6.1节处理，PASSIVE 本身不接收按键。祖先 PASSIVE 继续约束嵌套 INTERACTIVE；子树内 modal 声明不合法，隐藏或来源无有效呈现也须诊断实际 layer/modal 声明位置。
 
 范围归属按逻辑祖先，不能按 modal 外盒拒绝所属层中的合法点击。当前 modal 的控件与所属交互层是唯一前台输入范围，外部点击不同时激活后台。选择先消费本批来源空间可用性，再确定有效 modal 及最终呈现；不能先进入无来源的内层范围、触发失焦后再补偿。当前内层 modal 的来源祖先 Layer 保留必要呈现链，外层内容仍不接收输入。
 

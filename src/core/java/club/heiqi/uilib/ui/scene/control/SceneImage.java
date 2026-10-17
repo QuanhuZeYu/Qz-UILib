@@ -41,11 +41,7 @@ public final class SceneImage implements SceneControl {
     private final SceneNode placeholder;
     private boolean documentPolicy;
     private SceneTheme theme = SceneTheme.dark();
-    private club.heiqi.uilib.ui.scene.text.TextLayout quantityText, tooltipText;
-    private club.heiqi.uilib.ui.scene.image.ItemImageFacts tooltipFacts;
-    private club.heiqi.uilib.ui.scene.text.TextStyle tooltipStyle;
-    private int tooltipWidth = -1;
-    private long tooltipMetrics = -1;
+    private club.heiqi.uilib.ui.scene.text.TextLayout quantityText;
     private club.heiqi.uilib.ui.scene.image.ItemImageFacts quantityFacts;
     private TextStyle quantityStyle;
     private float quantityWidth = -1, quantityHeight = -1;
@@ -145,9 +141,6 @@ public final class SceneImage implements SceneControl {
                                 lease[0] = null;
                             }
                             control.state = null;
-                            control.tooltipFacts = null;
-                            control.tooltipStyle = null;
-                            control.tooltipText = null;
                             control.quantityText = null;
                             control.quantityFacts = null;
                             control.quantityStyle = null;
@@ -244,34 +237,7 @@ public final class SceneImage implements SceneControl {
             ImagePlacement placement = ImagePlacement.fit(state.content, entry.box, options);
             prepareQuantity(facts, node.style(), placement, text, metricsRevision);
         }
-        if (facts == null || !options.tooltip || facts.tooltip.source.isEmpty()) {
-            tooltipFacts = null;
-            tooltipStyle = null;
-            tooltipText = null;
-            return;
-        }
-        LayoutBox viewport = geometry.viewport();
-        int padding = Math.min(theme.padding, Math.min(viewport.width, viewport.height) / 2);
-        int width = Math.max(0, viewport.width - padding * 2);
-        club.heiqi.uilib.ui.scene.text.TextStyle style = node.style().withColor(theme.tooltipText);
-        if (tooltipText == null
-                || tooltipFacts != facts
-                || !style.equals(tooltipStyle)
-                || tooltipWidth != width
-                || tooltipMetrics != metricsRevision) {
-            club.heiqi.uilib.ui.scene.text.TextPolicy policy =
-                    new club.heiqi.uilib.ui.scene.text.TextPolicy(
-                            club.heiqi.uilib.ui.scene.text.TextPolicy.Direction.AUTO,
-                            club.heiqi.uilib.ui.scene.text.TextPolicy.Wrap.EMERGENCY,
-                            "und",
-                            0,
-                            0);
-            tooltipText = text.layout(facts.tooltip.resolve(style).text, width, policy);
-            tooltipFacts = facts;
-            tooltipStyle = style;
-            tooltipWidth = width;
-            tooltipMetrics = metricsRevision;
-        }
+
     }
 
     /** 数量随最终适配图像缩放。数学脚本只缩小图像盒，不改节点的主题字号；
@@ -375,46 +341,11 @@ public final class SceneImage implements SceneControl {
                 : new InkBounds(true, left, top, right, bottom);
     }
 
-    @Override
-    public void paintOverlay(
-            SceneNode node,
-            SceneGeometryView geometry,
-            PaintPlanBuilder target,
-            SceneTextMeasurer text) {
-        club.heiqi.uilib.ui.scene.image.ItemImageFacts facts =
-                state == null || state.content == null ? null : state.content.itemFacts();
-        if (facts == null
-                || tooltipText == null
-                || !options.tooltip
-                || node.runtime() == null
-                || node.runtime().pointerRouter().passiveHovered(geometry) != node) return;
-        SceneGeometryView.Entry entry = geometry.get(node);
-        LayoutBox viewport = geometry.viewport();
-        if (entry == null || viewport.width == 0 || viewport.height == 0) return;
-        int padding = Math.min(theme.padding, Math.min(viewport.width, viewport.height) / 2);
-        club.heiqi.uilib.ui.scene.text.TextLayout tip = tooltipText;
-        int w = Math.min(viewport.width, tip.width + padding * 2),
-                h = Math.min(viewport.height, tip.height + padding * 2);
-        int x = Math.max(viewport.x, Math.min(viewport.x + viewport.width - w, entry.box.x));
-        long below = (long) entry.box.y + entry.box.height + theme.gap;
-        long desired =
-                below + h <= (long) viewport.y + viewport.height
-                        ? below
-                        : (long) entry.box.y - theme.gap - h;
-        int y =
-                (int)
-                        Math.max(
-                                viewport.y,
-                                Math.min((long) viewport.y + viewport.height - h, desired));
-        LayoutBox box = new LayoutBox(x, y, w, h);
-        target.add(PaintCommand.rect(box, viewport, theme.tooltip));
-        LayoutBox inner =
-                new LayoutBox(
-                        x + padding,
-                        y + padding,
-                        Math.max(0, w - padding * 2),
-                        Math.max(0, h - padding * 2));
-        target.add(PaintCommand.text(inner, inner.intersect(viewport), tip));
+    @Override public SceneTooltip.Hint tooltip(SceneNode node,SceneGeometryView geometry){
+        club.heiqi.uilib.ui.scene.image.ItemImageFacts facts=state==null||state.content==null?null:state.content.itemFacts();
+        if(facts==null||!options.tooltip||facts.tooltip.source.isEmpty())return null;
+        SceneTheme styled=theme.withTextStyle(node.style());
+        return new SceneTooltip.Hint(new SceneTooltip.Content(facts.tooltip,""),new SceneTooltip.Options().width(Float.MAX_VALUE),styled);
     }
 
     @Override

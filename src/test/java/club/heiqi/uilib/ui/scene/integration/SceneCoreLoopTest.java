@@ -110,7 +110,12 @@ public final class SceneCoreLoopTest extends TestApplication {
         Signal<club.heiqi.uilib.ui.scene.control.SceneCheckBox.State>[] state=new Signal[1];
         Signal<Integer>[] clicks=new Signal[1];SceneNode[] box=new SceneNode[1],icon=new SceneNode[1],graphic=new SceneNode[1];
         Signal<club.heiqi.uilib.ui.scene.control.SceneIconButton.Symbol>[] shape=new Signal[1];
-        try(ScenePageSession page=ScenePageSession.open(domain,host,host,context->{
+        // 隔离成品验接口与正式输入；Tooltip换行几何用此软件度量，真实字形另由GPU场景验收。
+        club.heiqi.uilib.ui.scene.text.SceneTextMeasurer measurer=new club.heiqi.uilib.ui.scene.text.SceneTextMeasurer(){
+            public club.heiqi.uilib.ui.scene.text.TextLayout layout(String text,club.heiqi.uilib.ui.scene.text.TextStyle style,int width){return host.layout(text,style,width);}
+            public club.heiqi.uilib.ui.scene.text.TextLayout layout(String text,club.heiqi.uilib.ui.scene.text.TextStyle style,int width,club.heiqi.uilib.ui.scene.text.TextPolicy policy){return host.layout(text,style,width);}
+        };
+        try(ScenePageSession page=ScenePageSession.open(domain,host,measurer,context->{
             require(context.viewportWidth().get()==300,"成品初始空间事实缺失");
             state[0]=domain.signal(club.heiqi.uilib.ui.scene.control.SceneCheckBox.State.MIXED);clicks[0]=domain.signal(0);
             box[0]=club.heiqi.uilib.ui.scene.control.SceneCheckBox.create(context,state[0],()->"选择",context.theme(),
