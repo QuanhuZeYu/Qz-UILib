@@ -8,7 +8,8 @@ public final class MotionValue {
     private double value, velocity, target, origin, initialVelocity, reversingStart;
     private double shortening = 1, eased = 1;
     private long started, sampled, duration;
-    private boolean active;
+    private boolean active, bounded;
+    private double minimum, maximum, collisionBoundary;
     public double value() { return value; }
     public double velocity() { return velocity; }
     public double target() { return target; }
@@ -16,11 +17,12 @@ public final class MotionValue {
     public void snap(double next, long now) {
         finite(next); value = target = origin = reversingStart = next;
         velocity = initialVelocity = 0; shortening = eased = 1;
-        started = sampled = now; active = false; spec = MotionSpec.instant();
+        started = sampled = now; active = false; bounded = false; spec = MotionSpec.instant();
     }
     public void retarget(double next, MotionSpec strategy, long now) {
         finite(next); Objects.requireNonNull(strategy, "运动策略");
         advance(now);
+        if (bounded) next = Math.max(minimum, Math.min(maximum, next));
         if (target == next && spec.equals(strategy)) return;
         double previousTarget = target;
         if (strategy.kind == MotionSpec.Kind.TWEEN && spec.equals(strategy) && next == reversingStart) {
@@ -43,6 +45,19 @@ public final class MotionValue {
     public void shift(double delta) {
         finite(delta); value += delta; target += delta; origin += delta; reversingStart += delta;
     }
+    /** 硬边界接管当前轨迹：投影位置与目标，只消除朝边界外的速度，不积存不可见行程。 */
+    public void constrain(double minimum, double maximum, long now) {
+        finite(minimum); finite(maximum);
+        if (minimum > maximum) throw new IllegalArgumentException("运动边界次序无效");
+        advance(now);
+        this.minimum = minimum; this.maximum = maximum; bounded = true;
+        double position = Math.max(minimum, Math.min(maximum, value));
+        double destination = Math.max(minimum, Math.min(maximum, target));
+        double speed = position <= minimum && velocity < 0 || position >= maximum && velocity > 0 ? 0 : velocity;
+        if (position != value || destination != target || speed != velocity) rebase(position, speed, destination, sampled);
+    }
+    /** 约束声明撤销仅交还空间，不重置当前轨迹或速度。 */
+    public void unconstrain() { bounded = false; }
     /** 自由惯性终点由速度和衰减率求得；范围限位由所属视口负责。 */
     public void decay(double position, double speed, MotionSpec strategy, long now) {
         if (strategy.kind != MotionSpec.Kind.DECAY) throw new IllegalArgumentException("自由惯性要求衰减策略");
@@ -64,7 +79,9 @@ public final class MotionValue {
                 // 有限曲线只承诺值续接；其速度不参与反向连续性合同。
                 velocity = 0;
                 break;
-            case SPRING: spring(seconds); break;
+            case SPRING:
+                if (bounded) boundedSpring(now); else { sampleSpring(seconds); settle(); }
+                break;
             case DECAY:
                 double decay = Math.exp(-spec.frequency * seconds);
                 value = target + (origin - target) * decay;
@@ -76,7 +93,75 @@ public final class MotionValue {
         finite(value); finite(velocity);
         return active;
     }
-    private void spring(double seconds) {
+    private void rebase(double position, double speed, double destination, long now) {
+        value = origin = reversingStart = position; velocity = initialVelocity = speed; target = destination;
+        started = now; shortening = eased = 1; duration = spec.durationNanos;
+        active = position != destination || speed != 0;
+        if (spec.kind == MotionSpec.Kind.INSTANT || spec.kind == MotionSpec.Kind.TWEEN && duration == 0) finish();
+    }
+    private void boundedSpring(long now) {
+        while (active) {
+            double elapsed = (now - started) / 1_000_000_000.0;
+            double collision = firstCollision(elapsed);
+            if (Double.isNaN(collision)) { sampleSpring(elapsed); settle(); return; }
+            sampleSpring(collision);
+            double boundary = collisionBoundary;
+            long hit = Math.min(now, started + Math.round(collision * 1_000_000_000.0));
+            // 撞界时结束朝外速度，按剩余实际时间继续；不把整帧停在边界，也不积存越界行程。
+            rebase(boundary, 0, target, hit);
+            if (hit == now) return;
+        }
+    }
+    /** 弹簧每一方向的后续极值指数衰减，首个正/负极值已足以判定本解析段是否碰壁。 */
+    private double firstCollision(double elapsed) {
+        double cursor = 0, omega = spec.frequency, zeta = spec.damping;
+        if (zeta < 1) {
+            double rate = zeta * omega, damped = omega * Math.sqrt((1 - zeta) * (1 + zeta));
+            double a = origin - target, b = (initialVelocity + rate * a) / damped;
+            double phase = Math.atan2(-initialVelocity, -rate * b - damped * a);
+            double first = phase / damped, halfPeriod = Math.PI / damped;
+            if (first <= 0) first += halfPeriod;
+            for (int i = 0; i < 2; i++) {
+                double end = Math.min(elapsed, first + i * halfPeriod);
+                double collision = crossing(cursor, end);
+                if (!Double.isNaN(collision) || end == elapsed) return collision;
+                cursor = end;
+            }
+            return Double.NaN;
+        }
+        double turn = Double.NaN;
+        if (zeta == 1) {
+            double b = initialVelocity + omega * (origin - target);
+            if (b != 0) turn = initialVelocity / (omega * b);
+        } else {
+            double root = Math.sqrt(zeta - 1) * Math.sqrt(zeta + 1);
+            double fast = -omega * (zeta + root), slow = -omega / (zeta + root);
+            double a = (initialVelocity - fast * (origin - target)) / (slow - fast), b = origin - target - a;
+            double ratio = -slow * a / (fast * b);
+            if (ratio > 0) turn = Math.log(ratio) / (fast - slow);
+        }
+        if (turn > 0 && turn < elapsed) {
+            double collision = crossing(0, turn);
+            if (!Double.isNaN(collision)) return collision;
+            cursor = turn;
+        }
+        return crossing(cursor, elapsed);
+    }
+    private double crossing(double start, double end) {
+        if (end <= start) return Double.NaN;
+        sampleSpring(end);
+        boolean below = value < minimum;
+        if (!below && value <= maximum) return Double.NaN;
+        double boundary = below ? minimum : maximum; collisionBoundary = boundary;
+        double low = start, high = end;
+        // 仅定位解析函数的根，不按帧积分；纳秒投影误差不随帧间隔累积。
+        for (int i = 0; i < 64; i++) {
+            double middle = (low + high) * .5; sampleSpring(middle);
+            if (below ? value < boundary : value > boundary) high = middle; else low = middle;
+        }
+        return high;
+    }
+    private void sampleSpring(double seconds) {
         double omega = spec.frequency, zeta = spec.damping, displacement = origin - target;
         double x, v;
         if (zeta < 1) {
@@ -98,7 +183,7 @@ public final class MotionValue {
             double es = Math.exp(slow * seconds), ef = Math.exp(fast * seconds);
             x = a * es + b * ef; v = slow * a * es + fast * b * ef;
         }
-        value = target + x; velocity = v; settle();
+        value = target + x; velocity = v;
     }
     private void settle() {
         if (Math.abs(value - target) <= spec.positionPrecision && Math.abs(velocity) <= spec.velocityPrecision) finish();

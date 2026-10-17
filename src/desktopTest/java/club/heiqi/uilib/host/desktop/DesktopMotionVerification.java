@@ -39,6 +39,8 @@ public final class DesktopMotionVerification extends TestApplication {
         scenario("重排身份、结构退场与显隐反向", this::collections);
         scenario("拖拽回槽、取消与滚动边界", this::gestures);
         scenario("高速释放全段遵守父边界", this::fastRelease);
+        scenario("停手松开不甩出且再次拖动平稳接管", this::pausedRelease);
+        scenario("正常模式直接减少动效与退场途中切换", this::reducedMotion);
         scenario("途中关闭、减少动效与静态复用", this::policies);
         scenario("短窗口操作与离页释放", this::shortWindow);
         System.out.println("MOTION_DESKTOP sharedGallery=true realWindow=true realGlyphs=true inputSource=installed-GLFW-callback-injection readBuffer=GL_FRONT continuousFrames=true");
@@ -190,13 +192,71 @@ public final class DesktopMotionVerification extends TestApplication {
     private void fastRelease() throws Exception {
         Fixture f = open("fast-release"); pageEnd(f);
         LayoutBox slot = releaseDrag(f, "fast-drag", false); Set<Integer> positions = new HashSet<>();
+        long[] pinned = {-1};
         series(f, "fast-drag-release", 1100, elapsed -> {
-            assertParentBounds(f); positions.add(geometry(f.window, f.page.dragContent()).box.x);
+            assertParentBounds(f); LayoutBox current = geometry(f.window, f.page.dragContent()).box; positions.add(current.x);
+            LayoutBox parent = parentContent(f);
+            if (current.x + current.width == parent.x + parent.width) {
+                if (pinned[0] < 0) pinned[0] = elapsed;
+                require(elapsed - pinned[0] < 80, "高速回槽在父边界停滞后才返回");
+            } else pinned[0] = -1;
         });
         advanceWithinParent(f, 800);
         require(positions.size() >= 3 && geometry(f.window, f.page.dragContent()).box.x == slot.x,
                 "高速释放没有连续回到槽位");
         require(read(f.window, f.page.drops()) == 1, "高速回槽重复提交业务动作"); save(f.window, "09-fast-release");
+    }
+    private void pausedRelease() throws Exception {
+        Fixture f = open("paused-release"); pageEnd(f);
+        SceneNode handle = dragHandle(f); LayoutBox grip = geometry(f.window, handle).box;
+        double x = grip.x + grip.width / 2.0, y = grip.y + grip.height / 2.0;
+        f.input.moveTo(handle); f.input.mouse.invoke(f.window.handle(), GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 0); f.window.frame();
+        f.input.point(x + 70, y + 8); f.window.frame(); advance(f.window, 100);
+        int droppedX = geometry(f.window, f.page.dragContent()).box.x;
+        f.input.mouse.invoke(f.window.handle(), GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, 0); f.window.frame();
+        int[] grabbed = {-1};
+        series(f, "paused-drag-release", 250, elapsed -> {
+            assertParentBounds(f);
+            require(geometry(f.window, f.page.dragContent()).box.x <= droppedX, "停手松开后继续向外甩出");
+            if (grabbed[0] < 0 && elapsed >= 70) {
+                f.input.moveTo(handle); f.input.mouse.invoke(f.window.handle(), GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 0); f.window.frame();
+                grabbed[0] = geometry(f.window, f.page.dragContent()).box.x;
+                require(read(f.window, f.page.dragState().snapshot()).active && grabbed[0] > parentContent(f).x,
+                        "回槽途中按下没有接管当前可见位置");
+            }
+            if (grabbed[0] >= 0) require(geometry(f.window, f.page.dragContent()).box.x == grabbed[0], "新拖动仍被旧释放轨迹驱动");
+        });
+        f.input.key.invoke(f.window.handle(), GLFW_KEY_ESCAPE, 0, GLFW_PRESS, 0);
+        f.input.key.invoke(f.window.handle(), GLFW_KEY_ESCAPE, 0, GLFW_RELEASE, 0);
+        f.input.mouse.invoke(f.window.handle(), GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, 0); f.window.frame();
+        require(read(f.window, f.page.drops()) == 1, "取消重新拖动提交了第二次业务动作");
+        save(f.window, "10-paused-release");
+    }
+    private static int retainedAlpha(Fixture f) {
+        int[] result = {0};
+        f.window.domain.execute(() -> {
+            PaintPlan paint = f.window.page.runtime().retainedPresencePaint(f.window.page.pipeline().current().geometry);
+            for (club.heiqi.uilib.ui.scene.paint.PaintCommand command : paint.commands()) result[0] = Math.max(result[0], command.color >>> 24);
+        });
+        return result[0];
+    }
+    private void reducedMotion() throws Exception {
+        Fixture f = open("reduced-direct");
+        SceneNode removed = row(f, "选择 · 验收");
+        f.input.click("移除末项"); advance(f.window, 60); f.input.click("减少动效");
+        require(read(f.window, f.page.policy()) == MotionPolicy.REDUCED, "正常模式没有直接切换减少动效");
+        int[] previous = {255};
+        series(f, "reduced-exit", 700, elapsed -> {
+            int alpha = retainedAlpha(f);
+            require(alpha <= previous[0], "减少动效后已删除条目仍随弹簧回闪"); previous[0] = alpha;
+            if (elapsed >= 150) require(removed.destroyed(), "减少动效后仍等原弹簧结束才释放退场条目");
+        });
+        f.input.click("切换目标");
+        require(f.page.movingButton().translationX() == 76f, "减少动效下仍播放空间往返");
+        f.input.click("展开面板"); int height = geometry(f.window, f.page.panel()).box.height;
+        require(height > 0, "减少动效取消了展开动作"); advance(f.window, 300);
+        require(geometry(f.window, f.page.panel()).box.height == height, "减少动效下自然面板仍持续回弹");
+        save(f.window, "11-reduced-direct");
     }
     private LayoutBox releaseDrag(Fixture f, String sequence, boolean paced) {
         LayoutBox slot = geometry(f.window, f.page.dragContent()).box;

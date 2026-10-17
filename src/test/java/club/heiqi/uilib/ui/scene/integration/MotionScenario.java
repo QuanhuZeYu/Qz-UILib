@@ -23,7 +23,10 @@ public final class MotionScenario extends TestApplication {
         scenario("自然尺寸真实分配和位置重排途中命中", this::layout);
         scenario("显式退场立即结束输入及显隐反向", this::presence);
         scenario("拥有集合退场预算、同键新身份与页面释放", this::ownedExits);
+        scenario("途中减少动效同步已删除条目的平稳退场", this::reducedOwnedExit);
         scenario("拖拽释放保留位置和速度且单次意图", this::dragRelease);
+        scenario("停手释放不甩出且碰壁后立即回槽", this::dragReleaseFeedback);
+        scenario("碰壁按实际时刻推进且预览沿视口回槽", this::boundedRelease);
         scenario("滚动祖先优先、合法偏移与显式惯性", this::scrollMotion);
         scenario("退场滚动与窗口扩张消费当前裁剪", this::presenceClip);
         scenario("撤销回弹立即重排与旧滚动样本隔离", this::scrollCancellation);
@@ -234,6 +237,40 @@ public final class MotionScenario extends TestApplication {
         require(built.get(2).destroyed() && released[0] == 2, "退场预算未逐出最早记录");
         page.close(); require(released[0] == 3, "页面结束没有释放最后保留资源");
     }
+    private void reducedOwnedExit() {
+        for (boolean prepared : new boolean[] {false, true}) {
+        ReactiveDomain domain = ReactiveDomain.direct(); SoftwareSceneScenario.SoftwareHost host = new SoftwareSceneScenario.SoftwareHost(); host.width = 400; host.height = 300;
+        Signal<java.util.List<String>>[] items = new Signal[1]; Signal<MotionPolicy>[] policy = new Signal[1];
+        SceneNode[] row = {null}; int[] released = {0};
+        club.heiqi.uilib.ui.scene.host.ScenePageSession page = own(club.heiqi.uilib.ui.scene.host.ScenePageSession.open(domain, host, host, context -> {
+            items[0] = domain.signal(java.util.Collections.singletonList("条目")); policy[0] = domain.signal(MotionPolicy.NORMAL); context.motionPolicy(policy[0]);
+            context.mountOwned(new SceneNode().bind(NodeBinding.repeat(items[0], item -> item, item -> {
+                row[0] = new SceneNode().background(0xff182736).size(club.heiqi.uilib.ui.scene.layout.Size.fixed(100), club.heiqi.uilib.ui.scene.layout.Size.fixed(40)).own(() -> released[0]++);
+                return row[0];
+            }, () -> new club.heiqi.uilib.ui.scene.motion.PresenceOptions(MotionSpec.spring(.58, .52)))));
+        }));
+        page.frame(); domain.execute(() -> items[0].set(java.util.Collections.emptyList())); page.frame();
+        domain.execute(() -> {
+            long now = page.runtime().inputNanos();
+            if (prepared) { page.runtime().preparePresentation(now + 80_000_000L); page.pipeline().current(); }
+            policy[0].set(MotionPolicy.REDUCED); page.runtime().preparePresentation(now + 80_000_000L);
+            MotionValue reference = new MotionValue(); reference.snap(1, 0); reference.retarget(0, MotionSpec.spring(.58, .52), 0); reference.advance(80_000_000L);
+            int expected = Math.round((float) reference.value() * 255);
+            int current = page.pipeline().current().paint.commands().stream().filter(command -> (command.color & 0xffffff) == 0x182736)
+                    .mapToInt(command -> command.color >>> 24).max().orElse(0);
+            require(Math.abs(current - expected) <= 1, "减少策略回溯到上帧启动: current=" + current + " expected=" + expected);
+            int previous = 255;
+            for (long time = 80; time <= 700; time += 20) {
+                page.runtime().preparePresentation(now + time * 1_000_000L);
+                int alpha = page.pipeline().current().paint.commands().stream().filter(command -> (command.color & 0xffffff) == 0x182736)
+                        .mapToInt(command -> command.color >>> 24).max().orElse(0);
+                require(alpha <= previous, "减少动效后退场回闪: " + previous + "→" + alpha);
+                previous = alpha;
+                if (time == 200) require(row[0].destroyed() && released[0] == 1, "已删除条目仍运行原弹簧退出");
+            }
+        });
+        }
+    }
     private void dragRelease() {
         ReactiveDomain domain = ReactiveDomain.direct(); SoftwareSceneScenario.SoftwareHost host = new SoftwareSceneScenario.SoftwareHost(); host.width = 400; host.height = 300;
         SceneNode[] content = {null}, drag = {null}; int[] dropped = {0};
@@ -257,6 +294,99 @@ public final class MotionScenario extends TestApplication {
             page.runtime().preparePresentation(now + 2_000_000_000L);
             require(page.pipeline().current().geometry.get(content[0]).box.x == 0 && dropped[0] == 1, "回槽端点或动作次数错误");
         });
+    }
+    private void dragReleaseFeedback() {
+        for (boolean paused : new boolean[] {true, false}) {
+            ReactiveDomain domain = ReactiveDomain.direct();
+            SoftwareSceneScenario.SoftwareHost host = new SoftwareSceneScenario.SoftwareHost(); host.width = 400; host.height = 300;
+            SceneNode[] content = {null};
+            club.heiqi.uilib.ui.scene.host.ScenePageSession page = own(club.heiqi.uilib.ui.scene.host.ScenePageSession.open(domain, host, host, context -> {
+                content[0] = new SceneNode().size(club.heiqi.uilib.ui.scene.layout.Size.fixed(60), club.heiqi.uilib.ui.scene.layout.Size.fixed(40));
+                SceneNode drag = club.heiqi.uilib.ui.scene.control.SceneDraggable.create(context, content[0],
+                        club.heiqi.uilib.ui.scene.control.SceneDraggable.state(domain),
+                        new club.heiqi.uilib.ui.scene.control.SceneDraggable.Options().autoScroll(false)
+                                .bounds(club.heiqi.uilib.ui.scene.control.SceneDraggable.Bounds.PARENT).releaseMotion(MotionSpec.spring(.58, .52)));
+                context.mountOwned(new SceneNode().size(club.heiqi.uilib.ui.scene.layout.Size.fixed(180), club.heiqi.uilib.ui.scene.layout.Size.fixed(100)).add(drag));
+            }));
+            page.frame(); long input = System.nanoTime();
+            page.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.down(0, 5, 5).at(input));
+            page.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.move(75, 5).at(input + 5_000_000L));
+            page.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.up(0, 75, 5).at(input + (paused ? 80_000_000L : 5_000_000L))); page.frame();
+            domain.execute(() -> {
+                long time = page.runtime().inputNanos();
+                page.runtime().preparePresentation(time + 10_000_000L);
+                int first = page.pipeline().current().geometry.get(content[0]).box.x;
+                page.runtime().preparePresentation(time + 40_000_000L);
+                int next = page.pipeline().current().geometry.get(content[0]).box.x;
+                if (paused) require(first <= 70 && next < first, "停手松开仍按旧速度向外甩出: " + first + "/" + next);
+                else require(next < first, "撞到右边界后仍贴边等待内部越界轨迹: " + first + "/" + next);
+                page.runtime().preparePresentation(time + 2_000_000_000L);
+                require(page.pipeline().current().geometry.get(content[0]).box.x == 0, "边界投影没有回到合法槽位");
+            });
+        }
+    }
+    private void boundedRelease() {
+        MotionSpec released = MotionSpec.spring(.58, .52);
+        MotionValue constrained = new MotionValue(), reference = new MotionValue();
+        constrained.release(70, 0, 0, released, 0); constrained.constrain(0, 120, 0); constrained.advance(80_000_000L);
+        reference.release(constrained.value(), constrained.velocity(), 0, released, 80_000_000L);
+        constrained.unconstrain(); constrained.advance(300_000_000L); reference.advance(300_000_000L);
+        require(constrained.value() < 0, "撤销边界后仍被旧范围截断");
+        near(constrained.value(), reference.value(), .00001, "撤销约束重置了当前轨迹");
+        near(constrained.velocity(), reference.velocity(), .0001, "撤销约束丢失了速度");
+        for (double damping : new double[] {.52, 1, 1.8}) {
+            MotionSpec spring = MotionSpec.spring(.58, damping);
+            MotionValue one = new MotionValue(), many = new MotionValue();
+            one.release(70, 14000, 0, spring, 0); many.release(70, 14000, 0, spring, 0);
+            one.constrain(0, 120, 0); many.constrain(0, 120, 0);
+            one.advance(100_000_000L);
+            for (long now = 10_000_000L; now <= 100_000_000L; now += 10_000_000L) many.advance(now);
+            near(one.value(), many.value(), .00001, "碰壁分帧改变位置 damping=" + damping);
+            near(one.velocity(), many.velocity(), .0001, "碰壁分帧改变速度 damping=" + damping);
+            require(one.value() < 120, "大帧仍停在边界未推进剩余时间");
+            one.advance(1_000_000_000L); many.advance(1_000_000_000L);
+            near(one.value(), many.value(), .00001, "跨第二侧边界后不一致");
+        }
+        for (club.heiqi.uilib.ui.scene.control.SceneDraggable.Bounds bounds : new club.heiqi.uilib.ui.scene.control.SceneDraggable.Bounds[] {
+                club.heiqi.uilib.ui.scene.control.SceneDraggable.Bounds.NONE, club.heiqi.uilib.ui.scene.control.SceneDraggable.Bounds.PARENT}) for (boolean paused : new boolean[] {false, true}) {
+            int one = overlayRelease(bounds, paused, false), many = overlayRelease(bounds, paused, true);
+            near(one, many, 1, "预览PageSession单帧与连续排列改变相同经过时间的回槽位置");
+        }
+    }
+    private int overlayRelease(club.heiqi.uilib.ui.scene.control.SceneDraggable.Bounds bounds, boolean paused, boolean partitioned) {
+        ReactiveDomain domain = ReactiveDomain.direct(); SoftwareSceneScenario.SoftwareHost host = new SoftwareSceneScenario.SoftwareHost(); host.width = 180; host.height = 120;
+        SceneNode[] preview = {null}; long[] releasedAt = {0};
+        club.heiqi.uilib.ui.scene.host.ScenePageSession page = own(club.heiqi.uilib.ui.scene.host.ScenePageSession.open(domain, host, host, context -> {
+            preview[0] = new SceneNode().size(club.heiqi.uilib.ui.scene.layout.Size.fixed(60), club.heiqi.uilib.ui.scene.layout.Size.fixed(40));
+            SceneNode content = new SceneNode().size(club.heiqi.uilib.ui.scene.layout.Size.fixed(60), club.heiqi.uilib.ui.scene.layout.Size.fixed(40));
+            SceneNode drag = club.heiqi.uilib.ui.scene.control.SceneDraggable.create(context, content, club.heiqi.uilib.ui.scene.control.SceneDraggable.state(domain),
+                    new club.heiqi.uilib.ui.scene.control.SceneDraggable.Options().autoScroll(false).bounds(bounds).overlay(preview[0]).releaseMotion(MotionSpec.spring(.58, .52))
+                            .onDrop(ignored -> releasedAt[0] = context.runtime().inputNanos()));
+            context.mountOwned(new SceneNode().size(club.heiqi.uilib.ui.scene.layout.Size.fixed(300), club.heiqi.uilib.ui.scene.layout.Size.fixed(100)).add(drag));
+        }));
+        page.frame(); long input = System.nanoTime();
+        page.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.down(0, 5, 5).at(input));
+        int pointer = paused ? 175 : 75;
+        page.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.move(pointer, 5).at(input + 5_000_000L));
+        page.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.up(0, pointer, 5).at(input + (paused ? 80_000_000L : 5_000_000L))); page.frame();
+        int[] result = {0};
+        domain.execute(() -> {
+            int first = -1;
+            for (long time = partitioned ? 10 : 100; time <= 100; time += 10) {
+                page.runtime().preparePresentation(releasedAt[0] + time * 1_000_000L);
+                int current = page.pipeline().current().geometry.get(preview[0]).box.x;
+                if (time == 10) first = current;
+                if (time == 40) {
+                    require(current < first && first <= 120, "预览视口内部轨迹仍越界: " + first + "/" + current);
+                    if (paused) {
+                        MotionValue expected = new MotionValue(); expected.release(120, 0, 0, MotionSpec.spring(.58, .52), 0); expected.advance(40_000_000L);
+                        near(current, Math.round(expected.value()), 1, "预览UP与MOVE坐标混用产生假速度");
+                    }
+                }
+                result[0] = current;
+            }
+        });
+        return result[0];
     }
     private void scrollMotion() {
         ReactiveDomain domain = ReactiveDomain.direct(); SoftwareSceneScenario.SoftwareHost host = new SoftwareSceneScenario.SoftwareHost(); host.width = 400; host.height = 300;

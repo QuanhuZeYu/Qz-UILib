@@ -48,10 +48,11 @@ final class ScenePresence implements SceneTransitions.Step {
         final Snapshot snapshot;
         final MotionValue value = new MotionValue();
         final long started, maximum;
+        final MotionSpec requested;
         Exit(SceneNode node, Object scope, Object key, Snapshot snapshot, double opacity,
                 PresenceOptions options, MotionSpec spec, long now) {
             this.node = node; this.scope = scope; this.key = key; this.snapshot = snapshot;
-            started = now; maximum = options.maximumExitNanos;
+            started = now; maximum = options.maximumExitNanos; requested = options.exit;
             value.snap(opacity, now); value.retarget(0, spec, now);
         }
     }
@@ -125,7 +126,10 @@ final class ScenePresence implements SceneTransitions.Step {
             state.value.retarget(state.present ? 1 : 0, next.resolve(state.present ? state.options.enter : state.options.exit, false), now);
             if (!state.present && !state.value.active()) state.snapshot = null;
         }
-        if (next == MotionPolicy.OFF) for (Exit exit : new ArrayList<>(exits)) finish(exit);
+        for (Exit exit : new ArrayList<>(exits)) {
+            exit.value.retarget(0, next.resolve(exit.requested, false), now);
+            if (!exit.value.active()) finish(exit);
+        }
         runtime.invalidatePaint(); schedule();
     }
     private boolean available(Snapshot snapshot) {

@@ -545,8 +545,8 @@ public final class SceneRuntime implements AutoCloseable {
         mutation = true;
         try {
             if (motionPolicyDirty) { motionPolicyDirty = false; motionPolicySource.refresh(); }
-            presence.syncPolicy();
             transitions.advance(frameNanos);
+            presence.syncPolicy();
             do {
                 settleBindingDeclarations();
                 validateCurrentLayerPolicies();

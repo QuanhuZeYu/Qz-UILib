@@ -193,6 +193,7 @@ public final class SceneDraggable {
                         Offset current = release.active.get() ? new Offset(release.x(), release.y()) : state.preferred.get();
                         int x = SceneDragSupport.integer((long) sourceBox.x + node.padding() + current.x);
                         int y = SceneDragSupport.integer((long) sourceBox.y + node.padding() + current.y);
+                        release.bounds(releaseBounds, viewport, sourceBox.x + node.padding(), sourceBox.y + node.padding(), measured.width, measured.height);
                         if (release.active.get() && releaseBounds != null) {
                             x = SceneDragSupport.clamp(x, measured.width, releaseBounds.x, releaseBounds.width);
                             y = SceneDragSupport.clamp(y, measured.height, releaseBounds.y, releaseBounds.height);
@@ -269,6 +270,11 @@ public final class SceneDraggable {
             releaseBounds = currentOptions.bounds == Bounds.NONE ? null : currentOptions.bounds == Bounds.VIEWPORT
                     ? viewport : parentAllocation == null ? viewport : SceneControlPaint.inner(parentAllocation, node.parent().padding());
             ChildPlacements ordinary = SceneFlowLayout.arrange(node, box, children);
+            for (ChildPlacements.Entry entry : ordinary.entries()) if (options().overlay == null && entry.child == content) {
+                // 预览的最终范围由所属层提供，普通内容不得覆盖或撤销该轨迹约束。
+                LayoutBox child = entry.relativeBox;
+                release.bounds(releaseBounds, box.x + child.x, box.y + child.y, child.width, child.height);
+            }
             Snapshot current = state.snapshot.get();
             if ((!current.active && !release.active.get()) || options().overlay != null || options().preserveSlot) return ordinary;
             Offset offset = release.active.get() ? new Offset(release.x(), release.y()) : state.preferred.get();
@@ -485,6 +491,8 @@ public final class SceneDraggable {
             state.pointerX = event.x; state.pointerY = event.y;
             // 普通预览的 UP 只消费已发布盒；排序继续在自身正式控制器中结算位置意图。
             if (options().preserveSlot && options().overlay == null) update(node, geometry, SceneDragSupport.AutoScroll.Shift.NONE);
+            Offset preferred = state.preferred.get();
+            release.sample(preferred.x, preferred.y, event.timeNanos);
             drop(node, geometry);
         }
         @Override public boolean edit(SceneNode node, SceneEditEvent event, SceneGeometryView geometry) {
