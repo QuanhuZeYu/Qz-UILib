@@ -18,6 +18,8 @@ public final class MotionScenario extends TestApplication {
         scenario("解析弹簧同时间、不同分帧及三种阻尼", this::spring);
         scenario("有限反向缩时与显式惯性终点", this::finite);
         scenario("声明目标、动态策略、重复准备及重挂", this::binding);
+        scenario("减少模式保留短平稳位移而关闭立即落定", this::reducedSpatial);
+        scenario("显式弹性边缘有阻力且放下提交合法坐标", this::elasticDrag);
         scenario("正式颜色与透明度通道", this::properties);
         scenario("标准控件默认过渡、局部覆盖与纯绘制失效", this::standardFeedback);
         scenario("自然尺寸真实分配和位置重排途中命中", this::layout);
@@ -95,6 +97,60 @@ public final class MotionScenario extends TestApplication {
             runtime.attach(null, node); runtime.preparePresentation(2_000_000_000L);
             require(shown[0] == 30, "重挂未直接消费当前目标"); runtime.close(); node.destroy();
         });
+    }
+    private void reducedSpatial() {
+        ReactiveDomain domain = ReactiveDomain.direct();
+        domain.execute(() -> {
+            SceneRuntime runtime = new SceneRuntime(domain); Signal<MotionPolicy> policy = domain.signal(MotionPolicy.REDUCED);
+            Signal<Float> target = domain.signal(0f); runtime.motionPolicy(policy);
+            SceneNode node = new SceneNode().bind(club.heiqi.uilib.ui.scene.motion.SceneMotion.translateX(target, () -> MotionSpec.spring(.42, .68)));
+            runtime.attach(null, node); runtime.preparePresentation(0); target.set(100f); runtime.preparePresentation(0);
+            float previous = node.translationX();
+            for (long t = 20; t <= 160; t += 20) {
+                runtime.preparePresentation(t * 1_000_000L); float next = node.translationX();
+                require(next >= previous && next <= 100, "减少模式出现往返或超调");
+                if (t == 80) require(next > 0 && next < 100, "减少模式仍等于立即关闭");
+                previous = next;
+            }
+            require(node.translationX() == 100, "减少模式未及时落目标");
+            policy.set(MotionPolicy.OFF); target.set(0f); runtime.preparePresentation(160_000_000L);
+            require(node.translationX() == 0, "关闭未立即落定"); runtime.close(); node.destroy();
+        });
+    }
+    private void elasticDrag() {
+        club.heiqi.uilib.ui.scene.motion.ElasticOptions elastic = new club.heiqi.uilib.ui.scene.motion.ElasticOptions(32, MotionSpec.spring(.42, .68));
+        double a = elastic.displacement(40, MotionPolicy.NORMAL), b = elastic.displacement(80, MotionPolicy.NORMAL), c = elastic.displacement(120, MotionPolicy.NORMAL);
+        require(a > 0 && b > a && c > b && c - b < b - a && b - a < a, "越界阻力没有逐渐增大");
+        require(elastic.displacement(120, MotionPolicy.REDUCED) > 0 && elastic.displacement(120, MotionPolicy.REDUCED) < c, "减少模式形变没有缩小");
+        require(elastic.displacement(120, MotionPolicy.OFF) == 0, "关闭仍有形变");
+        ReactiveDomain domain = ReactiveDomain.direct(); SoftwareSceneScenario.SoftwareHost host = new SoftwareSceneScenario.SoftwareHost(); host.width = 300; host.height = 180;
+        SceneNode[] content = {null}; int[] drops = {0}, submitted = {-1}; long[] released = {0};
+        club.heiqi.uilib.ui.scene.host.ScenePageSession page = own(club.heiqi.uilib.ui.scene.host.ScenePageSession.open(domain, host, host, context -> {
+            content[0] = new SceneNode().size(club.heiqi.uilib.ui.scene.layout.Size.fixed(60), club.heiqi.uilib.ui.scene.layout.Size.fixed(40));
+            SceneNode drag = club.heiqi.uilib.ui.scene.control.SceneDraggable.create(context, content[0], club.heiqi.uilib.ui.scene.control.SceneDraggable.state(domain),
+                    new club.heiqi.uilib.ui.scene.control.SceneDraggable.Options().bounds(club.heiqi.uilib.ui.scene.control.SceneDraggable.Bounds.PARENT).elastic(elastic).autoScroll(false)
+                            .onDrop(value -> { drops[0]++; submitted[0] = value.deltaX; released[0] = context.runtime().inputNanos(); }));
+            context.mountOwned(new SceneNode().size(club.heiqi.uilib.ui.scene.layout.Size.fixed(100), club.heiqi.uilib.ui.scene.layout.Size.fixed(80)).add(drag));
+        }));
+        page.frame(); long input = System.nanoTime();
+        page.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.down(0, 5, 5).at(input));
+        page.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.move(175, 5).at(input + 50_000_000L)); page.frame();
+        int[] stretched = {0}; domain.execute(() -> { stretched[0] = page.pipeline().current().geometry.get(content[0]).box.x; require(stretched[0] > 40 && stretched[0] < 72, "拖中没有有限弹性越界"); });
+        page.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.up(0, 175, 5).at(input + 150_000_000L)); page.frame();
+        domain.execute(() -> {
+            require(drops[0] == 1 && submitted[0] == 40, "弹性视觉位移污染合法业务落点");
+            page.runtime().preparePresentation(released[0] + 50_000_000L);
+            int middle = page.pipeline().current().geometry.get(content[0]).box.x;
+            require(middle > 0 && middle < stretched[0], "松手未从拉伸位置自然回弹");
+            page.runtime().preparePresentation(released[0] + 2_000_000_000L);
+            require(page.pipeline().current().geometry.get(content[0]).box.x == 0 && drops[0] == 1, "回弹未停止或重复提交");
+        });
+        page.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.down(0, 5, 5));
+        page.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.move(175, 5)); page.frame();
+        int[] beforeGrab = {0}; domain.execute(() -> beforeGrab[0] = page.pipeline().current().geometry.get(content[0]).box.x);
+        page.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.up(0, 175, 5)); page.frame();
+        page.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.down(0, beforeGrab[0] + 5, 5)); page.frame();
+        domain.execute(() -> near(page.pipeline().current().geometry.get(content[0]).box.x, beforeGrab[0], 1, "软边缘再次按下重复压缩可见位移"));
     }
     private void properties() {
         ReactiveDomain domain = ReactiveDomain.direct();

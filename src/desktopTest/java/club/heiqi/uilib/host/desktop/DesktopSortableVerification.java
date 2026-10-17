@@ -14,6 +14,8 @@ import club.heiqi.uilib.ui.scene.control.SceneTheme;
 import club.heiqi.uilib.ui.scene.edit.SceneEditState;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.Size;
+import club.heiqi.uilib.ui.scene.motion.MotionPolicy;
+import club.heiqi.uilib.ui.scene.motion.MotionSpec;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.runtime.MountHandle;
 import java.nio.file.Files;
@@ -38,6 +40,9 @@ public final class DesktopSortableVerification extends TestApplication {
     @Override protected void runTests() throws Exception {
         scenario("拖中让位、反向与独立落下动画", this::feedback);
         scenario("关闭、自定义过渡与业务拒绝", this::transitionPolicies);
+        scenario("显式弹簧反向与三种用户策略", () -> motionPolicies(true));
+        scenario("原有限过渡遵循动态用户限制", () -> motionPolicies(false));
+        scenario("有限曲线来源重求值不延长轨迹", this::finiteSource);
         for (SceneSortable.Layout layout : SceneSortable.Layout.values()) scenario("真实变尺寸 " + layout, () -> layout(layout));
         scenario("跨容器及空容器保持身份与编辑", this::containers);
         scenario("键盘相邻排序与取消", this::keyboard);
@@ -56,8 +61,10 @@ public final class DesktopSortableVerification extends TestApplication {
         Signal<List<SceneSortable.Group<String,Integer>>> groups;
         Signal<Boolean> enabled;
         Signal<SceneSortable.Transition> transition;
+        Signal<MotionSpec> reorderMotion, dropMotion;
+        Signal<MotionPolicy> motionPolicy;
         SceneNode preview;
-        boolean rejectMove, noHandles, narrowContent;
+        boolean rejectMove, noHandles, narrowContent, freshTransition;
         Signal<Boolean> contentEnabled;
         final Map<Integer,SceneNode> rows = new HashMap<>(), grips = new HashMap<>(), fields = new HashMap<>();
         final Map<Integer,SceneEditState> edits = new HashMap<>();
@@ -70,6 +77,8 @@ public final class DesktopSortableVerification extends TestApplication {
                     :Collections.singletonList(new SceneSortable.Group<>("A",values)));
             enabled=ctx.domain().signal(true);contentEnabled=ctx.domain().signal(true);
             transition=ctx.domain().signal(new SceneSortable.Transition(250,.25,1,.5,1));
+            reorderMotion=ctx.domain().signal(null);dropMotion=ctx.domain().signal(null);
+            motionPolicy=ctx.domain().signal(MotionPolicy.NORMAL);ctx.motionPolicy(motionPolicy);
             SceneNode board=SceneSortable.create(ctx,groups,item->item,key->{
                 SceneNode list=layout==SceneSortable.Layout.GRID?SceneGrid.create(ctx,()->new SceneGrid.Policy(180,12,12))
                         :new SceneNode().axis(layout==SceneSortable.Layout.HORIZONTAL?SceneNode.Axis.ROW:SceneNode.Axis.COLUMN);
@@ -100,7 +109,7 @@ public final class DesktopSortableVerification extends TestApplication {
                 return noHandles?new SceneSortable.Row(content):new SceneSortable.Row(content,grip);
             },value->{preview=new SceneNode().size(Size.fixed(180),Size.fixed(70)).text("排序预览 "+value.get()).background(0xff93c5fd);return preview;},move->{
                 moves++;if(!rejectMove)groups.set(moved(groups.get(),move));
-            },()->new SceneSortable.Options<Integer,String>().draggable(item->item!=2||enabled.get()).accepts((container,item)->!"blocked".equals(container)&&enabled.get()).transition(transition.get()));
+            },()->new SceneSortable.Options<Integer,String>().draggable(item->item!=2||enabled.get()).accepts((container,item)->!"blocked".equals(container)&&enabled.get()).transition(freshTransition?new SceneSortable.Transition(250,.25,1,.5,1):transition.get()).reorderMotion(reorderMotion.get()).dropMotion(dropMotion.get()));
             board.gap(18);
             ctx.mountOwned(new SceneNode().size(Size.fill(1),Size.fill(1)).padding(25).add(board));
         }
@@ -151,6 +160,69 @@ public final class DesktopSortableVerification extends TestApplication {
             w.domain.execute(()->model.transition.set(new SceneSortable.Transition(300,.34,1.56,.64,1)));w.frame();
             dragToAfter(w,input,model,1,3);advance(w,350);key(w,input,GLFW_KEY_ESCAPE);release(w,input);advance(w,350);
             require(model.moves==1,"自定义回弹过渡取消仍提交");
+        }
+    }
+    private void finiteSource() throws Exception {
+        Model model=new Model(SceneSortable.Layout.VERTICAL,false,false);model.rejectMove=true;model.freshTransition=true;
+        try(DesktopWindow w=open(model,"finite-source")) {
+            DesktopTestInput input=new DesktopTestInput(w);int target=geometry(w,model.rows.get(1)).box.y;
+            int original=geometry(w,model.rows.get(2)).box.y;
+            dragToAfter(w,input,model,1,3);advance(w,350);
+            require(geometry(w,model.rows.get(2)).box.y==target,"重复读取有限曲线来源延长了让位");
+            key(w,input,GLFW_KEY_ESCAPE);release(w,input);advance(w,600);
+            require(model.moves==0&&geometry(w).get(model.preview)==null&&geometry(w,model.rows.get(2)).box.y==original,
+                    "有限曲线来源重新求值使取消运动持续");
+        }
+    }
+    private void motionPolicies(boolean spring) throws Exception {
+        Model model=new Model(SceneSortable.Layout.VERTICAL,false,false);model.rejectMove=true;
+        try(DesktopWindow w=open(model,"motion-policies-"+spring)) {
+            DesktopTestInput input=new DesktopTestInput(w);Map<Integer,MountHandle> mounts=mounts(w,model);
+            w.domain.execute(()->{
+                model.transition.set(spring?null:new SceneSortable.Transition(800,.34,1.56,.64,1));
+                if(spring){model.reorderMotion.set(MotionSpec.spring(.42,.68));model.dropMotion.set(MotionSpec.spring(.42,.68));}
+            });w.frame();
+            LayoutBox source=geometry(w,model.rows.get(1)).box,before=geometry(w,model.rows.get(2)).box;
+            dragToAfter(w,input,model,1,3);advance(w,50);
+            int middle=geometry(w,model.rows.get(2)).box.y;
+            require(source.y<middle&&middle<before.y&&model.moves==0,"让位没有可见中间值 spring="+spring);
+            w.domain.execute(()->{
+                long now=w.page.runtime().inputNanos();
+                int visible=w.page.pipeline().current().geometry.get(model.rows.get(2)).box.y;
+                for(int i=0;i<3;i++){w.page.runtime().preparePresentation(now);w.page.pipeline().current();}
+                require(w.page.pipeline().current().geometry.get(model.rows.get(2)).box.y==visible,"同帧重复准备推进排序运动");
+            });
+            move(w,input,source.x+source.width/2,source.y+4);
+            int reversed=geometry(w,model.rows.get(2)).box.y;
+            require(Math.abs((long)reversed-middle)<source.height/2,"途中反向从旧端点跳变");
+            w.domain.execute(()->model.motionPolicy.set(MotionPolicy.REDUCED));w.frame();
+            int start=geometry(w,model.rows.get(2)).box.y,previous=start;
+            require(start<before.y,"减少模式切换未保留当前让位");
+            for(int i=0;i<8;i++) {
+                advance(w,20);int current=geometry(w,model.rows.get(2)).box.y;
+                require(previous<=current&&current<=before.y,"减少模式让位往返或过冲");
+                if(i==1)require(start<current&&current<before.y,"减少模式缺少平稳中间帧");
+                previous=current;
+            }
+            require(previous==before.y,"减少模式未在短时内结束让位");continuous(w,model,mounts);
+            w.domain.execute(()->model.motionPolicy.set(MotionPolicy.NORMAL));w.frame();
+            LayoutBox third=geometry(w,model.rows.get(3)).box;
+            move(w,input,third.x+third.width/2,third.y+third.height-3);advance(w,35);release(w,input);
+            require(model.moves==1&&geometry(w).get(model.preview)!=null,"独立落下未保留反馈");
+            advance(w,30);w.domain.execute(()->model.motionPolicy.set(MotionPolicy.REDUCED));w.frame();
+            int dropStart=geometry(w,model.preview).box.y;long distance=Math.abs((long)dropStart-source.y);
+            for(int i=0;i<3;i++){
+                advance(w,20);LayoutBox current=geometry(w,model.preview).box;
+                long next=Math.abs((long)current.y-source.y);
+                require(next<=distance,"减少模式落下重新远离当前业务位置");distance=next;
+            }
+            require(distance>0&&distance<Math.abs((long)dropStart-source.y),"减少模式落下没有可见收敛");
+            w.domain.execute(()->model.motionPolicy.set(MotionPolicy.OFF));w.frame();
+            require(geometry(w).get(model.preview)==null&&geometry(w,model.rows.get(2)).box.y==before.y,
+                    "关闭模式仍保留让位或落下");
+            require(model.moves==1&&order(w,model,"A").equals(Arrays.asList(1,2,3,4,5,6)),"策略切换改变业务提交");
+            continuous(w,model,mounts);settle(w);Object plan=w.lastPlan;w.frame();w.frame();
+            require(w.lastPlan==plan,"策略结束后未恢复静态绘制复用");
         }
     }
     private static void advance(DesktopWindow window,long millis) throws Exception {

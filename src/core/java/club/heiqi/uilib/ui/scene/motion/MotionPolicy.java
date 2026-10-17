@@ -4,9 +4,14 @@ package club.heiqi.uilib.ui.scene.motion;
 public enum MotionPolicy {
     NORMAL, REDUCED, OFF;
     private static final MotionSpec FEEDBACK = MotionSpec.tween(120_000_000L, MotionSpec.SMOOTH);
+    private static final MotionSpec SPATIAL = MotionSpec.tween(160_000_000L, MotionSpec.SMOOTH);
     public MotionSpec resolve(MotionSpec requested, boolean spatial) {
-        if (this == OFF || this == REDUCED && spatial) return MotionSpec.instant();
-        if (this == REDUCED && (requested.kind == MotionSpec.Kind.SPRING || requested.kind == MotionSpec.Kind.DECAY)) return FEEDBACK;
+        if (this == OFF) return MotionSpec.instant();
+        if (this == REDUCED) {
+            if (requested.kind == MotionSpec.Kind.INSTANT || requested.kind == MotionSpec.Kind.DECAY) return MotionSpec.instant();
+            if (spatial) return SPATIAL;
+            if (requested.kind == MotionSpec.Kind.SPRING || requested.durationNanos > 120_000_000L) return FEEDBACK;
+        }
         return requested;
     }
 }

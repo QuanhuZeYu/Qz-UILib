@@ -25,7 +25,7 @@ import javax.imageio.ImageIO;
 /** 既有真实桌面宿主、发行 jar 和共享页面；输入来自已安装 GLFW 回调的自动注入。 */
 public final class DesktopMotionVerification extends TestApplication {
     private final Path output;
-    private final StringBuilder samples = new StringBuilder("sequence,elapsedNanos,translationX,panelHeight,dragX,dragY,dragWidth,dragHeight,parentX,parentY,parentWidth,parentHeight,scrollOffset,scrollMaximum,policy,clicks,drops\n");
+    private final StringBuilder samples = new StringBuilder("sequence,elapsedNanos,translationX,panelHeight,dragX,dragY,dragWidth,dragHeight,parentX,parentY,parentWidth,parentHeight,scrollOffset,scrollMaximum,policy,clicks,drops,sliderOffset,volume,sortCommits\n");
     private final StringBuilder inputs = new StringBuilder("sequence,elapsedNanos,kind,x,y,source\n");
     private DesktopMotionVerification(Path output) { this.output = output; }
     public static void main(String[] args) throws Exception {
@@ -34,10 +34,13 @@ public final class DesktopMotionVerification extends TestApplication {
     }
     @Override protected void runTests() throws Exception {
         scenario("目录入口、主题与切页保留", this::directory);
+        scenario("弹性音量两端拉伸、反向与合法提交", this::elasticSlider);
+        scenario("播放队列真实拖动与弹簧让位", this::elasticSort);
         scenario("目标反向、阻尼切换与运动中点击", this::stateMotion);
         scenario("自然展开、文字编辑与窗口变化", this::naturalPanel);
         scenario("重排身份、结构退场与显隐反向", this::collections);
         scenario("拖拽回槽、取消与滚动边界", this::gestures);
+        scenario("软边缘越界阻力与可见回弹", this::elasticBoundary);
         scenario("高速释放全段遵守父边界", this::fastRelease);
         scenario("停手松开不甩出且再次拖动平稳接管", this::pausedRelease);
         scenario("正常模式直接减少动效与退场途中切换", this::reducedMotion);
@@ -86,6 +89,78 @@ public final class DesktopMotionVerification extends TestApplication {
         require(read(f.window, f.page.target()), "离页后业务状态丢失");
         require(f.page.movingButton().translationX() == 76f, "重新挂载没有直接消费当前目标");
     }
+    private void elasticSlider() throws Exception {
+        Fixture f = open("elastic-slider");
+        SceneNode slider = f.page.elasticSlider(); LayoutBox box = geometry(f.window, slider).box;
+        f.input.point(box.x + box.width / 2.0, box.y + box.height / 2.0);
+        f.input.mouse.invoke(f.window.handle(), GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 0); f.window.frame();
+        f.input.point(box.x + box.width + 70, box.y + box.height / 2.0); f.window.frame();
+        double first = read(f.window, club.heiqi.uilib.ui.scene.control.SceneSlider.elasticOffset(slider));
+        require(read(f.window, f.page.volume()) == 100 && first > 0, "越界滑块没有在合法数值外呈现拉伸");
+        advance(f.window, 70); save(f.window, "12-slider-stretched");
+        f.input.point(box.x + box.width + 140, box.y + box.height / 2.0); f.window.frame();
+        double second = read(f.window, club.heiqi.uilib.ui.scene.control.SceneSlider.elasticOffset(slider));
+        require(second > first && second - first < first, "越拉阻力没有增大");
+        f.input.point(box.x - 70, box.y + box.height / 2.0); f.window.frame();
+        require(read(f.window, f.page.volume()) == 0 && read(f.window, club.heiqi.uilib.ui.scene.control.SceneSlider.elasticOffset(slider)) < 0,
+                "反向输入没有直接切到另一端弹性边缘");
+        f.input.mouse.invoke(f.window.handle(), GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, 0); f.window.frame();
+        Set<Integer> deformation = new HashSet<>();
+        series(f, "elastic-slider-release", 800, elapsed -> {
+            deformation.add((int) Math.round(read(f.window, club.heiqi.uilib.ui.scene.control.SceneSlider.elasticOffset(slider)) * 10));
+            double value = read(f.window, f.page.volume()); require(value >= 0 && value <= 100, "拉伸污染了真实音量");
+        });
+        require(deformation.size() >= 3 && read(f.window, club.heiqi.uilib.ui.scene.control.SceneSlider.elasticOffset(slider)) == 0,
+                "滑块形变没有自然回弹并停止");
+        require(read(f.window, f.page.sliderCommits()) == 1, "释放动画重复提交滑块");
+        save(f.window, "13-slider-settled");
+        f.input.point(box.x + box.width / 2.0, box.y + box.height / 2.0);
+        f.input.mouse.invoke(f.window.handle(), GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 0); f.window.frame();
+        f.input.point(box.x + box.width + 100, box.y + box.height / 2.0); f.window.frame();
+        f.input.mouse.invoke(f.window.handle(), GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, 0); f.window.frame();
+        double[] grabbed = {Double.NaN};
+        series(f, "elastic-slider-regrab", 220, elapsed -> {
+            if (Double.isNaN(grabbed[0]) && elapsed >= 40) {
+                double before = read(f.window, club.heiqi.uilib.ui.scene.control.SceneSlider.elasticOffset(slider));
+                f.input.point(sliderThumb(f, box), box.y + box.height / 2.0);
+                f.input.mouse.invoke(f.window.handle(), GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 0); f.window.frame();
+                grabbed[0] = read(f.window, club.heiqi.uilib.ui.scene.control.SceneSlider.elasticOffset(slider));
+                require(read(f.window, club.heiqi.uilib.ui.scene.control.SceneSlider.preview(slider)).active && Math.abs(grabbed[0] - before) < 3,
+                        "可见滑块圆点没有从当前形变接管");
+            }
+            if (!Double.isNaN(grabbed[0])) require(Math.abs(read(f.window, club.heiqi.uilib.ui.scene.control.SceneSlider.elasticOffset(slider)) - grabbed[0]) < .001,
+                    "再次按住滑块后旧回弹仍在推进");
+        });
+        f.input.key.invoke(f.window.handle(), GLFW_KEY_ESCAPE, 0, GLFW_PRESS, 0);
+        f.input.key.invoke(f.window.handle(), GLFW_KEY_ESCAPE, 0, GLFW_RELEASE, 0);
+        f.input.mouse.invoke(f.window.handle(), GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, 0); f.window.frame();
+        require(read(f.window, f.page.sliderCommits()) == 2, "取消滑块重新拾取仍提交了业务值");
+    }
+    private static double sliderThumb(Fixture f, LayoutBox slider) {
+        LayoutBox thumb = null; int center = slider.y + slider.height / 2;
+        for (club.heiqi.uilib.ui.scene.paint.PaintCommand command : f.window.lastPlan.commands()) {
+            LayoutBox box = command.box;
+            if (command.kind == club.heiqi.uilib.ui.scene.paint.PaintCommand.Kind.RECT && box.width >= 6
+                    && box.width <= 40 && box.x >= slider.x - 48 && box.x + box.width <= slider.x + slider.width + 48
+                    && box.y <= center + 1 && box.y + box.height >= center - 1) thumb = box;
+        }
+        require(thumb != null, "未找到当前画面中的滑块圆点"); return thumb.x + thumb.width / 2.0;
+    }
+    private void elasticSort() throws Exception {
+        Fixture f = open("elastic-sort"); SceneNode handle = f.page.sortHandle("清晨");
+        LayoutBox grip = geometry(f.window, handle).box; SceneNode neighbor = f.page.sortHandle("漫步");
+        int originalY = geometry(f.window, neighbor).box.y;
+        f.input.moveTo(handle); f.input.mouse.invoke(f.window.handle(), GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 0); f.window.frame();
+        f.input.point(grip.x + grip.width / 2.0, geometry(f.window, f.page.sortHandle("夜航")).box.y + 45); f.window.frame();
+        require(read(f.window, f.page.sortOrder()).get(0).equals("清晨"), "拖中修改了权威队列");
+        Set<Integer> yielding = new HashSet<>();
+        series(f, "elastic-sort-yield", 500, elapsed -> yielding.add(geometry(f.window, neighbor).box.y));
+        require(yielding.size() >= 3 && geometry(f.window, neighbor).box.y < originalY, "队列邻项没有弹簧让位");
+        f.input.mouse.invoke(f.window.handle(), GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, 0); f.window.frame();
+        series(f, "elastic-sort-land", 700, elapsed -> {});
+        require(read(f.window, f.page.sortOrder()).get(2).equals("清晨") && read(f.window, f.page.sortCommits()) == 1, "队列没有只在放下时提交一次顺序");
+        save(f.window, "14-elastic-sort");
+    }
     private void stateMotion() throws Exception {
         Fixture f = open("state");
         f.input.click("切换目标"); require(read(f.window, f.page.target()), "权威状态未立即可读");
@@ -128,7 +203,7 @@ public final class DesktopMotionVerification extends TestApplication {
         save(f.window, "03-natural-panel");
     }
     private void collections() throws Exception {
-        Fixture f = open("collection"); f.input.click("倒转顺序");
+        Fixture f = open("collection"); pageEnd(f); f.input.click("倒转顺序");
         SceneNode design = row(f, "选择 · 设计"); java.util.UUID original = design.id();
         boolean[] clicked = {false};
         series(f, "reorder", 450, elapsed -> {
@@ -188,6 +263,24 @@ public final class DesktopMotionVerification extends TestApplication {
         f.input.scroll.invoke(f.window.handle(), 0, 1); f.window.frame();
         require(geometry(f.window, viewport).scrollOffset < end.scrollOffset, "反向滚轮未立即作用于有效偏移");
         require(read(f.window, f.page.drops()) == 1, "释放结束重复提交业务动作"); save(f.window, "05-gestures");
+    }
+    private void elasticBoundary() throws Exception {
+        Fixture f = open("elastic-boundary"); pageEnd(f);
+        LayoutBox slot = geometry(f.window, f.page.dragContent()).box, bounds = parentContent(f), grip = geometry(f.window, dragHandle(f)).box;
+        double x = grip.x + grip.width / 2.0, y = grip.y + grip.height / 2.0;
+        int maximum = bounds.x + bounds.width - slot.width;
+        f.input.moveTo(dragHandle(f)); f.input.mouse.invoke(f.window.handle(), GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 0); f.window.frame();
+        f.input.point(x + maximum - slot.x + 40, y); f.window.frame();
+        int first = geometry(f.window, f.page.dragContent()).box.x - maximum;
+        f.input.point(x + maximum - slot.x + 80, y); f.window.frame();
+        int second = geometry(f.window, f.page.dragContent()).box.x - maximum;
+        require(first > 0 && second > first && second - first < first && second < 32, "软边缘没有呈现渐增阻力");
+        assertParentBounds(f); advance(f.window, 100); save(f.window, "15-boundary-stretched");
+        f.input.mouse.invoke(f.window.handle(), GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, 0); f.window.frame();
+        Set<Integer> positions = new HashSet<>();
+        series(f, "elastic-boundary-release", 850, elapsed -> { positions.add(geometry(f.window, f.page.dragContent()).box.x); assertParentBounds(f); });
+        require(positions.size() >= 3 && geometry(f.window, f.page.dragContent()).box.x == slot.x, "软边缘没有连续回到合法槽位");
+        require(read(f.window, f.page.drops()) == 1, "软边缘回弹重复提交");
     }
     private void fastRelease() throws Exception {
         Fixture f = open("fast-release"); pageEnd(f);
@@ -252,10 +345,16 @@ public final class DesktopMotionVerification extends TestApplication {
             if (elapsed >= 150) require(removed.destroyed(), "减少动效后仍等原弹簧结束才释放退场条目");
         });
         f.input.click("切换目标");
-        require(f.page.movingButton().translationX() == 76f, "减少动效下仍播放空间往返");
-        f.input.click("展开面板"); int height = geometry(f.window, f.page.panel()).box.height;
-        require(height > 0, "减少动效取消了展开动作"); advance(f.window, 300);
-        require(geometry(f.window, f.page.panel()).box.height == height, "减少动效下自然面板仍持续回弹");
+        Set<Integer> positions = new HashSet<>(); float[] previousX = {0};
+        series(f, "reduced-spatial", 220, elapsed -> {
+            float current = f.page.movingButton().translationX(); positions.add(Math.round(current));
+            require(current >= previousX[0] && current <= 76, "减少动效出现往返"); previousX[0] = current;
+        });
+        require(positions.size() >= 3 && f.page.movingButton().translationX() == 76f, "减少动效缺少可见的短平稳过渡");
+        f.input.click("展开面板"); Set<Integer> heights = new HashSet<>(); int[] previousHeight = {0};
+        series(f, "reduced-panel", 220, elapsed -> { int current = geometry(f.window, f.page.panel()).box.height;
+            require(current >= previousHeight[0], "减少动效面板往返"); heights.add(current); previousHeight[0] = current; });
+        require(heights.size() >= 3 && previousHeight[0] > 0, "减少动效面板直接跳转或没有展开");
         save(f.window, "11-reduced-direct");
     }
     private LayoutBox releaseDrag(Fixture f, String sequence, boolean paced) {
@@ -285,8 +384,9 @@ public final class DesktopMotionVerification extends TestApplication {
     }
     private static void assertParentBounds(Fixture f) {
         SceneGeometryView.Entry entry = geometry(f.window, f.page.dragContent()); LayoutBox child = entry.box, bounds = parentContent(f);
-        require(child.x >= bounds.x && child.y >= bounds.y && child.x + child.width <= bounds.x + bounds.width
-                && child.y + child.height <= bounds.y + bounds.height,
+        int margin = read(f.window, f.page.policy()) == MotionPolicy.NORMAL ? 32 : read(f.window, f.page.policy()) == MotionPolicy.REDUCED ? 8 : 0;
+        require(child.x >= bounds.x - margin && child.y >= bounds.y - margin && child.x + child.width <= bounds.x + bounds.width + margin
+                && child.y + child.height <= bounds.y + bounds.height + margin,
                 "回槽越过声明父边界：child=[" + child.x + "," + child.y + "," + child.width + "," + child.height
                         + "] parent=[" + bounds.x + "," + bounds.y + "," + bounds.width + "," + bounds.height + "]");
         LayoutBox visible = hit(entry);
@@ -300,8 +400,9 @@ public final class DesktopMotionVerification extends TestApplication {
         f.input.click("隐藏提示");
         require(geometry(f.window).get(f.page.noticeButton()) == null, "关闭策略保留了退场输入");
         f.input.click("减少动效"); f.input.click("切换目标");
-        require(read(f.window, f.page.policy()) == MotionPolicy.REDUCED && f.page.movingButton().translationX() == 76f,
-                "减少动效仍产生空间往返");
+        require(read(f.window, f.page.policy()) == MotionPolicy.REDUCED, "减少策略未选中");
+        advance(f.window, 180);
+        require(f.page.movingButton().translationX() == 76f, "减少模式短过渡未结束");
         require(read(f.window, f.page.clicks()) == 0 && read(f.window, f.page.drops()) == 0, "策略切换执行了业务动作");
         f.input.click("关闭动效"); f.input.point(8, 8); DesktopTestFrames.settle(f.window); advance(f.window, 500);
         PaintPlan plan = f.window.lastPlan; f.window.frame(); f.window.frame();
@@ -310,7 +411,8 @@ public final class DesktopMotionVerification extends TestApplication {
     private void shortWindow() throws Exception {
         Fixture f = open("short"); glfwSetWindowSize(f.window.handle(), 560, 420); DesktopTestFrames.settle(f.window);
         f.input.click("关闭动效"); f.input.click("切换目标"); require(read(f.window, f.page.target()), "短窗口无法操作状态目标");
-        f.input.click("点击 · 0"); require(read(f.window, f.page.clicks()) == 1, "短窗口的移动按钮不可操作");
+        reveal(f, f.page.movingButton()); f.input.click(geometry(f.window, f.page.movingButton()));
+        require(read(f.window, f.page.clicks()) == 1, "短窗口的移动按钮不可操作");
         save(f.window, "07-short-state");
         f.input.click("展开面板"); f.input.click("使用长文案");
         f.input.click("添加条目"); require(read(f.window, f.page.items()).size() == 4, "短窗口无法增删集合");
@@ -334,6 +436,16 @@ public final class DesktopMotionVerification extends TestApplication {
     private static void advanceWithinParent(Fixture f, long millis) {
         long end = System.nanoTime() + Math.multiplyExact(millis, 1_000_000L);
         do { f.window.frame(); assertParentBounds(f); } while (System.nanoTime() < end);
+    }
+    private static void reveal(Fixture f, SceneNode node) {
+        for (int i = 0; i < 30; i++) {
+            SceneGeometryView.Entry entry = geometry(f.window, node); LayoutBox visible = hit(entry);
+            if (visible.width == entry.box.width && visible.height == entry.box.height) return;
+            double distance = f.window.height() / 2.0 - (entry.box.y + entry.box.height / 2.0);
+            f.input.point(8, f.window.height() / 2.0);
+            f.input.scroll.invoke(f.window.handle(), 0, Math.max(-4, Math.min(4, distance / Math.max(1, f.page.root().scrollStep())))); f.window.frame();
+        }
+        throw new AssertionError("短窗口无法完整显露目标控件");
     }
     private static void pageEnd(Fixture f) {
         f.input.point(8, f.window.height() / 2.0); f.input.scroll.invoke(f.window.handle(), 0, -100); f.window.frame();
@@ -366,7 +478,8 @@ public final class DesktopMotionVerification extends TestApplication {
                 appendBox(samples, drag == null ? null : drag.box); appendBox(samples, parentContent(f));
                 samples.append(',').append(scroll == null ? -1 : scroll.scrollOffset).append(',').append(scroll == null ? -1 : scroll.scrollMaximum)
                         .append(',').append(read(f.window, f.page.policy())).append(',').append(read(f.window, f.page.clicks()))
-                        .append(',').append(read(f.window, f.page.drops())).append('\n');
+                        .append(',').append(read(f.window, f.page.drops())).append(',').append(read(f.window, club.heiqi.uilib.ui.scene.control.SceneSlider.elasticOffset(f.page.elasticSlider())))
+                        .append(',').append(read(f.window, f.page.volume())).append(',').append(read(f.window, f.page.sortCommits())).append('\n');
                 if (now >= next && frames.size() < 64) {
                     frames.add(new Captured(DesktopTestReadback.readFront(f.window), now - start)); next = now + 25_000_000L;
                 }

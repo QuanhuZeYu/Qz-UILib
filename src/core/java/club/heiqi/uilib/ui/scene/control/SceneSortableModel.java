@@ -72,6 +72,8 @@ final class SceneSortableModel<T, K, C> {
         root.control(new SceneSortablePresentation<>(this));
         layer = SceneSortablePresentation.layer(this);
         root.add(layer);
+        root.bind(SceneControlBindings.declaration(() -> { context.motionPolicy().get(); return options(); },
+                (node, value) -> motion.policyChanged(value)));
         root.bind(SceneControlBindings.declaration(groups, (node, value) -> apply(value)));
         root.bind(SceneControlBindings.declaration(() -> { revision.get(); return interaction.feedback.get(); },
                 (node, value) -> projection.apply(value)));

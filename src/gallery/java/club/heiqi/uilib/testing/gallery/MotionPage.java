@@ -7,6 +7,9 @@ import club.heiqi.uilib.ui.scene.control.SceneCheckBox;
 import club.heiqi.uilib.ui.scene.control.SceneDraggable;
 import club.heiqi.uilib.ui.scene.control.SceneGrid;
 import club.heiqi.uilib.ui.scene.control.SceneScrollArea;
+import club.heiqi.uilib.ui.scene.control.SceneSlider;
+import club.heiqi.uilib.ui.scene.control.SceneSortable;
+import club.heiqi.uilib.ui.scene.motion.ElasticOptions;
 import club.heiqi.uilib.ui.scene.control.SceneTextField;
 import club.heiqi.uilib.ui.scene.control.SceneTheme;
 import club.heiqi.uilib.ui.scene.edit.SceneEditState;
@@ -31,7 +34,11 @@ public final class MotionPage {
     private final Signal<MotionPolicy> policy;
     private final Signal<Boolean> target, bouncy, expanded, longText, notice;
     private final Signal<Integer> clicks, drops, noticeClicks, nextItem;
-    private final Signal<List<String>> items;
+    private final Signal<List<String>> items, sortOrder;
+    private final Signal<Double> volume;
+    private final Signal<Integer> sliderCommits, sortCommits;
+    private SceneNode elasticSlider, sortable;
+    private final java.util.Map<String, SceneNode> sortHandles = new java.util.LinkedHashMap<>();
     private final Signal<String> removed, selection;
     private final ReadableSignal<MotionSpec> spatial;
     private final ReadableSignal<PresenceOptions> presence;
@@ -49,9 +56,11 @@ public final class MotionPage {
         clicks = context.domain().signal(0); drops = context.domain().signal(0);
         noticeClicks = context.domain().signal(0); nextItem = context.domain().signal(4);
         items = context.domain().signal(Arrays.asList("设计", "开发", "验收"));
+        sortOrder = context.domain().signal(Arrays.asList("清晨", "漫步", "夜航"));
+        volume = context.domain().signal(50.0); sliderCommits = context.domain().signal(0); sortCommits = context.domain().signal(0);
         removed = context.domain().signal(null); selection = context.domain().signal("点击条目选择它");
-        spatial = context.domain().computed(context.scope(), () -> MotionSpec.spring(.58, bouncy.get() ? .52 : 1.0).precision(.1, .1));
-        presence = context.domain().computed(context.scope(), () -> new PresenceOptions(spatial.get())
+        spatial = context.domain().computed(context.scope(), () -> MotionSpec.spring(.42, bouncy.get() ? .68 : 1.0).precision(.1, .1));
+        presence = context.domain().computed(context.scope(), () -> new PresenceOptions(MotionSpec.tween(180_000_000L, MotionSpec.SMOOTH))
                 .initialEnter(true).budget(4).maximumExit(1_600_000_000L));
         draft = new SceneEditState(context.domain(), "下一次发布，从一个小改进开始");
         dragState = SceneDraggable.state(context.domain());
@@ -61,7 +70,7 @@ public final class MotionPage {
         root = new SceneNode().size(Size.fill(1), Size.fill(1)).padding(24).gap(20).scrollable(true);
         SceneNode heading = column(8);
         heading.add(GalleryStyle.label(context, () -> "动效实验室", theme, 28, false));
-        heading.add(GalleryStyle.label(context, () -> "切换状态、重排内容，观察界面如何接续。", theme, 15, true));
+        heading.add(GalleryStyle.label(context, () -> "拉到边缘，感受阻力；松开，让界面自然归位。", theme, 15, true));
         root.add(heading);
         SceneNode toolbar = adaptiveRow(8);
         for (MotionPolicy option : MotionPolicy.values()) {
@@ -73,11 +82,49 @@ public final class MotionPage {
         if (leave != null) toolbar.add(GalleryStyle.button(context, () -> "返回场景概览", theme, leave));
         root.add(toolbar);
         SceneNode grid = SceneGrid.create(context, () -> new SceneGrid.Policy(430, 20, 20));
-        grid.add(stateCard()).add(panelCard()).add(collectionCard()).add(gestureCard());
+        grid.add(sliderCard()).add(sortCard()).add(stateCard()).add(panelCard()).add(collectionCard()).add(gestureCard());
         root.add(grid);
         return root;
     }
 
+    private SceneNode sliderCard() {
+        SceneNode card = section("弹性音量", "拖过两端，轨道会拉伸；松手后恢复。");
+        SceneNode value = GalleryStyle.centeredRow().size(Size.fill(1), Size.natural()).gap(12);
+        value.add(GalleryStyle.label(context, () -> "音量", theme, 16, true).size(Size.fill(1), Size.natural()));
+        value.add(GalleryStyle.label(context, () -> Math.round(volume.get()) + "%", theme, 32, false));
+        card.add(value);
+        elasticSlider = SceneSlider.create(context, () -> new SceneSlider.Model(0, 100, 1, volume.get(), true)
+                .elastic(new ElasticOptions(40, spatial.get())), volume::set,
+                next -> { volume.set(next); sliderCommits.set(sliderCommits.get() + 1); }, theme).size(Size.fill(1), Size.fixed(84));
+        card.add(new SceneNode().size(Size.fill(1), Size.natural()).padding(30).add(elasticSlider));
+        SceneNode legend = GalleryStyle.centeredRow().size(Size.fill(1), Size.natural());
+        legend.add(GalleryStyle.label(context, () -> "静音", theme, 14, true).size(Size.fill(1), Size.natural()));
+        legend.add(GalleryStyle.label(context, () -> "最大音量", theme, 14, true)); card.add(legend);
+        return GalleryStyle.frame(card, theme);
+    }
+    private SceneNode sortCard() {
+        SceneNode card = section("弹性排序", "按住把手上下拖动，相邻曲目会让位。");
+        sortable = SceneSortable.create(context,
+                () -> java.util.Collections.singletonList(new SceneSortable.Group<>("播放队列", sortOrder.get())), name -> name,
+                key -> { SceneNode rows = column(8); return new SceneSortable.Container(rows, rows, SceneSortable.Layout.VERTICAL); },
+                name -> {
+                    SceneNode handle = GalleryStyle.dragGrip(theme); sortHandles.put(name.get(), handle);
+                    return new SceneSortable.Row(sortRow(name, handle), handle);
+                }, name -> sortRow(name, GalleryStyle.dragGrip(theme)), move -> {
+                    List<String> next = new ArrayList<>(sortOrder.get()); next.remove(move.key);
+                    int index = move.beforeKey == null ? next.size() : next.indexOf(move.beforeKey);
+                    next.add(index < 0 ? next.size() : index, move.key); sortOrder.set(next); sortCommits.set(sortCommits.get() + 1);
+                }, () -> new SceneSortable.Options<String, String>().autoScroll(false).reorderMotion(spatial.get()).dropMotion(spatial.get()));
+        card.add(sortable);
+        card.add(GalleryStyle.button(context, () -> "重置队列", theme, () -> sortOrder.set(Arrays.asList("清晨", "漫步", "夜航"))));
+        return GalleryStyle.frame(card, theme);
+    }
+    private SceneNode sortRow(ReadableSignal<String> name, SceneNode handle) {
+        SceneNode row = GalleryStyle.centeredRow().size(Size.fill(1), Size.natural()).padding(12).gap(14);
+        row.add(handle); row.add(GalleryStyle.label(context, name, theme, 16, false).size(Size.fill(1), Size.natural()));
+        row.add(GalleryStyle.label(context, () -> name.get().equals("清晨") ? "3:24" : name.get().equals("漫步") ? "4:08" : "2:56", theme, 14, true));
+        return GalleryStyle.frame(row, theme);
+    }
     private SceneNode stateCard() {
         SceneNode card = section("状态响应", "切换目标后，试着点击移动中的按钮。");
         SceneNode actions = adaptiveRow(8);
@@ -153,14 +200,14 @@ public final class MotionPage {
     }
 
     private SceneNode gestureCard() {
-        SceneNode card = section("手势释放", "拖动把手后松开，卡片会弹回槽位。Esc 取消。");
-        SceneNode stage = column(0).size(Size.fill(1), Size.fixed(110)).padding(12).clip(true);
+        SceneNode card = section("弹性边界", "拖到边缘后继续拉，阻力会增大；松手回弹。Esc 取消。");
+        SceneNode stage = column(0).size(Size.fill(1), Size.fixed(204)).padding(44).clip(true);
         SceneNode handle = GalleryStyle.dragGrip(theme);
         SceneNode body = GalleryStyle.centeredRow().size(Size.natural(), Size.natural()).padding(14).gap(12)
                 .add(handle).add(GalleryStyle.label(context, () -> "拖动我", theme, 15, false));
         dragContent = GalleryStyle.frame(body, theme).size(Size.natural(), Size.natural());
         draggable = SceneDraggable.create(context, dragContent, dragState, () -> new SceneDraggable.Options()
-                .handles(handle).bounds(SceneDraggable.Bounds.PARENT).autoScroll(false).releaseMotion(spatial.get())
+                .handles(handle).bounds(SceneDraggable.Bounds.PARENT).autoScroll(false).elastic(new ElasticOptions(32, spatial.get()))
                 .onDrop(drop -> drops.set(drops.get() + 1))).size(Size.natural(), Size.natural());
         stage.add(draggable); card.add(GalleryStyle.frame(stage, theme));
         card.add(GalleryStyle.label(context, () -> "正常放下 " + drops.get() + " 次", theme, 15, true));
@@ -211,4 +258,11 @@ public final class MotionPage {
     public SceneNode draggable() { return draggable; }
     public SceneNode dragContent() { return dragContent; }
     public SceneScrollArea.Area scrollArea() { return scrollArea; }
+    public SceneNode elasticSlider() { return elasticSlider; }
+    public ReadableSignal<Double> volume() { return volume; }
+    public ReadableSignal<Integer> sliderCommits() { return sliderCommits; }
+    public ReadableSignal<List<String>> sortOrder() { return sortOrder; }
+    public ReadableSignal<Integer> sortCommits() { return sortCommits; }
+    public SceneNode sortHandle(String key) { return sortHandles.get(key); }
+    public SceneNode sortable() { return sortable; }
 }

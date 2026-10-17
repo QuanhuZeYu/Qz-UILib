@@ -29,7 +29,7 @@
 
 策略优先级为用户的动效限制、局部明确声明、主题默认。主题及策略来源均可动态替换，按来源变化通知失效，不在构造期冻结。局部覆盖通过明确来源表达，不新增隐式的主题继承或全局节点注册表。
 
-提供正常、减少动效和关闭三种响应式策略。减少动效取消明显的空间往返和回弹，允许必要的平稳反馈；关闭时立即落到当前目标并结束退场保留。策略变化不修改业务值、焦点策略或动作次数。系统偏好若由宿主提供，通过同一来源接入，不在核心查询平台 API。
+提供正常、减少动效和关闭三种响应式策略。正常模式保留所声明的弹簧与弹性；减少动效保留可见的短时平稳位移、尺寸与淡入淡出，使用单调曲线收敛，取消弹簧往返、合成惯性和大幅拉伸。关闭时立即落到当前目标并结束退场保留。三种模式不改变业务值、焦点策略或动作次数。系统偏好若由宿主提供，通过同一来源接入，不在核心查询平台 API。
 
 ### 2.1 常用声明
 
@@ -47,7 +47,9 @@ panel.add(SceneLabel.create(context, bodyText, context.theme()));
 | 属性目标 | `SceneMotion.opacity / background / translateX / translateY` |
 | 布局变化 | 容器 `SceneMotion.layoutPositions`；节点 `SceneMotion.layoutSize` |
 | 显隐与结构退场 | `SceneMotion.presence`；带 `PresenceOptions` 的 `NodeBinding.repeat / ownedChildren` |
-| 手势释放 | `SceneDraggable.Options.releaseMotion`；`SceneMotion.scroll` 或 `SceneScrollArea.Options.motion` |
+| 手势释放 | `SceneDraggable.Options.releaseMotion / elastic`；`SceneMotion.scroll` 或 `SceneScrollArea.Options.motion` |
+| 弹性滑块 | `SceneSlider.Model.elastic(new ElasticOptions(limit, release))`，普通模型不启用形变 |
+| 拖拽排序让位 | `SceneSortable.Options.reorderMotion / dropMotion`，原有限 `Transition` 继续可用 |
 | 动效限制 | `ScenePageContext.motionPolicy`，来源值为 `MotionPolicy.NORMAL / REDUCED / OFF` |
 
 ## 3. 运动语义
@@ -90,6 +92,8 @@ panel.add(SceneLabel.create(context, bodyText, context.theme()));
 
 拖拽继续使用[Draggable](<2026-10-15-uilib-draggable-spec.md>)及[Droppable/Sortable](<2026-10-15-uilib-drop-sort-spec.md>)的所有权、约束和业务意图。直接拖动默认跟手，不为了弹性给指针增加滞后；明确启用的释放策略使用当前呈现及正式输入估计的速度，回到当前合法槽位、吸附点或业务接受的位置。
 
+显式 `ElasticOptions` 将交互边界声明为有阻力的软边缘：在范围内直接跟手，越界时位移增量递减并有上限，松手从当前呈现回弹；未声明弹性时原硬边界继续生效。软边缘的暂态位移不成为合法业务落点，放下意图仍投影到有效范围。滑块以当前轨道和端点为弹性范围，数值与提交保持在 min/max 之内；轨道在越界一侧伸长、厚度适度收缩，松手后形状与端点共同复原。减少模式缩小形变并平稳复原，关闭模式不保留形变。参考 [Elastic Slider](https://reactbits.dev/components/elastic-slider) 与 [Motion 拖拽边界](https://motion.dev/docs/react-drag) 的交互描述，算法和绘制由 UILib 自有控件实现。
+
 正常放下只按所属控件规则发出一次业务意图，运动结束不再次提交。取消不提交；失去交互资格仍立即终止原手势，有限的回位呈现不得恢复 capture、旧焦点或迟到尾部。
 
 滚动沿[滚动区规格](<2026-10-16-uilib-scroll-area-spec.md>)保留唯一有效偏移与连续滚轮接续。有效偏移始终在当前合法范围；显式启用的边界弹性是暂态呈现位移，随同一几何和裁剪更新，不把越界距离积存在有效滚动状态中。反向输入立即作用于当前事实。
@@ -120,7 +124,7 @@ panel.add(SceneLabel.create(context, bodyText, context.theme()));
 
 ## 9. 可观察验收
 
-复用[统一测试应用](<../verification/2026-10-07-uilib-testing-spec.md>)，建立共享动效案例：状态切换、可自然展开的面板、可重排集合、拖拽回槽、滚动边界及显式存在性。案例本身只声明状态和动效，不持有进度、坐标补偿或手工 frame。
+复用[统一测试应用](<../verification/2026-10-07-uilib-testing-spec.md>)，建立共享动效案例：弹性滑块、真实拖动排序、状态切换、可自然展开的面板、可重排集合、弹性边界回槽、滚动边界及显式存在性。滑块显示拖动阻力和自然伸缩，排序通过既有通用 Sortable 显示邻项连续让位，参照 [Draggable List](https://www.react-spring.dev/examples) 的交互目标。案例本身只声明状态和动效，不持有进度、坐标补偿或手工 frame。
 
 | 场景 | 预期反馈 |
 | --- | --- |
@@ -129,6 +133,8 @@ panel.add(SceneLabel.create(context, bodyText, context.theme()));
 | 面板自然高度、文案、字号或窗口在途中变化 | 目标自动更新，子内容按真实尺寸排版，页面无读回高度或重建补偿 |
 | 动画中点击条目、移动浮层来源及编辑文字 | 所见对象与命中、锚定、裁剪、文字定位一致；合法草稿和节点身份保持 |
 | 父子同时重排并在过程中滚动 | 位移不重复计算，滚动立即响应，Tab 沿逻辑顺序 |
+| 弹性滑块及软边缘拖动 | 范围内跟手、越界位移增量递减；松手从当前形变回弹，业务值与提交始终合法 |
+| 正常、减少与关闭模式对比 | 正常保留弹簧，减少有短时单调中间值且形变缩小，关闭即时落定 |
 | 拖放、取消及接管释放轨迹 | 正常结束只发所属业务意图；取消无提交，新的输入不被旧运动抢回 |
 | 嵌套滚动到边界、反向及范围缩小 | 祖先接续和范围隔离保持，有效偏移不越界、不积压虚假距离 |
 | 显隐快速反向、删除后同键返回及达到退场预算 | 合法显隐续接；已删除身份不复活；退出立即失去输入，资源按声明释放 |

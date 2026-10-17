@@ -35,6 +35,7 @@ final class SceneSortableInteraction<T, K, C> {
     }
     private void clear(SceneSortableModel.RowEntry<T, K, C> row) { if (active == row) clear(); }
     private void publish(LayoutBox box) {
+        model.motion.sample(token, box);
         Feedback<T, K, C> old = feedback.get();
         if (old != null && old.row == active && SceneSortableSelection.same(old.position, position)
                 && old.box.x == box.x && old.box.y == box.y && old.box.width == box.width && old.box.height == box.height) return;

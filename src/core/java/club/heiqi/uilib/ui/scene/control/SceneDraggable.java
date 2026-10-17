@@ -34,6 +34,7 @@ public final class SceneDraggable {
     /** 不可变链式声明；每次配置返回副本，外部策略 Signal 可在挂载后替换。 */
     public static final class Options {
         private club.heiqi.uilib.ui.scene.motion.MotionSpec releaseMotion;
+        private club.heiqi.uilib.ui.scene.motion.ElasticOptions elastic;
         private Axis axis = Axis.BOTH;
         private Bounds bounds = Bounds.NONE;
         private int gridX, gridY, distance, tolerance;
@@ -48,7 +49,7 @@ public final class SceneDraggable {
         private double autoScrollSpeed = 1.0;
         public Options() {}
         private Options(Options value) {
-            releaseMotion = value.releaseMotion;
+            releaseMotion = value.releaseMotion; elastic = value.elastic;
             axis = value.axis; bounds = value.bounds; gridX = value.gridX; gridY = value.gridY;
             distance = value.distance; tolerance = value.tolerance; delayMillis = value.delayMillis;
             handles = value.handles; overlay = value.overlay; onDrop = value.onDrop; activationExplicit = value.activationExplicit;
@@ -60,6 +61,9 @@ public final class SceneDraggable {
             if (value.kind == club.heiqi.uilib.ui.scene.motion.MotionSpec.Kind.DECAY) throw new IllegalArgumentException("回槽使用目标跟随策略，自由惯性归显式滚动释放");
             Options next = new Options(this); next.releaseMotion = value; return next;
         }
+        /** 显式软边缘；不声明时保持原硬边界，放下意图仍使用合法坐标。 */
+        public Options elastic(club.heiqi.uilib.ui.scene.motion.ElasticOptions value) { Options next = new Options(this); next.elastic = value; return next; }
+        private club.heiqi.uilib.ui.scene.motion.MotionSpec releaseStrategy() { return releaseMotion != null ? releaseMotion : elastic == null ? null : elastic.releaseMotion; }
         public Options axis(Axis value) { Options next = new Options(this); next.axis = Objects.requireNonNull(value, "axis"); return next; }
         public Options bounds(Bounds value) { Options next = new Options(this); next.bounds = Objects.requireNonNull(value, "bounds"); return next; }
         public Options grid(int x, int y) {
@@ -194,7 +198,7 @@ public final class SceneDraggable {
                         int x = SceneDragSupport.integer((long) sourceBox.x + node.padding() + current.x);
                         int y = SceneDragSupport.integer((long) sourceBox.y + node.padding() + current.y);
                         release.bounds(releaseBounds, viewport, sourceBox.x + node.padding(), sourceBox.y + node.padding(), measured.width, measured.height);
-                        if (release.active.get() && releaseBounds != null) {
+                        if (release.active.get() && releaseBounds != null && options().elastic == null) {
                             x = SceneDragSupport.clamp(x, measured.width, releaseBounds.x, releaseBounds.width);
                             y = SceneDragSupport.clamp(y, measured.height, releaseBounds.y, releaseBounds.height);
                         }
@@ -212,7 +216,7 @@ public final class SceneDraggable {
         void bindLifecycle(SceneNode node) {
             node.bind(NodeBinding.value(() -> {
                 runtime.motionPolicy().get(); runtime.interactionRevision().get();
-                return options().releaseMotion;
+                return options().releaseStrategy();
             }, (self, motion) -> {
                 if (motion == null || !runtime.interactive(self)) release.stop(); else release.policy(motion);
             }));
@@ -267,6 +271,7 @@ public final class SceneDraggable {
         @Override public ChildPlacements arrange(SceneNode node, LayoutBox box, SceneChildMeasurer children,
                 LayoutBox parentAllocation, LayoutBox viewport) {
             Options currentOptions = options();
+            release.elastic(currentOptions.elastic);
             releaseBounds = currentOptions.bounds == Bounds.NONE ? null : currentOptions.bounds == Bounds.VIEWPORT
                     ? viewport : parentAllocation == null ? viewport : SceneControlPaint.inner(parentAllocation, node.parent().padding());
             ChildPlacements ordinary = SceneFlowLayout.arrange(node, box, children);
@@ -282,7 +287,7 @@ public final class SceneDraggable {
             for (ChildPlacements.Entry entry : ordinary.entries()) {
                 LayoutBox child = entry.relativeBox;
                 int x = SceneDragSupport.integer((long) child.x + offset.x), y = SceneDragSupport.integer((long) child.y + offset.y);
-                if (release.active.get() && releaseBounds != null) {
+                if (release.active.get() && releaseBounds != null && options().elastic == null) {
                     x = SceneDragSupport.integer((long) SceneDragSupport.clamp((long) box.x + x, child.width, releaseBounds.x, releaseBounds.width) - box.x);
                     y = SceneDragSupport.integer((long) SceneDragSupport.clamp((long) box.y + y, child.height, releaseBounds.y, releaseBounds.height) - box.y);
                 }
@@ -400,6 +405,22 @@ public final class SceneDraggable {
                 state.keyboardX = SceneDragSupport.integer((long) SceneDragSupport.centerX(target) - baseX - width / 2);
                 state.keyboardY = SceneDragSupport.integer((long) SceneDragSupport.centerY(target) - baseY - height / 2);
             }
+            void preserveElasticGrab(LayoutBox current) {
+                if (options.elastic == null) return;
+                LayoutBox bounds = bounds(); if (bounds == null) return;
+                state.grabX -= grabCorrection(current.x, width, bounds.x, bounds.width);
+                state.grabY -= grabCorrection(current.y, height, bounds.y, bounds.height);
+            }
+            private int grabCorrection(int position, int size, int edge, int available) {
+                int legal = SceneDragSupport.clamp(position, size, edge, available);
+                double visible = (double) position - legal;
+                double limit = Math.abs(options.elastic.displacement(Double.MAX_VALUE, runtime.motionPolicy().get()));
+                if (visible == 0 || limit == 0) return 0;
+                // 共同几何已取整到像素；在同一像素内反求阻力前的位置，接管不重复压缩软边缘。
+                double amount = Math.min(Math.abs(visible), Math.max(0, limit - .25));
+                double input = Math.copySign(limit * amount / (.55 * (limit - amount)), visible);
+                return SceneDragSupport.integer(Math.round(input - visible));
+            }
             Offset resolve() {
                 int rawX = state.keyboard ? state.keyboardX : SceneDragSupport.integer((long) state.pointerX - state.grabX - baseX);
                 int rawY = state.keyboard ? state.keyboardY : SceneDragSupport.integer((long) state.pointerY - state.grabY - baseY);
@@ -421,8 +442,10 @@ public final class SceneDraggable {
                 if (!allowed) return 0;
                 int snapped = SceneDragSupport.snap(raw, grid);
                 if (bounds == null) return snapped;
-                return SceneDragSupport.integer((long) SceneDragSupport.clamp((long) base + snapped, size,
+                int legal = SceneDragSupport.integer((long) SceneDragSupport.clamp((long) base + snapped, size,
                         horizontal ? bounds.x : bounds.y, horizontal ? bounds.width : bounds.height) - base);
+                if (options.elastic == null || state.keyboard) return legal;
+                return SceneDragSupport.integer(Math.round(legal + options.elastic.displacement((double) snapped - legal, runtime.motionPolicy().get())));
             }
         }
         private void drop(SceneNode node, SceneGeometryView geometry) {
@@ -441,11 +464,20 @@ public final class SceneDraggable {
                             state.keyboard ? SceneDragSupport.centerY(dragBox) : state.pointerY);
                 }
             } finally { state.end(); }
-            if (normal && options().releaseMotion != null && !options().preserveSlot)
-                release.release(finalValue.deltaX, finalValue.deltaY, options().releaseMotion, releaseEventTime);
+            if (normal && options().releaseStrategy() != null && !options().preserveSlot)
+                release.release(finalValue.deltaX, finalValue.deltaY, options().releaseStrategy(), releaseEventTime);
             // 两种会话均已清理；回调抛错及迟到 UP 都不能重新提交。
             if (receiving != null) receiving.run();
-            if (normal && action != null) action.accept(finalValue);
+            if (normal && action != null) {
+                if (options().elastic != null && releaseBounds != null) {
+                    SceneGeometryView.Entry slot = geometry.get(node);
+                    int baseX = slot.box.x + node.padding(), baseY = slot.box.y + node.padding();
+                    int legalX = SceneDragSupport.clamp((long) baseX + finalValue.deltaX, dragBox.width, releaseBounds.x, releaseBounds.width) - baseX;
+                    int legalY = SceneDragSupport.clamp((long) baseY + finalValue.deltaY, dragBox.height, releaseBounds.y, releaseBounds.height) - baseY;
+                    finalValue = new Snapshot(true, false, legalX, legalY);
+                }
+                action.accept(finalValue);
+            }
         }
         @Override public void pointer(SceneNode node, ScenePointerEvent event, SceneGeometryView geometry) {
             syncObserver(node, options());
@@ -466,6 +498,7 @@ public final class SceneDraggable {
             state.grabX = event.x - entry.box.x; state.grabY = event.y - entry.box.y;
             state.pressedNanos = runtime.inputNanos();
             Options options = options();
+            new DragGeometry(node, geometry, SceneDragSupport.AutoScroll.Shift.NONE, geometry.get(node).box, entry.box).preserveElasticGrab(entry.box);
             if (options.handles.length > 0 && !options.activationExplicit || options.distance == 0 && options.delayMillis == 0) activate(state.pressedNanos);
             else state.publish(false, true, 0, 0);
             update(node, geometry, SceneDragSupport.AutoScroll.Shift.NONE);

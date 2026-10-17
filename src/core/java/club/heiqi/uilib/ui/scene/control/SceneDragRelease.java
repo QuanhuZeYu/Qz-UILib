@@ -18,6 +18,8 @@ final class SceneDragRelease {
     }
     private final java.util.ArrayDeque<Sample> samples = new java.util.ArrayDeque<>();
     private boolean bounded;
+    private club.heiqi.uilib.ui.scene.motion.ElasticOptions elastic;
+    void elastic(club.heiqi.uilib.ui.scene.motion.ElasticOptions value) { elastic = value; }
     private double minimumX, maximumX, minimumY, maximumY;
     SceneDragRelease(SceneRuntime runtime) { this.runtime = runtime; active = runtime.domain().signal(false); }
     void sample(int x, int y, long now) {
@@ -51,11 +53,15 @@ final class SceneDragRelease {
         if (!bounded) { x.unconstrain(); y.unconstrain(); return; }
         minimumX = (double) bounds.x - baseX; maximumX = minimumX + Math.max(0, bounds.width - width);
         minimumY = (double) bounds.y - baseY; maximumY = minimumY + Math.max(0, bounds.height - height);
+        if (elastic != null) {
+            double margin = Math.abs(elastic.displacement(Double.MAX_VALUE, runtime.motionPolicy().get()));
+            minimumX -= margin; maximumX += margin; minimumY -= margin; maximumY += margin;
+        }
         if (viewport != null) {
-            minimumX = SceneDragSupport.clamp((long) minimumX + baseX, width, viewport.x, viewport.width) - baseX;
-            maximumX = SceneDragSupport.clamp((long) maximumX + baseX, width, viewport.x, viewport.width) - baseX;
-            minimumY = SceneDragSupport.clamp((long) minimumY + baseY, height, viewport.y, viewport.height) - baseY;
-            maximumY = SceneDragSupport.clamp((long) maximumY + baseY, height, viewport.y, viewport.height) - baseY;
+            minimumX = SceneDragSupport.clamp(Math.round(minimumX + baseX), width, viewport.x, viewport.width) - baseX;
+            maximumX = SceneDragSupport.clamp(Math.round(maximumX + baseX), width, viewport.x, viewport.width) - baseX;
+            minimumY = SceneDragSupport.clamp(Math.round(minimumY + baseY), height, viewport.y, viewport.height) - baseY;
+            maximumY = SceneDragSupport.clamp(Math.round(maximumY + baseY), height, viewport.y, viewport.height) - baseY;
         }
     }
     void begin() { stop(); samples.clear(); }

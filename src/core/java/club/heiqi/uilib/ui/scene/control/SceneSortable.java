@@ -3,6 +3,7 @@ package club.heiqi.uilib.ui.scene.control;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.scene.host.ScenePageContext;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.motion.MotionSpec;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -80,34 +81,45 @@ public final class SceneSortable {
         }
     }
     public static final class Options<T, C> {
+        private static final Transition REORDER = new Transition(250, .25, 1, .5, 1);
+        private static final Transition DROP = new Transition(250, .25, .1, .25, 1);
         final Predicate<T> draggable;
         final BiPredicate<C, T> accepts;
         final boolean autoScroll;
         final double autoScrollSpeed;
         final Transition transition, dropAnimation;
-        public Options() { this(value -> true, (container, value) -> true, true, 1.0,
-                new Transition(250, .25, 1, .5, 1), new Transition(250, .25, .1, .25, 1)); }
+        final MotionSpec reorderMotion, dropMotion;
+        public Options() { this(value -> true, (container, value) -> true, true, 1.0, REORDER, DROP, null, null); }
         private Options(Predicate<T> draggable, BiPredicate<C, T> accepts, boolean autoScroll, double speed,
-                        Transition transition, Transition dropAnimation) {
+                        Transition transition, Transition dropAnimation, MotionSpec reorderMotion, MotionSpec dropMotion) {
             this.draggable = draggable; this.accepts = accepts; this.autoScroll = autoScroll; autoScrollSpeed = speed;
             this.transition = transition; this.dropAnimation = dropAnimation;
+            this.reorderMotion = reorderMotion; this.dropMotion = dropMotion;
         }
         public Options<T, C> draggable(Predicate<T> allowed) {
-            return new Options<>(Objects.requireNonNull(allowed, "draggable"), accepts, autoScroll, autoScrollSpeed, transition, dropAnimation);
+            return new Options<>(Objects.requireNonNull(allowed, "draggable"), accepts, autoScroll, autoScrollSpeed, transition, dropAnimation, reorderMotion, dropMotion);
         }
         public Options<T, C> accepts(BiPredicate<C, T> allowed) {
-            return new Options<>(draggable, Objects.requireNonNull(allowed, "accepts"), autoScroll, autoScrollSpeed, transition, dropAnimation);
+            return new Options<>(draggable, Objects.requireNonNull(allowed, "accepts"), autoScroll, autoScrollSpeed, transition, dropAnimation, reorderMotion, dropMotion);
         }
         public Options<T, C> transition(Transition value) {
-            return new Options<>(draggable, accepts, autoScroll, autoScrollSpeed, value, dropAnimation);
+            return new Options<>(draggable, accepts, autoScroll, autoScrollSpeed, value, dropAnimation, reorderMotion, dropMotion);
         }
         public Options<T, C> dropAnimation(Transition value) {
-            return new Options<>(draggable, accepts, autoScroll, autoScrollSpeed, transition, value);
+            return new Options<>(draggable, accepts, autoScroll, autoScrollSpeed, transition, value, reorderMotion, dropMotion);
         }
-        public Options<T, C> autoScroll(boolean enabled) { return new Options<>(draggable, accepts, enabled, autoScrollSpeed, transition, dropAnimation); }
+        /** 非 null 时独占让位通道；null 交回 transition，instant 显式关闭该通道。 */
+        public Options<T, C> reorderMotion(MotionSpec value) {
+            return new Options<>(draggable, accepts, autoScroll, autoScrollSpeed, transition, dropAnimation, value, dropMotion);
+        }
+        /** 非 null 时独占落下通道；取消也回到当前业务位置，不发布 Move。 */
+        public Options<T, C> dropMotion(MotionSpec value) {
+            return new Options<>(draggable, accepts, autoScroll, autoScrollSpeed, transition, dropAnimation, reorderMotion, value);
+        }
+        public Options<T, C> autoScroll(boolean enabled) { return new Options<>(draggable, accepts, enabled, autoScrollSpeed, transition, dropAnimation, reorderMotion, dropMotion); }
         public Options<T, C> autoScrollSpeed(double multiplier) {
             if (!Double.isFinite(multiplier) || multiplier < 0) throw new IllegalArgumentException("自动滚动速度倍率无效");
-            return new Options<>(draggable, accepts, autoScroll, multiplier, transition, dropAnimation);
+            return new Options<>(draggable, accepts, autoScroll, multiplier, transition, dropAnimation, reorderMotion, dropMotion);
         }
     }
     private SceneSortable() {}
