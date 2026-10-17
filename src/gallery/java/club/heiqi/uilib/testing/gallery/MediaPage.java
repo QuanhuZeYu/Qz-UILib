@@ -38,24 +38,31 @@ final class MediaPage {
         pickerDirectory=environment.initialMediaDirectory();page.own(this::stop);
     }
     SceneNode create(Runnable back) {
-        SceneNode root=new SceneNode().size(Size.fill(1),Size.fill(1)).padding(24).gap(12).scrollable(true);
-        SceneNode heading=GalleryStyle.centeredRow().size(Size.fill(1),Size.natural()).gap(16);
-        heading.add(GalleryStyle.button(page,()->"返回场景概览",theme,back));
-        heading.add(GalleryStyle.label(page,()->"媒体播放",theme,24,false));root.add(heading);
-        root.add(GalleryStyle.label(page,()->"播放视频或音频，暂停、调整音量并跳转到可播放的位置。",theme,15,true));
-        root.add(SceneTextField.create(page,address,theme,()->false,submission->{
+        club.heiqi.uilib.ui.scene.control.SceneAppearance style=new club.heiqi.uilib.ui.scene.control.SceneAppearance(page,theme);
+        SceneNode root=new SceneNode().size(Size.fill(1),Size.fill(1)).padding(28).gap(20).scrollable(true).own(style.scope);
+        root.add(GalleryStyle.header(page,theme,"媒体播放","选择一个来源，让声音与画面在这里继续。",back));
+        SceneNode sourceCard=GalleryStyle.card(theme).gap(12);
+        sourceCard.add(GalleryStyle.label(page,()->"媒体来源",theme,18,false));
+        SceneNode addressField=SceneTextField.create(page,address,()->style.colors.get().editorTheme(),()->false,submission->{
             if(openAddress(submission.text))address.accept(submission,submission.text.trim());
             else address.reject(submission,message.get());
-        },SceneTextField.SubmitPolicy.CONFIRM,()->"本地绝对路径、file URI 或 HTTP / HLS 地址"));
-        SceneNode actions=new SceneNode().axis(SceneNode.Axis.ROW).size(Size.fill(1),Size.natural()).gap(8);
-        actions.add(GalleryStyle.button(page,()->"打开媒体",theme,()->openAddress(address.snapshot().get().text)));
+        },SceneTextField.SubmitPolicy.CONFIRM,()->"本地路径、file URI 或 HTTP / HLS 地址",false);
+        sourceCard.add(style.field(addressField));
+        SceneNode actions=GalleryStyle.centeredRow().size(Size.fill(1),Size.natural()).gap(8).scrollable(true);
+        actions.add(GalleryStyle.primary(page,()->"打开媒体",theme,()->openAddress(address.snapshot().get().text)));
         actions.add(GalleryStyle.button(page,()->"选择本地视频",theme,()->picking.set(true)));
         actions.add(GalleryStyle.button(page,()->"内置示例",theme,()->{
             try{open(environment.exampleSource());}catch(Exception failure){message.set("无法打开示例："+failure.getMessage());}
         }));
-        actions.add(GalleryStyle.button(page,()->"停止",theme,()->{stop();message.set("已停止播放。");}));root.add(actions);
-        root.add(GalleryStyle.label(page,message,theme,14,true));
-        SceneNode player=new SceneNode().size(Size.fill(1),Size.natural()).gap(8);
+        actions.add(GalleryStyle.button(page,()->"停止",theme,()->{stop();message.set("已停止播放。");}));
+        sourceCard.add(actions).add(GalleryStyle.label(page,message,theme,13,true));
+        root.add(GalleryStyle.frame(sourceCard,theme));
+        SceneNode empty=GalleryStyle.card(theme).padding(36).gap(12)
+                .add(GalleryStyle.label(page,()->"准备好，按下播放",theme,24,false))
+                .add(GalleryStyle.label(page,()->"打开本地文件或粘贴媒体地址，也可以先体验内置示例。",theme,15,true));
+        SceneNode blank=GalleryStyle.frame(empty,theme).bind(NodeBinding.value(()->content.get().isEmpty(),SceneNode::visible));
+        root.add(blank);
+        SceneNode player=new SceneNode().size(Size.fill(1),Size.natural()).gap(16);
         player.bind(NodeBinding.ownedChildren(content));root.add(player);
         if(environment.media()==null)message.set("当前入口未提供媒体播放，仍可浏览其他场景。");
         // 选择器与正文由同一结构声明拥有；普通流只包含正文，所属层由正式引擎占用视口。
@@ -80,10 +87,25 @@ final class MediaPage {
         stop();MediaSession opened=service.open(source,false);
         try {
             SceneNode body=new SceneNode().size(Size.fill(1),Size.natural()).gap(12);
-            body.add(SceneVideo.create(page,opened).size(Size.fill(1),Size.fixed(240)).background(0xFF09090B));
-            body.add(SceneMediaControls.create(page,opened));
+            SceneNode video=SceneVideo.create(page,opened).size(Size.fill(1),Size.fill(1)).background(0xFF09090B);
+            body.add(new SceneNode().size(Size.fill(1),Size.natural()).control(new Stage(theme)).add(video));
+            body.add(GalleryStyle.frame(SceneMediaControls.create(page,opened,theme).padding(20),theme));
             current=opened;content.set(Collections.singletonList(body));message.set("使用下方控制暂停播放、调整音量或定位。");opened.play();
         }catch(RuntimeException|Error failure){current=null;try{opened.close();}catch(Throwable next){failure.addSuppressed(next);}throw failure;}
+    }
+    /** 播放画布按当前宽度与字号分配有界16:9空间，视频仍自行fit，不修改实际帧比例。 */
+    private static final class Stage implements club.heiqi.uilib.ui.scene.control.SceneControl {
+        final ReadableSignal<SceneTheme> theme;Stage(ReadableSignal<SceneTheme> theme){this.theme=theme;}
+        int height(int width){return Math.min(Math.max(0,(int)Math.min(Integer.MAX_VALUE,(long)width*9/16)),Math.round(theme.get().textStyle.logicalEm*22));}
+        public java.util.List<ReadableSignal<?>> measureDependencies(SceneNode node){return Collections.singletonList(theme);}
+        public club.heiqi.uilib.ui.scene.layout.MeasuredSize measure(SceneNode n,club.heiqi.uilib.ui.scene.layout.Constraints c,club.heiqi.uilib.ui.scene.text.SceneTextMeasurer text){
+            return new club.heiqi.uilib.ui.scene.layout.MeasuredSize(0,height(c.availableWidth));
+        }
+        public club.heiqi.uilib.ui.scene.layout.ChildPlacements arrange(SceneNode n,club.heiqi.uilib.ui.scene.layout.LayoutBox box,club.heiqi.uilib.ui.scene.layout.SceneChildMeasurer children){
+            SceneNode child=children.flowChildren().get(0);children.measureChild(child,new club.heiqi.uilib.ui.scene.layout.Constraints(box.width,box.height));
+            return new club.heiqi.uilib.ui.scene.layout.ChildPlacements(Collections.singletonList(new club.heiqi.uilib.ui.scene.layout.ChildPlacements.Entry(child,new club.heiqi.uilib.ui.scene.layout.LayoutBox(0,0,box.width,box.height))));
+        }
+        public void paint(SceneNode n,club.heiqi.uilib.ui.scene.layout.SceneGeometryView g,club.heiqi.uilib.ui.scene.paint.PaintPlanBuilder p){}
     }
     void stop() {
         picking.set(false);

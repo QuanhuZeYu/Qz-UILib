@@ -20,10 +20,7 @@ public final class DroppablePage {
 
     public static SceneNode create(ScenePageContext context, ReadableSignal<SceneTheme> theme, Runnable leave) {
         SceneNode root = new SceneNode().size(Size.fill(1), Size.fill(1)).padding(28).gap(20).scrollable(true);
-        SceneNode header = new SceneNode().axis(SceneNode.Axis.ROW).size(Size.fill(1), Size.natural()).gap(16);
-        header.add(GalleryStyle.label(context, () -> "Droppable", theme, 30, false).size(Size.fill(1), Size.natural()));
-        header.add(GalleryStyle.button(context, () -> "返回场景概览", theme, leave));
-        root.add(header).add(GalleryStyle.label(context, () -> "拾起卡片，移动到接收区，松开放下。", theme, 16, false));
+        root.add(GalleryStyle.header(context,theme,"Droppable","拾起卡片，移动到接收区，松开放下。",leave));
         root.add(GalleryStyle.label(context, () -> "参考：dnd-kit / React / Droppable", theme, 13, true));
         root.add(example(context, theme, false));
         root.add(example(context, theme, true));

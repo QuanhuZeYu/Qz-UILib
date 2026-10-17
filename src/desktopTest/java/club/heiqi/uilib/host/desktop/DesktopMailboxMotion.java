@@ -149,7 +149,7 @@ final class DesktopMailboxMotion {
         } finally {for(ByteBuffer image:images)org.lwjgl.system.MemoryUtil.memFree(image);}
         if(!intermediate||action(window,"星标邮件").box.width!=240)
             throw new AssertionError("持续悬停未沿真实中间态展开");
-        DesktopGalleryEvidence.screenshot(window,output.resolve("mailbox-hover-open.png"),0xfff8fafd);
+        DesktopGalleryEvidence.screenshot(window,output.resolve("mailbox-hover-open.png"),new club.heiqi.uilib.ui.scene.control.SceneAppearance.Palette(false).canvas);
         SceneGeometryView beforeScroll=DesktopTestInput.geometry(window);
         java.util.Map<SceneNode,Integer> scrolls=new java.util.IdentityHashMap<>();
         for(SceneGeometryView.Entry e:beforeScroll.ordered())if(e.node.scrollable())scrolls.put(e.node,e.scrollOffset);

@@ -17,7 +17,7 @@ final class MailReceiveSurface extends MailRaisedSurface {
 
     MailReceiveSurface(ReadableSignal<SceneTheme> theme, ReadableSignal<Integer> color,
                        ReadableSignal<Float> expansion) {
-        super(theme,color,1.1f,null,80000000L);
+        super(theme,color,club.heiqi.uilib.ui.scene.control.SceneAppearance.CONTROL_RADIUS/14f,null,80000000L);
         this.theme=theme;
         this.expansion=expansion;
     }

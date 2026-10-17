@@ -27,24 +27,28 @@ import club.heiqi.uilib.ui.scene.text.TextStyle;
 
 /** 广场局部视觉词汇；正式控件承担输入，卡片只装饰一个按正式引擎布局的内容节点。 */
 final class GalleryStyle {
-    static final int LIGHT_BACKGROUND = 0xfffafafa, DARK_BACKGROUND = 0xff09090b;
+    static final int LIGHT_BACKGROUND = club.heiqi.uilib.ui.scene.control.SceneAppearance.LIGHT_CANVAS, DARK_BACKGROUND = club.heiqi.uilib.ui.scene.control.SceneAppearance.DARK_CANVAS;
     private GalleryStyle() {}
-    static SceneTheme theme(boolean dark) {
-        return new SceneTheme((dark ? SceneTheme.dark() : SceneTheme.light()).textStyle.withEm(15).withColor(dark ? 0xfffafafa : 0xff18181b),
-                dark ? 0xff09090b : 0xffffffff, dark ? 0xff27272a : 0xfff4f4f5,
-                dark ? 0xff3f3f46 : 0xffe4e4e7, dark ? 0xff52525b : 0xffd4d4d8,
-                dark ? 0xffa1a1aa : 0xff71717a, dark ? 0xff27272a : 0xfff4f4f5,
-                0xffa1a1aa, dark ? 0xfffafafa : 0xff18181b, dark ? 0xff18181b : 0xfffafafa, 10, 12);
-    }
+    static SceneTheme theme(boolean dark) {return club.heiqi.uilib.ui.scene.control.SceneAppearance.theme(dark);}
     static SceneNode card(ReadableSignal<SceneTheme> theme) {
         return new SceneNode().size(Size.fill(1), Size.natural()).padding(20).gap(12);
     }
     static SceneNode label(ScenePageContext context, ReadableSignal<String> value, ReadableSignal<SceneTheme> theme, int em, boolean muted) {
-        return SceneLabel.create(context, value, () -> theme.get().withTextStyle(theme.get().textStyle.withEm(em).withColor(
-                muted ? 0xff71717a : theme.get().textStyle.color)));
+        return SceneLabel.create(context, value, () -> theme.get().withTextStyle(theme.get().textStyle.withEm(em).withFontStyle(new club.heiqi.uilib.ui.scene.text.FontStyle(em>=18?600:400,club.heiqi.uilib.ui.scene.text.FontStyle.Posture.NORMAL)).withColor(
+                muted ? new club.heiqi.uilib.ui.scene.control.SceneAppearance.Palette(theme.get()).muted : theme.get().textStyle.color)));
     }
     static SceneNode button(ScenePageContext context, ReadableSignal<String> value, ReadableSignal<SceneTheme> theme, Runnable action) {
-        return SceneButton.create(context, value, theme, action).size(Size.natural(), Size.natural());
+        return club.heiqi.uilib.ui.scene.control.SceneAppearance.button(context,value,theme,action,club.heiqi.uilib.ui.scene.control.SceneAppearance.Role.OUTLINE);
+    }
+    static SceneNode primary(ScenePageContext context,ReadableSignal<String> text,ReadableSignal<SceneTheme> theme,Runnable action){
+        return club.heiqi.uilib.ui.scene.control.SceneAppearance.button(context,text,theme,action,club.heiqi.uilib.ui.scene.control.SceneAppearance.Role.PRIMARY);
+    }
+    static SceneNode header(ScenePageContext context,ReadableSignal<SceneTheme> theme,String title,String description,Runnable back){
+        SceneNode heading=centeredRow().size(Size.fill(1),Size.natural()).gap(16);
+        heading.add(label(context,()->title,theme,28,false).size(Size.fill(1),Size.natural()));
+        if(back!=null)heading.add(button(context,()->"返回场景概览",theme,back));
+        return new SceneNode().size(Size.fill(1),Size.natural()).gap(8).add(heading)
+                .add(label(context,()->description,theme,15,true));
     }
     static SceneNode frame(SceneNode content, ReadableSignal<SceneTheme> theme) {
         return new SceneNode().size(Size.fill(1), Size.natural()).control(new Frame(theme)).add(content);
@@ -134,11 +138,11 @@ final class GalleryStyle {
         @Override public void paint(SceneNode node, SceneGeometryView geometry, PaintPlanBuilder paint) {
             SceneGeometryView.Entry entry = geometry.get(node);
             LayoutBox box = entry.box;
-            int border = theme.get().panel == 0xffffffff ? 0xffe4e4e7 : 0xff27272a;
-            ScenePaintShapes.rounded(paint, box, entry.clip, border, 8);
+            int border = new club.heiqi.uilib.ui.scene.control.SceneAppearance.Palette(theme.get()).border;
+            ScenePaintShapes.rounded(paint, box, entry.clip, border, club.heiqi.uilib.ui.scene.control.SceneAppearance.CARD_RADIUS);
             // 动态填色归同一圆角表面；正文整盒背景会在随后绘制时盖掉边框圆弧。
             int fill = (node.background() >>> 24) == 0 ? theme.get().panel : node.background();
-            ScenePaintShapes.rounded(paint, new LayoutBox(box.x + 1, box.y + 1, Math.max(0, box.width - 2), Math.max(0, box.height - 2)), entry.clip, fill, 7);
+            ScenePaintShapes.rounded(paint, new LayoutBox(box.x + 1, box.y + 1, Math.max(0, box.width - 2), Math.max(0, box.height - 2)), entry.clip, fill, club.heiqi.uilib.ui.scene.control.SceneAppearance.CARD_RADIUS-1);
         }
     }
 }

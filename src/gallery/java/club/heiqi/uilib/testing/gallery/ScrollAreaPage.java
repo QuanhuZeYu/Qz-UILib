@@ -22,11 +22,7 @@ public final class ScrollAreaPage {
 
     public static SceneNode create(ScenePageContext context, ReadableSignal<SceneTheme> theme, Runnable leave) {
         SceneNode content = column().padding(28).gap(20);
-        SceneNode header = new SceneNode().axis(SceneNode.Axis.ROW).size(Size.fill(1), Size.natural()).gap(16);
-        header.add(GalleryStyle.label(context, () -> "滚动区", theme, 30, false).size(Size.fill(1), Size.natural()));
-        header.add(GalleryStyle.button(context, () -> "返回场景概览", theme, leave));
-        content.add(header);
-        content.add(GalleryStyle.label(context, () -> "滚动文字、浏览卡片，在嵌套与动态内容中试用滚动条。", theme, 16, false));
+        content.add(GalleryStyle.header(context,theme,"滚动区","滚动文字、浏览卡片，在嵌套与动态内容中试用滚动条。",leave));
         content.add(GalleryStyle.label(context, () -> "参考：SimpleBar / Examples", theme, 13, true));
         SceneNode examples = GalleryStyle.grid(context, theme);
         examples.add(vertical(context, theme));

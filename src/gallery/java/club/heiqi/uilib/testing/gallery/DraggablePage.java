@@ -15,20 +15,11 @@ import club.heiqi.uilib.ui.scene.text.font.FontSource;
 
 /** 用户指定的dnd-kit普通Draggable参考；只声明内容、拖中样式和状态，不维护坐标或输入。 */
 public final class DraggablePage {
-    private static final List<FontSource> UI=fonts();
     private DraggablePage() {}
-    private static List<FontSource> fonts() {
-        try{return Collections.singletonList(FontSource.resource("draggable-ui",1,DraggablePage.class.getClassLoader(),
-                "assets/qz_uilib/fonts/ui/NotoSansSC-VF.ttf",false,Collections.<String>emptySet()));}
-        catch(IOException failure){throw new ExceptionInInitializerError(failure);}
-    }
     public static SceneNode create(ScenePageContext context,ReadableSignal<SceneTheme> inherited,Runnable leave) {
-        ReadableSignal<SceneTheme> theme=() -> inherited.get().withTextStyle(new TextStyle("draggable-ui",15,inherited.get().textStyle.color,UI));
+        ReadableSignal<SceneTheme> theme=inherited;
         SceneNode root=new SceneNode().size(Size.fill(1),Size.fill(1)).padding(28).gap(20).scrollable(true);
-        SceneNode header=new SceneNode().axis(SceneNode.Axis.ROW).size(Size.fill(1),Size.natural()).gap(16);
-        header.add(GalleryStyle.label(context,() -> "Draggable",theme,30,false).size(Size.fill(1),Size.natural()));
-        header.add(GalleryStyle.button(context,() -> "返回场景概览",theme,leave));root.add(header);
-        root.add(GalleryStyle.label(context,() -> "拾起、移动、释放。普通内容也可以拖动。",theme,16,false));
+        root.add(GalleryStyle.header(context,theme,"Draggable","拾起、移动、释放。普通内容也可以拖动。",leave));
         root.add(GalleryStyle.label(context,() -> "参考：dnd-kit / React / Draggable",theme,13,true));
         SceneNode grid=GalleryStyle.grid(context,theme);
         grid.add(example(context,theme,"单个元素",new String[]{"拖动我"}));
@@ -93,9 +84,8 @@ public final class DraggablePage {
         SceneNode node=SceneDraggable.create(context,surface,state);
         // 视觉跟随正式焦点信号；不建立页面级键盘监听或另一套目标身份。
         surface.bind(club.heiqi.uilib.ui.scene.runtime.NodeBinding.value(() -> {
-            boolean dark=theme.get().panel==GalleryStyle.DARK_BACKGROUND;
-            return state.snapshot().get().active?(dark?0xff172554:0xffdbeafe)
-                    :body.runtime()!=null&&body.runtime().focusRouter().focused().get()==node?(dark?0xff1e293b:0xffeef2ff):0x00000000;
+            return state.snapshot().get().active?theme.get().hover
+                    :body.runtime()!=null&&body.runtime().focusRouter().focused().get()==node?theme.get().pressed:0x00000000;
         },SceneNode::background));
         return node;
     }

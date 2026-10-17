@@ -27,6 +27,7 @@ final class SceneTextControl implements SceneControl {
     private final SceneTextPolicy policy;
     private final boolean button;
     private final ReadableSignal<SceneIconButton.Symbol> leadingIcon;
+    private SceneAppearance.Surface modernSurface;
     private TextLayout source, presented, tooltipSource, tooltipLayout;
     private int presentWidth, presentHeight, tooltipWidth;
 
@@ -69,6 +70,14 @@ final class SceneTextControl implements SceneControl {
         return node;
     }
 
+    static SceneNode createModern(ReadableSignal<String> text,ReadableSignal<SceneAppearance.Palette> colors,
+            SceneAppearance.Role role,ReadableSignal<SceneIconButton.Symbol> icon){
+        SceneNode node=create(text,()->colors.get().theme(1,
+                role==SceneAppearance.Role.PRIMARY?colors.get().onPrimary:colors.get().text,10),
+                SceneTextPolicy.ELLIPSIS_SINGLE_LINE,true,icon);
+        ((SceneTextControl)node.control()).modernSurface=new SceneAppearance.Surface(colors,role,node,()->false);
+        return node;
+    }
     private int iconSize(SceneNode node) { return leadingIcon==null?0:Math.max(1,Math.round(node.style().logicalEm*1.2f)); }
     private int iconSpace(SceneNode node) { return leadingIcon==null?0:iconSize(node)+theme.get().gap; }
     @Override public java.util.List<ReadableSignal<?>> measureDependencies(SceneNode node) {
@@ -123,7 +132,8 @@ final class SceneTextControl implements SceneControl {
             enabled &= cursor.enabled();
         boolean focused =
                 enabled && runtime != null && runtime.focusRouter().focusVisible(node);
-        if (button) {
+        if(modernSurface!=null)modernSurface.paint(node,geometry,target);
+        else if (button) {
             boolean hovered =
                     enabled && runtime != null && runtime.pointerRouter().hovered(geometry) == node;
             boolean pressed = enabled && runtime != null && runtime.pointerRouter().pressed(node);

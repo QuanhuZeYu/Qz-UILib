@@ -33,17 +33,18 @@ final class SettingsStyle {
         final int background,panel,text,muted,border,hover,accent,selected,primary,onPrimary,error;
         Palette(boolean dark) {
             this.dark=dark;
-            background=dark?0xff020617:0xffffffff;
-            panel=dark?0xff0f172a:0xfff8fafc;
-            text=dark?0xfff8fafc:0xff0f172a;
-            muted=dark?0xff94a3b8:0xff64748b;
-            border=dark?0xff273044:0xffe2e8f0;
-            hover=dark?0xff172033:0xfff1f5f9;
-            accent=dark?0xff94a3b8:0xff64748b;
-            selected=dark?0xff1e293b:0xfff1f5f9;
-            primary=dark?0xffe2e8f0:0xff0f172a;
-            onPrimary=dark?0xff0f172a:0xfff8fafc;
-            error=dark?0xfff87171:0xffdc2626;
+            club.heiqi.uilib.ui.scene.control.SceneAppearance.Palette p=new club.heiqi.uilib.ui.scene.control.SceneAppearance.Palette(dark);
+            background=p.background;
+            panel=p.surface;
+            text=p.text;
+            muted=p.muted;
+            border=p.border;
+            hover=p.hover;
+            accent=p.accent;
+            selected=p.selected;
+            primary=p.primary;
+            onPrimary=p.onPrimary;
+            error=p.error;
         }
         SceneTheme theme(int em,int color,int padding,boolean transparent) {
             return theme(SettingsTypography.style(em,color,400),padding,transparent);
@@ -138,7 +139,7 @@ final class SettingsStyle {
         public void paint(SceneNode n,SceneGeometryView g,PaintPlanBuilder paint) {
             SceneGeometryView.Entry e=g.get(n);Palette p=colors.get();
             int fill=primary?p.primary:muted?p.panel:p.background;
-            if(hovered(g)&&enabled())fill=primary?(p.dark?0xffcbd5e1:0xff263247):p.hover;
+            if(hovered(g)&&enabled())fill=primary?p.muted:p.hover;
             if(!enabled())fill=p.panel;
             int edge=focused()?p.accent:primary?fill:ghost?fill:p.border;
             rounded(paint,e,edge,fill,radius);

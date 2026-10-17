@@ -224,7 +224,7 @@ public final class SettingsPage implements ScenePage {
                     .add(text("移除的来源不会补回；空列表也不会追加默认字体。",12,true))
                     .add(done.view);
             return SettingsStyle.column(0).size(Size.fill(1),Size.fill(1)).control(new SettingsLayout.Layers(true,720))
-                    .background(0x66000000).modal(true).onEscape(() -> {cancelDialog();return true;})
+                    .background(club.heiqi.uilib.ui.scene.control.SceneAppearance.MODAL_SCRIM).modal(true).onEscape(() -> {cancelDialog();return true;})
                     .add(SettingsStyle.card(content,palette)).initialFocus(done.target);
         }
         club.heiqi.uilib.ui.scene.control.SceneSortableList.Row sortableSource(ReadableSignal<SettingsModel.Source> source) {
@@ -336,7 +336,7 @@ public final class SettingsPage implements ScenePage {
         }
         SceneNode modal(SceneNode card) {
             return SettingsStyle.column(0).size(Size.fill(1),Size.fill(1)).control(new SettingsLayout.Layers(true))
-                    .background(0x66000000).modal(true).onEscape(() -> {cancelDialog();return true;}).add(SettingsStyle.card(card,palette));
+                    .background(club.heiqi.uilib.ui.scene.control.SceneAppearance.MODAL_SCRIM).modal(true).onEscape(() -> {cancelDialog();return true;}).add(SettingsStyle.card(card,palette));
         }
         SceneNode confirmation(Dialog kind) {
             SceneNode content=SettingsStyle.column(16);

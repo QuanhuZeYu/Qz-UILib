@@ -55,7 +55,7 @@ public final class SceneFilePicker {
         SceneNode panel=FilePickerStyle.column(0).control(new Panel(style.colors))
                 .add(header).add(style.line()).add(content).add(style.line()).add(footer(style));
         SceneNode modal=SceneLayer.create(context,()->new SceneLayer.Policy(0,SceneLayer.Participation.INTERACTIVE))
-                .size(Size.fill(1),Size.fill(1)).padding(24).background(0x80000000).modal(true)
+                .size(Size.fill(1),Size.fill(1)).padding(24).background(SceneAppearance.MODAL_SCRIM).modal(true)
                 .initialFocus(field).onEscape(()->{selection.cancel();return true;}).add(style.centered(panel))
                 .bind(NodeBinding.value(selection.showing,SceneNode::visible)).own(style.scope);
         modal.bind((runtime,node,owner)->{

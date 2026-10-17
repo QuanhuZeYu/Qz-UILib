@@ -31,7 +31,7 @@ final class MailStyle {
                 t.tooltip, t.tooltipText, Math.max(4, t.padding / 2), t.gap);
     }
     static SceneNode button(ScenePageContext p, ReadableSignal<String> text, ReadableSignal<SceneTheme> theme, Runnable action) {
-        return SceneButton.create(p, text, () -> buttonTheme(theme.get(), false), action).size(Size.natural(), Size.natural());
+        return club.heiqi.uilib.ui.scene.control.SceneAppearance.button(p,text,theme,action,club.heiqi.uilib.ui.scene.control.SceneAppearance.Role.GHOST);
     }
     static SceneNode label(ScenePageContext p, ReadableSignal<String> text, ReadableSignal<SceneTheme> theme, float scale, boolean muted) {
         return SceneLabel.create(p, text, () -> theme.get().withTextStyle(theme.get().textStyle

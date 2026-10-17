@@ -67,10 +67,9 @@ public final class PerformanceGallery implements ScenePage {
         status = context.domain().signal("选择负载和规模后开始；滚动/编辑在MC中请持续手动操作。统计仅在结束时刷新。");
         content = context.domain().signal(Collections.emptyList());
         width = context.domain().signal(Size.fill(1));
-        SceneNode root = new SceneNode().size(Size.fill(1), Size.fill(1)).padding(16).gap(10);
+        SceneNode root = new SceneNode().size(Size.fill(1), Size.fill(1)).padding(28).gap(16);
         root.bind(NodeBinding.value(theme, (n,t) -> n.background(t.panel == 0xffffffff ? GalleryStyle.LIGHT_BACKGROUND : GalleryStyle.DARK_BACKGROUND)));
-        root.add(GalleryStyle.label(context, () -> "QZ / 性能压测广场", theme, 24, false));
-        root.add(GalleryStyle.label(context, () -> "静止 · 滚动 · 更新 · 文档 · 编辑 · 重排 / " + host, theme, 13, true));
+        root.add(GalleryStyle.header(context,theme,"QZ / 性能压测广场","选择一项负载，观察界面在持续操作中的表现。",null));
         SceneNode loads = new SceneNode().axis(SceneNode.Axis.ROW).size(Size.fill(1), Size.natural()).gap(5).scrollable(true);
         for (Load choice : Load.values()) loads.add(GalleryStyle.button(context, () -> (selected.get() == choice ? "● " : "") + choice.title, theme, () -> {
             if (running) stop(); selected.set(choice); status.set("已选择：" + choice.title);
@@ -81,12 +80,16 @@ public final class PerformanceGallery implements ScenePage {
             if (running) stop(); scale.set(scale.get() == 50 ? 200 : scale.get() == 200 ? 1000 : 50);
             status.set("已选择规模：" + scale.get());
         }));
-        actions.add(GalleryStyle.button(context, () -> "开始 / 重跑", theme, () -> start(selected.get(), scale.get(), 30, 120)));
+        actions.add(GalleryStyle.primary(context, () -> "开始 / 重跑", theme, () -> start(selected.get(), scale.get(), 30, 120)));
         actions.add(GalleryStyle.button(context, () -> "停止", theme, this::stop));
         root.add(actions);
         root.add(GalleryStyle.label(context, status, theme, 13, false));
         SceneNode deck = new SceneNode().size(Size.fill(1), Size.fill(1)).clip(true);
         deck.bind(NodeBinding.ownedChildren(content));
+        SceneNode empty=GalleryStyle.card(theme).gap(10)
+                .add(GalleryStyle.label(context,()->"准备开始",theme,22,false))
+                .add(GalleryStyle.label(context,()->"选择负载和规模，点击开始。运行区域会显示对应的真实内容。",theme,15,true));
+        root.add(GalleryStyle.frame(empty,theme).bind(NodeBinding.value(()->content.get().isEmpty(),SceneNode::visible)));
         root.add(deck);
         context.own(() -> { try { if (running) finish(false); } finally { pending = null; releaseWorkload(); } });
         context.mountOwned(root);

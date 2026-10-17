@@ -164,11 +164,45 @@ public final class DesktopGalleryMediaVerification extends TestApplication {
                     require(!snapshot().muted&&snapshot().volume>0,"显式打开媒体没有默认有声意图");input.click("静音");await(()->snapshot().muted,"主动静音未生效");sample=Paths.get(media.exampleSource().uri);require(Files.exists(sample),"示例未提取");
                     System.out.println("FILE source="+media.exampleSource()+" exists="+Files.exists(sample)+" nativeInput="+sample);
                     long firstSwaps=swaps;input.click("暂停");await(()->snapshot().state==MediaState.PAUSED,"暂停未生效");
+                    double beforeInvalidVolume=snapshot().volume;long beforeInvalidSeek=snapshot().generation;
+                    type(fields().get(1),"2",true);await(()->text("音量须为0到1"),"非法音量没有在当前页面显示拒绝原因");
+                    type(fields().get(2),"999999",true);await(()->text("定位目标不在当前有效范围"),"越界定位没有在当前页面显示拒绝原因");
+                    require(snapshot().volume==beforeInvalidVolume&&snapshot().generation==beforeInvalidSeek,"非法输入改变了播放权威值");
+                    require(text("可定位"),"当前来源可定位范围没有呈现");
+                    long pendingGlyphs=window.fonts.rasterizer().stats().pending;
+                    javax.imageio.ImageIO.write(capture(),"png",output.resolve("media-validation-initial.png").toFile());
+                    DesktopTestFrames.settle(window);
+                    DesktopGalleryEvidence.saveGeometry(window,output.resolve("media-validation.geometry.json"));
+                    java.util.List<String> validationText=new java.util.ArrayList<>();
+                    for(PaintCommand command:window.lastPlan.commands())if(command.kind==PaintCommand.Kind.TEXT&&command.text.logicalText.contains("定位目标"))
+                        validationText.add("box="+command.box+" clip="+command.clip+" lines="+command.text.lines().stream().map(line->line.text+"@"+line.x+","+line.y).collect(Collectors.joining(" | ")));
+                    Files.write(output.resolve("media-validation-text.txt"),validationText,java.nio.charset.StandardCharsets.UTF_8);
+                    java.awt.image.BufferedImage validationImage=capture();
+                    PaintCommand rejection=window.lastPlan.commands().stream().filter(c->c.kind==PaintCommand.Kind.TEXT&&c.text.logicalText.equals("定位目标不在当前有效范围")).findFirst().orElseThrow(()->new AssertionError("缺少定位拒绝文字"));
+                    require(rejection.text.lines().stream().map(line->line.text).collect(Collectors.joining()).equals(rejection.text.logicalText),"定位拒绝文字投影不完整");
+                    int firstInk=validationImage.getWidth(),lastInk=-1;
+                    club.heiqi.uilib.ui.scene.layout.LayoutBox errorBox=rejection.clip==null?rejection.box:rejection.box.intersect(rejection.clip);
+                    for(int y=Math.max(0,errorBox.y);y<Math.min(validationImage.getHeight(),errorBox.y+errorBox.height);y++)
+                        for(int x=Math.max(0,errorBox.x);x<Math.min(validationImage.getWidth(),errorBox.x+errorBox.width);x++){
+                            int color=validationImage.getRGB(x,y),red=color>>>16&255,green=color>>>8&255,blue=color&255;
+                            if(red>green+40&&red>blue+40){firstInk=Math.min(firstInk,x);lastInk=Math.max(lastInk,x);}
+                        }
+                    require(lastInk-firstInk>errorBox.width/2,"定位拒绝只有部分字形实际可见");
+                    System.out.println("MEDIA_VALIDATION illegalInputsRejected=true authorityUnchanged=true completeProjection=true redInkWidth="+(lastInk-firstInk+1)+" boxWidth="+errorBox.width+" pendingBeforeSettle="+pendingGlyphs+" pendingAfter="+window.fonts.rasterizer().stats().pending);
+                    javax.imageio.ImageIO.write(validationImage,"png",output.resolve("media-validation.png").toFile());
                     type(fields().get(1),"0.01",true);input.click("取消静音");await(()->!snapshot().muted,"静音控制未生效");input.click("静音");
                     long generation=snapshot().generation;type(fields().get(2),"0",true);await(()->snapshot().generation>generation&&snapshot().state==MediaState.PAUSED,"合法零秒定位未预览");
                     input.click("播放");await(()->swaps>firstSwaps+2&&snapshot().positionNanos>100_000_000L,"恢复播放无新swap");
                     DesktopGalleryEvidence.saveGeometry(window,output.resolve("media.geometry.json"));
                     javax.imageio.ImageIO.write(capture(),"png",output.resolve("media.png").toFile());
+                    long sameSession=sessionId();SceneNode sameSourceField=fields().get(0);
+                    window.domain.execute(()->window.configuration.set(club.heiqi.uilib.ui.scene.control.ThemeConfiguration.KEY,club.heiqi.uilib.ui.scene.control.ThemeMode.DARK));frames(3);
+                    javax.imageio.ImageIO.write(capture(),"png",output.resolve("media-dark.png").toFile());
+                    glfwSetWindowSize(window.handle(),640,900);frames(3);
+                    javax.imageio.ImageIO.write(capture(),"png",output.resolve("media-narrow.png").toFile());
+                    require(sessionId()==sameSession&&fields().get(0)==sameSourceField,"主题/窗口变化重建了播放器或来源草稿");
+                    window.domain.execute(()->window.configuration.set(club.heiqi.uilib.ui.scene.control.ThemeConfiguration.KEY,club.heiqi.uilib.ui.scene.control.ThemeMode.LIGHT));
+                    glfwSetWindowSize(window.handle(),1200,1000);frames(3);
                     localDirectory[0]=Files.createTempDirectory("qz 文件选择 中文 +");
                     Path browse=Files.createDirectory(localDirectory[0].resolve("浏览目录 中文 +"));
                     Files.createDirectory(browse.resolve("空目录"));
@@ -188,6 +222,8 @@ public final class DesktopGalleryMediaVerification extends TestApplication {
                     input.click("停止");frames(2);
                     require(pickerOpen()&&sessionId()==duringPicker&&service.activeSessions()==1,"模态指针穿透后台停止了媒体");
                     await(()->snapshot().positionNanos>positionBeforePicker,"选择器打开期间媒体没有继续推进");
+                    // 背景按钮的屏幕坐标可能落在模态导航上；隔离只要求后台不激活，随后显式恢复目标目录。
+                    type(pickerField(),localDirectory[0].toString(),true);await(()->text("浏览目录 中文 +"),"隔离验证后不能导航回目标目录");
                     pickerEntry("浏览目录 中文 +");await(()->text(localFile[0].getFileName().toString()),"目录条目不能导航");
                     pickerEntry("空目录");await(()->exactText("空目录"),"空目录没有反馈");
                     input.click("上一级");await(()->text(localFile[0].getFileName().toString()),"上级目录没有恢复列表");

@@ -20,10 +20,7 @@ public final class SortablePage {
     private SortablePage() {}
     public static SceneNode create(ScenePageContext context, ReadableSignal<SceneTheme> theme, Runnable leave) {
         SceneNode root = new SceneNode().size(Size.fill(1), Size.fill(1)).padding(28).gap(20).scrollable(true);
-        SceneNode header = new SceneNode().axis(SceneNode.Axis.ROW).size(Size.fill(1), Size.natural()).gap(16);
-        header.add(GalleryStyle.label(context, () -> "Sortable", theme, 30, false).size(Size.fill(1), Size.natural()));
-        header.add(GalleryStyle.button(context, () -> "返回场景概览", theme, leave)); root.add(header);
-        root.add(GalleryStyle.label(context, () -> "拖动改变顺序，也可以将条目移入另一个列表。", theme, 16, false));
+        root.add(GalleryStyle.header(context,theme,"Sortable","拖动改变顺序，也可以将条目移入另一个列表。",leave));
         root.add(GalleryStyle.label(context, () -> "参考：dnd-kit / React / Sortable", theme, 13, true));
         SceneNode examples = GalleryStyle.grid(context, theme);
         examples.add(example(context, theme, "纵向列表", SceneSortable.Layout.VERTICAL, false, false, false, false));

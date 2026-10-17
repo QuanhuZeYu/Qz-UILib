@@ -209,7 +209,9 @@ public final class DesktopDraggableVerification {
             boolean right=(corner&1)!=0,bottom=(corner&2)!=0;
             int outside=actual.getRGB(frame.x+(right?frame.width:-1),frame.y+(bottom?frame.height:-1));
             require(colorDistance(cornerPixel(actual,frame,right,bottom,1,1),outside)<=2,state+"圆角外被矩形填色覆盖");
-            for(int[] point:new int[][]{{1,3},{2,2},{3,1}}) {
+            // 采样共同卡片半径的外圆弧，避免把旧8px轮廓位置误当新12px边框；仍用健康GPU画面互证。
+            int diagonal=(int)Math.floor(club.heiqi.uilib.ui.scene.control.SceneAppearance.CARD_RADIUS*(1-Math.sqrt(.5))-.5);
+            for(int[] point:new int[][]{{diagonal-1,diagonal+1},{diagonal,diagonal},{diagonal+1,diagonal-1}}) {
                 int expected=cornerPixel(reference,original,right,bottom,point[0],point[1]);
                 int referenceOutside=reference.getRGB(original.x+(right?original.width:-1),original.y+(bottom?original.height:-1));
                 require(colorDistance(expected,referenceOutside)>2,"健康参照缺少可辨认圆弧");

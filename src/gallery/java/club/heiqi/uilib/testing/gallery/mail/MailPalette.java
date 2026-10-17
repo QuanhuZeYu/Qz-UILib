@@ -10,27 +10,27 @@ final class MailPalette {
     final SceneTheme theme;
 
     private MailPalette(SceneTheme base, boolean dark) {
-        canvas = dark ? 0xff111315 : 0xfff8fafd;
-        surface = dark ? 0xff1b1d1f : 0xffffffff;
-        read = dark ? 0xff202327 : 0xfff2f6fc;
-        unread = surface;
-        search = dark ? 0xff282d35 : 0xffe9eef6;
-        navigation = dark ? 0xff30435e : 0xffd6e2fb;
-        receive = dark ? 0xff31475f : 0xffc2e7ff;
-        subtleIcon = dark ? 0xff8f969f : 0xffbdc1c6;
-        selected = dark ? 0xff30435e : 0xffc2dbff;
-        selectedHover = dark ? 0xff3a5272 : 0xffb7d1f7;
-        selectedPressed = dark ? 0xff425d80 : 0xffa8c7fa;
-        hover = dark ? 0xff30343b : 0xffe9eef6;
-        pressed = dark ? 0xff3e4a5d : 0xffd3e3fd;
-        outline = dark ? 0xff45484e : 0xffe5e8ed;
-        mutedText = dark ? 0xffb6bcc6 : 0xff5f6368;
-        text = dark ? 0xffe3e3e3 : 0xff202124;
-        accent = dark ? 0xffa8c7fa : 0xff0b57d0;
+        club.heiqi.uilib.ui.scene.control.SceneAppearance.Palette p=new club.heiqi.uilib.ui.scene.control.SceneAppearance.Palette(dark);
+        canvas=p.canvas;
+        surface=p.background;
+        read=p.surface;
+        unread=p.background;
+        search=p.surface;
+        navigation=p.selected;
+        receive=p.selected;
+        subtleIcon=p.muted;
+        selected=p.selected;
+        selectedHover=p.hover;
+        selectedPressed=p.border;
+        hover=p.hover;
+        pressed=p.selected;
+        outline=p.border;
+        mutedText=p.muted;
+        text=p.text;
+        accent=p.accent;
         TextStyle style = MailTypography.style(base.textStyle).withColor(text);
         theme = new SceneTheme(style, surface, 0x00000000, hover, selected, accent,
-                dark ? 0xff26282b : 0xffedf0f4, mutedText,
-                dark ? 0xffdfe3e8 : 0xff303134, dark ? 0xff202124 : 0xffffffff,
+                p.surface,mutedText,p.primary,p.onPrimary,
                 base.padding, base.gap);
     }
 

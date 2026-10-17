@@ -69,15 +69,13 @@ public final class TestGallery implements ScenePage {
         Consumer<Page> navigate=target -> {if(selected.get()==Page.MEDIA&&target!=Page.MEDIA)media.stop();selected.set(target);};
         SceneNode shell=new SceneNode().size(Size.fill(1),Size.fill(1))
                 .bind(NodeBinding.value(dark,(n,value) -> n.background(value?GalleryStyle.DARK_BACKGROUND:GalleryStyle.LIGHT_BACKGROUND)));
-        SceneNode header=new SceneNode().size(Size.fill(1),Size.natural()).padding(24).gap(12);
-        header.bind(NodeBinding.value(() -> selected.get()==Page.HOME,SceneNode::visible));
-        header.add(GalleryStyle.label(context,() -> "QZ / 场景工作台",theme,24,false));
-        header.add(GalleryStyle.label(context,() -> "同一声明 · 自动化 / Desktop / Minecraft",theme,13,true));
-        SceneNode actions=new SceneNode().axis(SceneNode.Axis.ROW).size(Size.fill(1),Size.natural()).gap(8);
-        actions.add(GalleryStyle.button(context,() -> "场景概览",theme,() -> navigate.accept(Page.HOME)).clickFocus(false));
-        actions.add(GalleryStyle.button(context,() -> dark.get()?"预览浅色":"预览深色",theme,
-                () -> preview.set(dark.get()?ThemeMode.LIGHT:ThemeMode.DARK)));
-        header.add(actions);shell.add(header);
+        SceneNode header=GalleryStyle.centeredRow().size(Size.fill(1),Size.natural()).padding(24).gap(16);
+        header.bind(NodeBinding.value(()->selected.get()==Page.HOME,SceneNode::visible));
+        header.add(GalleryStyle.label(context,()->"QZ / 场景工作台",theme,20,false).size(Size.fill(1),Size.natural()));
+        header.add(GalleryStyle.button(context,()->"场景概览",theme,()->navigate.accept(Page.HOME)).clickFocus(false));
+        header.add(GalleryStyle.button(context,()->dark.get()?"预览浅色":"预览深色",theme,
+                ()->preview.set(dark.get()?ThemeMode.LIGHT:ThemeMode.DARK)));
+        shell.add(header);
         SceneNode deck=new SceneNode().size(Size.fill(1),Size.fill(1)).control(new Layers());
         for(Page id:Page.values()) {
             SceneNode page;
@@ -112,19 +110,34 @@ public final class TestGallery implements ScenePage {
         });
     }
     private static SceneNode directory(ScenePageContext context,ReadableSignal<SceneTheme> theme,Consumer<Page> navigate) {
-        SceneNode root=new SceneNode().size(Size.fill(1),Size.fill(1)).padding(24).gap(16).scrollable(true);
-        root.add(GalleryStyle.label(context,() -> "探索场景",theme,28,false));
-        root.add(GalleryStyle.label(context,() -> "从真实产品参考出发，检验可操作的应用页面。",theme,15,true));
+        SceneNode root=new SceneNode().size(Size.fill(1),Size.fill(1)).padding(28).gap(24).scrollable(true);
+        root.add(GalleryStyle.header(context,theme,"探索场景","从日常应用到细节交互，选择一个场景开始体验。",null));
+        root.add(group(context,theme,navigate,"应用体验","完整的工作流程，共同的界面语言。",Page.MAILBOX,Page.SETTINGS,Page.MEDIA));
+        root.add(group(context,theme,navigate,"交互组件","拖动、放置、排序与滚动，在真实内容里试一试。",Page.DRAGGABLE,Page.DROPPABLE,Page.SORTABLE,Page.SCROLL_AREA));
+        return root;
+    }
+    private static SceneNode group(ScenePageContext context,ReadableSignal<SceneTheme> theme,Consumer<Page> navigate,String title,String description,Page... entries){
+        SceneNode section=new SceneNode().size(Size.fill(1),Size.natural()).gap(16);
+        section.add(GalleryStyle.label(context,()->title,theme,20,false));
+        section.add(GalleryStyle.label(context,()->description,theme,14,true));
         SceneNode grid=GalleryStyle.grid(context,theme);
-        for(Page id:Page.values())if(id!=Page.HOME) {
-            SceneNode card=GalleryStyle.card(theme);
-            card.add(GalleryStyle.label(context,() -> id.title,theme,20,false));
-            card.add(GalleryStyle.label(context,() -> id.purpose,theme,15,true));
-            card.add(GalleryStyle.label(context,id::reference,theme,13,true));
-            card.add(GalleryStyle.button(context,() -> "打开"+id.title,theme,() -> navigate.accept(id)).clickFocus(false));
+        for(Page id:entries){
+            SceneNode card=GalleryStyle.card(theme).gap(14);
+            club.heiqi.uilib.ui.scene.control.SceneIconButton.Symbol icon;
+            switch(id){
+                case MAILBOX:icon=club.heiqi.uilib.ui.scene.control.SceneIconButton.Symbol.MAIL;break;
+                case SETTINGS:icon=club.heiqi.uilib.ui.scene.control.SceneIconButton.Symbol.SLIDERS;break;
+                case MEDIA:icon=club.heiqi.uilib.ui.scene.control.SceneIconButton.Symbol.MONITOR;break;
+                default:icon=club.heiqi.uilib.ui.scene.control.SceneIconButton.Symbol.SORT;break;
+            }
+            final club.heiqi.uilib.ui.scene.control.SceneIconButton.Symbol symbol=icon;
+            card.add(club.heiqi.uilib.ui.scene.control.SceneIconButton.graphic(context,()->symbol,theme).size(Size.fixed(24),Size.fixed(24)));
+            card.add(GalleryStyle.label(context,()->id.title,theme,20,false));
+            card.add(GalleryStyle.label(context,()->id.purpose,theme,14,true));
+            card.add(GalleryStyle.button(context,()->"打开"+id.title,theme,()->navigate.accept(id)).clickFocus(false));
             grid.add(GalleryStyle.frame(card,theme));
         }
-        return root.add(grid);
+        return section.add(grid);
     }
 
     /** 多根页面复用正式控件扩展端口，模态仍按原根顺序叠放；几何与输入由scene唯一引擎维护。 */

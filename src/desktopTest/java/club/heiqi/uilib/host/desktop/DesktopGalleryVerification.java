@@ -51,6 +51,10 @@ final class DesktopGalleryVerification extends TestApplication {
         scenario("广场配置原生关闭与快捷重载确认",this::nativeSettingsIntents);
         System.out.println("GALLERY host=desktop sharedDeclaration=true sharedJourney=true realReferencesOnly=true settingsShared=true renderer="
                 +glGetString(GL_RENDERER));
+        scenario("全部现有页面浅深色与宽窄实际画面",()->{
+            // 宿主拥有完整GLFW生命周期；先结束原窗口，再顺序创建取证窗口，不并存两个owner。
+            window.close();DesktopPageAppearanceEvidence.captureAll(output.resolve("appearance"));
+        });
     }
 
     private void sharedJourney() {
@@ -118,8 +122,7 @@ final class DesktopGalleryVerification extends TestApplication {
                             long motionEnd=System.nanoTime()+220000000L;
                             while(System.nanoTime()<motionEnd)window.frame();
                             settle(window);
-                            int background=name.startsWith("mailbox-")
-                                    ? name.equals("mailbox-dark")?0xff111315:0xfff8fafd : 0xfffafafa;
+                            int background=new club.heiqi.uilib.ui.scene.control.SceneAppearance.Palette(name.equals("mailbox-dark")).canvas;
                             if(name.startsWith("mailbox-")) saveGeometry(window,output.resolve(name+".geometry.json"));
                             screenshot(window,output.resolve(name+".png"),background);
                         }

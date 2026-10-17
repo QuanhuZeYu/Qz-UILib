@@ -30,10 +30,10 @@ final class MailSearch {
             if(query.accept(submission,submission.text))model.setQuery(submission.text);
         },SceneTextField.SubmitPolicy.INPUT,() -> "搜索邮件",false);
         SceneNode search=MailStyle.surface(theme,() -> field.runtime()!=null&&field.runtime().focusRouter().focused().get()==field
-                ?palette.get().surface:palette.get().search,1.6f).axis(SceneNode.Axis.ROW)
+                ?palette.get().surface:palette.get().search,club.heiqi.uilib.ui.scene.control.SceneAppearance.CONTROL_RADIUS/14f).axis(SceneNode.Axis.ROW)
                 .size(Size.fill(3).bounds(0,720),Size.natural()).gap(4).padding(4).own(scope);
         search.control(new MailRaisedSurface(theme,() -> field.runtime()!=null&&field.runtime().focusRouter().focused().get()==field
-                ?palette.get().surface:palette.get().search,1.6f,
+                ?palette.get().surface:palette.get().search,club.heiqi.uilib.ui.scene.control.SceneAppearance.CONTROL_RADIUS/14f,
                 () -> field.runtime()!=null&&field.runtime().focusRouter().focused().get()==field,100000000L));
         search.bind(NodeBinding.value(theme,(n,t) -> n.padding(MailStyle.px(t,4)).gap(MailStyle.px(t,4))
                 .size(Size.fill(3).bounds(0,MailStyle.px(t,720)),Size.natural().bounds(MailStyle.px(t,48),Integer.MAX_VALUE))));
