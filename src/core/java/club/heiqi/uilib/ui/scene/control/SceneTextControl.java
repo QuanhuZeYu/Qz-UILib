@@ -26,14 +26,17 @@ final class SceneTextControl implements SceneControl {
     private final ReadableSignal<SceneTheme> theme;
     private final SceneTextPolicy policy;
     private final boolean button;
+    private final ReadableSignal<SceneIconButton.Symbol> leadingIcon;
     private TextLayout source, presented, tooltipSource, tooltipLayout;
     private int presentWidth, presentHeight, tooltipWidth;
 
     private SceneTextControl(
-            ReadableSignal<SceneTheme> theme, SceneTextPolicy policy, boolean button) {
+            ReadableSignal<SceneTheme> theme, SceneTextPolicy policy, boolean button,
+            ReadableSignal<SceneIconButton.Symbol> leadingIcon) {
         this.theme = theme;
         this.policy = policy;
         this.button = button;
+        this.leadingIcon = leadingIcon;
     }
 
     static SceneNode create(
@@ -41,12 +44,16 @@ final class SceneTextControl implements SceneControl {
             ReadableSignal<SceneTheme> theme,
             SceneTextPolicy policy,
             boolean button) {
+        return create(text,theme,policy,button,null);
+    }
+    static SceneNode create(ReadableSignal<String> text, ReadableSignal<SceneTheme> theme,
+            SceneTextPolicy policy, boolean button, ReadableSignal<SceneIconButton.Symbol> leadingIcon) {
         Objects.requireNonNull(text, "text");
         Objects.requireNonNull(theme, "theme");
         Objects.requireNonNull(policy, "policy");
         SceneNode node =
                 new SceneNode()
-                        .control(new SceneTextControl(theme, policy, button))
+                        .control(new SceneTextControl(theme, policy, button, leadingIcon))
                         .textPolicy(
                                 policy == SceneTextPolicy.WRAP
                                         ? TextPolicy.NORMAL
@@ -62,19 +69,29 @@ final class SceneTextControl implements SceneControl {
         return node;
     }
 
+    private int iconSize(SceneNode node) { return leadingIcon==null?0:Math.max(1,Math.round(node.style().logicalEm*1.2f)); }
+    private int iconSpace(SceneNode node) { return leadingIcon==null?0:iconSize(node)+theme.get().gap; }
+    @Override public java.util.List<ReadableSignal<?>> measureDependencies(SceneNode node) {
+        return leadingIcon==null?Collections.emptyList():Collections.singletonList(theme);
+    }
+    @Override public java.util.List<ReadableSignal<?>> paintDependencies(SceneNode node) {
+        return leadingIcon==null?Collections.singletonList(theme):java.util.Arrays.asList(theme,leadingIcon);
+    }
+    @Override public TextLayout layoutText(SceneNode node,SceneTextMeasurer text,int width) {
+        return text.layout(node.text(),node.style(),Math.max(0,width-iconSpace(node)),node.textPolicy());
+    }
     @Override
     public MeasuredSize measure(
             SceneNode node, Constraints constraints, SceneTextMeasurer measurer) {
         TextLayout full =
-                measurer.layout(
-                        node.text(), node.style(), constraints.availableWidth, node.textPolicy());
+                layoutText(node,measurer,constraints.availableWidth);
         float width = 0, height = 0;
         for (TextLayout.Line line : full.lines()) {
             width = Math.max(width, SceneTextPresentation.right(line));
             height = Math.max(height, SceneTextPresentation.bottom(line));
             if (policy == SceneTextPolicy.ELLIPSIS_SINGLE_LINE) break;
         }
-        return new MeasuredSize((int) Math.ceil(width), (int) Math.ceil(height));
+        return new MeasuredSize((int) Math.ceil(width)+iconSpace(node),Math.max(iconSize(node),(int) Math.ceil(height)));
     }
 
     @Override
@@ -85,6 +102,7 @@ final class SceneTextControl implements SceneControl {
     @Override
     public TextLayout presentText(
             SceneNode node, TextLayout full, int width, int height, SceneTextMeasurer measurer) {
+        width=Math.max(0,width-iconSpace(node));
         if (source != full || presentWidth != width || presentHeight != height) {
             source = full;
             presentWidth = width;
@@ -117,6 +135,14 @@ final class SceneTextControl implements SceneControl {
             if (focused) border(target, entry.box, entry.clip, style.focus);
         }
         LayoutBox inner = inner(entry.box, node.padding());
+        if(leadingIcon!=null){
+            int side=Math.min(iconSize(node),Math.min(inner.width,inner.height));
+            SceneIconGlyph.paint(Objects.requireNonNull(leadingIcon.get(),"按钮图标"),
+                    new LayoutBox(inner.x,inner.y+Math.max(0,(inner.height-side)/2),side,side),target,entry.clip,
+                    enabled?node.style().color:style.disabledText);
+            int inset=iconSpace(node);
+            inner=new LayoutBox(inner.x+inset,inner.y,Math.max(0,inner.width-inset),inner.height);
+        }
         LayoutBox clip =
                 policy == SceneTextPolicy.OVERFLOW
                         ? entry.clip

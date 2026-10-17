@@ -2,18 +2,9 @@ package club.heiqi.uilib.ui.scene.control;
 
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.scene.host.ScenePageContext;
-import club.heiqi.uilib.ui.scene.layout.ChildPlacements;
-import club.heiqi.uilib.ui.scene.layout.Constraints;
-import club.heiqi.uilib.ui.scene.layout.LayoutBox;
-import club.heiqi.uilib.ui.scene.layout.MeasuredSize;
-import club.heiqi.uilib.ui.scene.layout.SceneChildMeasurer;
-import club.heiqi.uilib.ui.scene.layout.SceneFlowLayout;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometryView;
 import club.heiqi.uilib.ui.scene.layout.Size;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
-import club.heiqi.uilib.ui.scene.paint.PaintCommand;
-import club.heiqi.uilib.ui.scene.paint.PaintPlanBuilder;
-import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
 import club.heiqi.uilib.ui.scene.runtime.BindingActivation;
 import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
 import java.nio.file.Path;
@@ -48,85 +39,72 @@ public final class SceneFilePicker {
         return new SceneFilePicker(context, theme, selection).createNode();
     }
     private SceneNode createNode() {
-        SceneNode field = SceneTextField.create(context, selection.path, theme, () -> false,
-                selection::go, SceneTextField.SubmitPolicy.CONFIRM, () -> "目录或文件路径");
-        SceneNode panel = column().size(Size.fill(1), Size.fill(1)).control(new Panel())
-                .bind(NodeBinding.value(theme, (node, value) -> node.padding(value.padding + 8).background(value.panel)))
-                .add(SceneLabel.create(context, () -> "选择本地文件", theme))
-                .add(navigation()).add(row().add(field.size(Size.fill(1), Size.natural()))
-                        .add(button("前往", () -> selection.go(selection.path.request(true))).size(Size.natural(), Size.natural())))
-                .add(SceneLabel.create(context, selection.message, theme)).add(listing()).add(pagination())
-                .add(row().add(button("取消", selection::cancel)).add(button("选择文件", selection::confirm)
-                        .bind(NodeBinding.value(() -> !selection.busy.get(), SceneNode::enabled))));
-        SceneNode modal = SceneLayer.create(context, () -> new SceneLayer.Policy(0, SceneLayer.Participation.INTERACTIVE))
-                .size(Size.fill(1), Size.fill(1)).padding(12).background(0x99000000).modal(true)
-                .initialFocus(field).onEscape(() -> { selection.cancel(); return true; }).add(panel)
-                .bind(NodeBinding.value(selection.showing, SceneNode::visible));
-        modal.bind((runtime, node, owner) -> {
+        FilePickerStyle style=new FilePickerStyle(context,theme);
+        SceneNode field=SceneTextField.create(context,selection.path,
+                ()->style.colors.get().editorTheme(),()->false,
+                selection::go,SceneTextField.SubmitPolicy.CONFIRM,()->"输入目录或文件路径",false);
+        SceneNode heading=FilePickerStyle.row(14).add(style.icon(SceneIconButton.Symbol.FOLDER))
+                .add(FilePickerStyle.column(5).add(style.title("选择本地文件"))
+                        .add(style.label(()->"浏览文件夹，选择需要打开的文件。",.9f,true)));
+        SceneNode header=FilePickerStyle.column(18).padding(24).add(heading)
+                .add(navigation(style)).add(FilePickerStyle.row(10).add(style.field(field))
+                        .add(style.action("前往",null,()->selection.go(selection.path.request(true)),FilePickerStyle.Role.OUTLINE)));
+        SceneNode content=FilePickerStyle.column(10).size(Size.fill(1),Size.fill(1)).padding(24)
+                .add(style.label(()->"名称",.86f,true))
+                .add(listing(style)).add(style.label(selection.message,.86f,true));
+        SceneNode panel=FilePickerStyle.column(0).control(new Panel(style.colors))
+                .add(header).add(style.line()).add(content).add(style.line()).add(footer(style));
+        SceneNode modal=SceneLayer.create(context,()->new SceneLayer.Policy(0,SceneLayer.Participation.INTERACTIVE))
+                .size(Size.fill(1),Size.fill(1)).padding(24).background(0x80000000).modal(true)
+                .initialFocus(field).onEscape(()->{selection.cancel();return true;}).add(style.centered(panel))
+                .bind(NodeBinding.value(selection.showing,SceneNode::visible)).own(style.scope);
+        modal.bind((runtime,node,owner)->{
             selection.attach();
-            return new BindingActivation() {
-                @Override public void refresh() {}
-                @Override public void close() { selection.detach(); }
+            return new BindingActivation(){
+                @Override public void refresh(){}
+                @Override public void close(){selection.detach();}
             };
         });
         return modal;
     }
-    private SceneNode navigation() {
-        return row().add(button("上一级", selection::up)).add(button("根目录", () -> selection.showRoots(0)))
-                .add(button("刷新", selection::refresh));
+    private SceneNode navigation(FilePickerStyle style) {
+        return FilePickerStyle.row(8)
+                .add(style.action("上一级",SceneIconButton.Symbol.CHEVRON_LEFT,selection::up,FilePickerStyle.Role.OUTLINE))
+                .add(style.action("根目录",SceneIconButton.Symbol.MONITOR,()->selection.showRoots(0),FilePickerStyle.Role.GHOST))
+                .add(new SceneNode().size(Size.fill(1),Size.natural()))
+                .add(style.action("刷新",null,selection::refresh,FilePickerStyle.Role.GHOST));
     }
-    private SceneNode listing() {
-        SceneNode items = column().size(Size.fill(1), Size.natural());
-        items.bind(NodeBinding.repeat(selection.entries, entry -> entry.path, this::entry));
-        SceneScrollArea.Area listing = SceneScrollArea.create(context, items, () -> new SceneScrollArea.Options(), theme);
-        listing.viewport(SceneNode.Axis.COLUMN).bind(NodeBinding.value(() -> {
-            selection.revision.get(); return 0;
-        }, SceneNode::scrollOffset));
+    private SceneNode listing(FilePickerStyle style) {
+        SceneNode items=FilePickerStyle.column(4);
+        items.bind(NodeBinding.repeat(selection.entries,entry->entry.path,item->style.entry(item,
+                ()->item.get().path.equals(selection.selected.get()),()->selection.activate(item.get()))));
+        SceneScrollArea.Area listing=SceneScrollArea.create(context,items,
+                ()->new SceneScrollArea.Options().dimensions(7,24,1)
+                        .colors(0,style.colors.get().border,style.colors.get().muted),theme);
+        listing.viewport(SceneNode.Axis.COLUMN).bind(NodeBinding.value(()->{
+            selection.revision.get();return 0;
+        },SceneNode::scrollOffset));
         return listing.node();
     }
-    private SceneNode pagination() {
-        SceneNode previous = button("上一页", () -> selection.turn(-1))
-                .bind(NodeBinding.value(() -> !selection.busy.get() && selection.page.get() > 0, SceneNode::enabled));
-        SceneNode following = button("下一页", () -> selection.turn(1))
-                .bind(NodeBinding.value(() -> !selection.busy.get() && selection.next.get(), SceneNode::enabled));
-        return row().add(previous).add(SceneLabel.create(context, () -> "第 " + (selection.page.get() + 1) + " 页", theme)
-                .size(Size.fill(1), Size.natural())).add(following);
+    private SceneNode footer(FilePickerStyle style) {
+        SceneNode previous=style.action("上一页",null,()->selection.turn(-1),FilePickerStyle.Role.GHOST);
+        previous.bind(NodeBinding.value(()->!selection.busy.get()&&selection.page.get()>0,SceneNode::enabled));
+        SceneNode following=style.action("下一页",null,()->selection.turn(1),FilePickerStyle.Role.GHOST);
+        following.bind(NodeBinding.value(()->!selection.busy.get()&&selection.next.get(),SceneNode::enabled));
+        SceneNode pages=FilePickerStyle.row(6).add(style.label(()->"第 "+(selection.page.get()+1)+" 页",.86f,true)
+                .size(Size.fill(1),Size.natural())).add(previous).add(following);
+        SceneNode choose=style.action("选择文件",null,selection::confirm,FilePickerStyle.Role.PRIMARY);
+        choose.bind(NodeBinding.value(()->!selection.busy.get(),SceneNode::enabled));
+        SceneNode actions=FilePickerStyle.row(10)
+                .add(style.ellipsis(()->selection.selected.get()==null?"尚未选择文件":selection.selected.get().getFileName().toString(),.86f,true)
+                        .size(Size.fill(1),Size.natural()))
+                .add(style.action("取消",null,selection::cancel,FilePickerStyle.Role.OUTLINE)).add(choose);
+        return FilePickerStyle.column(12).padding(20).add(pages).add(actions);
     }
-    private SceneNode entry(ReadableSignal<FilePickerDirectory.Entry> item) {
-        ReadableSignal<SceneTheme> rowTheme = () -> {
-            SceneTheme base = theme.get();
-            if (!item.get().path.equals(selection.selected.get())) return base;
-            return new SceneTheme(base.textStyle, base.panel, base.pressed, base.hover, base.pressed,
-                    base.focus, base.disabled, base.disabledText, base.tooltip, base.tooltipText, base.padding, base.gap);
-        };
-        return SceneButton.create(context, () -> {
-            FilePickerDirectory.Entry value = item.get();
-            return (value.directory ? "[目录] " : "") + value.name();
-        }, rowTheme, () -> selection.activate(item.get()), SceneTextPolicy.ELLIPSIS_SINGLE_LINE);
-    }
-    private SceneNode column() {
-        return new SceneNode().gap(8).bind(NodeBinding.value(() -> theme.get().gap, SceneNode::gap));
-    }
-    private SceneNode row() { return column().axis(SceneNode.Axis.ROW).size(Size.fill(1), Size.natural()); }
-    private SceneNode button(String text, Runnable action) { return SceneButton.create(context, () -> text, theme, action); }
-
-    /** 正式输入帧领取目录结果，普通排列完全复用 SceneFlowLayout。 */
-    private final class Panel implements SceneControl {
-        @Override public long nextInputNanos(SceneNode node) { return selection.waiting() ? 0 : Long.MAX_VALUE; }
-        @Override public void inputFrame(SceneNode node, SceneGeometryView geometry, long now) { selection.receiveCompletion(); }
-        @Override public MeasuredSize measure(SceneNode node, Constraints body, SceneTextMeasurer text) {
-            return new MeasuredSize(0, 0);
-        }
-        @Override public MeasuredSize measure(SceneNode node, Constraints body, SceneTextMeasurer text, SceneChildMeasurer children) {
-            return SceneFlowLayout.measure(node, body, children);
-        }
-        @Override public ChildPlacements arrange(SceneNode node, LayoutBox box, SceneChildMeasurer children) {
-            return SceneFlowLayout.arrange(node, box, children);
-        }
-        @Override public void paint(SceneNode node, SceneGeometryView geometry, PaintPlanBuilder target) {
-            SceneGeometryView.Entry entry = geometry.get(node);
-            if (entry != null && (node.background() >>> 24) != 0)
-                target.add(PaintCommand.rect(entry.box, entry.clip, node.background()));
-        }
+    /** 正式输入帧领取目录结果；表面装饰和普通流继续走同一扩展合同。 */
+    private final class Panel extends FilePickerStyle.Surface {
+        Panel(ReadableSignal<FilePickerStyle.Palette> colors){super(colors,FilePickerStyle.Role.PANEL,null,()->false);}
+        @Override public long nextInputNanos(SceneNode node){return selection.waiting()?0:Long.MAX_VALUE;}
+        @Override public void inputFrame(SceneNode node,SceneGeometryView geometry,long now){selection.receiveCompletion();}
     }
 }

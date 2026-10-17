@@ -24,8 +24,13 @@ public final class SceneButton {
             ReadableSignal<SceneTheme> theme,
             Runnable action,
             SceneTextPolicy policy) {
+        return createWithIcon(context,text,theme,action,policy,null);
+    }
+    /** 包内组合仍使用同一文字、省略与提示控制器；图标只占用声明的文字前缀区域。 */
+    static SceneNode createWithIcon(ScenePageContext context,ReadableSignal<String> text,ReadableSignal<SceneTheme> theme,
+            Runnable action,SceneTextPolicy policy,ReadableSignal<SceneIconButton.Symbol> icon) {
         Objects.requireNonNull(context, "context").domain().checkWrite();
-        return SceneTextControl.create(text, theme, policy, true)
+        return SceneTextControl.create(text, theme, policy, true, icon)
                 .size(Size.fill(1), Size.natural())
                 .focusable(true)
                 .clickFocus(true)

@@ -94,6 +94,40 @@ public final class DesktopGalleryMediaVerification extends TestApplication {
         return DesktopTestInput.geometry(window).ordered().stream().filter(e->inPicker(e.node)&&e.node.clickAction()!=null&&e.node.text().contains("分页文件 "))
                 .map(e->e.node.text()).collect(Collectors.toCollection(java.util.LinkedHashSet::new));
     }
+    private void requireNameTooltip(String name) {
+        List<PaintCommand> commands=window.lastPlan.commands();
+        PaintCommand last=commands.get(commands.size()-1);
+        require(last.kind==PaintCommand.Kind.TEXT&&name.equals(last.text.logicalText)
+                &&last.text.lines().stream().map(line->line.text).collect(Collectors.joining()).equals(name),"长名称没有完整提示："+name);
+    }
+    private boolean focused(SceneNode target) {
+        final boolean[] result={false};
+        window.domain.execute(()->result[0]=window.page.runtime().focusRouter().focused().get()==target
+                &&window.page.runtime().focusRouter().focusVisible(target));
+        return result[0];
+    }
+    private club.heiqi.uilib.ui.scene.control.SceneScrollViewport.Snapshot pathViewport(SceneNode field) {
+        return field.control().scrollViewport(field,SceneNode.Axis.ROW,DesktopTestInput.geometry(window));
+    }
+    private void dragPathScrollbar() {
+        SceneNode field=pickerField();String before=editText(field);
+        input.moveTo(field);input.mouse.invoke(window.handle(),0,GLFW_PRESS,0);input.mouse.invoke(window.handle(),0,GLFW_RELEASE,0);frames(1);
+        SceneNode bar=field.parent().children().stream().filter(n->n!=field).findFirst().orElseThrow(()->new AssertionError("路径框缺少横向条"));
+        club.heiqi.uilib.ui.scene.layout.LayoutBox box=DesktopTestInput.hit(DesktopTestInput.geometry(window,bar));
+        require(box.width>0&&box.height>0,"路径条没有可交互区域");
+        int centerY=box.y+box.height/2;
+        input.key.invoke(window.handle(),org.lwjgl.glfw.GLFW.GLFW_KEY_HOME,0,GLFW_PRESS,0);
+        input.key.invoke(window.handle(),org.lwjgl.glfw.GLFW.GLFW_KEY_HOME,0,GLFW_RELEASE,0);frames(1);
+        require(pathViewport(field).offset==0,"路径编辑器HOME没有显露开头");
+        input.point(box.x+3,centerY);input.mouse.invoke(window.handle(),0,GLFW_PRESS,0);frames(1);
+        input.point(box.x+box.width+50,centerY);frames(1);input.mouse.invoke(window.handle(),0,GLFW_RELEASE,0);frames(1);
+        require(pathViewport(field).offset==pathViewport(field).maximum,"路径条未拖到末端 offset="+pathViewport(field).offset+" maximum="+pathViewport(field).maximum+" box="+box);
+        input.point(box.x+box.width-3,centerY);input.mouse.invoke(window.handle(),0,GLFW_PRESS,0);frames(1);
+        input.point(box.x-50,centerY);frames(1);input.mouse.invoke(window.handle(),0,GLFW_RELEASE,0);frames(1);
+        require(pathViewport(field).offset==0&&before.equals(editText(field)),"路径条未回到起点或改变了草稿");
+        window.domain.execute(()->require(window.page.runtime().focusRouter().focused().get()==field,"拖动路径条丢失编辑焦点"));
+        System.out.println("FILE_PICKER_PATH_BAR width="+box.width+" height="+box.height+" bothEnds=true draftAndFocusPreserved=true");
+    }
     private static void deleteTree(Path root) throws java.io.IOException {
         if(root==null)return;
         try(java.util.stream.Stream<Path> paths=Files.walk(root)) {
@@ -167,6 +201,35 @@ public final class DesktopGalleryMediaVerification extends TestApplication {
                     int nextPageSize=listedPage().size();
                     input.click("上一页");await(()->listedPage().equals(firstPage),"上一页没有返回原批次");
                     type(pickerField(),browse.toString(),true);await(()->text(localFile[0].getFileName().toString()),"不能返回中文目录");
+                    Path longName=browse.resolve("项目资料与设计规范_这是一个用于确认窄窗省略与选择身份的长文件名称_中文+空格.ViDeO");
+                    Files.createFile(longName);input.click("刷新");await(()->text(longName.getFileName().toString()),"长文件名没有进入实际列表");
+                    pickerEntry(localFile[0].getFileName().toString());frames(1);
+                    input.click(DesktopTestInput.geometry(window).ordered().stream().filter(e->inPicker(e.node)&&e.node.text().equals("选择本地文件")).findFirst().orElseThrow(()->new AssertionError("缺少选择器标题")));
+                    input.point(0,0);frames(2);
+                    javax.imageio.ImageIO.write(capture(),"png",output.resolve("file-picker-light.png").toFile());
+                    SceneNode retainedField=pickerField();
+                    window.domain.execute(()->window.configuration.set(club.heiqi.uilib.ui.scene.control.ThemeConfiguration.KEY,club.heiqi.uilib.ui.scene.control.ThemeMode.DARK));
+                    frames(3);require(pickerField()==retainedField,"主题变化重建路径编辑器");
+                    javax.imageio.ImageIO.write(capture(),"png",output.resolve("file-picker-dark.png").toFile());
+                    window.domain.execute(()->window.configuration.set(club.heiqi.uilib.ui.scene.control.ThemeConfiguration.KEY,club.heiqi.uilib.ui.scene.control.ThemeMode.LIGHT));frames(3);
+                    glfwSetWindowSize(window.handle(),560,620);frames(3);
+                    require(pickerField()==retainedField,"窄窗变化重建路径编辑器");
+                    pickerEntry(longName.getFileName().toString());frames(1);
+                    SceneNode longEntry=DesktopTestInput.geometry(window).ordered().stream()
+                            .filter(e->inPicker(e.node)&&e.node.clickAction()!=null&&e.node.text().equals(longName.getFileName().toString()))
+                            .map(e->e.node).findFirst().orElseThrow(()->new AssertionError("长名称条目缺失"));
+                    input.moveTo(longEntry);frames(2);requireNameTooltip(longName.getFileName().toString());
+                    input.point(0,0);frames(1);
+                    for(int attempt=0;attempt<DesktopTestInput.geometry(window).ordered().size()&&!focused(longEntry);attempt++) {
+                        input.key.invoke(window.handle(),org.lwjgl.glfw.GLFW.GLFW_KEY_TAB,0,GLFW_PRESS,0);
+                        input.key.invoke(window.handle(),org.lwjgl.glfw.GLFW.GLFW_KEY_TAB,0,GLFW_RELEASE,0);frames(1);
+                    }
+                    require(focused(longEntry),"键盘导航未到达长名称条目");
+                    requireNameTooltip(longName.getFileName().toString());
+                    System.out.println("FILE_PICKER_STYLE themeWithoutRebuild=true narrow=true hoverFullName=true keyboardFullName=true");
+                    DesktopGalleryEvidence.saveGeometry(window,output.resolve("file-picker-narrow.geometry.json"));
+                    javax.imageio.ImageIO.write(capture(),"png",output.resolve("file-picker-narrow.png").toFile());
+                    dragPathScrollbar();
                     glfwSetWindowSize(window.handle(),760,620);frames(3);
                     require(pickerOpen(),"窗口变化关闭了选择器");
                     DesktopGalleryEvidence.saveGeometry(window,output.resolve("file-picker.geometry.json"));

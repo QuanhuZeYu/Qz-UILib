@@ -83,6 +83,8 @@ final class SceneIconGlyph {
             case FILE:
                 p.polygon(false,6,3,14,3,19,8,19,21,6,21);p.line(14,3,14,8);p.line(14,8,19,8);
                 p.line(9,12,16,12);p.line(9,16,16,16);break;
+            case FOLDER:
+                p.polygon(false,3,5,9,5,12,8,21,8,21,20,3,20);break;
             case MONITOR:
                 p.polygon(false,3,4,21,4,21,17,3,17);p.line(12,17,12,21);p.line(8,21,16,21);break;
             case CHECK_BOX:p.polygon(false,4,4,20,4,20,20,4,20);break;
