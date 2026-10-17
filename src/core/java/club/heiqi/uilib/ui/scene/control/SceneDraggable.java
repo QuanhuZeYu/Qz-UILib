@@ -13,6 +13,8 @@ import club.heiqi.uilib.ui.scene.layout.MeasuredSize;
 import club.heiqi.uilib.ui.scene.layout.SceneChildMeasurer;
 import club.heiqi.uilib.ui.scene.layout.SceneFlowLayout;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometryView;
+import club.heiqi.uilib.ui.scene.motion.ElasticOptions;
+import club.heiqi.uilib.ui.scene.motion.MotionSpec;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.PaintPlanBuilder;
 import club.heiqi.uilib.ui.scene.runtime.BindingActivation;
@@ -33,8 +35,8 @@ public final class SceneDraggable {
 
     /** 不可变链式声明；每次配置返回副本，外部策略 Signal 可在挂载后替换。 */
     public static final class Options {
-        private club.heiqi.uilib.ui.scene.motion.MotionSpec releaseMotion;
-        private club.heiqi.uilib.ui.scene.motion.ElasticOptions elastic;
+        private MotionSpec releaseMotion;
+        private ElasticOptions elastic;
         private Axis axis = Axis.BOTH;
         private Bounds bounds = Bounds.NONE;
         private int gridX, gridY, distance, tolerance;
@@ -56,14 +58,14 @@ public final class SceneDraggable {
             observer = value.observer; autoScroll = value.autoScroll; autoScrollSpeed = value.autoScrollSpeed;
             sourceAnchor = value.sourceAnchor; preserveSlot = value.preserveSlot; sourceContent = value.sourceContent;
         }
-        public Options releaseMotion(club.heiqi.uilib.ui.scene.motion.MotionSpec value) {
+        public Options releaseMotion(MotionSpec value) {
             Objects.requireNonNull(value, "释放策略");
-            if (value.kind == club.heiqi.uilib.ui.scene.motion.MotionSpec.Kind.DECAY) throw new IllegalArgumentException("回槽使用目标跟随策略，自由惯性归显式滚动释放");
+            if (value.kind == MotionSpec.Kind.DECAY) throw new IllegalArgumentException("回槽使用目标跟随策略，自由惯性归显式滚动释放");
             Options next = new Options(this); next.releaseMotion = value; return next;
         }
         /** 显式软边缘；不声明时保持原硬边界，放下意图仍使用合法坐标。 */
-        public Options elastic(club.heiqi.uilib.ui.scene.motion.ElasticOptions value) { Options next = new Options(this); next.elastic = value; return next; }
-        private club.heiqi.uilib.ui.scene.motion.MotionSpec releaseStrategy() { return releaseMotion != null ? releaseMotion : elastic == null ? null : elastic.releaseMotion; }
+        public Options elastic(ElasticOptions value) { Options next = new Options(this); next.elastic = value; return next; }
+        private MotionSpec releaseStrategy() { return releaseMotion != null ? releaseMotion : elastic == null ? null : elastic.releaseMotion; }
         public Options axis(Axis value) { Options next = new Options(this); next.axis = Objects.requireNonNull(value, "axis"); return next; }
         public Options bounds(Bounds value) { Options next = new Options(this); next.bounds = Objects.requireNonNull(value, "bounds"); return next; }
         public Options grid(int x, int y) {
@@ -100,7 +102,8 @@ public final class SceneDraggable {
         Options preserveSlot() { Options next = new Options(this); next.preserveSlot = true; return next; }
     }
 
-    /** effective delta 为网格与约束后的 scene 像素，和当次发布的移动几何一致。 */
+    /** 位移单位为 scene 像素。State.snapshot 表达当前拖动呈现，显式弹性允许暂态越界；
+     *  onDrop 表达正常结束的合法位移，软边缘呈现先投影回有效范围。 */
     public static final class Snapshot {
         public final boolean active, pending;
         public final int deltaX, deltaY;
@@ -183,7 +186,7 @@ public final class SceneDraggable {
         private final Object bodyTarget = new Object();
         private final SceneDragRelease release;
         private long releaseEventTime;
-        private LayoutBox releaseBounds;
+        private final Placement placement = new Placement();
         private SceneNode layer;
         private boolean mounted;
         private SceneDragSupport.Observer observer;
@@ -193,17 +196,8 @@ public final class SceneDraggable {
         }
         void installOverlay(ScenePageContext context, SceneNode node) {
             layer = SceneLayer.create(context, () -> new SceneLayer.Policy(0, SceneLayer.Participation.PASSIVE),
-                    (self, sourceBox, viewport, measured) -> {
-                        Offset current = release.active.get() ? new Offset(release.x(), release.y()) : state.preferred.get();
-                        int x = SceneDragSupport.integer((long) sourceBox.x + node.padding() + current.x);
-                        int y = SceneDragSupport.integer((long) sourceBox.y + node.padding() + current.y);
-                        release.bounds(releaseBounds, viewport, sourceBox.x + node.padding(), sourceBox.y + node.padding(), measured.width, measured.height);
-                        if (release.active.get() && releaseBounds != null && options().elastic == null) {
-                            x = SceneDragSupport.clamp(x, measured.width, releaseBounds.x, releaseBounds.width);
-                            y = SceneDragSupport.clamp(y, measured.height, releaseBounds.y, releaseBounds.height);
-                        }
-                        return new LayoutBox(x, y, measured.width, measured.height);
-                    }, Arrays.asList(state.snapshot, state.preferred, source, release.active));
+                    (self, sourceBox, viewport, measured) -> placement.overlay(node, sourceBox, viewport, measured),
+                    Arrays.asList(state.snapshot, state.preferred, source, release.active));
             layer.bind(NodeBinding.value(() -> (state.snapshot.get().active || release.active.get()) && options().overlay != null, SceneNode::visible));
             layer.bind(NodeBinding.ownedChildren(() -> {
                 SceneNode preview = options().overlay;
@@ -270,30 +264,69 @@ public final class SceneDraggable {
         }
         @Override public ChildPlacements arrange(SceneNode node, LayoutBox box, SceneChildMeasurer children,
                 LayoutBox parentAllocation, LayoutBox viewport) {
-            Options currentOptions = options();
-            release.elastic(currentOptions.elastic);
-            releaseBounds = currentOptions.bounds == Bounds.NONE ? null : currentOptions.bounds == Bounds.VIEWPORT
-                    ? viewport : parentAllocation == null ? viewport : SceneControlPaint.inner(parentAllocation, node.parent().padding());
+            Options current = options();
+            placement.configure(node, current, parentAllocation, viewport);
             ChildPlacements ordinary = SceneFlowLayout.arrange(node, box, children);
-            for (ChildPlacements.Entry entry : ordinary.entries()) if (options().overlay == null && entry.child == content) {
-                // 预览的最终范围由所属层提供，普通内容不得覆盖或撤销该轨迹约束。
-                LayoutBox child = entry.relativeBox;
-                release.bounds(releaseBounds, box.x + child.x, box.y + child.y, child.width, child.height);
-            }
-            Snapshot current = state.snapshot.get();
-            if ((!current.active && !release.active.get()) || options().overlay != null || options().preserveSlot) return ordinary;
+            placement.observeContent(box, ordinary, current);
+            if ((!state.snapshot.get().active && !release.active.get()) || current.overlay != null || current.preserveSlot) return ordinary;
             Offset offset = release.active.get() ? new Offset(release.x(), release.y()) : state.preferred.get();
-            List<ChildPlacements.Entry> placed = new ArrayList<>();
-            for (ChildPlacements.Entry entry : ordinary.entries()) {
-                LayoutBox child = entry.relativeBox;
-                int x = SceneDragSupport.integer((long) child.x + offset.x), y = SceneDragSupport.integer((long) child.y + offset.y);
-                if (release.active.get() && releaseBounds != null && options().elastic == null) {
-                    x = SceneDragSupport.integer((long) SceneDragSupport.clamp((long) box.x + x, child.width, releaseBounds.x, releaseBounds.width) - box.x);
-                    y = SceneDragSupport.integer((long) SceneDragSupport.clamp((long) box.y + y, child.height, releaseBounds.y, releaseBounds.height) - box.y);
+            return placement.translate(box, ordinary, offset);
+        }
+        /** 同一边界分别服务释放约束、呈现排列和业务投影；软边缘只放宽呈现。 */
+        private final class Placement {
+            private LayoutBox bounds;
+            void configure(SceneNode node, Options current, LayoutBox parentAllocation, LayoutBox viewport) {
+                release.elastic(current.elastic);
+                switch (current.bounds) {
+                    case NONE: bounds = null; break;
+                    case VIEWPORT: bounds = viewport; break;
+                    case PARENT: bounds = parentAllocation == null ? viewport
+                            : SceneControlPaint.inner(parentAllocation, node.parent().padding()); break;
                 }
-                placed.add(new ChildPlacements.Entry(entry.child, new LayoutBox(x, y, child.width, child.height)));
             }
-            return new ChildPlacements(placed);
+            void observeContent(LayoutBox box, ChildPlacements ordinary, Options current) {
+                if (current.overlay != null) return;
+                // 预览的最终范围由所属层提供，普通内容不得覆盖或撤销该轨迹约束。
+                for (ChildPlacements.Entry entry : ordinary.entries()) {
+                    if (entry.child != content) continue;
+                    LayoutBox child = entry.relativeBox;
+                    release.bounds(bounds, box.x + child.x, box.y + child.y, child.width, child.height);
+                }
+            }
+            private boolean hardRelease() { return release.active.get() && bounds != null && options().elastic == null; }
+            ChildPlacements translate(LayoutBox box, ChildPlacements ordinary, Offset offset) {
+                boolean hard = hardRelease();
+                List<ChildPlacements.Entry> placed = new ArrayList<>();
+                for (ChildPlacements.Entry entry : ordinary.entries()) {
+                    LayoutBox child = entry.relativeBox;
+                    int x = SceneDragSupport.integer((long) child.x + offset.x), y = SceneDragSupport.integer((long) child.y + offset.y);
+                    if (hard) {
+                        x = SceneDragSupport.integer((long) SceneDragSupport.clamp((long) box.x + x, child.width, bounds.x, bounds.width) - box.x);
+                        y = SceneDragSupport.integer((long) SceneDragSupport.clamp((long) box.y + y, child.height, bounds.y, bounds.height) - box.y);
+                    }
+                    placed.add(new ChildPlacements.Entry(entry.child, new LayoutBox(x, y, child.width, child.height)));
+                }
+                return new ChildPlacements(placed);
+            }
+            LayoutBox overlay(SceneNode node, LayoutBox sourceBox, LayoutBox viewport, MeasuredSize measured) {
+                Offset current = release.active.get() ? new Offset(release.x(), release.y()) : state.preferred.get();
+                int x = SceneDragSupport.integer((long) sourceBox.x + node.padding() + current.x);
+                int y = SceneDragSupport.integer((long) sourceBox.y + node.padding() + current.y);
+                release.bounds(bounds, viewport, sourceBox.x + node.padding(), sourceBox.y + node.padding(), measured.width, measured.height);
+                if (hardRelease()) {
+                    x = SceneDragSupport.clamp(x, measured.width, bounds.x, bounds.width);
+                    y = SceneDragSupport.clamp(y, measured.height, bounds.y, bounds.height);
+                }
+                return new LayoutBox(x, y, measured.width, measured.height);
+            }
+            Snapshot legalDrop(SceneNode node, SceneGeometryView geometry, Snapshot value, LayoutBox dragBox) {
+                if (options().elastic == null || bounds == null) return value;
+                LayoutBox slot = geometry.get(node).box;
+                int baseX = slot.x + node.padding(), baseY = slot.y + node.padding();
+                int legalX = SceneDragSupport.clamp((long) baseX + value.deltaX, dragBox.width, bounds.x, bounds.width) - baseX;
+                int legalY = SceneDragSupport.clamp((long) baseY + value.deltaY, dragBox.height, bounds.y, bounds.height) - baseY;
+                return new Snapshot(true, false, legalX, legalY);
+            }
         }
         @Override public boolean capturesPointer() { return true; }
         @Override public Object pointerTarget(SceneNode node, SceneGeometryView geometry, int x, int y) {
@@ -452,31 +485,41 @@ public final class SceneDraggable {
             if (state.snapshot.get().active && valid(node, geometry)
                     && !(options().preserveSlot && options().overlay == null)) synchronize(node, geometry);
             Snapshot finalValue = state.snapshot.get();
-            Consumer<Snapshot> action = null;
-            Runnable receiving = null;
             LayoutBox dragBox = feedbackBox(node, geometry);
-            boolean normal = finalValue.active && valid(node, geometry) && dragBox != null;
+            Drop completed = null;
             try {
-                if (normal) {
-                    action = options().onDrop;
-                    if (observer != null) receiving = observer.normalDrop(node, geometry, state.keyboard, dragBox,
-                            state.keyboard ? SceneDragSupport.centerX(dragBox) : state.pointerX,
-                            state.keyboard ? SceneDragSupport.centerY(dragBox) : state.pointerY);
+                if (finalValue.active && valid(node, geometry) && dragBox != null) {
+                    completed = new Drop(node, geometry, finalValue, dragBox);
+                    completed.receive();
                 }
             } finally { state.end(); }
-            if (normal && options().releaseStrategy() != null && !options().preserveSlot)
-                release.release(finalValue.deltaX, finalValue.deltaY, options().releaseStrategy(), releaseEventTime);
-            // 两种会话均已清理；回调抛错及迟到 UP 都不能重新提交。
-            if (receiving != null) receiving.run();
-            if (normal && action != null) {
-                if (options().elastic != null && releaseBounds != null) {
-                    SceneGeometryView.Entry slot = geometry.get(node);
-                    int baseX = slot.box.x + node.padding(), baseY = slot.box.y + node.padding();
-                    int legalX = SceneDragSupport.clamp((long) baseX + finalValue.deltaX, dragBox.width, releaseBounds.x, releaseBounds.width) - baseX;
-                    int legalY = SceneDragSupport.clamp((long) baseY + finalValue.deltaY, dragBox.height, releaseBounds.y, releaseBounds.height) - baseY;
-                    finalValue = new Snapshot(true, false, legalX, legalY);
-                }
-                action.accept(finalValue);
+            if (completed != null) completed.finish();
+        }
+        /** 收拢一次正常放下的数据与动作；接收区先结算，输入会话清理后发布业务出口。 */
+        private final class Drop {
+            private final SceneNode node;
+            private final SceneGeometryView geometry;
+            private final Snapshot value;
+            private final LayoutBox box;
+            private final Consumer<Snapshot> action;
+            private Runnable receiving;
+            Drop(SceneNode node, SceneGeometryView geometry, Snapshot value, LayoutBox box) {
+                this.node = node; this.geometry = geometry; this.value = value; this.box = box;
+                action = options().onDrop;
+            }
+            void receive() {
+                receiving = observer == null ? null : observer.normalDrop(node, geometry, state.keyboard, box,
+                        state.keyboard ? SceneDragSupport.centerX(box) : state.pointerX,
+                        state.keyboard ? SceneDragSupport.centerY(box) : state.pointerY);
+            }
+            void finish() {
+                Options current = options();
+                MotionSpec strategy = current.releaseStrategy();
+                if (strategy != null && !current.preserveSlot)
+                    release.release(value.deltaX, value.deltaY, strategy, releaseEventTime);
+                // 两种会话均已清理；回调抛错及迟到 UP 都不能重新提交。
+                if (receiving != null) receiving.run();
+                if (action != null) action.accept(placement.legalDrop(node, geometry, value, box));
             }
         }
         @Override public void pointer(SceneNode node, ScenePointerEvent event, SceneGeometryView geometry) {
@@ -549,23 +592,26 @@ public final class SceneDraggable {
         }
         private boolean toggleKeyboard(SceneNode node, SceneGeometryView geometry) {
             Snapshot current = state.snapshot.get();
-            if (!current.active && !current.pending) {
-                Offset takeover = new Offset(0, 0);
-                if (release.active.get() && geometry != null) {
-                    LayoutBox currentBox = feedbackBox(node, geometry);
-                    SceneGeometryView.Entry slot = geometry.get(node);
-                    if (currentBox != null && slot != null) takeover = new Offset(
-                            currentBox.x - slot.box.x - node.padding(), currentBox.y - slot.box.y - node.padding());
-                }
-                release.begin();
-                state.end(); state.keyboard = true; activate(runtime.inputNanos());
-                state.keyboardX = takeover.x; state.keyboardY = takeover.y; state.preferred.set(takeover);
-                if (geometry != null) update(node, geometry, SceneDragSupport.AutoScroll.Shift.NONE);
-            } else if (state.keyboard) {
+            if (!current.active && !current.pending) beginKeyboard(node, geometry);
+            else if (state.keyboard) {
                 if (options().preserveSlot && options().overlay == null) update(node, geometry, SceneDragSupport.AutoScroll.Shift.NONE);
                 drop(node, geometry);
             }
             return true;
+        }
+        private void beginKeyboard(SceneNode node, SceneGeometryView geometry) {
+            Offset takeover = keyboardTakeover(node, geometry);
+            release.begin();
+            state.end(); state.keyboard = true; activate(runtime.inputNanos());
+            state.keyboardX = takeover.x; state.keyboardY = takeover.y; state.preferred.set(takeover);
+            if (geometry != null) update(node, geometry, SceneDragSupport.AutoScroll.Shift.NONE);
+        }
+        private Offset keyboardTakeover(SceneNode node, SceneGeometryView geometry) {
+            if (!release.active.get() || geometry == null) return Offset.ZERO;
+            LayoutBox current = feedbackBox(node, geometry);
+            SceneGeometryView.Entry slot = geometry.get(node);
+            if (current == null || slot == null) return Offset.ZERO;
+            return new Offset(current.x - slot.box.x - node.padding(), current.y - slot.box.y - node.padding());
         }
         private boolean cancelKeyboard() {
             Snapshot current = state.snapshot.get();

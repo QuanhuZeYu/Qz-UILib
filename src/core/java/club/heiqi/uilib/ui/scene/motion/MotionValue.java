@@ -114,38 +114,39 @@ public final class MotionValue {
     }
     /** 弹簧每一方向的后续极值指数衰减，首个正/负极值已足以判定本解析段是否碰壁。 */
     private double firstCollision(double elapsed) {
-        double cursor = 0, omega = spec.frequency, zeta = spec.damping;
-        if (zeta < 1) {
-            double rate = zeta * omega, damped = omega * Math.sqrt((1 - zeta) * (1 + zeta));
-            double a = origin - target, b = (initialVelocity + rate * a) / damped;
-            double phase = Math.atan2(-initialVelocity, -rate * b - damped * a);
-            double first = phase / damped, halfPeriod = Math.PI / damped;
-            if (first <= 0) first += halfPeriod;
-            for (int i = 0; i < 2; i++) {
-                double end = Math.min(elapsed, first + i * halfPeriod);
-                double collision = crossing(cursor, end);
-                if (!Double.isNaN(collision) || end == elapsed) return collision;
-                cursor = end;
-            }
-            return Double.NaN;
+        if (spec.damping < 1) return oscillatingCollision(elapsed);
+        double turn = turningTime();
+        if (!(turn > 0 && turn < elapsed)) return crossing(0, elapsed);
+        double collision = crossing(0, turn);
+        return Double.isNaN(collision) ? crossing(turn, elapsed) : collision;
+    }
+    private double oscillatingCollision(double elapsed) {
+        double omega = spec.frequency, zeta = spec.damping;
+        double rate = zeta * omega, damped = omega * Math.sqrt((1 - zeta) * (1 + zeta));
+        double a = origin - target, b = (initialVelocity + rate * a) / damped;
+        double phase = Math.atan2(-initialVelocity, -rate * b - damped * a);
+        double first = phase / damped, halfPeriod = Math.PI / damped;
+        if (first <= 0) first += halfPeriod;
+        double cursor = 0;
+        for (int i = 0; i < 2; i++) {
+            double end = Math.min(elapsed, first + i * halfPeriod);
+            double collision = crossing(cursor, end);
+            if (!Double.isNaN(collision) || end == elapsed) return collision;
+            cursor = end;
         }
-        double turn = Double.NaN;
+        return Double.NaN;
+    }
+    private double turningTime() {
+        double omega = spec.frequency, zeta = spec.damping;
         if (zeta == 1) {
             double b = initialVelocity + omega * (origin - target);
-            if (b != 0) turn = initialVelocity / (omega * b);
-        } else {
-            double root = Math.sqrt(zeta - 1) * Math.sqrt(zeta + 1);
-            double fast = -omega * (zeta + root), slow = -omega / (zeta + root);
-            double a = (initialVelocity - fast * (origin - target)) / (slow - fast), b = origin - target - a;
-            double ratio = -slow * a / (fast * b);
-            if (ratio > 0) turn = Math.log(ratio) / (fast - slow);
+            return b == 0 ? Double.NaN : initialVelocity / (omega * b);
         }
-        if (turn > 0 && turn < elapsed) {
-            double collision = crossing(0, turn);
-            if (!Double.isNaN(collision)) return collision;
-            cursor = turn;
-        }
-        return crossing(cursor, elapsed);
+        double root = Math.sqrt(zeta - 1) * Math.sqrt(zeta + 1);
+        double fast = -omega * (zeta + root), slow = -omega / (zeta + root);
+        double a = (initialVelocity - fast * (origin - target)) / (slow - fast), b = origin - target - a;
+        double ratio = -slow * a / (fast * b);
+        return ratio > 0 ? Math.log(ratio) / (fast - slow) : Double.NaN;
     }
     private double crossing(double start, double end) {
         if (end <= start) return Double.NaN;

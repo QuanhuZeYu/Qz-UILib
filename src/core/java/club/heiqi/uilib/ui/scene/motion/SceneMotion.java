@@ -36,16 +36,10 @@ public final class SceneMotion {
             float[] components = new float[4]; List<BindingActivation> active = new ArrayList<>();
             for (int i = 0; i < 4; i++) {
                 final int component = i;
-                ReadableSignal<Float> source = () -> {
-                    int color = Objects.requireNonNull(target.get(), "颜色目标"), alpha = color >>> 24;
-                    return component == 0 ? alpha / 255f : (color >>> (24 - component * 8) & 255) * alpha / 65025f;
-                };
+                ReadableSignal<Float> source = () -> colorComponent(Objects.requireNonNull(target.get(), "颜色目标"), component);
                 active.add(NodeBinding.motion(source, spec, false, channel + "." + i, (n, value) -> {
                     components[component] = Math.max(0, Math.min(1, value));
-                    float a = components[0]; int color = Math.round(a * 255) << 24;
-                    if (a > 0) for (int c = 1; c < 4; c++)
-                        color |= Math.round(Math.min(1, components[c] / a) * 255) << (24 - c * 8);
-                    apply.accept(n, color);
+                    apply.accept(n, composeColor(components));
                 }).activate(runtime, node, owner));
             }
             return new BindingActivation() {
@@ -53,6 +47,18 @@ public final class SceneMotion {
                 public void close() { for (BindingActivation binding : active) binding.close(); }
             };
         };
+    }
+    private static float colorComponent(int color, int component) {
+        int alpha = color >>> 24;
+        return component == 0 ? alpha / 255f : (color >>> (24 - component * 8) & 255) * alpha / 65025f;
+    }
+    private static int composeColor(float[] components) {
+        float alpha = components[0];
+        int color = Math.round(alpha * 255) << 24;
+        if (alpha <= 0) return color;
+        for (int component = 1; component < 4; component++)
+            color |= Math.round(Math.min(1, components[component] / alpha) * 255) << (24 - component * 8);
+        return color;
     }
     public static int alpha(int color, float opacity) {
         return color & 0x00ffffff | Math.round((color >>> 24) * opacity) << 24;

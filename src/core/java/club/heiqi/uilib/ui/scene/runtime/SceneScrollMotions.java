@@ -26,9 +26,12 @@ final class SceneScrollMotions implements SceneTransitions.Step {
     void configure(SceneNode node, ScrollMotionOptions options) {
         if (options == null) { remove(node); return; }
         State state = states.computeIfAbsent(node, ignored -> new State()); state.options = options;
-        MotionSpec strategy = runtime.motionPolicy().get().resolve(options.rebound, true);
-        state.bounce.retarget(0, strategy, runtime.inputNanos());
-        if (runtime.motionPolicy().get() != MotionPolicy.NORMAL) cancel(node, true);
+        long before = Math.round(state.bounce.value());
+        MotionPolicy policy = runtime.motionPolicy().get();
+        state.bounce.retarget(0, policy.resolve(options.rebound, true), runtime.inputNanos());
+        // 减少只终止合成惯性，回弹从当前呈现平稳续接；OFF 的即时策略才清空形变。
+        if (policy != MotionPolicy.NORMAL) { state.inertial = false; endSequence(node); }
+        if (before != Math.round(state.bounce.value())) runtime.invalidateGeometry();
         schedule();
     }
     int offset(SceneNode node) {
@@ -72,12 +75,13 @@ final class SceneScrollMotions implements SceneTransitions.Step {
     }
     boolean boundary(SceneNode node, ScenePointerEvent event) {
         State state = states.get(node);
-        if (state == null || !node.scrollable() || runtime.motionPolicy().get() != MotionPolicy.NORMAL) return false;
+        if (state == null || !node.scrollable()) return false;
         MotionSpec strategy = runtime.motionPolicy().get().resolve(state.options.rebound, true);
         if (strategy.kind == MotionSpec.Kind.INSTANT) return false;
-        double impulse = (double) event.delta * node.scrollStep() * .35;
-        double displacement = Math.max(-state.options.maximumDisplacement,
-                Math.min(state.options.maximumDisplacement, impulse));
+        double scale = runtime.motionPolicy().get() == MotionPolicy.REDUCED ? .25 : 1;
+        double impulse = (double) event.delta * node.scrollStep() * .35 * scale;
+        double limit = state.options.maximumDisplacement * scale;
+        double displacement = Math.max(-limit, Math.min(limit, impulse));
         state.bounce.release(displacement, 0, 0, strategy, runtime.inputNanos());
         runtime.invalidateGeometry(); schedule(); return true;
     }
@@ -94,23 +98,26 @@ final class SceneScrollMotions implements SceneTransitions.Step {
         for (Map.Entry<SceneNode, State> entry : states.entrySet()) {
             SceneNode node = entry.getKey(); State state = entry.getValue();
             if (!runtime.interactive(node)) { cancel(node, true); continue; }
-            long before = Math.round(state.bounce.value()); state.bounce.advance(now);
-            if (before != Math.round(state.bounce.value())) runtime.invalidateGeometry();
-            if (!state.inertial) continue;
-            state.inertia.advance(now);
-            int desired = (int) Math.max(Integer.MIN_VALUE, Math.min(Integer.MAX_VALUE, Math.round(state.inertia.value())));
-            int requested = desired - state.emitted;
-            int applied = runtime.scrollByPixels(node, requested); state.emitted += applied;
-            if (applied != requested) {
-                state.inertial = false;
-                if (state.options.rebound.kind != MotionSpec.Kind.INSTANT) {
-                    double impulse = Math.max(-state.options.maximumDisplacement,
-                            Math.min(state.options.maximumDisplacement, -state.inertia.velocity() * .025));
-                    state.bounce.release(0, impulse * 12, 0, state.options.rebound, now);
-                }
-            } else state.inertial = state.inertia.active();
+            advanceBounce(state, now);
+            if (state.inertial) advanceInertia(node, state, now);
         }
         return active();
+    }
+    private void advanceBounce(State state, long now) {
+        long before = Math.round(state.bounce.value()); state.bounce.advance(now);
+        if (before != Math.round(state.bounce.value())) runtime.invalidateGeometry();
+    }
+    private void advanceInertia(SceneNode node, State state, long now) {
+        state.inertia.advance(now);
+        int desired = (int) Math.max(Integer.MIN_VALUE, Math.min(Integer.MAX_VALUE, Math.round(state.inertia.value())));
+        int requested = desired - state.emitted;
+        int applied = runtime.scrollByPixels(node, requested); state.emitted += applied;
+        if (applied == requested) { state.inertial = state.inertia.active(); return; }
+        state.inertial = false;
+        if (state.options.rebound.kind == MotionSpec.Kind.INSTANT) return;
+        double impulse = Math.max(-state.options.maximumDisplacement,
+                Math.min(state.options.maximumDisplacement, -state.inertia.velocity() * .025));
+        state.bounce.release(0, impulse * 12, 0, state.options.rebound, now);
     }
     private boolean active() {
         for (State state : states.values()) if (state.inertial || state.bounce.active()) return true;

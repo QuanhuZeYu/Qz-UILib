@@ -19,6 +19,7 @@ public final class MotionScenario extends TestApplication {
         scenario("有限反向缩时与显式惯性终点", this::finite);
         scenario("声明目标、动态策略、重复准备及重挂", this::binding);
         scenario("减少模式保留短平稳位移而关闭立即落定", this::reducedSpatial);
+        scenario("减少模式约束短自定义反馈曲线单调", this::reducedFeedback);
         scenario("显式弹性边缘有阻力且放下提交合法坐标", this::elasticDrag);
         scenario("正式颜色与透明度通道", this::properties);
         scenario("标准控件默认过渡、局部覆盖与纯绘制失效", this::standardFeedback);
@@ -26,10 +27,15 @@ public final class MotionScenario extends TestApplication {
         scenario("显式退场立即结束输入及显隐反向", this::presence);
         scenario("拥有集合退场预算、同键新身份与页面释放", this::ownedExits);
         scenario("途中减少动效同步已删除条目的平稳退场", this::reducedOwnedExit);
+        scenario("拥有集合退场跟随策略来源而不复活身份", this::ownedExitStrategy);
+        scenario("已有结构退场按当前预算与期限释放", this::ownedExitLimits);
+        scenario("所属容器移动后退场消费当前祖先而非旧归属", this::movedExit);
+        scenario("退场片段跟随父视口回弹的当前空间", this::presenceBounce);
         scenario("拖拽释放保留位置和速度且单次意图", this::dragRelease);
         scenario("停手释放不甩出且碰壁后立即回槽", this::dragReleaseFeedback);
         scenario("碰壁按实际时刻推进且预览沿视口回槽", this::boundedRelease);
         scenario("滚动祖先优先、合法偏移与显式惯性", this::scrollMotion);
+        scenario("滚动减少模式保留单调回弹而关闭立即落定", this::reducedScroll);
         scenario("退场滚动与窗口扩张消费当前裁剪", this::presenceClip);
         scenario("撤销回弹立即重排与旧滚动样本隔离", this::scrollCancellation);
         scenario("回槽途中键盘接管与取消", this::keyboardTakeover);
@@ -116,6 +122,19 @@ public final class MotionScenario extends TestApplication {
             policy.set(MotionPolicy.OFF); target.set(0f); runtime.preparePresentation(160_000_000L);
             require(node.translationX() == 0, "关闭未立即落定"); runtime.close(); node.destroy();
         });
+    }
+    private void reducedFeedback() {
+        MotionSpec requested = MotionSpec.tween(100_000_000L, t -> t + .15 * Math.sin(4 * Math.PI * t));
+        require(MotionPolicy.NORMAL.resolve(requested, false) == requested, "正常模式覆盖了局部曲线");
+        MotionValue value = new MotionValue(); value.snap(0, 0);
+        value.retarget(1, MotionPolicy.REDUCED.resolve(requested, false), 0);
+        double previous = 0;
+        for (long now = 12_500_000L; now <= 100_000_000L; now += 12_500_000L) {
+            value.advance(now);
+            require(value.value() >= previous && value.value() <= 1, "减少模式保留了往返曲线：" + previous + "→" + value.value());
+            previous = value.value();
+        }
+        require(previous == 1 && !value.active(), "短反馈没有保留有限结束");
     }
     private void elasticDrag() {
         club.heiqi.uilib.ui.scene.motion.ElasticOptions elastic = new club.heiqi.uilib.ui.scene.motion.ElasticOptions(32, MotionSpec.spring(.42, .68));
@@ -327,6 +346,112 @@ public final class MotionScenario extends TestApplication {
         });
         }
     }
+    private void ownedExitStrategy() {
+        for (boolean repeat : new boolean[] {true, false}) {
+            ReactiveDomain domain = ReactiveDomain.direct();
+            SoftwareSceneScenario.SoftwareHost host = new SoftwareSceneScenario.SoftwareHost();
+            Signal<Boolean>[] present = new Signal[1];
+            Signal<club.heiqi.uilib.ui.scene.motion.PresenceOptions>[] options = new Signal[1];
+            SceneNode[] row = {null}; int[] released = {0};
+            club.heiqi.uilib.ui.scene.host.ScenePageSession page = own(club.heiqi.uilib.ui.scene.host.ScenePageSession.open(domain, host, host, context -> {
+                present[0] = domain.signal(true);
+                options[0] = domain.signal(new club.heiqi.uilib.ui.scene.motion.PresenceOptions(MotionSpec.tween(1_000_000_000L, MotionSpec.LINEAR)));
+                java.util.function.Supplier<SceneNode> build = () -> {
+                    SceneNode child = new SceneNode().background(0xff13579b).size(club.heiqi.uilib.ui.scene.layout.Size.fixed(60), club.heiqi.uilib.ui.scene.layout.Size.fixed(30)).own(() -> released[0]++);
+                    row[0] = child; return child;
+                };
+                NodeBinding children = repeat ? NodeBinding.repeat(
+                        () -> present[0].get() ? java.util.Collections.singletonList("a") : java.util.Collections.emptyList(),
+                        key -> key, item -> build.get(), options[0]) : NodeBinding.ownedChildren(
+                        () -> present[0].get() ? java.util.Collections.singletonList(row[0]) : java.util.Collections.emptyList(), options[0]);
+                if (!repeat) build.get();
+                context.mountOwned(new SceneNode().bind(children));
+            }));
+            page.frame(); domain.execute(() -> present[0].set(false)); page.frame();
+            domain.execute(() -> {
+                SceneRuntime runtime = page.runtime(); long now = runtime.inputNanos();
+                runtime.preparePresentation(now + 80_000_000L); page.pipeline().current();
+                require(row[0].retired() && !row[0].destroyed() && row[0].runtime() == null, "未进入被动退场");
+                options[0].set(new club.heiqi.uilib.ui.scene.motion.PresenceOptions(MotionSpec.instant()));
+                runtime.preparePresentation(now + 80_000_000L);
+                require(row[0].destroyed() && released[0] == 1, "已有退场忽略策略来源：repeat=" + repeat);
+                require(page.pipeline().current().paint.commands().stream().noneMatch(c -> (c.color & 0xffffff) == 0x13579b), "即时策略仍保留旧退场片段");
+            });
+            page.close(); require(released[0] == 1, "页面关闭重复释放退出资源");
+        }
+    }
+    private void ownedExitLimits() {
+        for (boolean repeat : new boolean[] {true, false}) {
+            ReactiveDomain domain = ReactiveDomain.direct();
+            SoftwareSceneScenario.SoftwareHost host = new SoftwareSceneScenario.SoftwareHost(); host.height = 200;
+            Signal<Boolean>[] present = new Signal[1];
+            Signal<club.heiqi.uilib.ui.scene.motion.PresenceOptions>[] options = new Signal[1];
+            java.util.List<SceneNode> rows = new java.util.ArrayList<>(); int[] released = {0};
+            club.heiqi.uilib.ui.scene.host.ScenePageSession page = own(club.heiqi.uilib.ui.scene.host.ScenePageSession.open(domain, host, host, context -> {
+                present[0] = domain.signal(true);
+                options[0] = domain.signal(new club.heiqi.uilib.ui.scene.motion.PresenceOptions(MotionSpec.tween(1_000_000_000L, MotionSpec.LINEAR)).budget(3));
+                java.util.function.Supplier<SceneNode> build = () -> {
+                    SceneNode child = new SceneNode().background(0xff2468ac).size(club.heiqi.uilib.ui.scene.layout.Size.fixed(60), club.heiqi.uilib.ui.scene.layout.Size.fixed(30)).own(() -> released[0]++);
+                    rows.add(child); return child;
+                };
+                NodeBinding children;
+                if (repeat) children = NodeBinding.repeat(() -> present[0].get() ? java.util.Arrays.asList("a", "b", "c") : java.util.Collections.emptyList(), key -> key, item -> build.get(), options[0]);
+                else {
+                    build.get(); build.get(); build.get();
+                    children = NodeBinding.ownedChildren(() -> present[0].get() ? rows : java.util.Collections.emptyList(), options[0]);
+                }
+                context.mountOwned(new SceneNode().bind(children));
+            }));
+            page.frame(); domain.execute(() -> present[0].set(false)); page.frame();
+            domain.execute(() -> {
+                SceneRuntime runtime = page.runtime(); long now = runtime.inputNanos();
+                runtime.preparePresentation(now + 80_000_000L); page.pipeline().current();
+                require(released[0] == 0, "初始预算未保留退场资源");
+                options[0].set(options[0].get().budget(1)); runtime.preparePresentation(now + 80_000_000L);
+                require(rows.get(0).destroyed() && rows.get(1).destroyed() && !rows.get(2).destroyed() && released[0] == 2,
+                        "已有退场未按新预算逐出最早记录：repeat=" + repeat + "，released=" + released[0]);
+                options[0].set(options[0].get().maximumExit(50_000_000L)); runtime.preparePresentation(now + 80_000_000L);
+                require(rows.get(2).destroyed() && released[0] == 3, "缩短退出期限没有按最初退出时刻清理");
+            });
+            page.close(); require(released[0] == 3, "预算变更后重复释放退出资源");
+        }
+    }
+    private void movedExit() {
+        ReactiveDomain domain = ReactiveDomain.direct();
+        SoftwareSceneScenario.SoftwareHost host = new SoftwareSceneScenario.SoftwareHost(); host.height = 200;
+        Signal<Boolean>[] present = new Signal[1], keepFormer = new Signal[1], keepCurrent = new Signal[1];
+        Signal<SceneNode>[] destination = new Signal[1];
+        SceneNode[] former = {null}, current = {null}, container = {null}, row = {null}; int[] released = {0};
+        club.heiqi.uilib.ui.scene.host.ScenePageSession page = own(club.heiqi.uilib.ui.scene.host.ScenePageSession.open(domain, host, host, context -> {
+            keepCurrent[0] = domain.signal(true);
+            former[0] = new SceneNode().opacity(.8f); current[0] = new SceneNode().opacity(.2f);
+            destination[0] = domain.signal(former[0]); present[0] = domain.signal(true); keepFormer[0] = domain.signal(true);
+            container[0] = new SceneNode().bind(NodeBinding.move(destination[0])).bind(NodeBinding.repeat(
+                    () -> present[0].get() ? java.util.Collections.singletonList("a") : java.util.Collections.emptyList(), key -> key, item -> {
+                        row[0] = new SceneNode().background(0xff3579bd).size(club.heiqi.uilib.ui.scene.layout.Size.fixed(60), club.heiqi.uilib.ui.scene.layout.Size.fixed(30)).own(() -> released[0]++);
+                        return row[0];
+                    }, () -> new club.heiqi.uilib.ui.scene.motion.PresenceOptions(MotionSpec.tween(1_000_000_000L, MotionSpec.LINEAR))));
+            former[0].add(container[0]);
+            context.mountOwned(new SceneNode().bind(NodeBinding.ownedChildren(() -> {
+                java.util.List<SceneNode> children = new java.util.ArrayList<>();
+                if (keepFormer[0].get()) children.add(former[0]);
+                if (keepCurrent[0].get()) children.add(current[0]);
+                return children;
+            })));
+        }));
+        page.frame(); domain.execute(() -> present[0].set(false)); page.frame();
+        domain.execute(() -> {
+            destination[0].set(current[0]);
+            page.runtime().preparePresentation(page.runtime().inputNanos());
+            int alpha = page.pipeline().current().paint.commands().stream().filter(c -> (c.color & 0xffffff) == 0x3579bd).mapToInt(c -> c.color >>> 24).max().orElse(0);
+            require(alpha > 0 && alpha <= Math.round(.2f * 255), "移动后退场仍消费原祖先透明度：alpha=" + alpha);
+            keepFormer[0].set(false); page.pipeline().current();
+            require(former[0].destroyed() && !container[0].destroyed() && container[0].parent() == current[0], "未完成正式同页转移");
+            require(!row[0].destroyed() && released[0] == 0, "结束旧祖先错误释放已迁移作用域的退场");
+            keepCurrent[0].set(false); page.runtime().preparePresentation(page.runtime().inputNanos() + 20_000_000L); page.pipeline().current();
+            require(row[0].destroyed() && released[0] == 1, "当前祖先结束没有释放退场资源");
+        });
+    }
     private void dragRelease() {
         ReactiveDomain domain = ReactiveDomain.direct(); SoftwareSceneScenario.SoftwareHost host = new SoftwareSceneScenario.SoftwareHost(); host.width = 400; host.height = 300;
         SceneNode[] content = {null}, drag = {null}; int[] dropped = {0};
@@ -484,6 +609,87 @@ public final class MotionScenario extends TestApplication {
             int stopped = page.runtime().scrollOffset(outer[0]); page.runtime().preparePresentation(page.runtime().inputNanos() + 200_000_000L); page.pipeline().current();
             require(page.runtime().scrollOffset(outer[0]) == stopped, "新输入没有接管旧惯性");
         });
+    }
+    private void reducedScroll() {
+        ReactiveDomain domain = ReactiveDomain.direct();
+        SoftwareSceneScenario.SoftwareHost host = new SoftwareSceneScenario.SoftwareHost();
+        host.width = 200; host.height = 200;
+        SceneNode[] viewport = {null}, content = {null};
+        Signal<MotionPolicy>[] policy = new Signal[1];
+        club.heiqi.uilib.ui.scene.host.ScenePageSession page = own(club.heiqi.uilib.ui.scene.host.ScenePageSession.open(domain, host, host, context -> {
+            policy[0] = domain.signal(MotionPolicy.NORMAL); context.motionPolicy(policy[0]);
+            content[0] = new SceneNode().size(club.heiqi.uilib.ui.scene.layout.Size.fixed(100), club.heiqi.uilib.ui.scene.layout.Size.fixed(400));
+            viewport[0] = new SceneNode().scrollable(true).size(club.heiqi.uilib.ui.scene.layout.Size.fixed(100), club.heiqi.uilib.ui.scene.layout.Size.fixed(100))
+                    .bind(club.heiqi.uilib.ui.scene.motion.SceneMotion.scroll(() -> new club.heiqi.uilib.ui.scene.motion.ScrollMotionOptions(MotionSpec.spring(.6, 1))))
+                    .add(content[0]);
+            context.mountOwned(viewport[0]);
+        }));
+        page.frame(); page.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.scroll(5, 5, 1)); page.frame();
+        long[] time = {0}; int[] normal = {0};
+        domain.execute(() -> {
+            SceneRuntime runtime = page.runtime(); time[0] = runtime.inputNanos();
+            normal[0] = runtime.scrollPresentationOffset(viewport[0]);
+            require(normal[0] > 0, "未建立正常滚动回弹");
+            policy[0].set(MotionPolicy.REDUCED); runtime.preparePresentation(time[0]);
+            int previous = runtime.scrollPresentationOffset(viewport[0]);
+            require(previous > 0, "切换减少模式立即清空回弹：正常=" + normal[0] + "，减少=" + previous);
+            for (long elapsed = 20; elapsed <= 160; elapsed += 20) {
+                runtime.preparePresentation(time[0] + elapsed * 1_000_000L);
+                int current = runtime.scrollPresentationOffset(viewport[0]);
+                require(current >= 0 && current <= previous, "减少模式滚动回弹反向或超调");
+                require(runtime.scrollOffset(viewport[0]) == 0, "暂态回弹污染有效滚动值");
+                require(page.pipeline().current().geometry.get(content[0]).box.y == current, "回弹几何没有消费当前偏移");
+                if (elapsed == 80) require(current > 0 && current < normal[0], "减少模式没有可见中间位置");
+                previous = current;
+            }
+            require(previous == 0, "减少模式回弹没有及时落定");
+        });
+        page.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.scroll(5, 5, 1).at(time[0] + 200_000_000L)); page.frame();
+        domain.execute(() -> {
+            SceneRuntime runtime = page.runtime(); long now = runtime.inputNanos();
+            int reduced = runtime.scrollPresentationOffset(viewport[0]);
+            require(reduced > 0 && reduced < normal[0], "减少模式新输入未保留小幅回弹：正常=" + normal[0] + "，减少=" + reduced + "，有效=" + runtime.scrollOffset(viewport[0]));
+            runtime.preparePresentation(now + 40_000_000L); page.pipeline().current();
+            policy[0].set(MotionPolicy.OFF); runtime.preparePresentation(now + 40_000_000L);
+            require(runtime.scrollPresentationOffset(viewport[0]) == 0, "关闭没有立即清空回弹");
+            require(page.pipeline().current().geometry.get(content[0]).box.y == 0, "关闭保留了旧回弹几何");
+            runtime.preparePresentation(now + 300_000_000L);
+            Object settled = page.pipeline().current();
+            runtime.preparePresentation(now + 400_000_000L);
+            require(page.pipeline().current() == settled, "停止后仍破坏静态复用");
+        });
+    }
+    private void presenceBounce() {
+        for (boolean captureDuringBounce : new boolean[] {true, false}) {
+            ReactiveDomain domain = ReactiveDomain.direct();
+            SoftwareSceneScenario.SoftwareHost host = new SoftwareSceneScenario.SoftwareHost(); host.height = 200;
+            Signal<Boolean>[] present = new Signal[1]; SceneNode[] viewport = {null}, sibling = {null};
+            club.heiqi.uilib.ui.scene.host.ScenePageSession page = own(club.heiqi.uilib.ui.scene.host.ScenePageSession.open(domain, host, host, context -> {
+                present[0] = domain.signal(true);
+                SceneNode row = new SceneNode().background(0xff468ace).size(club.heiqi.uilib.ui.scene.layout.Size.fixed(60), club.heiqi.uilib.ui.scene.layout.Size.fixed(30))
+                        .bind(club.heiqi.uilib.ui.scene.motion.SceneMotion.presence(present[0], () -> new club.heiqi.uilib.ui.scene.motion.PresenceOptions(MotionSpec.tween(1_000_000_000L, MotionSpec.LINEAR))));
+                sibling[0] = new SceneNode().size(club.heiqi.uilib.ui.scene.layout.Size.fixed(60), club.heiqi.uilib.ui.scene.layout.Size.fixed(30));
+                viewport[0] = new SceneNode().scrollable(true).size(club.heiqi.uilib.ui.scene.layout.Size.fixed(100), club.heiqi.uilib.ui.scene.layout.Size.fixed(100))
+                        .bind(club.heiqi.uilib.ui.scene.motion.SceneMotion.scroll(() -> new club.heiqi.uilib.ui.scene.motion.ScrollMotionOptions(MotionSpec.spring(.3, 1))))
+                        .add(row).add(sibling[0]).add(new SceneNode().size(club.heiqi.uilib.ui.scene.layout.Size.fixed(60), club.heiqi.uilib.ui.scene.layout.Size.fixed(400)));
+                context.mountOwned(viewport[0]);
+            }));
+            page.frame();
+            if (captureDuringBounce) { page.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.scroll(5, 5, 1)); page.frame(); }
+            domain.execute(() -> present[0].set(false)); page.frame();
+            if (!captureDuringBounce) { page.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.scroll(5, 5, 1)); page.frame(); }
+            domain.execute(() -> {
+                SceneRuntime runtime = page.runtime(); long now = runtime.inputNanos();
+                require(runtime.scrollPresentationOffset(viewport[0]) > 0, "没有建立父视口回弹");
+                for (long elapsed : new long[] {0, 80_000_000L, 400_000_000L}) {
+                    runtime.preparePresentation(now + elapsed);
+                    club.heiqi.uilib.ui.scene.paint.PaintPlan plan = page.pipeline().current().paint;
+                    int ghostY = plan.commands().stream().filter(c -> (c.color & 0xffffff) == 0x468ace).mapToInt(c -> c.box.y).min().orElse(Integer.MIN_VALUE);
+                    int siblingY = page.pipeline().current().geometry.get(sibling[0]).box.y;
+                    require(ghostY == siblingY, "退场没有消费父回弹基准：capture=" + captureDuringBounce + "，elapsed=" + elapsed + "，ghost=" + ghostY + "，sibling=" + siblingY);
+                }
+            });
+        }
     }
     private void presenceClip() {
         ReactiveDomain domain = ReactiveDomain.direct(); SoftwareSceneScenario.SoftwareHost host = new SoftwareSceneScenario.SoftwareHost(); host.width = 400; host.height = 300;

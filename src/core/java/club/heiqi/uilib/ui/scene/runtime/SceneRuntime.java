@@ -709,6 +709,7 @@ public final class SceneRuntime implements AutoCloseable {
         if (!mounts.containsKey(parent)) throw new IllegalArgumentException("父节点未挂载");
         List<SceneNode> next = new ArrayList<>(declared);
         Set<SceneNode> members = validateDeclaredChildren(parent, next, scope);
+        presence.configureSource(scope, exits);
         if (parent.children().equals(next)) {
             adoptDeclaredOwnership(next, scope, owned);
             return;

@@ -7,11 +7,11 @@ public enum MotionPolicy {
     private static final MotionSpec SPATIAL = MotionSpec.tween(160_000_000L, MotionSpec.SMOOTH);
     public MotionSpec resolve(MotionSpec requested, boolean spatial) {
         if (this == OFF) return MotionSpec.instant();
-        if (this == REDUCED) {
-            if (requested.kind == MotionSpec.Kind.INSTANT || requested.kind == MotionSpec.Kind.DECAY) return MotionSpec.instant();
-            if (spatial) return SPATIAL;
-            if (requested.kind == MotionSpec.Kind.SPRING || requested.durationNanos > 120_000_000L) return FEEDBACK;
-        }
-        return requested;
+        if (this == NORMAL) return requested;
+        if (requested.kind == MotionSpec.Kind.INSTANT || requested.kind == MotionSpec.Kind.DECAY) return MotionSpec.instant();
+        if (spatial) return SPATIAL;
+        if (requested.kind == MotionSpec.Kind.SPRING || requested.durationNanos >= FEEDBACK.durationNanos) return FEEDBACK;
+        // 短自定义曲线也可能往返；减少模式保留其短时长，统一使用单调反馈曲线。
+        return MotionSpec.tween(requested.durationNanos, MotionSpec.SMOOTH);
     }
 }
