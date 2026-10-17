@@ -1,0 +1,76 @@
+plugins {
+    id 'net.minecraftforge.gradle' version '6.0.24'
+    id 'java'
+}
+java.toolchain.languageVersion = JavaLanguageVersion.of(8)
+minecraft { mappings channel: 'snapshot', version: '20210309-1.16.5' }
+dependencies { minecraft 'net.minecraftforge:forge:1.16.5-36.2.42' }
+group = 'club.heiqi.uilib'
+version = '4.11.1-multi-instance'
+
+repositories {
+    maven { url = uri('.gradle/maven') }
+    if (findProperty('uilibRuntimeRepository')) {
+        maven { url = uri(property('uilibRuntimeRepository')); metadataSources { artifact() } }
+    }
+    mavenCentral()
+}
+
+def shared = file('../../build/embedded/java8')
+def sharedFiles = { names -> files(names.collect { new File(shared, it + '.jar') }) }
+sourceSets {
+    main {
+        java.srcDirs = ['../../src/minecraft116/java']
+        resources.srcDirs = ['../../src/minecraft116/resources']
+    }
+    manual {
+        java.srcDirs = ['../../src/minecraft116Manual/java']
+        resources.srcDirs = ['../../src/minecraft116Manual/resources']
+        compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath + sharedFiles(['gallery', 'media-adapter'])
+        runtimeClasspath += output + compileClasspath
+    }
+}
+dependencies { compileOnly sharedFiles(['core', 'font-adapter', 'gl-renderer', 'lwjgl3']) }
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.compilerArgs += ['-proc:none']
+}
+jar {
+    archiveBaseName = 'qz_uilib_forge116'
+    from('../../LICENSE')
+    manifest { attributes('Implementation-Version': project.version) }
+    finalizedBy 'reobfJar'
+}
+task manualJar(type: Jar) {
+    archiveBaseName = 'qz_uilib_manual_forge116'
+    from sourceSets.manual.output
+    from('../../LICENSE')
+    from({ zipTree(new File(shared, 'gallery.jar')) }) { exclude 'META-INF/MANIFEST.MF' }
+    finalizedBy 'reobfManualJar'
+}
+reobf { manualJar {} }
+
+// Forge 36 从 FMLModType 装载独立库；仍消费根输出，不把核心装进宿主 Mod。
+task glAdapterJar(type: Jar) {
+    archiveFileName = 'qz_uilib-gl-adapter-java8.jar'
+    destinationDirectory = layout.buildDirectory.dir('libraries')
+    from({ zipTree(new File(shared, 'gl-renderer.jar')) }) { exclude 'META-INF/MANIFEST.MF' }
+    from({ zipTree(new File(shared, 'lwjgl3.jar')) }) { exclude 'META-INF/MANIFEST.MF' }
+    manifest { attributes('FMLModType': 'LIBRARY') }
+}
+def libraryJars = ['core', 'font-adapter', 'media-adapter'].collect { name ->
+    tasks.register('library' + name.split('-').collect { it.capitalize() }.join(''), Jar) {
+        archiveFileName = 'qz_uilib-' + name + '-java8.jar'
+        destinationDirectory = layout.buildDirectory.dir('libraries')
+        from({ zipTree(new File(shared, name + '.jar')) }) { exclude 'META-INF/MANIFEST.MF' }
+        manifest { attributes('FMLModType': 'LIBRARY') }
+    }
+}
+task installBundle(type: Sync) {
+    dependsOn jar, manualJar, glAdapterJar, 'reobfJar', 'reobfManualJar', libraryJars
+    into layout.buildDirectory.dir('install')
+    from jar.archiveFile
+    from manualJar.archiveFile
+    from glAdapterJar.archiveFile
+    libraryJars.each { from(it.flatMap { library -> library.archiveFile }) }
+}

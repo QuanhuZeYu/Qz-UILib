@@ -1,0 +1,20 @@
+modLoader="javafml"
+loaderVersion="[36,)"
+license="LGPL-3.0-or-later"
+[[mods]]
+modId="qz_uilib"
+version="4.11.1"
+displayName="Qz UILib"
+description='''UILib 页面宿主'''
+[[dependencies.qz_uilib]]
+modId="forge"
+mandatory=true
+versionRange="[36.2.42,37)"
+ordering="NONE"
+side="CLIENT"
+[[dependencies.qz_uilib]]
+modId="minecraft"
+mandatory=true
+versionRange="[1.16.5,1.17)"
+ordering="NONE"
+side="CLIENT"

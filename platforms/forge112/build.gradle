@@ -1,0 +1,76 @@
+buildscript {
+    repositories {
+        maven { url = uri('.gradle/maven') }
+        mavenCentral()
+        maven { url = 'https://maven.minecraftforge.net' }
+    }
+    dependencies { classpath 'net.minecraftforge.gradle:ForgeGradle:3.0.197' }
+}
+apply plugin: 'net.minecraftforge.gradle'
+apply plugin: 'java'
+sourceCompatibility = targetCompatibility = '1.8'
+minecraft { mappings channel: 'snapshot', version: '20171003-1.12' }
+dependencies { minecraft 'net.minecraftforge:forge:1.12.2-14.23.5.2864' }
+group = 'club.heiqi.uilib'
+version = '4.11.1-multi-instance'
+
+repositories {
+    maven { url = uri('.gradle/maven') }
+    if (findProperty('uilibRuntimeRepository')) {
+        maven { url = uri(property('uilibRuntimeRepository')); metadataSources { artifact() } }
+    }
+    mavenCentral()
+}
+
+def shared = file('../../build/embedded/java8')
+def sharedFiles = { names -> files(names.collect { new File(shared, it + '.jar') }) }
+sourceSets {
+    main {
+        java.srcDirs = ['../../src/minecraft112/java']
+        resources.srcDirs = ['../../src/minecraft112/resources']
+    }
+    manual {
+        java.srcDirs = ['../../src/minecraft112Manual/java']
+        resources.srcDirs = ['../../src/minecraft112Manual/resources']
+        compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath + sharedFiles(['gallery', 'media-adapter'])
+        runtimeClasspath += output + compileClasspath
+    }
+}
+dependencies { compileOnly sharedFiles(['core', 'font-adapter', 'gl-renderer', 'lwjgl2']) }
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.compilerArgs += ['-proc:none']
+}
+jar {
+    archiveBaseName = 'qz_uilib_forge112'
+    from('../../LICENSE')
+    manifest { attributes('Implementation-Version': project.version, 'FMLCorePlugin': 'club.heiqi.uilib.host.forge112.loading.UILibLoadingPlugin', 'FMLCorePluginContainsFMLMod': 'true') }
+    finalizedBy 'reobfJar'
+}
+task manualJar(type: Jar) {
+    archiveBaseName = 'qz_uilib_manual_forge112'
+    from sourceSets.manual.output
+    from('../../LICENSE')
+    from({ zipTree(new File(shared, 'gallery.jar')) }) { exclude 'META-INF/MANIFEST.MF' }
+    finalizedBy 'reobfManualJar'
+}
+reobf { manualJar {} }
+
+// 独立目录保留根构建生成的库；宿主与人工入口不重复打入核心。
+task glAdapterJar(type: Jar) {
+    archiveFileName = 'qz_uilib-gl-adapter-java8.jar'
+    destinationDirectory = layout.buildDirectory.dir('libraries')
+    from({ zipTree(new File(shared, 'gl-renderer.jar')) }) { exclude 'META-INF/MANIFEST.MF' }
+    from({ zipTree(new File(shared, 'lwjgl2.jar')) }) { exclude 'META-INF/MANIFEST.MF' }
+}
+task installBundle(type: Sync) {
+    dependsOn jar, manualJar, glAdapterJar, 'reobfJar', 'reobfManualJar'
+    into layout.buildDirectory.dir('install')
+    from jar.archiveFile
+    from manualJar.archiveFile
+    from glAdapterJar.archiveFile
+    from(shared) {
+        include 'core.jar', 'font-adapter.jar', 'media-adapter.jar'
+        rename { name -> 'qz_uilib-' + name.substring(0, name.length() - 4) + '-java8.jar' }
+    }
+}

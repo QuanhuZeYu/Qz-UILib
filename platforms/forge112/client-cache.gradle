@@ -1,0 +1,53 @@
+plugins { id 'base' }
+
+// 当前模式只使用显式提供的 Prism 运行输入；标准 ForgeGradle 工程不参与这次配置。
+repositories {
+    maven { url = uri('.gradle/maven'); metadataSources { artifact() } }
+    mavenCentral()
+    maven { url = 'https://maven.minecraftforge.net' }
+}
+configurations { prismMappings }
+dependencies { prismMappings 'de.oceanlabs.mcp:mcp_snapshot:20171003-1.12@zip' }
+
+def configurePrismBuild = { task, includeManual ->
+    task.group = 'build'
+    task.description = includeManual ? '显式装配 UILib 宿主、人工广场与媒体运行依赖' : '使用 Prism 输入编译和生产重映射 UILib 正式宿主'
+    task.doFirst {
+        if (!project.hasProperty('prismRoot')) throw new GradleException('缺少 -PprismRoot=<Prism Launcher 目录>')
+        def jdk = project.findProperty('java8Home') ? file(project.property('java8Home')) : new File(System.getProperty('java.home'))
+        if (!new File(jdk, 'bin/javac.exe').isFile()) jdk = jdk.parentFile
+        if (!new File(jdk, 'bin/javac.exe').isFile() || !JavaVersion.current().isJava8Compatible())
+            throw new GradleException('Prism 编译需要 JDK8，可通过 -Pjava8Home 指定')
+
+        def mappings = project.findProperty('mcpMappings') ? file(project.property('mcpMappings')) : configurations.prismMappings.singleFile
+        task.commandLine project.findProperty('pythonExecutable') ?: 'python', file('build-client-cache.py'),
+                '--target', '112', '--launcher', file(project.property('prismRoot')),
+                '--jdk', jdk, '--snapshot', mappings
+        if (includeManual) task.args '--install-bundle'
+        task.environment 'PYTHONUTF8', '1'
+    }
+}
+tasks.register('clientCacheBuild', Exec) { task -> configurePrismBuild(task, false) }
+tasks.named('assemble') { dependsOn 'clientCacheBuild' }
+tasks.register('installBundle', Exec) { task ->
+    dependsOn 'clientCacheBuild'
+    configurePrismBuild(task, true)
+}
+
+// 验证实际 LWJGL2 事件编码与生产合并消费者；不创建窗口或改动游戏事件队列。
+def inputQueueVerification = tasks.register('compileInputQueueVerification', JavaCompile) {
+    source file('../../src/minecraft112/java/club/heiqi/uilib/host/forge112/Lwjgl2InputQueue.java'),
+            file('verification/Lwjgl2InputQueueVerification.java')
+    classpath = files(new File(file(project.property('prismRoot')), 'libraries/org/lwjgl/lwjgl/lwjgl/2.9.4-nightly-20150209/lwjgl-2.9.4-nightly-20150209.jar'))
+    destinationDir = file('build/verification/input-queue')
+    sourceCompatibility = targetCompatibility = '1.8'
+    options.encoding = 'UTF-8'
+}
+tasks.register('verifyInputQueue', JavaExec) {
+    dependsOn inputQueueVerification
+    classpath = files(inputQueueVerification.map { it.destinationDir }) + inputQueueVerification.get().classpath
+    main = 'club.heiqi.uilib.host.forge112.Lwjgl2InputQueueVerification'
+    jvmArgs '-Dfile.encoding=UTF-8'
+}
+tasks.named('check') { dependsOn 'verifyInputQueue' }
+

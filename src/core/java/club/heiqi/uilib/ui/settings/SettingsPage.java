@@ -155,7 +155,7 @@ public final class SettingsPage implements ScenePage {
             SceneNode categories=SettingsStyle.column(6).size(Size.fill(1),Size.fill(1)).add(text("偏好设置",12,true));
             for(Section target:Section.values())if(target!=Section.MINECRAFT||configuration.hasMinecraft())categories.add(navButton(target));
             sidebar.add(categories).add(SettingsStyle.column(8).padding(8).add(SettingsStyle.line(palette))
-                    .add(text(configuration.hasMinecraft()?"Minecraft 工作区":"Desktop 工作区",13,false))
+                    .add(text("本地工作区",13,false))
                     .add(text("本地配置 · 显式保存",12,true)));
             sidebar.bind(NodeBinding.value(compact,(n,value) -> n.visible(!value)));
             SettingsStyle.Button trigger=SettingsStyle.button(ctx,() -> section.get().title+" · 切换分类",palette,

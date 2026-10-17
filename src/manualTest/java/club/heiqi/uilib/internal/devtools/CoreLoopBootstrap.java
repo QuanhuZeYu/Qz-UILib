@@ -23,12 +23,47 @@ public final class CoreLoopBootstrap {
         pendingPerformance = false;
     }
 
+    /** 测试附加包提供主菜单入口；打开真实广场无需进入或改动世界。 */
+    @SubscribeEvent
+    public void menu(net.minecraftforge.client.event.GuiScreenEvent.InitGuiEvent.Post event) {
+        if (isMainMenu(event.gui))
+            event.buttonList.add(new GalleryButton(event.gui.width - 110, 4));
+    }
+
+    private static boolean isMainMenu(net.minecraft.client.gui.GuiScreen gui) {
+        if (gui instanceof net.minecraft.client.gui.GuiMainMenu) return true;
+        // GTNH 的 CustomMainMenu 替换了 GuiMainMenu；其标准按钮列表仍由 Forge 事件分发。
+        // 只识别本次实际主菜单配置，不把广场入口插到该模组的其他自定义页面。
+        if (!"lumien.custommainmenu.gui.GuiCustom".equals(gui.getClass().getName())) return false;
+        try {
+            Object config = gui.getClass().getField("guiConfig").get(gui);
+            return "mainmenu".equals(config.getClass().getField("name").get(config));
+        } catch (ReflectiveOperationException failure) {
+            throw new IllegalStateException("不能读取 CustomMainMenu 的主菜单配置", failure);
+        }
+    }
+
+    @SubscribeEvent
+    public void open(net.minecraftforge.client.event.GuiScreenEvent.ActionPerformedEvent.Pre event) {
+        if (!(event.button instanceof GalleryButton)) return;
+        event.setCanceled(true);
+        pendingPage = club.heiqi.uilib.testing.gallery.TestGallery.Page.HOME;
+        pendingPerformance = false;
+        pendingOpen = true;
+    }
+
+    private static final class GalleryButton extends net.minecraft.client.gui.GuiButton {
+        GalleryButton(int x, int y) { super(0x515a, x, y, 106, 20, "UILib 测试广场"); }
+    }
+
     private CoreLoopBootstrap() {}
 
     public static void install() {
         if (installed) return;
         installed = true;
-        FMLCommonHandler.instance().bus().register(new CoreLoopBootstrap());
+        CoreLoopBootstrap hooks = new CoreLoopBootstrap();
+        FMLCommonHandler.instance().bus().register(hooks);
+        net.minecraftforge.common.MinecraftForge.EVENT_BUS.register(hooks);
         ClientCommandHandler.instance.registerCommand(
                 new CommandBase() {
                     @Override

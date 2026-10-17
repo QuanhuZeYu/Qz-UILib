@@ -1,0 +1,11 @@
+pluginManagement {
+    repositories {
+        maven { url = uri('.gradle/maven') }
+        mavenCentral()
+        maven { url = 'https://maven.minecraftforge.net' }
+        gradlePluginPortal()
+    }
+}
+rootProject.name = 'uilib-forge116'
+// -PprismRoot 显式选择本地实例开发输入；默认继续使用官方 ForgeGradle。
+if (gradle.startParameter.projectProperties.containsKey('prismRoot')) rootProject.buildFileName = 'client-cache.gradle'

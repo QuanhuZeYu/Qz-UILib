@@ -1,0 +1,14 @@
+modLoader="javafml"
+loaderVersion="[36,)"
+license="LGPL-3.0-or-later"
+[[mods]]
+modId="qz_uilib_manualtest"
+version="4.11.1"
+displayName="UILib 测试广场"
+description='''共享案例广场的人工验收入口'''
+[[dependencies.qz_uilib_manualtest]]
+modId="qz_uilib"
+mandatory=true
+versionRange="[4.11.1,)"
+ordering="AFTER"
+side="CLIENT"

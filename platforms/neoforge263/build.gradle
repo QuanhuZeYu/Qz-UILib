@@ -1,0 +1,178 @@
+plugins {
+    id 'java-library'
+    id 'net.neoforged.moddev' version '2.0.148'
+}
+
+group = 'club.heiqi.uilib'
+version = providers.gradleProperty('uilibVersion').getOrElse('4.11.1')
+base.archivesName = 'qz_uilib-neoforge263'
+
+def repositoryRoot = projectDir.toPath().resolve('../..').normalize().toFile()
+def shared = new File(repositoryRoot, 'build/embedded/java21')
+def productionLibraries = ['core', 'font-adapter', 'gl-renderer', 'lwjgl3']
+def manualLibraries = ['gallery', 'media-adapter']
+def productionNestedLibraries = ['core', 'font-adapter']
+def manualNestedLibraries = ['media-adapter']
+
+java.toolchain.languageVersion = JavaLanguageVersion.of(25)
+// 正常开发使用官方 NeoForm；已有精确实例可显式选择其明文 patched 客户端编译。
+if (!providers.gradleProperty('prismRoot').isPresent()) {
+    neoForge {
+        version = '26.3.0.86'
+        mods { qz_uilib { sourceSet sourceSets.main } }
+    }
+}
+
+sourceSets {
+    main {
+        java.srcDirs = [new File(repositoryRoot, 'src/minecraft263/java')]
+        resources.srcDirs = [new File(repositoryRoot, 'src/minecraft263/resources')]
+    }
+    manual {
+        java.srcDirs = [new File(repositoryRoot, 'src/minecraft263Manual/java')]
+        resources.srcDirs = [new File(repositoryRoot, 'src/minecraft263Manual/resources')]
+        compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
+        runtimeClasspath += output + compileClasspath
+    }
+}
+
+repositories { mavenCentral() }
+dependencies {
+    implementation files(productionLibraries.collect { new File(shared, it + '.jar') })
+    manualImplementation files(manualLibraries.collect { new File(shared, it + '.jar') })
+}
+
+if (providers.gradleProperty('prismRoot').isPresent()) {
+    def prism = file(providers.gradleProperty('prismRoot').get())
+    def coordinates = new LinkedHashSet<String>()
+    ['net.minecraft/26.3', 'net.neoforged/26.3.0.86', 'org.lwjgl3/3.4.3'].each { component ->
+        def metadata = new groovy.json.JsonSlurper().parse(new File(prism, 'meta/' + component + '.json'))
+        (metadata.libraries ?: []).each { library -> coordinates.add(library.name as String) }
+        (metadata.mavenFiles ?: []).each { library -> coordinates.add(library.name as String) }
+    }
+    def libraries = coordinates.collect { coordinate ->
+        def elements = coordinate.split(':')
+        def classifier = elements.length > 3 ? '-' + elements[3] : ''
+        new File(prism, 'libraries/' + elements[0].replace('.', '/') + '/' + elements[1] + '/' + elements[2] + '/' + elements[1] + '-' + elements[2] + classifier + '.jar')
+    }.findAll { it.isFile() }
+    def patched = new File(prism, 'libraries/net/neoforged/minecraft-client-patched/26.3.0.86/minecraft-client-patched-26.3.0.86.jar')
+    if (!patched.isFile()) throw new GradleException('指定 Prism 缓存缺少精确 NeoForge 26.3.0.86 patched 客户端')
+    libraries.add(patched)
+    // MixinExtras 的注入辅助不用于本接入；Mixin API 已由实例 loader 依赖提供。
+    sourceSets.main.compileClasspath = files(libraries, productionLibraries.collect { new File(shared, it + '.jar') })
+    sourceSets.manual.compileClasspath = files(sourceSets.main.output, sourceSets.main.compileClasspath,
+            manualLibraries.collect { new File(shared, it + '.jar') })
+}
+
+tasks.withType(ProcessResources).configureEach {
+    inputs.property('uilibVersion', project.version)
+    filesMatching('META-INF/neoforge.mods.toml') { expand(uilibVersion: project.version) }
+}
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.release = 25
+    options.compilerArgs += ['-proc:none']
+}
+tasks.named('compileManualJava', JavaCompile) {
+    // 同一测试路径解析器继续供所有人工宿主使用，不在版本接入中复制。
+    source(new File(repositoryRoot, 'src/testHost/java/club/heiqi/uilib/testing/host/LocalMediaFiles.java'))
+}
+
+def requireShared = { List<String> modules ->
+    modules.each { module ->
+        def artifact = new File(shared, module + '.jar')
+        if (!artifact.isFile()) throw new GradleException('缺少共享产物 ' + artifact + '；请先在根工程执行 prepareEmbedded')
+    }
+}
+def verifyShared = tasks.register('verifySharedArtifacts') {
+    inputs.files(productionLibraries.collect { new File(shared, it + '.jar') })
+    doLast { requireShared(productionLibraries) }
+}
+def verifyManual = tasks.register('verifyManualArtifacts') {
+    dependsOn verifyShared
+    inputs.files(manualLibraries.collect { new File(shared, it + '.jar') })
+    doLast { requireShared(manualLibraries) }
+}
+tasks.named('compileJava') { dependsOn verifyShared }
+tasks.named('compileManualJava') { dependsOn verifyManual }
+
+def nestedResources = { String name, List<String> modules ->
+    tasks.register(name) {
+        inputs.files(modules.collect { new File(shared, it + '.jar') })
+        outputs.dir(layout.buildDirectory.dir('generated/' + name))
+        dependsOn name.startsWith('manual') ? verifyManual : verifyShared
+        doLast {
+            def root = layout.buildDirectory.dir('generated/' + name).get().asFile
+            def jarjar = new File(root, 'META-INF/jarjar')
+            jarjar.mkdirs()
+            project.sync {
+                into jarjar
+                from(modules.collect { new File(shared, it + '.jar') })
+            }
+            def jars = modules.collect { module -> [identifier: [group: 'club.heiqi.uilib', artifact: module], version: [range: '[' + project.version + ']', artifactVersion: project.version.toString()], path: 'META-INF/jarjar/' + module + '.jar', isObfuscated: false] }
+            new File(jarjar, 'metadata.json').text = groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson([jars: jars])) + '\n'
+        }
+    }
+}
+def productionNested = nestedResources('productionNestedResources', productionNestedLibraries)
+def manualNested = nestedResources('manualNestedResources', manualNestedLibraries)
+tasks.named('jar', Jar) {
+    dependsOn productionNested
+    from(layout.buildDirectory.dir('generated/productionNestedResources'))
+    // GL API 与具体 binding 同包，消费共同编译输出合入此适配，避免 FML 模块 split package。
+    ['gl-renderer', 'lwjgl3'].each { module ->
+        from(zipTree(new File(shared, module + '.jar'))) {
+            exclude 'META-INF/MANIFEST.MF', 'META-INF/*.SF', 'META-INF/*.RSA', 'META-INF/*.DSA', 'module-info.class'
+        }
+    }
+    from(new File(repositoryRoot, 'LICENSE'))
+    manifest.attributes('Implementation-Title': 'Qz UILib NeoForge 26.3', 'Implementation-Version': project.version,
+            'UILib-Source-Revision': providers.gradleProperty('sourceRevision').getOrElse('development'))
+}
+def manualJar = tasks.register('manualJar', Jar) {
+    archiveBaseName = 'qz_uilib_manualtest-neoforge263'
+    dependsOn tasks.named('manualClasses'), manualNested
+    from(sourceSets.manual.output)
+    // 图像资产必须属于正式 mod 资源包；普通 JiJ library 不承担 ResourceManager 的资源包身份。
+    from(zipTree(new File(shared, 'gallery.jar'))) { exclude 'META-INF/MANIFEST.MF' }
+    from(layout.buildDirectory.dir('generated/manualNestedResources'))
+    from(new File(repositoryRoot, 'LICENSE'))
+    manifest.attributes('Implementation-Title': 'Qz UILib NeoForge 26.3 测试广场', 'Implementation-Version': project.version)
+}
+def verifyBundle = { File artifact, boolean manual ->
+    new java.util.zip.ZipFile(artifact).withCloseable { zip ->
+        if (zip.getEntry('club/heiqi/uilib/ui/reactive/Signal.class') != null) throw new GradleException('宿主产物不能重复内嵌核心类')
+        if (zip.getEntry('META-INF/neoforge.mods.toml') == null) throw new GradleException('缺少 NeoForge 模组元数据')
+        def metadata = new groovy.json.JsonSlurper().parse(zip.getInputStream(zip.getEntry('META-INF/jarjar/metadata.json')))
+        metadata.jars.each { nested ->
+            if (zip.getEntry(nested.path) == null) throw new GradleException('JiJ 引用缺少产物: ' + nested.path)
+        }
+        if (!manual && zip.entries().toList().any { it.name.startsWith('club/heiqi/uilib/testing/') })
+            throw new GradleException('正式宿主不能包含测试广场')
+    }
+}
+def productionJar = tasks.named('jar', Jar)
+tasks.named('check') {
+    dependsOn productionJar
+    doLast { verifyBundle(productionJar.get().archiveFile.get().asFile, false) }
+}
+def verifyManualBundle = tasks.register('verifyManualBundle') {
+    group = 'verification'
+    description = '构建并核对独立人工广场包；不进入正式 build/check'
+    dependsOn manualJar
+    inputs.file(manualJar.flatMap { it.archiveFile })
+    doLast { verifyBundle(manualJar.get().archiveFile.get().asFile, true) }
+}
+tasks.register('galleryBuild') {
+    group = 'build'
+    description = '显式构建正式宿主与完整人工广场并核对归档'
+    dependsOn tasks.named('build'), verifyManualBundle
+}
+tasks.register('installBundle', Sync) {
+    group = 'distribution'
+    description = '装配已核对的正式宿主与人工广场两包'
+    dependsOn tasks.named('build'), verifyManualBundle
+    into layout.buildDirectory.dir('install')
+    from productionJar.flatMap { it.archiveFile }
+    from manualJar.flatMap { it.archiveFile }
+}

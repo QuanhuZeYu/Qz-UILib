@@ -1,0 +1,13 @@
+{
+  "pack": {
+    "description": "UILib 共享测试广场资源",
+    "min_format": [
+      97,
+      1
+    ],
+    "max_format": [
+      97,
+      1
+    ]
+  }
+}

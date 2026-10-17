@@ -120,7 +120,7 @@ val verifyDevToolsNotPackaged by tasks.registering {
         tasks.named(name, AbstractArchiveTask::class.java).flatMap { task -> task.archiveFile }
     }
     val allArchives: Provider<List<File>> = provider {
-        tasks.withType(AbstractArchiveTask::class.java).toList().filter { it.name !in setOf("manualTestDevJar", "manualTestJar", "desktopTestJar", "mediaTestJar", "mediaTestLegacyJar", "lwjgl2TestJar") }.map { task -> task.archiveFile.get().asFile }
+        tasks.withType(AbstractArchiveTask::class.java).toList().filter { it.name !in setOf("manualTestDevJar", "manualTestJar", "desktopTestJar", "mediaTestJar", "mediaTestLegacyJar", "lwjgl2TestJar", "embeddedGalleryJar") }.map { task -> task.archiveFile.get().asFile }
     }
     val forbidden = "$internalDevToolsPackagePath/"
     doLast {

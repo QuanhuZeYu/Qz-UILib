@@ -1,0 +1,3 @@
+rootProject.name = 'uilib-forge112'
+// -PprismRoot 显式选择本地实例开发输入；默认继续使用官方 ForgeGradle。
+if (gradle.startParameter.projectProperties.containsKey('prismRoot')) rootProject.buildFileName = 'client-cache.gradle'

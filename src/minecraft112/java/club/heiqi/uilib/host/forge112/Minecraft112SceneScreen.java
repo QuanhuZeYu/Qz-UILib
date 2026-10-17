@@ -1,0 +1,152 @@
+package club.heiqi.uilib.host.forge112;
+
+import club.heiqi.uilib.host.embedded.EmbeddedSceneHost;
+import club.heiqi.uilib.host.embedded.EmbeddedSceneInputs;
+import club.heiqi.uilib.host.embedded.EmbeddedSceneInputs.Key;
+import club.heiqi.uilib.host.embedded.EmbeddedSceneServices;
+import club.heiqi.uilib.ui.media.MediaService;
+import club.heiqi.uilib.ui.scene.host.ScenePage;
+import club.heiqi.uilib.ui.scene.host.ScenePageSession;
+import club.heiqi.uilib.ui.scene.input.SceneEditEvent;
+import club.heiqi.uilib.ui.scene.input.ScenePointerEvent;
+import java.util.EnumSet;
+import java.util.HashSet;
+import java.util.Set;
+import net.minecraft.client.gui.GuiScreen;
+import org.lwjgl.input.Keyboard;
+import org.lwjgl.input.Mouse;
+import org.lwjgl.opengl.Display;
+
+/** GuiScreen 仅转换原生事实；内容、输入所有权和呈现均由共享页面环境协调。 */
+public class Minecraft112SceneScreen extends GuiScreen {
+    private final GuiScreen parent;
+    private final ScenePage page;
+    private final MediaService media;
+    private ScenePageSession session;
+    private EmbeddedSceneInputs inputs;
+    private boolean repeatEvents, repeatBorrowed;
+    private boolean leftControl, rightControl, leftShift, rightShift;
+    private double wheelRemainder;
+
+    public Minecraft112SceneScreen(GuiScreen parent, ScenePage page) { this(parent, page, null); }
+    public Minecraft112SceneScreen(GuiScreen parent, ScenePage page, MediaService media) {
+        this.parent = parent;
+        this.page = java.util.Objects.requireNonNull(page, "page");
+        this.media = media;
+    }
+
+    @Override public void initGui() {
+        if (session != null) return;
+        EmbeddedSceneServices services = Forge112Client.services();
+        EmbeddedSceneHost host = new EmbeddedSceneHost(services, Display::getWidth, Display::getHeight, media);
+        boolean[] owned = {false};
+        repeatEvents = Keyboard.areRepeatEventsEnabled();
+        Keyboard.enableRepeatEvents(true);
+        repeatBorrowed = true;
+        try {
+            session = ScenePageSession.open(services.domain(), host, services.fonts(), context -> {
+                context.own(host); owned[0] = true;
+                page.build(context);
+            });
+            ScenePageSession opened = session;
+            inputs = new EmbeddedSceneInputs(opened, new SceneEditEvent.Clipboard() {
+                public String read() { return GuiScreen.getClipboardString(); }
+                public void write(String text) { GuiScreen.setClipboardString(text); }
+            }, () -> { if (session == opened && mc.currentScreen == this) requestClose(); });
+        } catch (RuntimeException | Error failure) {
+            try { onGuiClosed(); } catch (Throwable cleanup) { if (cleanup != failure) failure.addSuppressed(cleanup); }
+            if (!owned[0]) try { host.close(); } catch (Throwable cleanup) { if (cleanup != failure) failure.addSuppressed(cleanup); }
+            throw failure;
+        }
+    }
+
+    @Override public void drawScreen(int mouseX, int mouseY, float partialTicks) {
+        ScenePageSession opened = session;
+        if (opened == null || mc.currentScreen != this) return;
+        handleInput();
+        if (session == opened && mc.currentScreen == this) opened.frame();
+    }
+
+    @Override public void handleInput() {
+        EmbeddedSceneInputs collecting = inputs;
+        if (collecting == null) return;
+        collecting.availability(Display.isActive());
+        Lwjgl2InputQueue.drain(this::handleMouseInput, this::handleKeyboardInput);
+        if (inputs != collecting) return;
+        Set<Integer> physical = new HashSet<>();
+        Set<Key> special = EnumSet.noneOf(Key.class);
+        for (int key = 0; key < Keyboard.KEYBOARD_SIZE; key++) if (Keyboard.isKeyDown(key)) {
+            physical.add(key); special.add(semantic(key));
+        }
+        boolean released = true;
+        for (int button = 0; button < Mouse.getButtonCount(); button++) released &= !Mouse.isButtonDown(button);
+        collecting.historyDrained(physical, special, released);
+        leftControl = Keyboard.isKeyDown(Keyboard.KEY_LCONTROL); rightControl = Keyboard.isKeyDown(Keyboard.KEY_RCONTROL);
+        leftShift = Keyboard.isKeyDown(Keyboard.KEY_LSHIFT); rightShift = Keyboard.isKeyDown(Keyboard.KEY_RSHIFT);
+    }
+
+    @Override public void handleKeyboardInput() {
+        if (inputs == null) return;
+        int key = Keyboard.getEventKey();
+        boolean down = Keyboard.getEventKeyState();
+        if (key == Keyboard.KEY_LCONTROL) leftControl = down;
+        if (key == Keyboard.KEY_RCONTROL) rightControl = down;
+        if (key == Keyboard.KEY_LSHIFT) leftShift = down;
+        if (key == Keyboard.KEY_RSHIFT) rightShift = down;
+        if (key != Keyboard.KEY_NONE)
+            inputs.key(key, semantic(key), down, Keyboard.isRepeatEvent(), leftControl || rightControl, leftShift || rightShift);
+        if (down || key == Keyboard.KEY_NONE) inputs.character(Keyboard.getEventCharacter());
+    }
+
+    @Override public void handleMouseInput() {
+        if (inputs == null) return;
+        long sampled = Mouse.getEventNanoseconds();
+        int x = Mouse.getEventX(), y = Display.getHeight() - Mouse.getEventY() - 1, button = Mouse.getEventButton();
+        if (button >= 0) inputs.pointer((Mouse.getEventButtonState() ? ScenePointerEvent.down(button, x, y)
+                : ScenePointerEvent.up(button, x, y)).at(sampled));
+        else inputs.pointer(ScenePointerEvent.move(x, y).at(sampled));
+        wheelRemainder += Mouse.getEventDWheel() / 120.0;
+        int wheel = (int) wheelRemainder;
+        if (wheel != 0) { wheelRemainder -= wheel; inputs.pointer(ScenePointerEvent.scroll(x, y, wheel).at(sampled)); }
+    }
+
+    protected void requestClose() { mc.displayGuiScreen(parent); }
+    @Override public void onGuiClosed() {
+        ScenePageSession closing = session;
+        session = null; inputs = null;
+        try { if (closing != null) closing.close(); }
+        finally {
+            if (repeatBorrowed) { repeatBorrowed = false; Keyboard.enableRepeatEvents(repeatEvents); }
+        }
+    }
+    @Override public boolean doesGuiPauseGame() { return false; }
+
+    private static Key semantic(int key) {
+        switch (key) {
+            case Keyboard.KEY_TAB: return Key.TAB;
+            case Keyboard.KEY_RETURN: return Key.ENTER;
+            case Keyboard.KEY_NUMPADENTER: return Key.KEYPAD_ENTER;
+            case Keyboard.KEY_SPACE: return Key.SPACE;
+            case Keyboard.KEY_ESCAPE: return Key.ESCAPE;
+            case Keyboard.KEY_LSHIFT: return Key.LEFT_SHIFT;
+            case Keyboard.KEY_RSHIFT: return Key.RIGHT_SHIFT;
+            case Keyboard.KEY_LEFT: return Key.LEFT;
+            case Keyboard.KEY_RIGHT: return Key.RIGHT;
+            case Keyboard.KEY_UP: return Key.UP;
+            case Keyboard.KEY_DOWN: return Key.DOWN;
+            case Keyboard.KEY_HOME: return Key.HOME;
+            case Keyboard.KEY_END: return Key.END;
+            case Keyboard.KEY_PRIOR: return Key.PAGE_UP;
+            case Keyboard.KEY_NEXT: return Key.PAGE_DOWN;
+            case Keyboard.KEY_BACK: return Key.BACKSPACE;
+            case Keyboard.KEY_DELETE: return Key.DELETE;
+            case Keyboard.KEY_A: return Key.A;
+            case Keyboard.KEY_C: return Key.C;
+            case Keyboard.KEY_X: return Key.X;
+            case Keyboard.KEY_V: return Key.V;
+            case Keyboard.KEY_Z: return Key.Z;
+            case Keyboard.KEY_Y: return Key.Y;
+            default: return Key.OTHER;
+        }
+    }
+}

@@ -1,0 +1,14 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "club.heiqi.uilib.host.neoforge263.mixin",
+  "compatibilityLevel": "JAVA_25",
+  "client": [
+    "KeyboardHandlerMixin",
+    "MouseHandlerMixin",
+    "WindowMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}
