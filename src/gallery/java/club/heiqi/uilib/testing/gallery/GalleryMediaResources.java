@@ -15,15 +15,18 @@ public final class GalleryMediaResources implements AutoCloseable {
     private boolean closed;
     public GalleryMediaResources(MediaService service) { this.service=java.util.Objects.requireNonNull(service,"service"); }
     public GalleryEnvironment environment(club.heiqi.uilib.ui.settings.SettingsConfiguration settings) {
-        return environment(settings,text->MediaSource.of(java.net.URI.create(text.trim())),()->null);
+        return environment(settings,text->MediaSource.of(java.net.URI.create(text.trim())),
+                java.nio.file.Paths.get(System.getProperty("user.home", ".")));
     }
     public GalleryEnvironment environment(club.heiqi.uilib.ui.settings.SettingsConfiguration settings,
-            java.util.function.Function<String,MediaSource> resolver,java.util.concurrent.Callable<MediaSource> chooser) {
+            java.util.function.Function<String,MediaSource> resolver,Path initialDirectory) {
+        java.util.Objects.requireNonNull(resolver,"resolver");
+        java.util.Objects.requireNonNull(initialDirectory,"initialDirectory");
         return new GalleryEnvironment() {
             @Override public club.heiqi.uilib.ui.settings.SettingsConfiguration settings() { return settings; }
             @Override public MediaService media() { return service(); }
             @Override public MediaSource resolveSource(String text) { return resolver.apply(text); }
-            @Override public MediaSource chooseMediaSource() throws Exception { return chooser.call(); }
+            @Override public Path initialMediaDirectory() { return initialDirectory; }
             @Override public MediaSource exampleSource() throws IOException { return GalleryMediaResources.this.exampleSource(); }
         };
     }

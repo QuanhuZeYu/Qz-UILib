@@ -6,6 +6,7 @@ import club.heiqi.uilib.ui.media.MediaSource;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.control.SceneMediaControls;
+import club.heiqi.uilib.ui.scene.control.SceneFilePicker;
 import club.heiqi.uilib.ui.scene.control.SceneTextField;
 import club.heiqi.uilib.ui.scene.control.SceneTheme;
 import club.heiqi.uilib.ui.scene.control.SceneVideo;
@@ -14,6 +15,8 @@ import club.heiqi.uilib.ui.scene.host.ScenePageContext;
 import club.heiqi.uilib.ui.scene.layout.Size;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
+import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
@@ -25,11 +28,14 @@ final class MediaPage {
     private final Signal<List<SceneNode>> content;
     private final Signal<String> message;
     private final SceneEditState address;
+    private final Signal<Boolean> picking;
+    private Path pickerDirectory;
     private MediaSession current;
     MediaPage(ScenePageContext page,GalleryEnvironment environment,ReadableSignal<SceneTheme> theme) {
         this.page=page;this.environment=environment;this.theme=theme;
         content=page.domain().signal(Collections.emptyList());message=page.domain().signal("选择本地视频，输入媒体地址，或打开内置示例。");
-        address=new SceneEditState(page.domain(),"");page.own(this::stop);
+        address=new SceneEditState(page.domain(),"");picking=page.domain().signal(false);
+        pickerDirectory=environment.initialMediaDirectory();page.own(this::stop);
     }
     SceneNode create(Runnable back) {
         SceneNode root=new SceneNode().size(Size.fill(1),Size.fill(1)).padding(24).gap(12).scrollable(true);
@@ -43,12 +49,7 @@ final class MediaPage {
         },SceneTextField.SubmitPolicy.CONFIRM,()->"本地绝对路径、file URI 或 HTTP / HLS 地址"));
         SceneNode actions=new SceneNode().axis(SceneNode.Axis.ROW).size(Size.fill(1),Size.natural()).gap(8);
         actions.add(GalleryStyle.button(page,()->"打开媒体",theme,()->openAddress(address.snapshot().get().text)));
-        actions.add(GalleryStyle.button(page,()->"选择本地视频",theme,()->{
-            try {
-                MediaSource source=environment.chooseMediaSource();
-                if(source!=null){open(source);address.reset(source.uri.toString());}
-            }catch(Exception failure){message.set("无法打开本地视频："+failure.getMessage());}
-        }));
+        actions.add(GalleryStyle.button(page,()->"选择本地视频",theme,()->picking.set(true)));
         actions.add(GalleryStyle.button(page,()->"内置示例",theme,()->{
             try{open(environment.exampleSource());}catch(Exception failure){message.set("无法打开示例："+failure.getMessage());}
         }));
@@ -57,7 +58,17 @@ final class MediaPage {
         SceneNode player=new SceneNode().size(Size.fill(1),Size.natural()).gap(8);
         player.bind(NodeBinding.ownedChildren(content));root.add(player);
         if(environment.media()==null)message.set("当前入口未提供媒体播放，仍可浏览其他场景。");
-        return root;
+        // 选择器与正文由同一结构声明拥有；普通流只包含正文，所属层由正式引擎占用视口。
+        SceneNode stage=new SceneNode().size(Size.fill(1),Size.fill(1));
+        stage.bind(NodeBinding.repeat(()->picking.get()?Arrays.asList(false,true):Collections.singletonList(false),
+                value->value,item->item.get()?SceneFilePicker.create(page,pickerDirectory,theme,selected->{
+                    picking.set(false);pickerDirectory=selected.getParent();
+                    try {
+                        MediaSource source=MediaSource.of(selected.toUri());
+                        open(source);address.reset(source.uri.toString());
+                    }catch(Exception failure){message.set("无法打开本地视频："+failure.getMessage());}
+                },()->picking.set(false)):root));
+        return stage;
     }
     private boolean openAddress(String raw) {
         try{open(environment.resolveSource(raw));return true;}
@@ -75,6 +86,7 @@ final class MediaPage {
         }catch(RuntimeException|Error failure){current=null;try{opened.close();}catch(Throwable next){failure.addSuppressed(next);}throw failure;}
     }
     void stop() {
+        picking.set(false);
         MediaSession previous=current;current=null;content.set(Collections.emptyList());
         if(previous!=null)previous.close();
     }

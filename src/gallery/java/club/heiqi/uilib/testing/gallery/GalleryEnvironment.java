@@ -11,9 +11,9 @@ public interface GalleryEnvironment {
     default club.heiqi.uilib.ui.media.MediaSource resolveSource(String text) {
         return club.heiqi.uilib.ui.media.MediaSource.of(java.net.URI.create(text.trim()));
     }
-    /** 取消返回null，页面保留当前来源和播放；系统选择器由宿主提供。 */
-    default club.heiqi.uilib.ui.media.MediaSource chooseMediaSource() throws Exception {
-        throw new java.io.IOException("当前入口不支持选择本地视频");
+    /** 宿主只提供文件事实入口；选择界面由共享页面的正式 SceneFilePicker 承担。 */
+    default java.nio.file.Path initialMediaDirectory() {
+        return java.nio.file.Paths.get(System.getProperty("user.home", ".")).toAbsolutePath().normalize();
     }
     default club.heiqi.uilib.ui.media.MediaSource exampleSource() throws java.io.IOException {
         throw new java.io.IOException("当前入口没有内置示例");

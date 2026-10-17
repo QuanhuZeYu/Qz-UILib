@@ -18,7 +18,8 @@ public final class CoreLoopScreen extends MinecraftSceneScreen {
         super(MinecraftApplicationConfiguration.settings().domain(),context -> {
             context.own(media);
             new TestGallery(media.environment(MinecraftApplicationConfiguration.settings(),
-                    club.heiqi.uilib.testing.host.LocalMediaFiles::resolve,club.heiqi.uilib.testing.host.LocalMediaFiles::choose),initial).build(context);
+                    club.heiqi.uilib.testing.host.LocalMediaFiles::resolve,
+                    club.heiqi.uilib.testing.host.LocalMediaFiles.initialDirectory()),initial).build(context);
         },media.service());
     }
     @Override public boolean doesGuiPauseGame(){return false;}

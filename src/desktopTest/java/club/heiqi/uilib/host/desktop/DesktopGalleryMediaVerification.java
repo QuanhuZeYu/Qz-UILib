@@ -23,6 +23,8 @@ import static org.lwjgl.glfw.GLFW.GLFW_RELEASE;
 import static org.lwjgl.glfw.GLFW.GLFW_KEY_A;
 import static org.lwjgl.glfw.GLFW.GLFW_MOD_CONTROL;
 import static org.lwjgl.glfw.GLFW.GLFW_KEY_ENTER;
+import static org.lwjgl.glfw.GLFW.GLFW_KEY_ESCAPE;
+import static org.lwjgl.glfw.GLFW.GLFW_KEY_BACKSPACE;
 import static org.lwjgl.glfw.GLFW.glfwSetWindowSize;
 
 /** 用户从目录进入媒体页，经正式GLFW输入操作与actualswap验证，共用广场、正式媒体服务及短样本。 */
@@ -30,11 +32,15 @@ public final class DesktopGalleryMediaVerification extends TestApplication {
     private DesktopWindow window;
     private DesktopTestInput input;
     private long swaps;
+    private club.heiqi.uilib.ui.reactive.Owner pickerObservation;
+    private final java.util.Set<Thread> pickerUiThreads=java.util.Collections.newSetFromMap(new java.util.concurrent.ConcurrentHashMap<Thread,Boolean>());
     private void frames(int count) { for(int i=0;i<count;i++){window.frame();swaps+=window.mediaPresentations().size();} }
     private void await(BooleanSupplier condition,String reason) throws Exception {
         long deadline=System.nanoTime()+5_000_000_000L;
         while(!condition.getAsBoolean()&&System.nanoTime()<deadline){frames(1);Thread.sleep(5);}
         if(!condition.getAsBoolean()) {
+            DesktopGalleryEvidence.saveGeometry(window,Paths.get(arguments()[0]).resolve("failure.geometry.json"));
+            javax.imageio.ImageIO.write(capture(),"png",Paths.get(arguments()[0]).resolve("failure.png").toFile());
             MediaSnapshot s=snapshot();System.out.println("WAIT reason="+reason+" snapshot="+(s==null?"null":s.state+" "+s.positionNanos+" fail="+(s.failure==null?"none":s.failure.cause))+" native="+IsolatedMediaAdapters.resources());
             System.out.println("TEXT "+window.lastPlan.commands().stream().filter(c->c.kind==PaintCommand.Kind.TEXT).map(c->c.text.logicalText).collect(Collectors.joining(" | ")));
         }
@@ -47,11 +53,52 @@ public final class DesktopGalleryMediaVerification extends TestApplication {
     }
     private long sessionId() {return window.lastPlan.commands().stream().filter(c->c.kind==PaintCommand.Kind.VIDEO).findFirst().map(c->c.video.frame.key.sessionId).orElse(-1L);}
     private boolean text(String value) {return window.lastPlan.commands().stream().anyMatch(c->c.kind==PaintCommand.Kind.TEXT&&c.text.logicalText.contains(value));}
+    private boolean exactText(String value) {return window.lastPlan.commands().stream().anyMatch(c->c.kind==PaintCommand.Kind.TEXT&&c.text.logicalText.equals(value));}
     private List<SceneNode> fields() {return DesktopTestInput.geometry(window).ordered().stream().filter(e->e.node.control() instanceof club.heiqi.uilib.ui.scene.edit.SceneCompositionTarget).map(e->e.node).collect(Collectors.toList());}
+    private String editText(SceneNode field) {
+        final String[] text={null};window.domain.execute(()->text[0]=((club.heiqi.uilib.ui.scene.edit.SceneCompositionTarget)field.control()).compositionState().snapshot().get().text);return text[0];
+    }
     private void type(SceneNode field,String value,boolean enter) {
         input.moveTo(field);input.mouse.invoke(window.handle(),0,GLFW_PRESS,0);input.mouse.invoke(window.handle(),0,GLFW_RELEASE,0);
-        input.key.invoke(window.handle(),GLFW_KEY_A,0,GLFW_PRESS,GLFW_MOD_CONTROL);value.codePoints().forEach(c->input.character.invoke(window.handle(),c));
+        input.key.invoke(window.handle(),GLFW_KEY_A,0,GLFW_PRESS,GLFW_MOD_CONTROL);
+        if(value.isEmpty())input.key.invoke(window.handle(),GLFW_KEY_BACKSPACE,0,GLFW_PRESS,0);
+        else value.codePoints().forEach(c->input.character.invoke(window.handle(),c));
         if(enter)input.key.invoke(window.handle(),GLFW_KEY_ENTER,0,GLFW_PRESS,0);frames(1);
+        if(inPicker(field))require(value.equals(editText(field)),"路径输入未生效：期望="+value+" 实际="+editText(field));
+    }
+    private static boolean inPicker(SceneNode node) {
+        for(SceneNode at=node;at!=null;at=at.parent())if(at.modal())return true;
+        return false;
+    }
+    private void observePickerThread() {
+        SceneNode field=pickerField();
+        window.domain.execute(()->{
+            pickerObservation=window.domain.owner();
+            club.heiqi.uilib.ui.scene.edit.SceneEditState state=((club.heiqi.uilib.ui.scene.edit.SceneCompositionTarget)field.control()).compositionState();
+            window.domain.effect(pickerObservation,()->{state.snapshot().get();pickerUiThreads.add(Thread.currentThread());});
+        });
+    }
+    private void closePickerObservation() {
+        if(pickerObservation!=null)window.domain.execute(()->{pickerObservation.close();pickerObservation=null;});
+    }
+    private boolean pickerWorkersGone() {return Thread.getAllStackTraces().keySet().stream().noneMatch(t->t.isAlive()&&t.getName().startsWith("uilib-file-picker-"));}
+    private boolean pickerOpen() {return DesktopTestInput.geometry(window).ordered().stream().anyMatch(e->e.node.modal());}
+    private boolean pickerButtonEnabled(String label) {return DesktopTestInput.geometry(window).ordered().stream().anyMatch(e->inPicker(e.node)&&e.node.clickAction()!=null&&e.node.text().equals(label)&&e.node.enabled());}
+    private SceneNode pickerField() {return fields().stream().filter(DesktopGalleryMediaVerification::inPicker).findFirst().orElseThrow(()->new AssertionError("选择器没有正式路径字段"));}
+    private void pickerEntry(String name) {
+        String label=DesktopTestInput.geometry(window).ordered().stream().filter(e->inPicker(e.node)&&e.node.clickAction()!=null&&e.node.text().endsWith(name))
+                .map(e->e.node.text()).findFirst().orElseThrow(()->new AssertionError("选择器没有目录条目："+name));
+        input.click(label);
+    }
+    private java.util.Set<String> listedPage() {
+        return DesktopTestInput.geometry(window).ordered().stream().filter(e->inPicker(e.node)&&e.node.clickAction()!=null&&e.node.text().contains("分页文件 "))
+                .map(e->e.node.text()).collect(Collectors.toCollection(java.util.LinkedHashSet::new));
+    }
+    private static void deleteTree(Path root) throws java.io.IOException {
+        if(root==null)return;
+        try(java.util.stream.Stream<Path> paths=Files.walk(root)) {
+            for(Path path:paths.sorted(java.util.Comparator.reverseOrder()).collect(Collectors.toList()))Files.deleteIfExists(path);
+        }
     }
     private void baseline(MediaService service,String stage) {
         require(service.activeSessions()==0,stage+"会话未关闭");
@@ -66,17 +113,17 @@ public final class DesktopGalleryMediaVerification extends TestApplication {
         Path output=Paths.get(arguments()[0]);Files.createDirectories(output);
         scenario("真实共享广场媒体入口、示例、控件和离页关闭",()->{
             Path sample;
-            final Path[] localFile={null};
-            java.util.concurrent.atomic.AtomicReference<club.heiqi.uilib.ui.media.MediaSource> selection=new java.util.concurrent.atomic.AtomicReference<>();
-            java.util.concurrent.atomic.AtomicInteger chooserCalls=new java.util.concurrent.atomic.AtomicInteger();
+            final Path[] localFile={null},localDirectory={null};
+            int pickerOpens=0;
             try(GalleryMediaResources media=new GalleryMediaResources(new MediaService(IsolatedMediaAdapters.decoderFactory(),IsolatedMediaAdapters.audioSinkFactory(),MediaBudget.DEFAULT));
                     MediaFixture fixture=new MediaFixture();
-                    AutoCloseable localCleanup=()->{if(localFile[0]!=null)Files.deleteIfExists(localFile[0]);}) {
+                    AutoCloseable localCleanup=()->deleteTree(localDirectory[0])) {
                 MediaService service=media.service();
                 try(DesktopWindow opened=DesktopWindow.openWithServices(output.resolve("gallery.yaml"),service,true,
-                        services->DesktopGallery.createGallery(services,TestGallery.Page.HOME,media,()->{chooserCalls.incrementAndGet();return selection.getAndSet(null);}))) {
+                        services->DesktopGallery.createGallery(services,TestGallery.Page.HOME,media));
+                        AutoCloseable observationCleanup=this::closePickerObservation) {
                     window=opened;glfwSetWindowSize(window.handle(),1200,1000);frames(12);input=new DesktopTestInput(window);
-                    require(service.activeSessions()==0&&IsolatedMediaAdapters.resources().runtimeLoaders==0&&chooserCalls.get()==0,"目录预热了媒体native或自动弹文件选择");
+                    require(service.activeSessions()==0&&IsolatedMediaAdapters.resources().runtimeLoaders==0&&!pickerOpen(),"目录预热了媒体native或自动弹文件选择");
                     input.click("打开媒体播放");frames(2);
                     require(service.activeSessions()==0&&text("媒体播放"),"进入媒体页自动打开或未呈现");
                     input.click("内置示例");await(()->snapshot()!=null&&snapshot().statistics.presentedFrames>0&&snapshot().positionNanos>30_000_000L,"示例未actualswap/device播放");
@@ -88,16 +135,66 @@ public final class DesktopGalleryMediaVerification extends TestApplication {
                     input.click("播放");await(()->swaps>firstSwaps+2&&snapshot().positionNanos>100_000_000L,"恢复播放无新swap");
                     DesktopGalleryEvidence.saveGeometry(window,output.resolve("media.geometry.json"));
                     javax.imageio.ImageIO.write(capture(),"png",output.resolve("media.png").toFile());
-                    localFile[0]=Files.createTempFile("qz 用户 +video-",arguments().length>1?".MP4":".ViDeO");
-                    Files.copy(arguments().length>1?Paths.get(arguments()[1]):sample,localFile[0],java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                    localDirectory[0]=Files.createTempDirectory("qz 文件选择 中文 +");
+                    Path browse=Files.createDirectory(localDirectory[0].resolve("浏览目录 中文 +"));
+                    Files.createDirectory(browse.resolve("空目录"));
+                    Path many=Files.createDirectory(localDirectory[0].resolve("分页目录"));
+                    int directoryEntries=150;
+                    for(int i=0;i<directoryEntries;i++)Files.createFile(many.resolve(String.format(java.util.Locale.ROOT,"分页文件 %03d.ViDeO",i)));
+                    localFile[0]=browse.resolve(arguments().length>1?"任意视频 +中文.MP4":"任意视频 +中文.ViDeO");
+                    Files.copy(arguments().length>1?Paths.get(arguments()[1]):sample,localFile[0]);
                     club.heiqi.uilib.ui.media.MediaSource chosen=club.heiqi.uilib.testing.host.LocalMediaFiles.resolve(localFile[0].toString());
-                    selection.set(chosen);input.click("选择本地视频");await(()->snapshot()!=null&&snapshot().statistics.presentedFrames>0&&snapshot().positionNanos>50_000_000L,"选择任意本地视频未实际播放");
-                    require(chooserCalls.get()==1&&text(chosen.uri.toString()),"选择文件后地址未同步");
-                    long beforeCancel=sessionId();input.click("选择本地视频");frames(2);
-                    require(chooserCalls.get()==2&&sessionId()==beforeCancel&&text(chosen.uri.toString()),"取消选择更换了会话或地址");
+                    type(fields().get(0),sample.toString(),false);input.click("打开媒体");await(()->snapshot()!=null&&snapshot().state==MediaState.PLAYING&&snapshot().positionNanos>30_000_000L,"打开选择器前媒体未播放");
+                    long duringPicker=sessionId(),positionBeforePicker=snapshot().positionNanos;
+                    input.click("选择本地视频");pickerOpens++;await(this::pickerOpen,"未出现UILib模态文件选择器");
+                    observePickerThread();
+                    input.click("根目录");await(()->text("根目录 / 盘符"),"根目录入口没有读取实际盘符");
+                    pickerEntry(localDirectory[0].getRoot().toString());
+                    type(pickerField(),localDirectory[0].toString(),true);await(()->text("浏览目录 中文 +"),"实际目录没有进入自有选择器");
+                    input.click("停止");frames(2);
+                    require(pickerOpen()&&sessionId()==duringPicker&&service.activeSessions()==1,"模态指针穿透后台停止了媒体");
+                    await(()->snapshot().positionNanos>positionBeforePicker,"选择器打开期间媒体没有继续推进");
+                    pickerEntry("浏览目录 中文 +");await(()->text(localFile[0].getFileName().toString()),"目录条目不能导航");
+                    pickerEntry("空目录");await(()->exactText("空目录"),"空目录没有反馈");
+                    input.click("上一级");await(()->text(localFile[0].getFileName().toString()),"上级目录没有恢复列表");
+                    Path refreshed=browse.resolve("刷新后出现.ViDeO");Files.createFile(refreshed);
+                    input.click("刷新");await(()->text(refreshed.getFileName().toString()),"目录刷新没有显示新增文件");
+                    type(pickerField(),browse.resolve("不存在的目录").toString(),true);await(()->text("无法"),"不存在路径没有可见反馈");
+                    type(pickerField(),many.toString(),true);await(()->!listedPage().isEmpty(),"大目录没有首批条目");
+                    java.util.Set<String> firstPage=listedPage();
+                    require(firstPage.size()<directoryEntries,"大目录一次挂载了整个目录");
+                    input.click("下一页");await(()->!listedPage().isEmpty()&&java.util.Collections.disjoint(firstPage,listedPage()),"下一页没有读取独立批次");
+                    int nextPageSize=listedPage().size();
+                    input.click("上一页");await(()->listedPage().equals(firstPage),"上一页没有返回原批次");
+                    type(pickerField(),browse.toString(),true);await(()->text(localFile[0].getFileName().toString()),"不能返回中文目录");
+                    glfwSetWindowSize(window.handle(),760,620);frames(3);
+                    require(pickerOpen(),"窗口变化关闭了选择器");
+                    DesktopGalleryEvidence.saveGeometry(window,output.resolve("file-picker.geometry.json"));
+                    javax.imageio.ImageIO.write(capture(),"png",output.resolve("file-picker.png").toFile());
+                    input.click("取消");await(()->!pickerOpen()&&pickerWorkersGone(),"取消没有结束选择器或目录工作");
+                    require(sessionId()==duringPicker,"取消选择更换了当前会话");
+                    require(pickerUiThreads.size()==1&&pickerUiThreads.contains(Thread.currentThread()),"目录结果在宿主线程外推动了UI："+pickerUiThreads);
+                    closePickerObservation();
+                    glfwSetWindowSize(window.handle(),1200,1000);frames(3);
+                    input.click("选择本地视频");pickerOpens++;await(this::pickerOpen,"第二次打开选择器失败");
+                    input.key.invoke(window.handle(),GLFW_KEY_ESCAPE,0,GLFW_PRESS,0);input.key.invoke(window.handle(),GLFW_KEY_ESCAPE,0,GLFW_RELEASE,0);frames(2);
+                    await(()->!pickerOpen()&&pickerWorkersGone(),"ESC后目录工作未结束");
+                    require(sessionId()==duringPicker&&text("媒体播放"),"ESC取消选择器误关页面或更换会话");
+                    input.click("选择本地视频");pickerOpens++;await(this::pickerOpen,"确认文件前无法打开选择器");
+                    type(pickerField(),browse.toString(),true);await(()->text(localFile[0].getFileName().toString()),"重新打开未读取中文目录");
+                    type(pickerField(),"",false);input.click("选择文件");await(()->text("无法"),"空路径没有错误反馈");
+                    require(pickerButtonEnabled("选择文件"),"空路径错误后确认被永久禁用");
+                    input.click("刷新");await(()->text(localFile[0].getFileName().toString()),"空路径错误后不能继续浏览");
+                    pickerEntry(refreshed.getFileName().toString());Files.delete(refreshed);input.click("选择文件");await(()->text("无法"),"确认时没有重新校验已删除文件");
+                    require(pickerOpen()&&sessionId()==duringPicker,"失效文件结束选择器或改变了播放");
+                    input.click("刷新");await(()->text(localFile[0].getFileName().toString()),"核验失败后不能继续浏览");
+                    pickerEntry(localFile[0].getFileName().toString());frames(1);
+                    require(pickerOpen()&&sessionId()==duringPicker,"文件条目在确认前换源");
+                    input.click("选择文件");await(()->!pickerOpen()&&snapshot()!=null&&snapshot().statistics.presentedFrames>0&&snapshot().positionNanos>50_000_000L&&text(chosen.uri.toString()),"自有选择器确认任意本地视频未实际播放");
+                    long beforeCancel=sessionId();
                     type(fields().get(0),localFile[0].toString(),false);input.click("打开媒体");
                     await(()->snapshot()!=null&&snapshot().statistics.presentedFrames>0&&sessionId()!=beforeCancel&&snapshot().positionNanos>50_000_000L,"本地绝对路径不能播放");
-                    System.out.println("LOCAL_VIDEO source="+chosen+" absolute="+localFile[0]+" chooserCalls="+chooserCalls.get()+" cancelKeptSession=true audioPlayed="+snapshot().positionNanos);
+                    System.out.println("LOCAL_VIDEO source="+chosen+" absolute="+localFile[0]+" pickerOpens="+pickerOpens+" pageRows="+firstPage.size()+" nextPageRows="+nextPageSize+" totalFiles="+directoryEntries+" directoryUiThreads="+pickerUiThreads.stream().map(Thread::getName).collect(Collectors.joining(","))+" cancelKeptSession=true escapeKeptPage=true modalIsolated=true refreshed=true audioPlayed="+snapshot().positionNanos);
                     DesktopGalleryEvidence.saveGeometry(window,output.resolve("local-media.geometry.json"));
                     javax.imageio.ImageIO.write(capture(),"png",output.resolve("local-media.png").toFile());
                     input.click("停止");frames(3);baseline(service,"stop");
@@ -111,11 +208,11 @@ public final class DesktopGalleryMediaVerification extends TestApplication {
                     input.click("打开媒体播放");frames(2);require(service.activeSessions()==0&&text(fixture.uri().toString()),"返回媒体页未保留地址或自动播放");input.click("内置示例");await(()->snapshot()!=null&&snapshot().statistics.presentedFrames>0,"重复进入不能再次播放");
                     await(()->snapshot().state==MediaState.ENDED,"短示例未结束");input.click("内置示例");await(()->snapshot()!=null&&snapshot().state==MediaState.PLAYING&&snapshot().statistics.presentedFrames>0,"结束后不能重开示例");
                 }
-                require(service.activeSessions()==0&&IsolatedMediaAdapters.resources().activeHandles()==0,"关窗后资源残留");
+                require(service.activeSessions()==0&&IsolatedMediaAdapters.resources().activeHandles()==0&&pickerWorkersGone(),"关窗后资源残留");
                 require(window.mediaResources().closed&&window.mediaResources().textureCount==0,"关窗GPU未关闭");
             }
             require(!Files.exists(sample)&&!Files.exists(localFile[0]),"示例或任意本地临时文件未删除");
-            Files.write(output.resolve("media-summary.json"),("{\"actualSwap\":"+swaps+",\"chooserCalls\":"+chooserCalls.get()+",\"cancelKeptSession\":true,\"absolutePathPlayed\":true,\"httpHlsPlayed\":true,\"stopHomeReleased\":true,\"tempDeleted\":true}\n").getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            Files.write(output.resolve("media-summary.json"),("{\"actualSwap\":"+swaps+",\"pickerOpens\":"+pickerOpens+",\"ownScenePicker\":true,\"cancelKeptSession\":true,\"escapeKeptPage\":true,\"modalIsolated\":true,\"directoryPagingAndRefresh\":true,\"absolutePathPlayed\":true,\"httpHlsPlayed\":true,\"stopHomeReleased\":true,\"tempDeleted\":true}\n").getBytes(java.nio.charset.StandardCharsets.UTF_8));
             System.out.println("GALLERY_MEDIA actualSwap="+swaps+" sampleAndHls=true stopped=true homeClosed=true reopened=true tempDeleted=true");
         });
     }

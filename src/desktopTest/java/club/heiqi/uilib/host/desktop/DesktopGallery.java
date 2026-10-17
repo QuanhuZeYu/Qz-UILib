@@ -50,12 +50,9 @@ public final class DesktopGallery {
         return createGallery(services,initial,null);
     }
     static TestGallery createGallery(DesktopPageServices services,TestGallery.Page initial,GalleryMediaResources media){
-        return createGallery(services,initial,media,club.heiqi.uilib.testing.host.LocalMediaFiles::choose);
-    }
-    static TestGallery createGallery(DesktopPageServices services,TestGallery.Page initial,GalleryMediaResources media,
-            java.util.concurrent.Callable<club.heiqi.uilib.ui.media.MediaSource> chooser){
         TestGallery gallery=new TestGallery(media==null?services::settings:media.environment(services.settings(),
-                club.heiqi.uilib.testing.host.LocalMediaFiles::resolve,chooser),initial);
+                club.heiqi.uilib.testing.host.LocalMediaFiles::resolve,
+                club.heiqi.uilib.testing.host.LocalMediaFiles.initialDirectory()),initial);
         services.onCloseRequested(gallery::requestClose);services.onReloadRequested(gallery::requestReload);
         return gallery;
     }
