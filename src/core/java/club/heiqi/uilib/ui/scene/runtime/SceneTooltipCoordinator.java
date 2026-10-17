@@ -72,14 +72,33 @@ final class SceneTooltipCoordinator implements SceneTransitions.Step,AutoCloseab
     }
     void prepare(SceneGeometryView geometry,SceneTextMeasurer text,long metrics){
         if(closed)return;
+        Entry hover=hoverSource(geometry),focus=focusSource(geometry);
+        refreshPresentations(geometry);
+        if(keepsHover())hover=current;
+        selectRequest(hover,focus);
+        retain(hover,focus);
+        advance(runtime.transitions().now());
+        updateFrame(geometry,text,metrics);
+        schedule();
+    }
+    private Entry hoverSource(SceneGeometryView geometry){
         Entry hover=source(runtime.pointerRouter().tooltipHovered(geometry),geometry);
-        // 中性区域兴趣可以来自滚动条；只有其确有提示声明才优先，否则继续使用同次投影的控件候选。
-        if(hover==null)hover=source(runtime.pointerRouter().passiveHovered(geometry),geometry);
+        // 中性兴趣可能来自滚动条；只有其确有提示声明才优先，否则使用同次控件投影。
+        return hover==null?source(runtime.pointerRouter().passiveHovered(geometry),geometry):hover;
+    }
+    private Entry focusSource(SceneGeometryView geometry){
         SceneNode focused=runtime.focusRouter().focused().get();
-        Entry focus=focused!=null&&runtime.focusRouter().focusVisible(focused)?source(focused,geometry):null;
+        return focused!=null&&runtime.focusRouter().focusVisible(focused)?source(focused,geometry):null;
+    }
+    private void refreshPresentations(SceneGeometryView geometry){
         if(current!=null&&!refresh(current,geometry))hide();
         if(pending!=null&&!refresh(pending,geometry))pending=null;
-        if(current!=null&&current.hint.options.hoverable&&frame!=null&&runtime.pointerRouter().observesTooltip(frame.anchor,frame.box))hover=current;
+    }
+    private boolean keepsHover(){
+        return current!=null&&current.hint.options.hoverable&&frame!=null
+                &&runtime.pointerRouter().observesTooltip(frame.anchor,frame.box);
+    }
+    private void selectRequest(Entry hover,Entry focus){
         boolean focusEntered=focus!=null&&focus!=previousFocus;
         boolean hoverEntered=hover!=null&&hover!=previousHover;
         long pointer=runtime.pointerRouter().positionRevision();
@@ -90,14 +109,12 @@ final class SceneTooltipCoordinator implements SceneTransitions.Step,AutoCloseab
             request(requested,focusEntered);
         }
         previousHover=hover;previousFocus=focus;lastPointer=pointer;
+    }
+    private void retain(Entry hover,Entry focus){
         if(pending!=null&&pending!=hover&&pending!=focus)pending=null;
-        if(current!=null){
-            if(current==hover||current==focus)closing=false;
-            else if(!closing){closing=true;closeStarted=runtime.transitions().now();closeDelay=current.hint.options.closeDelayNanos;}
-        }
-        advance(runtime.transitions().now());
-        updateFrame(geometry,text,metrics);
-        schedule();
+        if(current==null)return;
+        if(current==hover||current==focus){closing=false;return;}
+        if(!closing){closing=true;closeStarted=runtime.transitions().now();closeDelay=current.hint.options.closeDelayNanos;}
     }
     private void request(Entry entry,boolean keyboard){
         if(entry==current){closing=false;return;}

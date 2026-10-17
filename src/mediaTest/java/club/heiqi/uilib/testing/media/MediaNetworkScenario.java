@@ -42,6 +42,27 @@ public final class MediaNetworkScenario extends TestApplication {
                 }
             }
         });
+        scenario("同字节数的真实动态视频尺寸刷新行跨度",()->{
+            java.nio.file.Path file=java.nio.file.Files.createTempFile("uilib-equal-area-",".mjpg");
+            try{
+                java.io.ByteArrayOutputStream bytes=new java.io.ByteArrayOutputStream();
+                int[][] images={{64,96,0xffcc2222},{96,64,0xff2244cc}};
+                for(int[] image:images){
+                    java.awt.image.BufferedImage frame=new java.awt.image.BufferedImage(image[0],image[1],java.awt.image.BufferedImage.TYPE_INT_RGB);
+                    for(int y=0;y<image[1];y++)for(int x=0;x<image[0];x++)frame.setRGB(x,y,image[2]);
+                    javax.imageio.ImageIO.write(frame,"jpeg",bytes);
+                }
+                java.nio.file.Files.write(file,bytes.toByteArray());
+                try(MediaDecoder decoder=IsolatedMediaAdapters.decoderFactory().open(MediaSource.of(file.toUri()),()->false)){
+                    MediaDecoded first=decoder.read();require(first!=null&&first.video&&first.width==64&&first.height==96,"未读取首个真实窄帧");
+                    MediaDecoded second=decoder.read();require(second!=null&&second.video&&second.width==96&&second.height==64,"真实MJPEG未变尺寸");
+                    int pixel=(second.width*second.height-1)*4;
+                    int red=second.data.get(pixel)&255,blue=second.data.get(pixel+2)&255;
+                    System.out.println("RGBA_STRIDE equalBytes="+second.data.remaining()+" first=64x96 second=96x64 lastRed="+red+" lastBlue="+blue);
+                    require(blue>red+80,"同字节数变宽后末像素仍来自旧帧，行跨度未更新");
+                }
+            }finally{java.nio.file.Files.deleteIfExists(file);}
+        });
         scenario("真实Range双输入不同尾部及定位取消",()->{
             try(MediaNetworkFixture fixture=new MediaNetworkFixture()){
                 for(boolean shorter:new boolean[]{false,true}){

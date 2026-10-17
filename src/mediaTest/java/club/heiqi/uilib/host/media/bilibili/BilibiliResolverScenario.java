@@ -19,14 +19,14 @@ public final class BilibiliResolverScenario extends TestApplication {
             boolean cancelled=false;try{resolver.resolve(new MediaResolver.Request("BV1GJ411x7h7","",""),()->true);}catch(java.util.concurrent.CancellationException expected){cancelled=true;}require(cancelled,"取消后仍解析");
         });
         scenario("分P与匿名实际清晰度组合原始分轨",()->{
-            MediaResolver.Result result=BilibiliResolver.videoResult(URI.create("https://www.bilibili.com/"),"BV1GJ411x7h7","22","16",BilibiliResolver.map(BilibiliJson.parse(METADATA)),BilibiliResolver.map(BilibiliJson.parse(PLAY)));
+            MediaResolver.Result result=BilibiliVideo.result("BV1GJ411x7h7","22","16",BilibiliJson.map(BilibiliJson.parse(METADATA)),BilibiliJson.map(BilibiliJson.parse(PLAY)));
             require(result.parts.size()==2&&result.part.equals("22")&&result.canonical.getQuery().equals("p=2"),"分P身份错误");
             require(result.qualities.size()==2&&result.quality.equals("16")&&result.source.uri.getPath().contains("360")&&result.source.audio!=null,"不可用清晰度混入或分轨选择错误");
             require(result.source.headers.get("Referer").equals(result.canonical.toString())&&result.source.audio.headers.equals(result.source.headers),"两轨未携带同一来源请求头");
-            boolean denied=false;try{BilibiliResolver.videoResult(result.canonical,"BV1GJ411x7h7","22","80",BilibiliResolver.map(BilibiliJson.parse(METADATA)),BilibiliResolver.map(BilibiliJson.parse(PLAY)));}catch(IOException expected){denied=true;}require(denied,"缺少可播放轨道仍伪称提供清晰度");
+            boolean denied=false;try{BilibiliVideo.result("BV1GJ411x7h7","22","80",BilibiliJson.map(BilibiliJson.parse(METADATA)),BilibiliJson.map(BilibiliJson.parse(PLAY)));}catch(IOException expected){denied=true;}require(denied,"缺少可播放轨道仍伪称提供清晰度");
         });
         scenario("直播签名查询和实际流格式保留",()->{
-            MediaResolver.Result result=BilibiliResolver.liveResult(URI.create("https://live.bilibili.com/6"),java.util.Collections.emptyMap(),"测试主播",BilibiliResolver.map(BilibiliJson.parse(LIVE)));
+            MediaResolver.Result result=BilibiliLive.result(URI.create("https://live.bilibili.com/6"),java.util.Collections.emptyMap(),"测试主播",BilibiliJson.map(BilibiliJson.parse(LIVE)));
             require(result.live&&result.source.uri.getRawQuery().equals("expires=123&signature=abc")&&result.quality.equals("150"),"直播地址签名丢失");
             require(result.qualities.size()==1&&result.qualities.get(0).id.equals("150"),"直播宣传档位冒充匿名可播放清晰度");
         });
@@ -34,7 +34,7 @@ public final class BilibiliResolverScenario extends TestApplication {
             for(String invalid:new String[]{"{\"a\":1,}","[01]","{\"a\":1,\"a\":2}","true false",new String(new char[80]).replace('\0','[')+"0"+new String(new char[80]).replace('\0',']')}){
                 boolean failed=false;try{BilibiliJson.parse(invalid);}catch(IOException expected){failed=true;}require(failed,"无效响应被接受");
             }
-            require("中文\n说明".equals(BilibiliResolver.map(BilibiliJson.parse("{\"text\":\"中文\\n说明\"}")).get("text")),"JSON转义语义丢失");
+            require("中文\n说明".equals(BilibiliJson.map(BilibiliJson.parse("{\"text\":\"中文\\n说明\"}")).get("text")),"JSON转义语义丢失");
         });
     }
 }

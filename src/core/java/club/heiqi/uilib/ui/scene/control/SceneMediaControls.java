@@ -21,64 +21,117 @@ public final class SceneMediaControls {
     private SceneMediaControls(){}
     public static SceneNode create(ScenePageContext page,MediaSession session){return create(page,session,page.theme());}
     public static SceneNode create(ScenePageContext page,MediaSession session,ReadableSignal<SceneTheme> theme){
-        SceneAppearance style=new SceneAppearance(page,theme);
-        MediaViewPump pump=page.mediaViews();MediaViewPump.View view=pump.view(page.domain(),session);
-        ReadableSignal<MediaSnapshot> state=view.snapshot();
-        SceneNode root=SceneAppearance.column(8).own(style.scope);
-        Signal<Boolean> precise=page.domain().signal(false);
-        Signal<String> interaction=page.domain().signal("");
-        SceneNode timeline=SceneSlider.create(page,()->timeline(state.get()),value->{},value->{
-            MediaSnapshot current=session.snapshot();MediaRange range=current.info.seekable;
-            long target=Math.round(value);
+        return new Controls(page,session,theme).create();
+    }
+
+    /** 一次挂载的声明上下文；时间轴、常用动作和精确草稿各有自己的构建与提交入口。 */
+    private static final class Controls {
+        private final ScenePageContext page;
+        private final MediaSession session;
+        private final ReadableSignal<SceneTheme> theme;
+        private final SceneAppearance style;
+        private final MediaViewPump pump;
+        private final MediaViewPump.View view;
+        private final ReadableSignal<MediaSnapshot> state;
+        private final Signal<Boolean> precise;
+        private final Signal<String> interaction;
+
+        Controls(ScenePageContext page,MediaSession session,ReadableSignal<SceneTheme> theme){
+            this.page=page;this.session=session;this.theme=theme;style=new SceneAppearance(page,theme);
+            pump=page.mediaViews();view=pump.view(page.domain(),session);state=view.snapshot();
+            precise=page.domain().signal(false);interaction=page.domain().signal("");
+        }
+
+        SceneNode create(){
+            SceneNode timeline=timelineControl();ReadableSignal<SceneSlider.Preview> preview=SceneSlider.preview(timeline);
+            SceneNode root=SceneAppearance.column(8).own(style.scope);
+            root.bind((runtime,node,owner)->pump.attach(view,runtime.domain()));
+            root.add(timeline).add(playbackButtons());
+            root.add(style.label(()->preview.get().active?"定位预览 "+clock(Math.round(preview.get().value)):"",.85f,true)
+                    .bind(NodeBinding.value(()->preview.get().active,SceneNode::visible)));
+            return root.add(style.error(interaction)).add(statusRow())
+                    .add(preciseFields().bind(NodeBinding.value(precise,SceneNode::visible)));
+        }
+
+        private SceneNode timelineControl(){
+            SceneNode timeline=SceneSlider.create(page,()->timeline(state.get()),value->{},this::seekPreview,theme);
+            ReadableSignal<SceneSlider.Preview> preview=SceneSlider.preview(timeline);
+            SceneTooltip.attach(page,timeline,()->SceneTooltip.Content.text(preview.get().active
+                    ?"跳转到 "+clock(Math.round(preview.get().value)):seekRange(state.get()),"← / → · Home / End"),()->new SceneTooltip.Options(),theme);
+            return timeline;
+        }
+
+        private void seekPreview(double value){
+            MediaRange range=session.snapshot().info.seekable;long target=Math.round(value);
             if(range==null||!range.contains(target)){interaction.set("时间范围已变化，请重新选择位置");return;}
-            try{session.seek(target);interaction.set("");}catch(IllegalArgumentException|IllegalStateException failure){interaction.set(failure.getMessage());}
-        },theme);
-        ReadableSignal<SceneSlider.Preview> preview=SceneSlider.preview(timeline);
-        SceneTooltip.attach(page,timeline,()->SceneTooltip.Content.text(preview.get().active?"跳转到 "+clock(Math.round(preview.get().value)):seekRange(state.get()),"← / → · Home / End"),()->new SceneTooltip.Options(),theme);
-        root.bind((runtime,node,owner)->pump.attach(view,runtime.domain()));
-        SceneNode buttons=SceneAppearance.row(10);
-        buttons.add(style.action(()->playLabel(state.get()),null,
-                ()->toggle(session),SceneAppearance.Role.PRIMARY));
-        buttons.add(style.action(()->state.get().muted?"取消静音":"静音",null,
-                ()->session.muted(!session.snapshot().muted),SceneAppearance.Role.OUTLINE));
-        buttons.bind(NodeBinding.value(()->state.get().state!=MediaState.CLOSED&&(state.get().state!=MediaState.FAILED||liveExpired(state.get())),SceneNode::enabled));
-        buttons.add(style.label(()->timeLabel(state.get()),1,false)
-                .size(Size.fill(1),Size.natural()));
-        SceneNode volumeSlider=SceneSlider.create(page,()->new SceneSlider.Model(0,1,.01,state.get().volume,state.get().state!=MediaState.CLOSED),session::volume,value->{},theme).size(Size.fixed(110),Size.natural());
-        SceneTooltip.attach(page,volumeSlider,()->SceneTooltip.Content.text("音量 "+String.format(Locale.ROOT,"%.0f%%",state.get().volume*100),"← / →"),()->new SceneTooltip.Options(),theme);
-        buttons.add(volumeSlider);
-        buttons.add(style.action(()->"回到直播",null,()->liveEdge(session),SceneAppearance.Role.OUTLINE).bind(NodeBinding.value(()->!state.get().info.durationKnown()&&state.get().info.seekable!=null&&!liveExpired(state.get()),SceneNode::visible)));
-        root.add(timeline).add(buttons);
-        root.add(style.label(()->preview.get().active?"定位预览 "+clock(Math.round(preview.get().value)):"",.85f,true).bind(NodeBinding.value(()->preview.get().active,SceneNode::visible)));
-        root.add(style.error(interaction));
-        root.add(SceneAppearance.row(8).add(style.label(()->status(state.get()),.9f,true).size(Size.fill(1),Size.natural()))
-                .add(style.action(()->precise.get()?"收起精确控制":"精确控制",null,()->precise.set(!precise.get()),SceneAppearance.Role.GHOST)));
-        SceneNode fields=SceneGrid.create(page,()->new SceneGrid.Policy(Math.round(style.colors.get().textStyle.logicalEm*18),16,16));
-        SceneEditState volume=new SceneEditState(page.domain(),Double.toString(state.get().volume));
-        SceneNode volumeField=SceneTextField.create(page,volume,()->style.colors.get().editorTheme(),()->state.get().state==MediaState.CLOSED,
-                submission->{
-                    try{
-                        double value=Double.parseDouble(submission.text.trim());
-                        if(!Double.isFinite(value)||value<0||value>1)throw new IllegalArgumentException("音量须为0到1");
-                        session.volume(value);volume.accept(submission,Double.toString(value));
-                    }catch(IllegalArgumentException|IllegalStateException failure){volume.reject(submission,failure.getMessage());}
-                },SceneTextField.SubmitPolicy.CONFIRM,()->"音量（0到1）",false);
-        page.domain().effect(style.scope,()->volume.synchronizeExternal(Double.toString(state.get().volume)));
-        fields.add(SceneAppearance.column(8).add(style.label(()->"音量 "+String.format(Locale.ROOT,"%.0f%%",state.get().volume*100),.9f,false))
-                .add(style.field(volumeField)).add(style.error(()->volume.snapshot().get().error)));
-        SceneEditState seek=new SceneEditState(page.domain(),"");
-        SceneNode seekField=SceneTextField.create(page,seek,()->style.colors.get().editorTheme(),()->state.get().info.seekable==null||state.get().state==MediaState.CLOSED,
-                submission->{
-                    try{
-                        long nanos=new BigDecimal(submission.text.trim()).movePointRight(9).setScale(0,RoundingMode.HALF_UP).longValueExact();
-                        MediaRange range=session.snapshot().info.seekable;
-                        if(range==null||!range.contains(nanos))throw new IllegalArgumentException("定位目标不在当前有效范围");
-                        session.seek(nanos);seek.accept(submission,submission.text.trim());
-                    }catch(ArithmeticException|IllegalArgumentException|IllegalStateException failure){seek.reject(submission,failure.getMessage());}
-                },SceneTextField.SubmitPolicy.CONFIRM,()->"输入秒数，Enter 确认",false);
-        fields.add(SceneAppearance.column(8).add(style.label(()->"跳转到",.9f,false)).add(style.field(seekField))
-                .add(style.label(()->seekRange(state.get()),.85f,true)).add(style.error(()->seek.snapshot().get().error)));
-        return root.add(fields.bind(NodeBinding.value(precise,SceneNode::visible)));
+            try{session.seek(target);interaction.set("");}
+            catch(IllegalArgumentException|IllegalStateException failure){interaction.set(failure.getMessage());}
+        }
+
+        private SceneNode playbackButtons(){
+            SceneNode buttons=SceneAppearance.row(10);
+            buttons.add(style.action(()->playLabel(state.get()),null,()->toggle(session),SceneAppearance.Role.PRIMARY));
+            buttons.add(style.action(()->state.get().muted?"取消静音":"静音",null,
+                    ()->session.muted(!session.snapshot().muted),SceneAppearance.Role.OUTLINE));
+            buttons.bind(NodeBinding.value(()->state.get().state!=MediaState.CLOSED
+                    &&(state.get().state!=MediaState.FAILED||liveExpired(state.get())),SceneNode::enabled));
+            buttons.add(style.label(()->timeLabel(state.get()),1,false).size(Size.fill(1),Size.natural()));
+            buttons.add(volumeSlider());
+            return buttons.add(style.action(()->"回到直播",null,()->liveEdge(session),SceneAppearance.Role.OUTLINE)
+                    .bind(NodeBinding.value(()->!state.get().info.durationKnown()&&state.get().info.seekable!=null&&!liveExpired(state.get()),SceneNode::visible)));
+        }
+
+        private SceneNode volumeSlider(){
+            SceneNode slider=SceneSlider.create(page,()->new SceneSlider.Model(0,1,.01,state.get().volume,state.get().state!=MediaState.CLOSED),
+                    session::volume,value->{},theme).size(Size.fixed(110),Size.natural());
+            return SceneTooltip.attach(page,slider,()->SceneTooltip.Content.text("音量 "+String.format(Locale.ROOT,"%.0f%%",state.get().volume*100),"← / →"),
+                    ()->new SceneTooltip.Options(),theme);
+        }
+
+        private SceneNode statusRow(){
+            return SceneAppearance.row(8).add(style.label(()->status(state.get()),.9f,true).size(Size.fill(1),Size.natural()))
+                    .add(style.action(()->precise.get()?"收起精确控制":"精确控制",null,()->precise.set(!precise.get()),SceneAppearance.Role.GHOST));
+        }
+
+        private SceneNode preciseFields(){
+            return SceneGrid.create(page,()->new SceneGrid.Policy(Math.round(style.colors.get().textStyle.logicalEm*18),16,16))
+                    .add(volumeField()).add(seekField());
+        }
+
+        private SceneNode volumeField(){
+            SceneEditState volume=new SceneEditState(page.domain(),Double.toString(state.get().volume));
+            SceneNode field=SceneTextField.create(page,volume,()->style.colors.get().editorTheme(),()->state.get().state==MediaState.CLOSED,
+                    submission->submitVolume(volume,submission),SceneTextField.SubmitPolicy.CONFIRM,()->"音量（0到1）",false);
+            page.domain().effect(style.scope,()->volume.synchronizeExternal(Double.toString(state.get().volume)));
+            return SceneAppearance.column(8).add(style.label(()->"音量 "+String.format(Locale.ROOT,"%.0f%%",state.get().volume*100),.9f,false))
+                    .add(style.field(field)).add(style.error(()->volume.snapshot().get().error));
+        }
+
+        private void submitVolume(SceneEditState volume,SceneEditState.Submission submission){
+            try{
+                double value=Double.parseDouble(submission.text.trim());
+                if(!Double.isFinite(value)||value<0||value>1)throw new IllegalArgumentException("音量须为0到1");
+                session.volume(value);volume.accept(submission,Double.toString(value));
+            }catch(IllegalArgumentException|IllegalStateException failure){volume.reject(submission,failure.getMessage());}
+        }
+
+        private SceneNode seekField(){
+            SceneEditState seek=new SceneEditState(page.domain(),"");
+            SceneNode field=SceneTextField.create(page,seek,()->style.colors.get().editorTheme(),
+                    ()->state.get().info.seekable==null||state.get().state==MediaState.CLOSED,submission->submitSeek(seek,submission),
+                    SceneTextField.SubmitPolicy.CONFIRM,()->"输入秒数，Enter 确认",false);
+            return SceneAppearance.column(8).add(style.label(()->"跳转到",.9f,false)).add(style.field(field))
+                    .add(style.label(()->seekRange(state.get()),.85f,true)).add(style.error(()->seek.snapshot().get().error));
+        }
+
+        private void submitSeek(SceneEditState seek,SceneEditState.Submission submission){
+            try{
+                long nanos=new BigDecimal(submission.text.trim()).movePointRight(9).setScale(0,RoundingMode.HALF_UP).longValueExact();
+                MediaRange range=session.snapshot().info.seekable;
+                if(range==null||!range.contains(nanos))throw new IllegalArgumentException("定位目标不在当前有效范围");
+                session.seek(nanos);seek.accept(submission,submission.text.trim());
+            }catch(ArithmeticException|IllegalArgumentException|IllegalStateException failure){seek.reject(submission,failure.getMessage());}
+        }
     }
     /** 观看区域自身取得焦点后处理快捷键；工具栏、文字编辑与模态仍沿各自当前目标。 */
     public static SceneNode viewing(ScenePageContext page,MediaSession session,SceneNode content,ReadableSignal<SceneTheme> theme){
@@ -89,17 +142,23 @@ public final class SceneMediaControls {
         final MediaSession session;Viewing(MediaSession session){this.session=session;}
         @Override public boolean edit(SceneNode node,club.heiqi.uilib.ui.scene.input.SceneEditEvent event,club.heiqi.uilib.ui.scene.layout.SceneGeometryView geometry){
             MediaSnapshot current=session.snapshot();if(current.state==MediaState.CLOSED||event.compositionEvent||event.compositionSource!=null)return false;
-            if(event.command==null){if("m".equalsIgnoreCase(event.text)){session.muted(!current.muted);return true;}return false;}
+            if(event.command==null)return text(event.text,current);
             switch(event.command){
                 case ACTIVATE_ONLY:case SPACE:toggle(session);return true;
-                case LEFT:case RIGHT:
-                    MediaRange range=current.info.seekable;if(range==null||current.state==MediaState.FAILED)return true;
-                    long step=event.command==club.heiqi.uilib.ui.scene.input.SceneEditEvent.Command.LEFT?-5_000_000_000L:5_000_000_000L;
-                    long target=step>0?Math.min(range.endNanos,current.positionNanos>Long.MAX_VALUE-step?Long.MAX_VALUE:current.positionNanos+step):Math.max(range.startNanos,current.positionNanos+step);
-                    try{session.seek(target);}catch(IllegalArgumentException shifted){/* 同批直播范围已变化，保留会话当前事实。 */}return true;
+                case LEFT:case RIGHT:seek(current,event.command==club.heiqi.uilib.ui.scene.input.SceneEditEvent.Command.LEFT?-5_000_000_000L:5_000_000_000L);return true;
                 case UP:case DOWN:session.volume(Math.max(0,Math.min(1,current.volume+(event.command==club.heiqi.uilib.ui.scene.input.SceneEditEvent.Command.UP?.05:-.05))));return true;
                 default:return false;
             }
+        }
+        private boolean text(String text,MediaSnapshot current){
+            if(!"m".equalsIgnoreCase(text))return false;
+            session.muted(!current.muted);return true;
+        }
+        private void seek(MediaSnapshot current,long step){
+            MediaRange range=current.info.seekable;if(range==null||current.state==MediaState.FAILED)return;
+            long target=step>0?Math.min(range.endNanos,current.positionNanos>Long.MAX_VALUE-step?Long.MAX_VALUE:current.positionNanos+step)
+                    :Math.max(range.startNanos,current.positionNanos+step);
+            try{session.seek(target);}catch(IllegalArgumentException shifted){/* 同批直播范围已变化，保留会话当前事实。 */}
         }
     }
     public static void toggle(MediaSession session){

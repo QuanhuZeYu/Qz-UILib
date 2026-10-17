@@ -92,34 +92,60 @@ final class FilePickerDirectory implements AutoCloseable {
         }
     }
     private Result collect(long request,Path directory,boolean roots,FilePickerQuery query,Iterator<Path> paths,Path selected){
-        Comparator<Entry> order=query.order;
-        boolean backwards=query.direction==FilePickerQuery.Direction.PREVIOUS;
-        int limit=PAGE_SIZE+1;
-        PriorityQueue<Entry> candidates=new PriorityQueue<>(limit,backwards?order:order.reversed());
-        long before=0;boolean opposite=false;
+        Candidates candidates=new Candidates(query);
         while(paths.hasNext()){
             checkCancelled();
-            Path path=paths.next().toAbsolutePath().normalize();
-            Entry entry;
-            try{BasicFileAttributes attributes=Files.readAttributes(path,BasicFileAttributes.class);entry=new Entry(path,roots||attributes.isDirectory(),attributes.size(),attributes.lastModifiedTime().toMillis());}
-            catch(IOException|SecurityException inaccessible){boolean directoryEntry=roots;try{directoryEntry|=Files.isDirectory(path);}catch(SecurityException unknownKind){/* 属性失败仍可显示未知项，不把无权读取伪装为0。 */}entry=new Entry(path,directoryEntry);}
-            if(!roots&&!query.accepts(entry))continue;
-            int compared=query.boundary==null?1:order.compare(entry,query.boundary);
-            if(compared<0)before++;
-            boolean eligible=query.boundary==null||backwards&&compared<0
-                    ||!backwards&&(compared>0||query.direction==FilePickerQuery.Direction.AROUND&&compared==0);
-            if(!eligible){opposite=true;continue;}
-            if(candidates.size()<limit)candidates.add(entry);
-            else if(backwards?order.compare(entry,candidates.peek())>0:order.compare(entry,candidates.peek())<0){
-                candidates.poll();candidates.add(entry);
-            }
+            Entry entry=entry(paths.next().toAbsolutePath().normalize(),roots);
+            if(roots||query.accepts(entry))candidates.accept(entry);
         }
         checkCancelled();
-        List<Entry> entries=new ArrayList<>(candidates);entries.sort(order);
-        boolean more=entries.size()>PAGE_SIZE;
-        if(more)entries.remove(backwards?0:entries.size()-1);
-        long page=query.direction==FilePickerQuery.Direction.AROUND?before/PAGE_SIZE:query.page;
-        return new Result(request,page,directory,roots,backwards?more:opposite,backwards?opposite:more,entries,selected,null,null,query);
+        return candidates.result(request,directory,roots,selected);
+    }
+
+    private static Entry entry(Path path,boolean roots){
+        try{
+            BasicFileAttributes attributes=Files.readAttributes(path,BasicFileAttributes.class);
+            return new Entry(path,roots||attributes.isDirectory(),attributes.size(),attributes.lastModifiedTime().toMillis());
+        }catch(IOException|SecurityException inaccessible){
+            boolean directory=roots;
+            try{directory|=Files.isDirectory(path);}catch(SecurityException unknownKind){/* 未知属性保留，不伪造为0。 */}
+            return new Entry(path,directory);
+        }
+    }
+
+    /** 有界候选和分页边界一起计算；读取器仍完整扫描，最多保留PAGE_SIZE+1项。 */
+    private static final class Candidates {
+        private final FilePickerQuery query;
+        private final Comparator<Entry> order;
+        private final boolean backwards;
+        private final PriorityQueue<Entry> entries;
+        private long before;
+        private boolean opposite;
+
+        Candidates(FilePickerQuery query){
+            this.query=query;order=query.order;backwards=query.direction==FilePickerQuery.Direction.PREVIOUS;
+            entries=new PriorityQueue<>(PAGE_SIZE+1,backwards?order:order.reversed());
+        }
+        void accept(Entry entry){
+            int compared=query.boundary==null?1:order.compare(entry,query.boundary);
+            if(compared<0)before++;
+            if(!eligible(compared)){opposite=true;return;}
+            if(entries.size()<PAGE_SIZE+1){entries.add(entry);return;}
+            boolean nearer=backwards?order.compare(entry,entries.peek())>0:order.compare(entry,entries.peek())<0;
+            if(nearer){entries.poll();entries.add(entry);}
+        }
+        private boolean eligible(int compared){
+            if(query.boundary==null)return true;
+            if(backwards)return compared<0;
+            return compared>0||query.direction==FilePickerQuery.Direction.AROUND&&compared==0;
+        }
+        Result result(long request,Path directory,boolean roots,Path selected){
+            List<Entry> shown=new ArrayList<>(entries);shown.sort(order);
+            boolean more=shown.size()>PAGE_SIZE;
+            if(more)shown.remove(backwards?0:shown.size()-1);
+            long page=query.direction==FilePickerQuery.Direction.AROUND?before/PAGE_SIZE:query.page;
+            return new Result(request,page,directory,roots,backwards?more:opposite,backwards?opposite:more,shown,selected,null,null,query);
+        }
     }
     void cancelRead() {
         if (latest != null) latest.cancel(true);

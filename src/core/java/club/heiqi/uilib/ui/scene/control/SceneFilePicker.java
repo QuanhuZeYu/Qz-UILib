@@ -53,17 +53,7 @@ public final class SceneFilePicker {
         SceneNode field=SceneTextField.create(context,selection.path,
                 ()->style.colors.get().editorTheme(),()->false,
                 selection::go,SceneTextField.SubmitPolicy.CONFIRM,()->"输入目录或文件路径",false);
-        SceneNode heading=FilePickerStyle.row(14).add(style.icon(SceneIconButton.Symbol.FOLDER))
-                .add(FilePickerStyle.column(5).add(style.title("选择本地文件"))
-                        .add(style.label(()->"浏览文件夹，选择需要打开的文件。",.9f,true).bind(NodeBinding.value(()->context.viewportHeight().get()>=800,SceneNode::visible))));
-        SceneNode header=FilePickerStyle.column(8).padding(12).add(heading)
-                .add(navigation(style)).add(FilePickerStyle.row(10).add(style.field(field))
-                        .add(style.action("前往",null,()->selection.go(selection.path.request(true)),FilePickerStyle.Role.OUTLINE)));
-        SceneNode search=SceneTextField.create(context,selection.search,()->style.colors.get().editorTheme(),()->false,selection::query,SceneTextField.SubmitPolicy.CONFIRM,()->"搜索当前目录…",false);
-        header.add(FilePickerStyle.row(8).add(style.field(search)).add(style.action("清除",null,selection::clearQuery,FilePickerStyle.Role.GHOST).bind(NodeBinding.value(()->!selection.search.snapshot().get().text.isEmpty(),SceneNode::enabled))).add(style.action(()->selection.order.get().label,null,selection::cycleOrder,FilePickerStyle.Role.OUTLINE))
-                .add(style.action(()->selection.extension.get().isEmpty()?"所有文件":options.filterName,null,()->{selection.extension.set(selection.extension.get().isEmpty()?options.extensions:"");selection.refresh();},FilePickerStyle.Role.GHOST).bind(NodeBinding.value(()->!options.extensions.isEmpty(),SceneNode::visible))));
-        SceneNode crumbs=FilePickerStyle.row(3).scrollable(true);
-        crumbs.bind(NodeBinding.repeat(()->{java.util.ArrayList<Path> chain=new java.util.ArrayList<>();for(Path cursor=selection.directory.get();cursor!=null;cursor=cursor.getParent())chain.add(cursor);java.util.Collections.reverse(chain);if(chain.size()>3)chain.subList(1,chain.size()-2).clear();return chain;},part->part,item->SceneTooltip.attach(context,style.action(()->(item.get().equals(selection.directory.get().getParent())&&selection.directory.get().getNameCount()>2?"… / ":"")+(item.get().getFileName()==null?item.get().toString():item.get().getFileName().toString()),null,()->selection.navigate(item.get()),FilePickerStyle.Role.GHOST).size(Size.fill(1),Size.natural()),()->SceneTooltip.Content.text(item.get().toString()),()->new SceneTooltip.Options(),theme)));header.add(crumbs.bind(NodeBinding.value(()->context.viewportHeight().get()>=700,SceneNode::visible)));
+        SceneNode header=header(style,field);
         SceneNode content=FilePickerStyle.column(10).size(Size.fill(1),Size.fill(1)).padding(12)
                 .add(style.label(()->"名称",.86f,true))
                 .add(listing(style)).add(style.label(selection::feedback,.86f,true));
@@ -81,6 +71,43 @@ public final class SceneFilePicker {
             };
         });
         return modal;
+    }
+    private SceneNode header(FilePickerStyle style,SceneNode field){
+        SceneNode heading=FilePickerStyle.row(14).add(style.icon(SceneIconButton.Symbol.FOLDER))
+                .add(FilePickerStyle.column(5).add(style.title("选择本地文件"))
+                        .add(style.label(()->"浏览文件夹，选择需要打开的文件。",.9f,true).bind(NodeBinding.value(()->context.viewportHeight().get()>=800,SceneNode::visible))));
+        SceneNode header=FilePickerStyle.column(8).padding(12).add(heading)
+                .add(navigation(style)).add(FilePickerStyle.row(10).add(style.field(field))
+                        .add(style.action("前往",null,()->selection.go(selection.path.request(true)),FilePickerStyle.Role.OUTLINE)));
+        return header.add(search(style)).add(breadcrumbs(style));
+    }
+    private SceneNode search(FilePickerStyle style){
+        SceneNode search=SceneTextField.create(context,selection.search,()->style.colors.get().editorTheme(),()->false,selection::query,SceneTextField.SubmitPolicy.CONFIRM,()->"搜索当前目录…",false);
+        return FilePickerStyle.row(8).add(style.field(search)).add(style.action("清除",null,selection::clearQuery,FilePickerStyle.Role.GHOST).bind(NodeBinding.value(()->!selection.search.snapshot().get().text.isEmpty(),SceneNode::enabled))).add(style.action(()->selection.order.get().label,null,selection::cycleOrder,FilePickerStyle.Role.OUTLINE))
+                .add(style.action(()->selection.extension.get().isEmpty()?"所有文件":options.filterName,null,this::toggleFilter,FilePickerStyle.Role.GHOST)
+                        .bind(NodeBinding.value(()->!options.extensions.isEmpty(),SceneNode::visible)));
+    }
+    private void toggleFilter(){
+        selection.extension.set(selection.extension.get().isEmpty()?options.extensions:"");selection.refresh();
+    }
+    private SceneNode breadcrumbs(FilePickerStyle style){
+        SceneNode crumbs=FilePickerStyle.row(3).scrollable(true);
+        crumbs.bind(NodeBinding.repeat(this::breadcrumbPaths,part->part,item->SceneTooltip.attach(context,
+                style.action(()->breadcrumbLabel(item.get()),null,()->selection.navigate(item.get()),FilePickerStyle.Role.GHOST)
+                        .size(Size.fill(1),Size.natural()),()->SceneTooltip.Content.text(item.get().toString()),()->new SceneTooltip.Options(),theme)));
+        return crumbs.bind(NodeBinding.value(()->context.viewportHeight().get()>=700,SceneNode::visible));
+    }
+    private java.util.List<Path> breadcrumbPaths(){
+        java.util.ArrayList<Path> chain=new java.util.ArrayList<>();
+        for(Path cursor=selection.directory.get();cursor!=null;cursor=cursor.getParent())chain.add(cursor);
+        java.util.Collections.reverse(chain);
+        if(chain.size()>3)chain.subList(1,chain.size()-2).clear();
+        return chain;
+    }
+    private String breadcrumbLabel(Path part){
+        Path directory=selection.directory.get();
+        String prefix=part.equals(directory.getParent())&&directory.getNameCount()>2?"… / ":"";
+        return prefix+(part.getFileName()==null?part.toString():part.getFileName().toString());
     }
     private SceneNode navigation(FilePickerStyle style) {
         SceneNode back=style.action("后退",null,()->selection.history(-1),FilePickerStyle.Role.GHOST).bind(NodeBinding.value(()->selection.backCount.get()>0&&!selection.busy.get(),SceneNode::enabled));
@@ -101,7 +128,7 @@ public final class SceneFilePicker {
         SceneNode viewport=listing.viewport(SceneNode.Axis.COLUMN);
         viewport.bind(NodeBinding.value(()->{selection.revision.get();return selection.scroll.get();},SceneNode::scrollOffset));
         viewport.bind((runtime,node,owner)->{selection.scrollPosition=()->runtime.scrollOffset(node);return new BindingActivation(){public void refresh(){}public void close(){selection.scrollPosition=()->0;}};});
-        items.control(new ListNavigation(selection,context));
+        items.control(new FilePickerListNavigation(selection));
         return listing.node();
     }
     private SceneNode footer(FilePickerStyle style) {
@@ -118,29 +145,6 @@ public final class SceneFilePicker {
                         .size(Size.fill(1),Size.natural()))
                 .add(style.action("取消",null,selection::cancel,FilePickerStyle.Role.OUTLINE)).add(choose);
         return FilePickerStyle.column(8).padding(12).add(pages).add(actions);
-    }
-    /** 只在列表内按钮焦点上委派；文本字段与组字沿其本来的编辑目标。 */
-    private static final class ListNavigation extends SceneAppearance.Flow {
-        private final FilePickerSelection selection;
-        private String prefix="";private long typedAt;
-        ListNavigation(FilePickerSelection selection,ScenePageContext context){this.selection=selection;}
-        @Override public boolean editActivator(SceneNode node,SceneNode focused,club.heiqi.uilib.ui.scene.input.SceneEditEvent event){
-            if(event.compositionEvent||event.compositionSource!=null||focused.control()==null||focused.control().acceptsTextInput(focused))return false;
-            if(event.command==null)return event.text!=null&&!event.text.isEmpty();
-            switch(event.command){case UP:case DOWN:case HOME:case END:case PAGE_UP:case PAGE_DOWN:return true;default:return false;}
-        }
-        @Override public boolean edit(SceneNode node,club.heiqi.uilib.ui.scene.input.SceneEditEvent event,SceneGeometryView geometry){
-            if(selection.busy.get())return true;
-            java.util.List<SceneNode> targets=new java.util.ArrayList<>();for(SceneNode row:node.children())for(SceneNode child:row.children())if(child.focusable()&&child.clickAction()!=null&&node.runtime().interactive(child))targets.add(child);
-            if(targets.isEmpty())return true;
-            SceneNode focused=node.runtime().focusRouter().focused().get();int current=targets.indexOf(focused),next=current;
-            if(event.command==null){
-                long now=System.nanoTime();if(now-typedAt>800_000_000L)prefix="";typedAt=now;prefix+=event.text.toLowerCase(java.util.Locale.ROOT);
-                if(prefix.length()>128)prefix=prefix.substring(prefix.length()-128);
-                for(int i=1;i<=targets.size();i++){int index=(Math.max(0,current)+i)%targets.size();if(targets.get(index).text().toLowerCase(java.util.Locale.ROOT).startsWith(prefix)){next=index;break;}}
-            }else switch(event.command){case UP:next=Math.max(0,current-1);break;case DOWN:next=Math.min(targets.size()-1,current+1);break;case HOME:next=0;break;case END:next=targets.size()-1;break;case PAGE_UP:next=Math.max(0,current-8);break;case PAGE_DOWN:next=Math.min(targets.size()-1,current+8);break;default:return false;}
-            if(next>=0)node.runtime().focusRouter().navigateTo(node.runtime().captureMount(targets.get(next)));return true;
-        }
     }
     /** 正式输入帧领取目录结果；表面装饰和普通流继续走同一扩展合同。 */
     private final class Panel extends FilePickerStyle.Surface {
