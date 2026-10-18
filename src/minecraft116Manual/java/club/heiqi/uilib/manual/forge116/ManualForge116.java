@@ -13,30 +13,19 @@ import club.heiqi.uilib.ui.media.MediaSource;
 import java.net.URI;
 import java.nio.file.Paths;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.screen.MainMenuScreen;
 import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.widget.button.Button;
-import net.minecraft.util.text.StringTextComponent;
 import net.minecraftforge.client.event.ClientChatEvent;
-import net.minecraftforge.client.event.GuiScreenEvent;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 
-/** 共享广场单独附加；主菜单按钮与客户端命令打开同一目录。 */
+/** 共享广场单独附加，仅通过显式客户端命令打开。 */
 @Mod("qz_uilib_manualtest")
 public final class ManualForge116 {
     private boolean pending;
     public ManualForge116() { MinecraftForge.EVENT_BUS.register(this); }
 
-    @SubscribeEvent public void menu(GuiScreenEvent.InitGuiEvent.Post event) {
-        if (event.getGui() instanceof MainMenuScreen) {
-            Screen menu = event.getGui();
-            event.addWidget(new Button(menu.width - 164, menu.height - 28, 156, 20,
-                    new StringTextComponent("UILib 测试广场"), button -> pending = true));
-        }
-    }
     @SubscribeEvent public void command(ClientChatEvent event) {
         if ("/qzcore".equals(event.getMessage().trim())) { event.setCanceled(true); pending = true; }
     }

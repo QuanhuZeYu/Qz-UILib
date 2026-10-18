@@ -12,15 +12,11 @@ import club.heiqi.uilib.testing.host.LocalMediaFiles;
 import club.heiqi.uilib.ui.media.MediaBudget;
 import club.heiqi.uilib.ui.media.MediaService;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
-import net.minecraft.client.gui.screens.TitleScreen;
 import net.minecraft.commands.Commands;
-import net.minecraft.network.chat.Component;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.neoforge.client.event.RegisterClientCommandsEvent;
-import net.neoforged.neoforge.client.event.ScreenEvent;
 import net.neoforged.neoforge.common.NeoForge;
 
 /** 人工附加包仅登记入口；目录、配置、图片和媒体全用同一共享广场。 */
@@ -28,18 +24,11 @@ import net.neoforged.neoforge.common.NeoForge;
 public final class NeoForgeGalleryMod {
     public NeoForgeGalleryMod() {
         NeoForge.EVENT_BUS.addListener(NeoForgeGalleryMod::commands);
-        NeoForge.EVENT_BUS.addListener(NeoForgeGalleryMod::menu);
     }
     private static void commands(RegisterClientCommandsEvent event) {
         event.getDispatcher().register(Commands.literal("qzcore").executes(context -> {
             Minecraft.getInstance().execute(NeoForgeGalleryMod::open); return 1;
         }));
-    }
-    private static void menu(ScreenEvent.Init.Post event) {
-        if (event.getScreen() instanceof TitleScreen screen) {
-            event.addListener(Button.builder(Component.literal("UILib 测试广场"), button -> open())
-                    .bounds(Math.max(8, screen.width - 152), 8, 144, 20).build());
-        }
     }
     private static void open() {
         Minecraft minecraft = Minecraft.getInstance();

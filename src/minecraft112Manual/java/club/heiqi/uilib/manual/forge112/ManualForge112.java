@@ -13,14 +13,11 @@ import java.net.URI;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiMainMenu;
 import net.minecraft.client.gui.GuiScreen;
 import net.minecraft.command.CommandBase;
 import net.minecraft.command.ICommandSender;
 import net.minecraft.server.MinecraftServer;
 import net.minecraftforge.client.ClientCommandHandler;
-import net.minecraftforge.client.event.GuiScreenEvent;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.common.event.FMLInitializationEvent;
@@ -31,7 +28,6 @@ import net.minecraftforge.fml.common.gameevent.TickEvent;
 @Mod(modid = "qz_uilib_manualtest", name = "UILib 测试广场", version = "4.11.1",
         dependencies = "required-after:qz_uilib", clientSideOnly = true, acceptableRemoteVersions = "*")
 public final class ManualForge112 {
-    private static final int BUTTON_ID = 0x515a;
     private boolean pending;
 
     @Mod.EventHandler public void initialize(FMLInitializationEvent event) {
@@ -42,14 +38,6 @@ public final class ManualForge112 {
             public int getRequiredPermissionLevel() { return 0; }
             public void execute(MinecraftServer server, ICommandSender sender, String[] arguments) { pending = true; }
         });
-    }
-    @SubscribeEvent public void menu(GuiScreenEvent.InitGuiEvent.Post event) {
-        if (event.getGui() instanceof GuiMainMenu)
-            event.getButtonList().add(new GuiButton(BUTTON_ID, event.getGui().width - 164, event.getGui().height - 28,
-                    156, 20, "UILib 测试广场"));
-    }
-    @SubscribeEvent public void click(GuiScreenEvent.ActionPerformedEvent.Post event) {
-        if (event.getGui() instanceof GuiMainMenu && event.getButton().id == BUTTON_ID) pending = true;
     }
     @SubscribeEvent public void tick(TickEvent.ClientTickEvent event) {
         if (event.phase != TickEvent.Phase.END || !pending) return;
