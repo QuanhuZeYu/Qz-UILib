@@ -24,6 +24,8 @@
 
 嵌入式页面服务组合既有场景、共享 GL、CPU 字体、图像、媒体与配置能力。各版本宿主只负责加载器入口、页面打开关闭、资源变更通知、framebuffer 尺寸与原生事件转换，不重新实现布局、绘制或输入权威，也不通过全局替换游戏输入回调接管其他页面。
 
+宿主按[Core 命令与范围快捷键规格](<../../../Qz-UILib-Core/specs/scene/2026-10-18-uilib-command-spec.md>)只递交命名键 DOWN/UP、当次修饰键与重复事实，字符和组字经独立文本入口递交。按压与焦点交互参考 [React Aria usePress](https://react-aria.adobe.com/usePress) 和 [useFocus](https://react-aria.adobe.com/useFocus) 案例：Space 的原目标联系、完整释放后的单次激活及离开焦点取消由 Core 维护，Enter 在 DOWN 激活。`native-only` 回归验证生产输入转换与路由，窗口可用性和物理状态由隔离夹具提供，不替代真实设备与窗口运行。
+
 新版提取式渲染宿主在真实 GPU 提交阶段消费不可变 PaintPlan，提取阶段不执行 GL。页面结束后不得回放旧页计划；资源结束遵循其所有权。宿主提交必须保持有效的目标 framebuffer 与宿主 GL 状态；宿主虚拟化状态仍从实际有效状态取得。
 
 [测试广场](<../../../Qz-UILib-Core/specs/verification/2026-10-07-uilib-testing-spec.md#2-共享测试广场>)保持共享声明、资源及独立附加产物。人工附加包仅登记显式客户端命令 `/qzcore`，不向游戏主菜单注入测试入口或兼容其他模组的菜单实现。生产入口可打开任意 ScenePage。正式跨仓依赖与产物边界遵循核心第 9 节，实际坐标、版本与发布策略由各仓构建维护。
