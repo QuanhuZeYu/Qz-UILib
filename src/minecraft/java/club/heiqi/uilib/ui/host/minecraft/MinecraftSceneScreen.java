@@ -1,6 +1,8 @@
 package club.heiqi.uilib.ui.host.minecraft;
 
 import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
+import java.util.function.Supplier;
 import net.minecraft.client.gui.GuiScreen;
 import org.lwjgl.input.Mouse;
 import org.lwjgl.input.Keyboard;
@@ -14,6 +16,8 @@ import club.heiqi.uilib.ui.scene.host.SceneKeyInputAdapter;
 import club.heiqi.uilib.ui.scene.input.SceneKey;
 import club.heiqi.uilib.ui.scene.input.SceneKeyEvent;
 import club.heiqi.uilib.ui.scene.input.ScenePointerEvent;
+import club.heiqi.uilib.ui.scene.semantics.SceneSemanticRequest;
+import club.heiqi.uilib.ui.scene.semantics.SceneSemanticSnapshot;
 
 /** 正式 MC 页面入口：内容声明与 GuiScreen 生命周期、唯一原生输入消费者分离。
  * 同一次打开的重初始化保留会话，关闭只释放本页资源，不关闭共享字体服务。
@@ -24,7 +28,7 @@ public class MinecraftSceneScreen extends GuiScreen {
     private final ScenePage page;
     private final club.heiqi.uilib.ui.media.MediaService mediaService;
     private ScenePageSession session;
-    private Inputs inputs;
+    private volatile Inputs inputs;
 
     public MinecraftSceneScreen(ScenePage page) {
         this(ReactiveDomain.direct(), page);
@@ -44,6 +48,20 @@ public class MinecraftSceneScreen extends GuiScreen {
         this.page = Objects.requireNonNull(page, "page");
     }
 
+    /** 读取同页Host最近发布的纯值快照；未开屏或关闭后为空，不触发绘制。 */
+    public SceneSemanticSnapshot semantics() {
+        Inputs current = inputs;
+        return current == null ? SceneSemanticSnapshot.EMPTY : current.semantics();
+    }
+
+    /** 沿原会话有序入口递交；future在handler及Effect结算后完成。 */
+    public CompletableFuture<SceneSemanticRequest.Result> semantic(SceneSemanticRequest request) {
+        Objects.requireNonNull(request, "语义请求");
+        Inputs current = inputs;
+        return current == null ? CompletableFuture.completedFuture(SceneSemanticRequest.Result.CLOSED)
+                : current.semantic(request);
+    }
+
     @Override
     public void initGui() {
         if (session != null) return;
@@ -61,7 +79,7 @@ public class MinecraftSceneScreen extends GuiScreen {
                                 ctx.own(new RepeatEvents());
                                 page.build(ctx);
                             });
-            inputs = new Inputs(session);
+            inputs = new Inputs(session, host::semantics);
             inputs.initialize();
         } catch (RuntimeException | Error failure) {
             // 已打开会话后的输入桥/适配器初始化失败也释放scope和repeat借用。
@@ -127,7 +145,15 @@ public class MinecraftSceneScreen extends GuiScreen {
     /** 同次会话的宿主输入借用；独立adapter仍持有各自物理按压门，核心持焦点/手势权威。 */
     private final class Inputs implements AutoCloseable {
         final ScenePageSession opened;
-        Inputs(ScenePageSession opened) { this.opened = opened; }
+        private final Supplier<SceneSemanticSnapshot> semantics;
+        Inputs(ScenePageSession opened, Supplier<SceneSemanticSnapshot> semantics) {
+            this.opened = opened;
+            this.semantics = Objects.requireNonNull(semantics, "语义读取端口");
+        }
+        SceneSemanticSnapshot semantics() { return semantics.get(); }
+        CompletableFuture<SceneSemanticRequest.Result> semantic(SceneSemanticRequest request) {
+            return opened.semantic(request);
+        }
         private SceneTabInputAdapter tabInput;
         private club.heiqi.uilib.ui.scene.host.SceneEditInputAdapter editInput;
         private SceneKeyInputAdapter keyInput;
@@ -228,7 +254,7 @@ public class MinecraftSceneScreen extends GuiScreen {
                 for (int key = 0; key < Keyboard.KEYBOARD_SIZE; key++)
                     if (Keyboard.isKeyDown(key)) {
                         physical.add(key);
-                        SceneKey value = semantic(key);
+                        SceneKey value = MinecraftSceneScreen.semantic(key);
                         if (value != null) named.add(value);
                     }
                 editInput.historyDrained(physical);
@@ -263,7 +289,7 @@ public class MinecraftSceneScreen extends GuiScreen {
             else if (key == Keyboard.KEY_RMENU) rightAlt = down;
             else if (key == Keyboard.KEY_LMETA) leftMeta = down;
             else if (key == Keyboard.KEY_RMETA) rightMeta = down;
-            SceneKey named = semantic(key);
+            SceneKey named = MinecraftSceneScreen.semantic(key);
             // 每个已知释放都回到接收DOWN的同一适配器；合法按压与取消归Core。
             if (!down && named != null) keyInput.key(event(named), false);
             if (key == Keyboard.KEY_LSHIFT) {

@@ -5,6 +5,8 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.nio.ByteBuffer;
 import java.util.Collections;
+import java.util.concurrent.CompletableFuture;
+import java.util.function.Supplier;
 import org.lwjgl.input.Keyboard;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiScreen;
@@ -19,6 +21,9 @@ import club.heiqi.uilib.ui.scene.input.SceneKey;
 import club.heiqi.uilib.ui.scene.input.SceneShortcut;
 import club.heiqi.uilib.ui.scene.control.SceneCommand;
 import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
+import club.heiqi.uilib.ui.scene.semantics.SceneSemanticRequest;
+import club.heiqi.uilib.ui.scene.semantics.SceneSemanticSnapshot;
+import club.heiqi.uilib.ui.scene.semantics.SceneSemantics;
 import club.heiqi.uilib.ui.scene.layout.Size;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.PaintCommand;
@@ -31,6 +36,9 @@ public final class MinecraftScreenSwitchScenario extends TestApplication {
     private boolean nativeOnly;
     private static final class Host implements SceneHost {
         int frames;
+        private volatile SceneSemanticSnapshot semantics = SceneSemanticSnapshot.EMPTY;
+        public SceneSemanticSnapshot semantics() { return semantics; }
+        public void semanticsChanged(SceneSemanticSnapshot snapshot) { semantics = snapshot; }
         public int width() { return 80; }
         public int height() { return 60; }
         public long metricsRevision() { return 1; }
@@ -47,13 +55,15 @@ public final class MinecraftScreenSwitchScenario extends TestApplication {
         field.set(target, value);
     }
 
-    private AutoCloseable installSession(MinecraftSceneScreen screen, ScenePageSession session) throws Exception {
+    private AutoCloseable installSession(MinecraftSceneScreen screen, ScenePageSession session,
+            Supplier<SceneSemanticSnapshot> semantics) throws Exception {
         field(MinecraftSceneScreen.class, screen, "session", session);
         // 本场景绕过完整MC字体/原生文本安装，只注入宿主环境；同次会话借用仍用生产对象。
         Class<?> type = Class.forName(MinecraftSceneScreen.class.getName() + "$Inputs");
-        java.lang.reflect.Constructor<?> constructor = type.getDeclaredConstructor(MinecraftSceneScreen.class, ScenePageSession.class);
+        java.lang.reflect.Constructor<?> constructor = type.getDeclaredConstructor(
+                MinecraftSceneScreen.class, ScenePageSession.class, Supplier.class);
         constructor.setAccessible(true);
-        Object inputs = constructor.newInstance(screen, session);
+        Object inputs = constructor.newInstance(screen, session, semantics);
         field(MinecraftSceneScreen.class, screen, "inputs", inputs);
         Method initialize = type.getDeclaredMethod("initialize");
         initialize.setAccessible(true);
@@ -202,15 +212,18 @@ public final class MinecraftScreenSwitchScenario extends TestApplication {
         final club.heiqi.uilib.ui.scene.edit.SceneEditState[] state = {null};
         final SceneNode[] node = {null}, search = {null}, action = {null};
         final club.heiqi.uilib.ui.scene.edit.SceneEditState[] searchState = {null};
+        club.heiqi.uilib.ui.reactive.Signal<Boolean> fieldPresent;
         int searches, saves, activations;
         final int[] namedHits = new int[NAMED_KEYS.length];
         final ScenePageSession page;
         NativeField(Minecraft mc) throws Exception {
             field(GuiScreen.class, screen, "mc", mc);
             page = ScenePageSession.open(domain, host, text, context -> {
+                fieldPresent = domain.signal(true);
                 state[0] = new club.heiqi.uilib.ui.scene.edit.SceneEditState(domain, "");
                 node[0] = club.heiqi.uilib.ui.scene.control.SceneTextField.create(context, state[0],
-                        domain.signal(club.heiqi.uilib.ui.scene.control.SceneTheme.light()), domain.signal(false), ignored -> {});
+                        domain.signal(club.heiqi.uilib.ui.scene.control.SceneTheme.light()), domain.signal(false), ignored -> {})
+                        .bind(NodeBinding.semantics(() -> SceneSemantics.builder().name("主字段").build()));
                 searchState[0] = new club.heiqi.uilib.ui.scene.edit.SceneEditState(domain, "");
                 search[0] = club.heiqi.uilib.ui.scene.control.SceneTextField.create(context, searchState[0],
                         context.theme(), () -> false, ignored -> {});
@@ -228,10 +241,12 @@ public final class MinecraftScreenSwitchScenario extends TestApplication {
                             () -> namedHits[key]++), SceneShortcut.Modifier.ALT));
                 }
                 context.mount(new SceneNode().size(Size.fill(1), Size.fill(1)).background(0xff112233)
-                        .initialFocus(node[0]).add(node[0]).add(search[0]).add(action[0])
+                        .initialFocus(node[0]).bind(NodeBinding.children(() -> fieldPresent.get()
+                                ? java.util.Arrays.asList(node[0], search[0], action[0])
+                                : java.util.Arrays.asList(search[0], action[0])))
                         .bind(NodeBinding.shortcuts(SceneShortcut.Scope.PAGE, shortcuts.toArray(new SceneShortcut[0]))));
             });
-            installSession(screen, page);
+            installSession(screen, page, host::semantics);
         }
         void activate(Minecraft mc) {
             mc.currentScreen = screen;
@@ -393,6 +408,50 @@ public final class MinecraftScreenSwitchScenario extends TestApplication {
         } finally { Keyboard.enableRepeatEvents(repeats); }
     }
 
+    private void nativeSemantics() throws Exception {
+        Minecraft mc = (Minecraft) unsafe().allocateInstance(Minecraft.class);
+        try (ActiveWindow active = new ActiveWindow(nativeOnly); NativeCharacters history = new NativeCharacters();
+                NativeField input = new NativeField(mc)) {
+            input.activate(mc);
+            SceneSemanticSnapshot before = input.screen.semantics();
+            SceneSemanticSnapshot.Entry field = before.entries.stream()
+                    .filter(entry -> entry.values.role == SceneSemantics.Role.TEXT_FIELD && "主字段".equals(entry.values.name))
+                    .findFirst().orElseThrow(() -> new AssertionError("宿主未读取到正式字段角色和独立名称"));
+            require("".equals(field.values.value) && field.actions.contains(SceneSemantics.Action.SET_TEXT),
+                    "名称被字段值覆盖或当前动作缺失");
+            history.keys(down(Keyboard.KEY_LCONTROL), down(Keyboard.KEY_F), up(Keyboard.KEY_F), up(Keyboard.KEY_LCONTROL));
+            input.screen.drawScreen(0, 0, 0);
+            require(!field.id.equals(input.screen.semantics().focused), "原输入没有将焦点移到另一个字段");
+            CompletableFuture<SceneSemanticRequest.Result> applied = input.screen.semantic(SceneSemanticRequest.text(field.id, "语义值"));
+            require(!applied.isDone(), "语义入队被误报为已执行");
+            input.screen.drawScreen(0, 0, 0);
+            require(applied.getNow(null) == SceneSemanticRequest.Result.APPLIED && input.draft().equals("语义值")
+                    && input.searchDraft().isEmpty(), "按ID语义文本动作投给了当前焦点或未执行");
+            require("语义值".equals(input.screen.semantics().get(field.id).values.value) && "".equals(field.values.value),
+                    "宿主未取得当前值或旧纯值快照被修改");
+
+            input.domain.execute(() -> input.fieldPresent.set(false)); input.screen.drawScreen(0, 0, 0);
+            require(input.screen.semantics().get(field.id) == null, "卸载字段仍在当前语义快照");
+            input.domain.execute(() -> input.fieldPresent.set(true)); input.screen.drawScreen(0, 0, 0);
+            SceneSemanticSnapshot.Entry remounted = input.screen.semantics().entries.stream()
+                    .filter(entry -> "主字段".equals(entry.values.name)).findFirst().get();
+            require(!field.id.equals(remounted.id), "重挂字段复用了旧语义ID");
+            CompletableFuture<SceneSemanticRequest.Result> rejected = input.screen.semantic(SceneSemanticRequest.text(field.id, "旧请求"));
+            input.screen.drawScreen(0, 0, 0);
+            require(rejected.getNow(null) == SceneSemanticRequest.Result.REJECTED && input.draft().equals("语义值"),
+                    "旧语义ID误操作了重挂字段");
+            CompletableFuture<SceneSemanticRequest.Result> pending = input.screen.semantic(SceneSemanticRequest.text(remounted.id, "未执行"));
+            input.screen.onGuiClosed();
+            require(pending.isDone() && pending.getNow(null) == SceneSemanticRequest.Result.CLOSED
+                    && input.screen.semantics().entries.isEmpty() && input.host.semantics().entries.isEmpty(),
+                    "关闭未清空宿主快照或未结束待执行请求");
+            require(input.screen.semantic(SceneSemanticRequest.text(remounted.id, "关闭后")).getNow(null)
+                    == SceneSemanticRequest.Result.CLOSED, "关闭后的宿主动作未返回CLOSED");
+            System.out.println("MC_NATIVE_SEMANTICS hostSnapshot=true nameValueSeparate=true targetedText=true"
+                    + " oldSnapshotImmutable=true staleIdRejected=true remountIdChanged=true closeEmpty=true pendingClosed=true");
+        }
+    }
+
     private void nativeRenderCadence() throws Exception {
         Minecraft mc = (Minecraft) unsafe().allocateInstance(Minecraft.class);
         try (ActiveWindow active = new ActiveWindow(nativeOnly); NativeCharacters history = new NativeCharacters();
@@ -453,6 +512,7 @@ public final class MinecraftScreenSwitchScenario extends TestApplication {
         scenario("原生命令切焦、文本顺序与物理尾部隔离", this::nativeCommands);
         scenario("原生Space按下释放与焦点取消、双Enter起手", this::nativeKeyPhases);
         scenario("常用命名键经真实历史与同批释放重按", this::nativeNamedKeys);
+        scenario("宿主语义快照、定向字段、旧ID和关闭", this::nativeSemantics);
         scenario("中间render采集原生字符且后续tick不重放", this::nativeRenderCadence);
         scenario("原生采集中关闭不访问旧会话", () -> closeWhileCollecting(false));
         scenario("原生采集中切页隔离历史尾部", () -> closeWhileCollecting(true));
@@ -480,8 +540,8 @@ public final class MinecraftScreenSwitchScenario extends TestApplication {
                                 first.onGuiClosed();
                                 mc.currentScreen = second;
                             }))));
-            own(installSession(first, previous[0]));
-            own(installSession(second, next));
+            own(installSession(first, previous[0], oldHost::semantics));
+            own(installSession(second, next, newHost::semantics));
             mc.currentScreen = first;
             first.drawScreen(10, 10, 0);
             require(oldHost.frames == 1, "初始旧页未呈现");
@@ -504,14 +564,15 @@ public final class MinecraftScreenSwitchScenario extends TestApplication {
             SceneNode[] node = {null};
             SceneTextMeasurer text = own(new club.heiqi.uilib.ui.scene.text.font.FontTextService(
                     club.heiqi.uilib.host.font.IsolatedFontEngine.shared()));
-            ScenePageSession session = own(ScenePageSession.open(domain, new Host(), text, context -> {
+            Host host = new Host();
+            ScenePageSession session = own(ScenePageSession.open(domain, host, text, context -> {
                 node[0] = club.heiqi.uilib.ui.scene.control.SceneTextField.create(context, state,
                         domain.signal(club.heiqi.uilib.ui.scene.control.SceneTheme.light()),
                         domain.signal(false), ignored -> {});
                 context.mount(node[0]);
             }));
             MinecraftSceneScreen screen = new MinecraftSceneScreen(context -> {});
-            AutoCloseable inputs = own(installSession(screen, session));
+            AutoCloseable inputs = own(installSession(screen, session, host::semantics));
             session.frame();
             domain.execute(() -> session.runtime().focusRouter().request(session.runtime().captureMount(node[0])));
             session.edit(club.heiqi.uilib.ui.scene.input.SceneEditEvent.composition("候选", true));

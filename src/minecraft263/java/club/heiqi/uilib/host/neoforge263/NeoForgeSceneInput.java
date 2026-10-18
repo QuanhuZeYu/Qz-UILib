@@ -12,6 +12,8 @@ import java.util.Set;
 import club.heiqi.uilib.host.embedded.EmbeddedSceneInputs;
 import club.heiqi.uilib.host.embedded.EmbeddedSceneInputs.Key;
 import club.heiqi.uilib.ui.scene.host.ScenePageSession;
+import club.heiqi.uilib.ui.scene.semantics.SceneSemanticRequest;
+import java.util.concurrent.CompletableFuture;
 import club.heiqi.uilib.ui.scene.input.SceneCompositionSource;
 import club.heiqi.uilib.ui.scene.input.SceneEditEvent;
 import club.heiqi.uilib.ui.scene.input.ScenePointerEvent;
@@ -53,6 +55,10 @@ final class NeoForgeSceneInput implements AutoCloseable {
         }, screen::onClose);
         focused = (SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS) != 0;
         updateAvailability();
+    }
+
+    CompletableFuture<SceneSemanticRequest.Result> semantic(SceneSemanticRequest request) {
+        return inputs.semantic(request);
     }
 
     private static IllegalStateException nativeFailure(String action) {

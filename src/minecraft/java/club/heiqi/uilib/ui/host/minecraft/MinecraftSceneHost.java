@@ -7,6 +7,7 @@ import club.heiqi.uilib.host.client.font.MinecraftFontServices;
 import club.heiqi.uilib.host.client.settings.MinecraftApplicationConfiguration;
 import club.heiqi.uilib.ui.scene.control.ThemeConfiguration;
 import club.heiqi.uilib.ui.scene.host.SceneHost;
+import club.heiqi.uilib.ui.scene.semantics.SceneSemanticSnapshot;
 import club.heiqi.uilib.ui.scene.paint.PaintPlan;
 import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
 import club.heiqi.uilib.ui.scene.text.TextLayout;
@@ -21,6 +22,7 @@ public final class MinecraftSceneHost implements SceneHost, SceneTextMeasurer, A
             club.heiqi.uilib.host.client.image.MinecraftImageServices.shared();
     private final FramebufferSceneRenderer renderer;
     private final club.heiqi.uilib.ui.scene.video.MediaViewPump mediaViews;
+    private volatile SceneSemanticSnapshot semantics = SceneSemanticSnapshot.EMPTY;
 
     public MinecraftSceneHost() { this(null); }
     /** 借用中性服务；MC的framebuffer-submit回执不冒充游戏最终交换。 */
@@ -29,6 +31,13 @@ public final class MinecraftSceneHost implements SceneHost, SceneTextMeasurer, A
         renderer = new FramebufferSceneRenderer(fonts, images, media, false);
     }
     @Override public club.heiqi.uilib.ui.scene.video.MediaViewPump mediaViews() { return mediaViews; }
+
+    /** 只保留Core最近发布的不可变事实，读取不推进页面或访问runtime。 */
+    public SceneSemanticSnapshot semantics() { return semantics; }
+
+    @Override public void semanticsChanged(SceneSemanticSnapshot snapshot) {
+        semantics = java.util.Objects.requireNonNull(snapshot, "语义快照");
+    }
 
     @Override
     public ThemeConfiguration themeConfiguration() {

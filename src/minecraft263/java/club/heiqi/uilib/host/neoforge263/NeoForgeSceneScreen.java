@@ -1,6 +1,7 @@
 package club.heiqi.uilib.host.neoforge263;
 
 import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 import club.heiqi.uilib.host.embedded.EmbeddedSceneHost;
 import club.heiqi.uilib.host.embedded.EmbeddedSceneServices;
@@ -8,6 +9,8 @@ import club.heiqi.uilib.ui.media.MediaService;
 import club.heiqi.uilib.ui.scene.host.ScenePage;
 import club.heiqi.uilib.ui.scene.host.ScenePageContext;
 import club.heiqi.uilib.ui.scene.host.ScenePageSession;
+import club.heiqi.uilib.ui.scene.semantics.SceneSemanticRequest;
+import club.heiqi.uilib.ui.scene.semantics.SceneSemanticSnapshot;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.Screen;
@@ -25,7 +28,8 @@ public class NeoForgeSceneScreen extends Screen {
     private final NeoForgeFramebuffer framebuffer = new NeoForgeFramebuffer();
     private Consumer<Runnable> closeRequest = Runnable::run;
     private ScenePageSession session;
-    private NeoForgeSceneInput input;
+    private volatile NeoForgeSceneInput input;
+    private volatile EmbeddedSceneHost semanticHost;
     private NeoForgeSceneCoordinates coordinates;
 
     public NeoForgeSceneScreen(ScenePage page) {
@@ -39,11 +43,26 @@ public class NeoForgeSceneScreen extends Screen {
         this.closeRequest = Objects.requireNonNull(request, "关闭策略"); return this;
     }
 
+    /** 读取Host最近发布的同页快照；提取和GPU提交之外也只返回纯值。 */
+    public SceneSemanticSnapshot semantics() {
+        EmbeddedSceneHost host = semanticHost;
+        return host == null ? SceneSemanticSnapshot.EMPTY : host.semantics();
+    }
+
+    /** 仍经同一页面Inputs/Session排队，不从旧快照调用动作。 */
+    public CompletableFuture<SceneSemanticRequest.Result> semantic(SceneSemanticRequest request) {
+        Objects.requireNonNull(request, "语义请求");
+        NeoForgeSceneInput current = input;
+        return current == null ? CompletableFuture.completedFuture(SceneSemanticRequest.Result.CLOSED)
+                : current.semantic(request);
+    }
+
     @Override protected void init() {
         coordinates = NeoForgeSceneCoordinates.input(minecraft.getWindow());
         if (session != null) return;
         EmbeddedSceneServices services = NeoForgeUILib.services();
         EmbeddedSceneHost host = new EmbeddedSceneHost(services, () -> coordinates.width(), () -> coordinates.height(), media);
+        semanticHost = host;
         boolean[] owned = {false};
         try {
             session = ScenePageSession.open(services.domain(), host, services.fonts(), context -> {
@@ -106,7 +125,7 @@ public class NeoForgeSceneScreen extends Screen {
     }
 
     @Override public void removed() {
-        ScenePageSession closing = session; session = null;
+        ScenePageSession closing = session; session = null; semanticHost = null;
         NeoForgeSceneInput oldInput = input; input = null;
         Throwable failure = null;
         try { if (oldInput != null) oldInput.close(); } catch (RuntimeException | Error next) { failure = next; }

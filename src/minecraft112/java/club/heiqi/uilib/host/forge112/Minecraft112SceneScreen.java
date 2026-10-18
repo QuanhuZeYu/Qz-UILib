@@ -7,6 +7,9 @@ import club.heiqi.uilib.host.embedded.EmbeddedSceneServices;
 import club.heiqi.uilib.ui.media.MediaService;
 import club.heiqi.uilib.ui.scene.host.ScenePage;
 import club.heiqi.uilib.ui.scene.host.ScenePageSession;
+import club.heiqi.uilib.ui.scene.semantics.SceneSemanticRequest;
+import club.heiqi.uilib.ui.scene.semantics.SceneSemanticSnapshot;
+import java.util.concurrent.CompletableFuture;
 import club.heiqi.uilib.ui.scene.input.SceneEditEvent;
 import club.heiqi.uilib.ui.scene.input.ScenePointerEvent;
 import java.util.EnumSet;
@@ -23,7 +26,8 @@ public class Minecraft112SceneScreen extends GuiScreen {
     private final ScenePage page;
     private final MediaService media;
     private ScenePageSession session;
-    private EmbeddedSceneInputs inputs;
+    private volatile EmbeddedSceneInputs inputs;
+    private volatile EmbeddedSceneHost semanticHost;
     private boolean repeatEvents, repeatBorrowed;
     private boolean leftControl, rightControl, leftShift, rightShift, leftAlt, rightAlt, leftMeta, rightMeta;
     private double wheelRemainder;
@@ -35,10 +39,25 @@ public class Minecraft112SceneScreen extends GuiScreen {
         this.media = media;
     }
 
+    /** 最近发布的同页纯值语义；读取不执行frame或访问runtime。 */
+    public SceneSemanticSnapshot semantics() {
+        EmbeddedSceneHost host = semanticHost;
+        return host == null ? SceneSemanticSnapshot.EMPTY : host.semantics();
+    }
+
+    /** 动作沿原Embedded输入端口递交，结果由当前页面会话结算。 */
+    public CompletableFuture<SceneSemanticRequest.Result> semantic(SceneSemanticRequest request) {
+        java.util.Objects.requireNonNull(request, "语义请求");
+        EmbeddedSceneInputs current = inputs;
+        return current == null ? CompletableFuture.completedFuture(SceneSemanticRequest.Result.CLOSED)
+                : current.semantic(request);
+    }
+
     @Override public void initGui() {
         if (session != null) return;
         EmbeddedSceneServices services = Forge112Client.services();
         EmbeddedSceneHost host = new EmbeddedSceneHost(services, Display::getWidth, Display::getHeight, media);
+        semanticHost = host;
         boolean[] owned = {false};
         repeatEvents = Keyboard.areRepeatEventsEnabled();
         Keyboard.enableRepeatEvents(true);
@@ -120,7 +139,7 @@ public class Minecraft112SceneScreen extends GuiScreen {
     protected void requestClose() { mc.displayGuiScreen(parent); }
     @Override public void onGuiClosed() {
         ScenePageSession closing = session;
-        session = null; inputs = null;
+        session = null; inputs = null; semanticHost = null;
         try { if (closing != null) closing.close(); }
         finally {
             if (repeatBorrowed) { repeatBorrowed = false; Keyboard.enableRepeatEvents(repeatEvents); }

@@ -8,6 +8,9 @@ import club.heiqi.uilib.host.embedded.EmbeddedSceneServices;
 import club.heiqi.uilib.ui.media.MediaService;
 import club.heiqi.uilib.ui.scene.host.ScenePage;
 import club.heiqi.uilib.ui.scene.host.ScenePageSession;
+import club.heiqi.uilib.ui.scene.semantics.SceneSemanticRequest;
+import club.heiqi.uilib.ui.scene.semantics.SceneSemanticSnapshot;
+import java.util.concurrent.CompletableFuture;
 import club.heiqi.uilib.ui.scene.input.SceneEditEvent;
 import club.heiqi.uilib.ui.scene.input.ScenePointerEvent;
 import com.mojang.blaze3d.matrix.MatrixStack;
@@ -24,7 +27,8 @@ public class Minecraft116SceneScreen extends Screen {
     private final MediaService media;
     private final Set<Integer> held = new HashSet<>();
     private ScenePageSession session;
-    private EmbeddedSceneInputs inputs;
+    private volatile EmbeddedSceneInputs inputs;
+    private volatile EmbeddedSceneHost semanticHost;
     private double scrollRemainder;
 
     public Minecraft116SceneScreen(Screen parent, ScenePage page) { this(parent, page, null); }
@@ -38,10 +42,25 @@ public class Minecraft116SceneScreen extends Screen {
     private int framebufferWidth() { int[] w = {0}, h = {0}; glfwGetFramebufferSize(window(), w, h); return w[0]; }
     private int framebufferHeight() { int[] w = {0}, h = {0}; glfwGetFramebufferSize(window(), w, h); return h[0]; }
 
+    /** 最近发布的同页纯值语义；读取不执行frame或访问runtime。 */
+    public SceneSemanticSnapshot semantics() {
+        EmbeddedSceneHost host = semanticHost;
+        return host == null ? SceneSemanticSnapshot.EMPTY : host.semantics();
+    }
+
+    /** 动作沿原Embedded输入端口递交，结果由当前页面会话结算。 */
+    public CompletableFuture<SceneSemanticRequest.Result> semantic(SceneSemanticRequest request) {
+        java.util.Objects.requireNonNull(request, "语义请求");
+        EmbeddedSceneInputs current = inputs;
+        return current == null ? CompletableFuture.completedFuture(SceneSemanticRequest.Result.CLOSED)
+                : current.semantic(request);
+    }
+
     @Override protected void init() {
         if (session != null) return;
         EmbeddedSceneServices services = Forge116Client.services();
         EmbeddedSceneHost host = new EmbeddedSceneHost(services, this::framebufferWidth, this::framebufferHeight, media);
+        semanticHost = host;
         boolean[] owned = {false};
         try {
             session = ScenePageSession.open(services.domain(), host, services.fonts(), context -> {
@@ -114,7 +133,7 @@ public class Minecraft116SceneScreen extends Screen {
     @Override public void closeScreen() { if (session != null) session.escape(this::requestClose); }
     @Override public boolean isPauseScreen() { return false; }
     @Override public void onClose() {
-        ScenePageSession closing = session; session = null; inputs = null; held.clear();
+        ScenePageSession closing = session; session = null; inputs = null; semanticHost = null; held.clear();
         if (closing != null) closing.close();
     }
     private static Key semantic(int key) {
