@@ -28,6 +28,7 @@ import club.heiqi.uilib.ui.scene.text.TextLayout;
 
 /** 实际 MC screen.drawScreen 与正式 Session；仅宿主环境注入，不启动世界或 FML。 */
 public final class MinecraftScreenSwitchScenario extends TestApplication {
+    private boolean nativeOnly;
     private static final class Host implements SceneHost {
         int frames;
         public int width() { return 80; }
@@ -73,7 +74,7 @@ public final class MinecraftScreenSwitchScenario extends TestApplication {
         final Object base, original;
         final long offset;
         boolean available = true;
-        ActiveWindow() throws Exception {
+        ActiveWindow(boolean nativeOnly) throws Exception {
             field.setAccessible(true);
             original = field.get(null);
             base = access.staticFieldBase(field);
@@ -81,12 +82,36 @@ public final class MinecraftScreenSwitchScenario extends TestApplication {
             Object active = java.lang.reflect.Proxy.newProxyInstance(original.getClass().getClassLoader(),
                     new Class<?>[] {field.getType()}, (proxy, method, arguments) -> {
                         if (method.getName().equals("isActive")) return available;
+                        if (nativeOnly) throw new AssertionError("无窗口输入夹具访问显示操作：" + method.getName());
                         method.setAccessible(true);
                         return method.invoke(original, arguments);
                     });
             access.putObjectVolatile(base, offset, active);
         }
         public void close() { access.putObjectVolatile(base, offset, original); }
+    }
+
+    /** 隔离JVM只借用LWJGL历史缓冲和可用性事实，不创建Display/设备或调用系统输入。 */
+    private static final class NativeHistoryEnvironment implements AutoCloseable {
+        final Field window = nativeField(org.lwjgl.opengl.Display.class, "window_created");
+        final Field keyboard = nativeField(Keyboard.class, "created");
+        final Field buffer = nativeField(Keyboard.class, "readBuffer");
+        final Object oldBuffer = buffer.get(null);
+        final ActiveWindow active;
+        NativeHistoryEnvironment() throws Exception {
+            require(!org.lwjgl.opengl.Display.isCreated() && !Keyboard.isCreated() && !org.lwjgl.input.Mouse.isCreated(),
+                    "无窗口输入场景必须在未创建原生设备的隔离JVM执行");
+            active = new ActiveWindow(true);
+            window.setBoolean(null, true);
+            keyboard.setBoolean(null, true);
+            buffer.set(null, ByteBuffer.allocate(0));
+        }
+        private static Field nativeField(Class<?> type, String name) throws Exception {
+            Field result = type.getDeclaredField(name); result.setAccessible(true); return result;
+        }
+        public void close() throws Exception {
+            buffer.set(null, oldBuffer); keyboard.setBoolean(null, false); window.setBoolean(null, false); active.close();
+        }
     }
 
     /** 沿已有LWJGL2原生载荷回归的方式借用历史；字节由真正WindowsKeyboard生成。 */
@@ -161,6 +186,13 @@ public final class MinecraftScreenSwitchScenario extends TestApplication {
         }
     }
 
+    private static final SceneKey[] NAMED_KEYS = {
+            SceneKey.F1, SceneKey.F2, SceneKey.F3, SceneKey.F4, SceneKey.F5, SceneKey.F6, SceneKey.F7, SceneKey.F8, SceneKey.F9, SceneKey.F10, SceneKey.F11, SceneKey.F12, SceneKey.DIGIT_0, SceneKey.DIGIT_1, SceneKey.DIGIT_2, SceneKey.DIGIT_3, SceneKey.DIGIT_4, SceneKey.DIGIT_5, SceneKey.DIGIT_6, SceneKey.DIGIT_7, SceneKey.DIGIT_8, SceneKey.DIGIT_9, SceneKey.SLASH, SceneKey.COMMA, SceneKey.PERIOD, SceneKey.MINUS, SceneKey.EQUAL, SceneKey.SEMICOLON, SceneKey.APOSTROPHE, SceneKey.LEFT_BRACKET, SceneKey.RIGHT_BRACKET, SceneKey.BACKSLASH, SceneKey.GRAVE, SceneKey.INSERT
+    };
+    private static final int[] NATIVE_KEYS = {
+            Keyboard.KEY_F1, Keyboard.KEY_F2, Keyboard.KEY_F3, Keyboard.KEY_F4, Keyboard.KEY_F5, Keyboard.KEY_F6, Keyboard.KEY_F7, Keyboard.KEY_F8, Keyboard.KEY_F9, Keyboard.KEY_F10, Keyboard.KEY_F11, Keyboard.KEY_F12, Keyboard.KEY_0, Keyboard.KEY_1, Keyboard.KEY_2, Keyboard.KEY_3, Keyboard.KEY_4, Keyboard.KEY_5, Keyboard.KEY_6, Keyboard.KEY_7, Keyboard.KEY_8, Keyboard.KEY_9, Keyboard.KEY_SLASH, Keyboard.KEY_COMMA, Keyboard.KEY_PERIOD, Keyboard.KEY_MINUS, Keyboard.KEY_EQUALS, Keyboard.KEY_SEMICOLON, Keyboard.KEY_APOSTROPHE, Keyboard.KEY_LBRACKET, Keyboard.KEY_RBRACKET, Keyboard.KEY_BACKSLASH, Keyboard.KEY_GRAVE, Keyboard.KEY_INSERT
+    };
+
     private final class NativeField implements AutoCloseable {
         final ReactiveDomain domain = ReactiveDomain.direct();
         final Host host = new Host();
@@ -171,6 +203,7 @@ public final class MinecraftScreenSwitchScenario extends TestApplication {
         final SceneNode[] node = {null}, search = {null}, action = {null};
         final club.heiqi.uilib.ui.scene.edit.SceneEditState[] searchState = {null};
         int searches, saves, activations;
+        final int[] namedHits = new int[NAMED_KEYS.length];
         final ScenePageSession page;
         NativeField(Minecraft mc) throws Exception {
             field(GuiScreen.class, screen, "mc", mc);
@@ -183,14 +216,20 @@ public final class MinecraftScreenSwitchScenario extends TestApplication {
                         context.theme(), () -> false, ignored -> {});
                 action[0] = club.heiqi.uilib.ui.scene.control.SceneButton.create(context, () -> "动作", context.theme(),
                         () -> activations++);
+                java.util.List<SceneShortcut> shortcuts = new java.util.ArrayList<>();
+                shortcuts.add(SceneShortcut.primary(SceneKey.F, SceneCommand.of(() -> true, () -> {
+                    searches++;
+                    pageFocus(context.runtime(), search[0]);
+                })));
+                shortcuts.add(SceneShortcut.primary(SceneKey.S, SceneCommand.of(() -> true, () -> saves++)));
+                for (int index = 0; index < NAMED_KEYS.length; index++) {
+                    final int key = index;
+                    shortcuts.add(SceneShortcut.of(NAMED_KEYS[index], SceneCommand.of(() -> true,
+                            () -> namedHits[key]++), SceneShortcut.Modifier.ALT));
+                }
                 context.mount(new SceneNode().size(Size.fill(1), Size.fill(1)).background(0xff112233)
                         .initialFocus(node[0]).add(node[0]).add(search[0]).add(action[0])
-                        .bind(NodeBinding.shortcuts(SceneShortcut.Scope.PAGE,
-                                SceneShortcut.primary(SceneKey.F, SceneCommand.of(() -> true, () -> {
-                                    searches++;
-                                    pageFocus(context.runtime(), search[0]);
-                                })),
-                                SceneShortcut.primary(SceneKey.S, SceneCommand.of(() -> true, () -> saves++)))));
+                        .bind(NodeBinding.shortcuts(SceneShortcut.Scope.PAGE, shortcuts.toArray(new SceneShortcut[0]))));
             });
             installSession(screen, page);
         }
@@ -223,7 +262,7 @@ public final class MinecraftScreenSwitchScenario extends TestApplication {
         Minecraft mc = (Minecraft) unsafe().allocateInstance(Minecraft.class);
         boolean repeats = Keyboard.areRepeatEventsEnabled();
         Keyboard.enableRepeatEvents(true);
-        try (ActiveWindow active = new ActiveWindow(); NativeCharacters history = new NativeCharacters();
+        try (ActiveWindow active = new ActiveWindow(nativeOnly); NativeCharacters history = new NativeCharacters();
                 NativeField input = new NativeField(mc)) {
             mc.currentScreen = input.screen;
             history.physical(Keyboard.KEY_LCONTROL, Keyboard.KEY_F);
@@ -241,7 +280,10 @@ public final class MinecraftScreenSwitchScenario extends TestApplication {
             history.keys(new int[] {Keyboard.KEY_SPACE, 1, ' ', 0}, new int[] {Keyboard.KEY_SPACE, 1, ' ', 1}, up(Keyboard.KEY_SPACE));
             input.screen.drawScreen(0, 0, 0);
             history.load('\uD83D', '\uDE00', 'f', '/'); input.screen.drawScreen(0, 0, 0);
-            require(input.searchDraft().equals("中  😀f/"), "LWJGL2空格起手/repeat、代理对或普通文本丢失/重复");
+            history.keys(new int[] {Keyboard.KEY_1, 1, '\uD83D', 0},
+                    new int[] {Keyboard.KEY_1, 1, '\uDE00', 0}, up(Keyboard.KEY_1));
+            input.screen.drawScreen(0, 0, 0);
+            require(input.searchDraft().equals("中  😀f/😀"), "LWJGL2空格起手/repeat、代理对或新增命名键文本丢失/重复");
 
             history.physical(Keyboard.KEY_LCONTROL, Keyboard.KEY_S);
             history.keys(down(Keyboard.KEY_LCONTROL), down(Keyboard.KEY_S)); input.screen.drawScreen(0, 0, 0);
@@ -276,9 +318,84 @@ public final class MinecraftScreenSwitchScenario extends TestApplication {
         } finally { Keyboard.enableRepeatEvents(repeats); }
     }
 
+    private void nativeKeyPhases() throws Exception {
+        Minecraft mc = (Minecraft) unsafe().allocateInstance(Minecraft.class);
+        boolean repeats = Keyboard.areRepeatEventsEnabled();
+        Keyboard.enableRepeatEvents(true);
+        try (ActiveWindow active = new ActiveWindow(nativeOnly); NativeCharacters history = new NativeCharacters();
+                NativeField input = new NativeField(mc)) {
+            mc.currentScreen = input.screen;
+            history.physical(Keyboard.KEY_SPACE);
+            history.keys(down(Keyboard.KEY_SPACE), repeat(Keyboard.KEY_SPACE));
+            input.screen.drawScreen(0, 0, 0);
+            input.domain.execute(() -> pageFocus(input.page.runtime(), input.action[0]));
+            history.physical(); history.keys(up(Keyboard.KEY_SPACE)); input.screen.drawScreen(0, 0, 0);
+            require(input.activations == 0, "开屏旧Space的UP误激活当前按钮");
+
+            history.physical(Keyboard.KEY_SPACE); history.keys(down(Keyboard.KEY_SPACE));
+            input.screen.drawScreen(0, 0, 0);
+            require(input.activations == 0, "Space在DOWN提前激活按钮");
+            history.keys(repeat(Keyboard.KEY_SPACE)); input.screen.drawScreen(0, 0, 0);
+            require(input.activations == 0, "Space repeat提前激活按钮");
+            history.physical(); history.keys(up(Keyboard.KEY_SPACE)); input.screen.drawScreen(0, 0, 0);
+            require(input.activations == 1, "Space合法UP没有单次激活原按钮");
+            history.keys(up(Keyboard.KEY_SPACE)); input.screen.drawScreen(0, 0, 0);
+            require(input.activations == 1, "重复Space UP再次激活按钮");
+
+            history.physical(Keyboard.KEY_SPACE); history.keys(down(Keyboard.KEY_SPACE));
+            input.screen.drawScreen(0, 0, 0);
+            input.focus();
+            input.domain.execute(() -> pageFocus(input.page.runtime(), input.action[0]));
+            history.physical(); history.keys(up(Keyboard.KEY_SPACE)); input.screen.drawScreen(0, 0, 0);
+            require(input.activations == 1, "Space按压离开焦点后返回仍在UP激活");
+
+            history.physical(Keyboard.KEY_SPACE); history.keys(down(Keyboard.KEY_SPACE));
+            input.screen.drawScreen(0, 0, 0);
+            active.available = false; input.screen.drawScreen(0, 0, 0);
+            active.available = true; input.screen.drawScreen(0, 0, 0);
+            input.domain.execute(() -> pageFocus(input.page.runtime(), input.action[0]));
+            history.physical(); history.keys(up(Keyboard.KEY_SPACE)); input.screen.drawScreen(0, 0, 0);
+            require(input.activations == 1, "失焦恢复的Space旧UP激活按钮");
+            history.keys(down(Keyboard.KEY_SPACE), repeat(Keyboard.KEY_SPACE), up(Keyboard.KEY_SPACE));
+            input.screen.drawScreen(0, 0, 0);
+            require(input.activations == 2, "取消后新的完整Space按压未正常激活");
+
+            history.physical(Keyboard.KEY_RETURN, Keyboard.KEY_NUMPADENTER);
+            history.keys(down(Keyboard.KEY_RETURN), down(Keyboard.KEY_NUMPADENTER), repeat(Keyboard.KEY_RETURN));
+            input.screen.drawScreen(0, 0, 0);
+            require(input.activations == 4, "两Enter未在各自DOWN单次激活");
+            history.physical(); history.keys(up(Keyboard.KEY_RETURN), up(Keyboard.KEY_NUMPADENTER));
+            input.screen.drawScreen(0, 0, 0);
+            require(input.activations == 4, "Enter的UP重复执行DOWN动作");
+            System.out.println("MC_NATIVE_KEY_PHASE spaceDownDeferred=true spaceUpOnce=true"
+                    + " oldUpBlocked=true repeatBlocked=true focusRoundTripCancelled=true focusLossCancelled=true"
+                    + " enterDownIndependent=true activations=" + input.activations);
+        } finally { Keyboard.enableRepeatEvents(repeats); }
+    }
+
+    private void nativeNamedKeys() throws Exception {
+        Minecraft mc = (Minecraft) unsafe().allocateInstance(Minecraft.class);
+        boolean repeats = Keyboard.areRepeatEventsEnabled(); Keyboard.enableRepeatEvents(true);
+        try (ActiveWindow active = new ActiveWindow(nativeOnly); NativeCharacters history = new NativeCharacters();
+                NativeField input = new NativeField(mc)) {
+            input.activate(mc);
+            input.domain.execute(() -> pageFocus(input.page.runtime(), input.action[0]));
+            require(NAMED_KEYS.length == NATIVE_KEYS.length, "命名键与原生事件表未一一对应");
+            for (int index = 0; index < NATIVE_KEYS.length; index++) {
+                int key = NATIVE_KEYS[index];
+                history.keys(down(Keyboard.KEY_LMENU), down(key), repeat(key), up(key), down(key), up(key), up(Keyboard.KEY_LMENU));
+                input.screen.drawScreen(0, 0, 0);
+                require(input.namedHits[index] == 2, "命名键映射、repeat或同批释放重按错误：" + NAMED_KEYS[index]);
+            }
+            require(input.draft().isEmpty() && input.searchDraft().isEmpty(), "命名键错误合成了文本");
+            System.out.println("MC_NATIVE_NAMED_KEYS keys=" + NAMED_KEYS.length + " activations="
+                    + java.util.Arrays.stream(input.namedHits).sum() + " repeatBlocked=true sameBatchRelease=true noSynthesizedText=true");
+        } finally { Keyboard.enableRepeatEvents(repeats); }
+    }
+
     private void nativeRenderCadence() throws Exception {
         Minecraft mc = (Minecraft) unsafe().allocateInstance(Minecraft.class);
-        try (ActiveWindow active = new ActiveWindow(); NativeCharacters history = new NativeCharacters();
+        try (ActiveWindow active = new ActiveWindow(nativeOnly); NativeCharacters history = new NativeCharacters();
                 NativeField input = new NativeField(mc)) {
             input.activate(mc);
             input.screen.handleInput(); // 第一个逻辑tick；随后中间render没有tick采集。
@@ -301,7 +418,7 @@ public final class MinecraftScreenSwitchScenario extends TestApplication {
 
     private void closeWhileCollecting(boolean switchPage) throws Exception {
         Minecraft mc = (Minecraft) unsafe().allocateInstance(Minecraft.class);
-        try (ActiveWindow active = new ActiveWindow(); NativeCharacters history = new NativeCharacters();
+        try (ActiveWindow active = new ActiveWindow(nativeOnly); NativeCharacters history = new NativeCharacters();
                 NativeField old = new NativeField(mc); NativeField next = new NativeField(mc)) {
             old.activate(mc);
             int oldFrames = old.host.frames;
@@ -330,11 +447,16 @@ public final class MinecraftScreenSwitchScenario extends TestApplication {
 
     @Override
     protected void runTests() throws Exception {
-        own(new DisplayTestEnvironment(80, 60, "UILib MC screen same-frame switch"));
+        nativeOnly = arguments().length == 1 && arguments()[0].equals("native-only");
+        if (nativeOnly) own(new NativeHistoryEnvironment());
+        else own(new DisplayTestEnvironment(80, 60, "UILib MC screen same-frame switch"));
         scenario("原生命令切焦、文本顺序与物理尾部隔离", this::nativeCommands);
+        scenario("原生Space按下释放与焦点取消、双Enter起手", this::nativeKeyPhases);
+        scenario("常用命名键经真实历史与同批释放重按", this::nativeNamedKeys);
         scenario("中间render采集原生字符且后续tick不重放", this::nativeRenderCadence);
         scenario("原生采集中关闭不访问旧会话", () -> closeWhileCollecting(false));
         scenario("原生采集中切页隔离历史尾部", () -> closeWhileCollecting(true));
+        if (nativeOnly) return;
         scenario("点击切页当帧提交新页且旧输入不转投", () -> {
             // MC构造会启动完整游戏基础设施；环境只供currentScreen身份，生产screen正常构造。
             Field access = sun.misc.Unsafe.class.getDeclaredField("theUnsafe");
@@ -433,6 +555,6 @@ public final class MinecraftScreenSwitchScenario extends TestApplication {
     }
 
     public static void main(String[] args) throws Exception {
-        new MinecraftScreenSwitchScenario().run();
+        new MinecraftScreenSwitchScenario().run(args);
     }
 }

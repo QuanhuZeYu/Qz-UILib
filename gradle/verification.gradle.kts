@@ -87,10 +87,12 @@ fun display(name: String, description: String, application: String, full: Boolea
     dependsOn(legacyTests.classesTaskName, extractNatives)
 }
 val switch = display("minecraftScreenSwitchScenario", "实际MC屏幕当帧切页与旧输入隔离", prefix + "MinecraftScreenSwitchScenario", true)
+val nativeInput = display("minecraftNativeInputScenario", "无窗口真实历史按压释放与命令文本顺序", prefix + "MinecraftScreenSwitchScenario", true)
+nativeInput.configure { args("native-only") }
 val cleanup = display("minecraftScreenCleanupScenario", "正式session双失败首错与幂等清理", "club.heiqi.uilib.ui.host.minecraft.MinecraftScreenCleanupScenario")
 val shutdown = display("minecraftFontShutdownScenario", "字体桥失败仍结束真实owner", prefix + "MinecraftFontShutdownScenario", true)
 display("imageLwjgl2Scenario", "LWJGL2实际IMAGE像素及item scope", prefix + "ImageLwjgl2Scenario")
-tasks.named("check") { dependsOn(switch, cleanup, shutdown) }
+tasks.named("check") { dependsOn(switch, cleanup, shutdown, nativeInput) }
 tasks.register<Jar>("lwjgl2TestJar") { group = "verification"; archiveClassifier.set("lwjgl2-test"); from(legacyTests.output) }
 
 val sdl = configurations.create("sdlTextInputRuntime") { isCanBeConsumed = false; isTransitive = false }
@@ -190,7 +192,7 @@ tasks.named("check") { dependsOn("verifyLwjgl3AwareAssembly") }
 
 // Java8 Windows native loader无法加载本机中文绝对DLL路径；只在验证进程边界复制到唯一临时目录。
 // 每个消费者在自己的finalizer释放临时副本，生产加载器与解析产物不改动。
-listOf("minecraftScreenSwitchScenario", "minecraftScreenCleanupScenario", "minecraftFontShutdownScenario", "imageLwjgl2Scenario", "lwjgl2HostScenario", "lwjgl2VideoVerify", "packagedMediaJava8").forEach { taskName ->
+listOf("minecraftScreenSwitchScenario", "minecraftNativeInputScenario", "minecraftScreenCleanupScenario", "minecraftFontShutdownScenario", "imageLwjgl2Scenario", "lwjgl2HostScenario", "lwjgl2VideoVerify", "packagedMediaJava8").forEach { taskName ->
     val runtimeDirectory = objects.property(File::class.java)
     val cleanup = tasks.register(taskName + "CleanupNatives") {
         doLast { runtimeDirectory.orNull?.let { temporary -> delete(temporary) } }

@@ -159,33 +159,30 @@ public class MinecraftSceneScreen extends GuiScreen {
 
         private void initialize() {
             if (SceneNativeTextInput.available()) nativeText = new SceneNativeTextInput();
-            tabInput = new SceneTabInputAdapter(direction -> opened.key(new SceneKeyEvent(SceneKey.TAB,
+            editInput = new club.heiqi.uilib.ui.scene.host.SceneEditInputAdapter();
+            keyInput = new SceneKeyInputAdapter(event -> {
+                if (event.key == SceneKey.ESCAPE && event.phase == SceneKeyEvent.Phase.DOWN)
+                    opened.key(event, () -> {
+                        // 延迟结果只可关闭递交事件的同一页/会话。
+                        if (session == opened && mc.currentScreen == MinecraftSceneScreen.this) fallbackEscape();
+                    });
+                else opened.key(event);
+            });
+            tabInput = new SceneTabInputAdapter(direction -> keyInput.key(new SceneKeyEvent(SceneKey.TAB,
                     leftCtrl || rightCtrl,
                     direction == club.heiqi.uilib.ui.scene.input.SceneNavigationEvent.PREVIOUS,
-                    leftAlt || rightAlt, leftMeta || rightMeta, repeat, clipboard)));
-            editInput = new club.heiqi.uilib.ui.scene.host.SceneEditInputAdapter();
-            keyInput = new SceneKeyInputAdapter(opened::key);
+                    leftAlt || rightAlt, leftMeta || rightMeta, repeat, clipboard), true));
             // 主Enter和小键盘Enter保留各自的物理按压段。
             enterInput = new club.heiqi.uilib.ui.scene.host.SceneKeyPressInputAdapter(
-                    () -> opened.key(event(SceneKey.ENTER)));
+                    () -> keyInput.key(event(SceneKey.ENTER), true));
             keypadEnterInput = new club.heiqi.uilib.ui.scene.host.SceneKeyPressInputAdapter(
-                    () -> opened.key(event(SceneKey.KEYPAD_ENTER)));
+                    () -> keyInput.key(event(SceneKey.KEYPAD_ENTER), true));
             spaceInput = new club.heiqi.uilib.ui.scene.host.SceneKeyPressInputAdapter(() -> {
-                if (nativeText != null) opened.key(event(SceneKey.SPACE));
-                else opened.editOrNavigate(
-                        club.heiqi.uilib.ui.scene.input.SceneEditEvent.command(
-                                club.heiqi.uilib.ui.scene.input.SceneEditEvent.Command.SPACE, false, clipboard),
-                        club.heiqi.uilib.ui.scene.input.SceneNavigationEvent.ACTIVATE);
+                keyInput.key(event(SceneKey.SPACE), true);
+                // 无原生文本桥时保留空格文本来源；激活的DOWN/UP仍由Core解释。
+                if (nativeText == null) opened.edit(club.heiqi.uilib.ui.scene.input.SceneEditEvent.text(" "));
             });
-            escapeInput =
-                    new SceneEscapeInputAdapter(
-                            () ->
-                                    opened.key(event(SceneKey.ESCAPE),
-                                            () -> {
-                                                // 延迟结果只可关闭递交事件的同一页/会话，不能借旧事件关闭后来打开的页面。
-                                                if (session == opened && mc.currentScreen == MinecraftSceneScreen.this)
-                                                    fallbackEscape();
-                                            }));
+            escapeInput = new SceneEscapeInputAdapter(() -> keyInput.key(event(SceneKey.ESCAPE), true));
         }
 
         private SceneKeyEvent event(SceneKey key) {
@@ -266,6 +263,9 @@ public class MinecraftSceneScreen extends GuiScreen {
             else if (key == Keyboard.KEY_RMENU) rightAlt = down;
             else if (key == Keyboard.KEY_LMETA) leftMeta = down;
             else if (key == Keyboard.KEY_RMETA) rightMeta = down;
+            SceneKey named = semantic(key);
+            // 每个已知释放都回到接收DOWN的同一适配器；合法按压与取消归Core。
+            if (!down && named != null) keyInput.key(event(named), false);
             if (key == Keyboard.KEY_LSHIFT) {
                 leftShift = down;
                 tabInput.shift(true, down);
@@ -286,12 +286,8 @@ public class MinecraftSceneScreen extends GuiScreen {
                 return;
             } else if (key == Keyboard.KEY_SPACE) {
                 pendingHigh = 0;
-                if (nativeText == null && repeat && accepted)
-                    opened.edit(
-                            club.heiqi.uilib.ui.scene.input.SceneEditEvent.command(
-                                    club.heiqi.uilib.ui.scene.input.SceneEditEvent.Command.SPACE,
-                                    false,
-                                    clipboard));
+                if (nativeText == null && down && repeat && accepted)
+                    opened.edit(club.heiqi.uilib.ui.scene.input.SceneEditEvent.text(" "));
                 else spaceInput.key(down, repeat);
                 return;
             } else if (key == Keyboard.KEY_ESCAPE) {
@@ -299,22 +295,8 @@ public class MinecraftSceneScreen extends GuiScreen {
                 escapeInput.key(down, repeat);
                 return;
             }
-            // GTNH既有Ctrl+纵向/翻页仍按plain编辑；只保留这四项原用法，其余解释交Core。
-            if (accepted && (leftCtrl || rightCtrl)) {
-                club.heiqi.uilib.ui.scene.input.SceneEditEvent.Command legacy = null;
-                if (key == Keyboard.KEY_UP) legacy = club.heiqi.uilib.ui.scene.input.SceneEditEvent.Command.UP;
-                else if (key == Keyboard.KEY_DOWN) legacy = club.heiqi.uilib.ui.scene.input.SceneEditEvent.Command.DOWN;
-                else if (key == Keyboard.KEY_PRIOR) legacy = club.heiqi.uilib.ui.scene.input.SceneEditEvent.Command.PAGE_UP;
-                else if (key == Keyboard.KEY_NEXT) legacy = club.heiqi.uilib.ui.scene.input.SceneEditEvent.Command.PAGE_DOWN;
-                if (legacy != null) {
-                    pendingHigh = 0;
-                    opened.edit(club.heiqi.uilib.ui.scene.input.SceneEditEvent.command(legacy, leftShift || rightShift, clipboard));
-                    return;
-                }
-            }
-            SceneKey named = semantic(key);
-            if (named != null && (!down || accepted)) {
-                if (!named.letter() || leftCtrl || rightCtrl) pendingHigh = 0;
+            if (named != null && down && accepted) {
+                if ((!named.letter() && character < 32) || leftCtrl || rightCtrl) pendingHigh = 0;
                 keyInput.key(event(named), down);
             }
             if (!accepted) return;
@@ -482,6 +464,40 @@ public class MinecraftSceneScreen extends GuiScreen {
             case Keyboard.KEY_X: return SceneKey.X;
             case Keyboard.KEY_Y: return SceneKey.Y;
             case Keyboard.KEY_Z: return SceneKey.Z;
+            case Keyboard.KEY_F1: return SceneKey.F1;
+            case Keyboard.KEY_F2: return SceneKey.F2;
+            case Keyboard.KEY_F3: return SceneKey.F3;
+            case Keyboard.KEY_F4: return SceneKey.F4;
+            case Keyboard.KEY_F5: return SceneKey.F5;
+            case Keyboard.KEY_F6: return SceneKey.F6;
+            case Keyboard.KEY_F7: return SceneKey.F7;
+            case Keyboard.KEY_F8: return SceneKey.F8;
+            case Keyboard.KEY_F9: return SceneKey.F9;
+            case Keyboard.KEY_F10: return SceneKey.F10;
+            case Keyboard.KEY_F11: return SceneKey.F11;
+            case Keyboard.KEY_F12: return SceneKey.F12;
+            case Keyboard.KEY_0: return SceneKey.DIGIT_0;
+            case Keyboard.KEY_1: return SceneKey.DIGIT_1;
+            case Keyboard.KEY_2: return SceneKey.DIGIT_2;
+            case Keyboard.KEY_3: return SceneKey.DIGIT_3;
+            case Keyboard.KEY_4: return SceneKey.DIGIT_4;
+            case Keyboard.KEY_5: return SceneKey.DIGIT_5;
+            case Keyboard.KEY_6: return SceneKey.DIGIT_6;
+            case Keyboard.KEY_7: return SceneKey.DIGIT_7;
+            case Keyboard.KEY_8: return SceneKey.DIGIT_8;
+            case Keyboard.KEY_9: return SceneKey.DIGIT_9;
+            case Keyboard.KEY_SLASH: return SceneKey.SLASH;
+            case Keyboard.KEY_COMMA: return SceneKey.COMMA;
+            case Keyboard.KEY_PERIOD: return SceneKey.PERIOD;
+            case Keyboard.KEY_MINUS: return SceneKey.MINUS;
+            case Keyboard.KEY_EQUALS: return SceneKey.EQUAL;
+            case Keyboard.KEY_SEMICOLON: return SceneKey.SEMICOLON;
+            case Keyboard.KEY_APOSTROPHE: return SceneKey.APOSTROPHE;
+            case Keyboard.KEY_LBRACKET: return SceneKey.LEFT_BRACKET;
+            case Keyboard.KEY_RBRACKET: return SceneKey.RIGHT_BRACKET;
+            case Keyboard.KEY_BACKSLASH: return SceneKey.BACKSLASH;
+            case Keyboard.KEY_GRAVE: return SceneKey.GRAVE;
+            case Keyboard.KEY_INSERT: return SceneKey.INSERT;
             default: return null;
         }
     }
