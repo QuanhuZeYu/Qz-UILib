@@ -24,10 +24,23 @@ public final class CoreLoopBootstrap {
     }
 
     /** 测试附加包提供主菜单入口；打开真实广场无需进入或改动世界。 */
-    @SubscribeEvent
+    @SubscribeEvent(priority = cpw.mods.fml.common.eventhandler.EventPriority.LOWEST)
+    @SuppressWarnings("unchecked")
     public void menu(net.minecraftforge.client.event.GuiScreenEvent.InitGuiEvent.Post event) {
-        if (isMainMenu(event.gui))
-            event.buttonList.add(new GalleryButton(event.gui.width - 110, 4));
+        net.minecraft.client.gui.GuiScreen gui = event.gui;
+        java.util.List<net.minecraft.client.gui.GuiButton> buttons = event.buttonList;
+        // CMM 的高优先级钩子把 Post 的 gui/buttonList 换成伪主菜单，并在末尾移除普通附加按钮。
+        // 在它完成包装后，对当前真实主菜单公开的按钮列表附加入口；不修改整合包菜单配置。
+        if ("lumien.custommainmenu.gui.GuiFakeMain".equals(gui.getClass().getName())) {
+            gui = Minecraft.getMinecraft().currentScreen;
+            if (gui == null || !isMainMenu(gui)) return;
+            try {
+                buttons = (java.util.List<net.minecraft.client.gui.GuiButton>) gui.getClass().getMethod("getButtonList").invoke(gui);
+            } catch (ReflectiveOperationException failure) {
+                throw new IllegalStateException("不能读取 CustomMainMenu 的实际按钮列表", failure);
+            }
+        }
+        if (isMainMenu(gui)) buttons.add(new GalleryButton(gui.width - 110, 4));
     }
 
     private static boolean isMainMenu(net.minecraft.client.gui.GuiScreen gui) {
