@@ -6,6 +6,7 @@ import csv
 import io
 import json
 import lzma
+import os
 from pathlib import Path
 import re
 import struct
@@ -14,7 +15,19 @@ import zipfile
 
 
 def run(command: list[str], cwd: Path) -> None:
-    subprocess.run(command, cwd=cwd, check=True)
+    # Java8 Windows launcher无法处理本机中文绝对路径；只在进程边界转相对参数。
+    def relative(value: str) -> str:
+        if not Path(value).is_absolute():
+            return value
+        try:
+            return os.path.relpath(value, cwd)
+        except ValueError:  # 不同盘符仍使用原绝对路径。
+            return value
+
+    arguments = [os.pathsep.join(relative(part) for part in value.split(os.pathsep))
+                 if os.pathsep in value and not value.startswith("-") else relative(value)
+                 for value in command[1:]]
+    subprocess.run([command[0], *arguments], cwd=cwd, check=True)
 
 
 def mapping_files(target: str, libraries: Path, snapshot: Path, output: Path) -> None:
@@ -99,7 +112,7 @@ def dependencies(launcher: Path, minecraft: str, forge: str, target: str) -> lis
 
 
 def package_mod(destination: Path, classes: Path, package: str, resources: Path, manifest: str, repository: Path,
-                gallery: Path | None = None) -> None:
+                gallery: Path | None = None, verification: Path | None = None) -> None:
     with zipfile.ZipFile(destination, "w", zipfile.ZIP_DEFLATED) as result:
         result.writestr("META-INF/MANIFEST.MF", manifest)
         for path in (classes / package).rglob("*.class"):
@@ -112,6 +125,11 @@ def package_mod(destination: Path, classes: Path, package: str, resources: Path,
             with zipfile.ZipFile(gallery) as source:
                 for entry in source.infolist():
                     if not entry.is_dir() and entry.filename != "META-INF/MANIFEST.MF":
+                        result.writestr(entry, source.read(entry))
+        if verification:
+            with zipfile.ZipFile(verification) as source:
+                for entry in source.infolist():
+                    if entry.filename.startswith("club/heiqi/uilib/testing/host/LocalMediaFiles") and entry.filename.endswith(".class"):
                         result.writestr(entry, source.read(entry))
 
 
@@ -143,10 +161,14 @@ def main() -> None:
     parser.add_argument("--launcher", type=Path, required=True)
     parser.add_argument("--jdk", type=Path, required=True)
     parser.add_argument("--snapshot", type=Path, required=True)
+    parser.add_argument("--repository", type=Path, required=True, help="本Minecraft仓根目录")
+    parser.add_argument("--project", type=Path, required=True, help="当前独立Gradle工程")
+    parser.add_argument("--shared", type=Path, required=True, help="当前工程从Maven解析并同步的正式依赖")
+    parser.add_argument("--version", required=True)
     parser.add_argument("--install-bundle", action="store_true", help="显式装配人工附加包与媒体运行依赖")
     args = parser.parse_args()
-    repository = Path(__file__).resolve().parents[2]
-    project = repository / "platforms" / ("forge" + args.target)
+    repository = args.repository.resolve()
+    project = args.project.resolve()
     cache = project / ".gradle/runtime-cache"
     cache.mkdir(parents=True, exist_ok=True)
     classes = cache / "classes"
@@ -158,7 +180,7 @@ def main() -> None:
     staging.mkdir(parents=True, exist_ok=True)
     output = project / "build" / ("install" if args.install_bundle else "production")
     output.mkdir(parents=True, exist_ok=True)
-    shared = repository / "build/embedded/java8"
+    shared = args.shared.resolve()
     libraries = args.launcher.resolve() / "libraries"
     minecraft, forge, binding = (("1.12.2", "14.23.5.2864", "lwjgl2") if args.target == "112"
                                   else ("1.16.5", "36.2.42", "lwjgl3"))
@@ -179,7 +201,7 @@ def main() -> None:
     tools += [libraries / f"org/ow2/asm/{name}/9.3/{name}-9.3.jar" for name in ["asm", "asm-tree", "asm-commons"]]
     shared_names = ["core", "font-adapter", "gl-renderer", binding]
     if args.install_bundle:
-        shared_names += ["media-adapter", "gallery"]
+        shared_names += ["media-adapter", "gallery", "verification"]
     for dependency in tools + clients + [shared / (name + ".jar") for name in shared_names]:
         if not dependency.is_file():
             raise FileNotFoundError(dependency)
@@ -200,7 +222,7 @@ def main() -> None:
         sources += list((repository / f"src/minecraft{args.target}Manual/java").rglob("*.java"))
     run([javac, "-J-Dfile.encoding=UTF-8", "-encoding", "UTF-8", "-source", "8", "-target", "8", "-proc:none", "-cp", ";".join(map(str, classpath)),
          "-d", str(classes)] + list(map(str, sources)), repository)
-    base_manifest = "Manifest-Version: 1.0\r\nImplementation-Version: 4.11.1-multi-instance\r\n"
+    base_manifest = "Manifest-Version: 1.0\r\nImplementation-Version: " + args.version + "\r\n"
     host_manifest = base_manifest
     if args.target == "112":
         host_manifest += "FMLCorePlugin: club.heiqi.uilib.host.forge112.loading.UILibLoadingPlugin\r\nFMLCorePluginContainsFMLMod: true\r\n"
@@ -209,8 +231,9 @@ def main() -> None:
         package_mod(development, classes, f"club/heiqi/uilib/{'host' if kind == 'host' else 'manual'}/forge{args.target}",
                     repository / f"src/minecraft{args.target}{'Manual' if kind == 'manual' else ''}/resources",
                     (host_manifest if kind == "host" else base_manifest) + "\r\n", repository,
-                    shared / "gallery.jar" if kind == "manual" else None)
-        production = output / (f"qz_uilib_{'manual_' if kind == 'manual' else ''}forge{args.target}-4.11.1-multi-instance.jar")
+                    shared / "gallery.jar" if kind == "manual" else None,
+                    shared / "verification.jar" if kind == "manual" else None)
+        production = output / (f"qz_uilib_{'manual_' if kind == 'manual' else ''}forge{args.target}-{args.version}.jar")
         live_classpath = tools + classpath + [development]
         run([java, "-Xmx1G", "-cp", ";".join(map(str, live_classpath)), "net.md_5.specialsource.SpecialSource", "--live",
              "--in-jar", str(development), "--out-jar", str(production), "--srg-in", str(cache / "to-production.srg"), "--quiet"], repository)

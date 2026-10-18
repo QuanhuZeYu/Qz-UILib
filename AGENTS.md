@@ -4,7 +4,7 @@
 
 ## 规格权威与职责归属
 
-开始工作先读 [UILib 核心职责与交互规格](<specs/2026-10-07-uilib-core-contract-design.md>)。再按 [规格入口](<specs/README.md>) 阅读对应模块规格。核心定义跨模块合同，模块定义所属能力与验收；两者共同构成项目规格体系，同一要求只在其归属规格维护。源码、注释与测试描述实现或证据，不能另立要求，也不能以旧约定覆盖 spec。
+开始工作先读 [Core 核心职责与交互规格](<../Qz-UILib-Core/specs/2026-10-07-uilib-core-contract-design.md>)，再读本仓 [Minecraft 多版本宿主规格](<specs/host/2026-10-18-uilib-minecraft-hosts-spec.md>) 与 [MC 渲染规格](<specs/host/2026-10-07-mc-host-render-optimization-spec.md>)。本仓负责加载器、游戏资源、原版字体、输入与生命周期接入；核心合同及共享平台实现分别归 Core 与 Platform。源码、注释与测试描述实现或证据，不能另立要求，也不能以旧约定覆盖 spec。
 
 遇到实现与 spec 不符，记录偏差并按 spec 设计；spec 未覆盖的行为不得从旧母本、历史编号或结构快照推导为强制要求。现有能力不因缺少规格而自动删除；必要的目标或核心边界缺口先向用户确认，并把认可结果更新到所属核心或模块规格。
 
@@ -16,4 +16,4 @@
 - 测试按 spec 的真实场景评价，不以测试现状反向定义需求。生产代码改动运行完整 build；仅文档或注释变更检查差异与引用，明确未验证的运行行为。
 - 公共接口或兼容承诺变化须有明确设计与授权；当前任务授权持续有效，不重复确认。push、tag、release、实机 runClient/runServer 由用户明确授权。
 
-只维护 `specs/` 中的正式规格，不创建 docs、接入指南或与实现并行维护的说明文档。实现意图、不变量与失败语义写在相关源码旁；用法通过接口与可运行示例表达；临时计划、任务笔记和验证记录统一放在忽略的 `.superpowers/`，不定义项目行为。构建与验证命令以 [Gradle 任务声明](<gradle/>) 为准。
+只维护 `specs/` 中的正式规格，不创建 docs、接入指南或与实现并行维护的说明文档。实现意图、不变量与失败语义写在相关源码旁；用法通过接口与可运行示例表达；临时计划、任务笔记和验证记录统一放在忽略的 `.superpowers/`，不定义项目行为。构建与验证命令以 [根构建](<build.gradle.kts>) 和各版本 [Forge 1.12](<platforms/forge112/build.gradle>)、[Forge 1.16](<platforms/forge116/build.gradle>)、[NeoForge 26.3](<platforms/neoforge263/build.gradle>) 为准。各工程使用自己的 wrapper；跨仓依赖通过 `-PuilibRepository` 与 `-PuilibVersion` 显式选择 Maven 产物。

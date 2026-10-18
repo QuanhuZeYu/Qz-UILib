@@ -6,18 +6,16 @@ java.toolchain.languageVersion = JavaLanguageVersion.of(8)
 minecraft { mappings channel: 'snapshot', version: '20210309-1.16.5' }
 dependencies { minecraft 'net.minecraftforge:forge:1.16.5-36.2.42' }
 group = 'club.heiqi.uilib'
-version = '4.11.1-multi-instance'
+version = findProperty('uilibVersion') ?: '4.11.1'
 
 repositories {
     maven { url = uri('.gradle/maven') }
-    if (findProperty('uilibRuntimeRepository')) {
-        maven { url = uri(property('uilibRuntimeRepository')); metadataSources { artifact() } }
-    }
     mavenCentral()
 }
 
-def shared = file('../../build/embedded/java8')
-def sharedFiles = { names -> files(names.collect { new File(shared, it + '.jar') }) }
+ext.uilibJavaTarget = 8
+ext.uilibBinding = 'lwjgl3'
+apply from: '../../gradle/loader-dependencies.gradle'
 sourceSets {
     main {
         java.srcDirs = ['../../src/minecraft116/java']
@@ -26,11 +24,11 @@ sourceSets {
     manual {
         java.srcDirs = ['../../src/minecraft116Manual/java']
         resources.srcDirs = ['../../src/minecraft116Manual/resources']
-        compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath + sharedFiles(['gallery', 'media-adapter'])
+        compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath + uilibManual
         runtimeClasspath += output + compileClasspath
     }
 }
-dependencies { compileOnly sharedFiles(['core', 'font-adapter', 'gl-renderer', 'lwjgl3']) }
+dependencies { compileOnly uilibProduction }
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
     options.compilerArgs += ['-proc:none']
@@ -44,25 +42,27 @@ jar {
 task manualJar(type: Jar) {
     archiveBaseName = 'qz_uilib_manual_forge116'
     from sourceSets.manual.output
+    from({ zipTree(uilibArtifacts.verification.singleFile) }) { include 'club/heiqi/uilib/testing/host/LocalMediaFiles*.class' }
     from('../../LICENSE')
-    from({ zipTree(new File(shared, 'gallery.jar')) }) { exclude 'META-INF/MANIFEST.MF' }
+    from({ zipTree(uilibArtifacts.gallery.singleFile) }) { exclude 'META-INF/MANIFEST.MF', 'LICENSE' }
     finalizedBy 'reobfManualJar'
 }
 reobf { manualJar {} }
 
-// Forge 36 从 FMLModType 装载独立库；仍消费根输出，不把核心装进宿主 Mod。
+// Forge 36 从 FMLModType 装载独立库；消费 Maven 正式产物，不把核心装进宿主 Mod。
 task glAdapterJar(type: Jar) {
     archiveFileName = 'qz_uilib-gl-adapter-java8.jar'
+    from('../../LICENSE')
     destinationDirectory = layout.buildDirectory.dir('libraries')
-    from({ zipTree(new File(shared, 'gl-renderer.jar')) }) { exclude 'META-INF/MANIFEST.MF' }
-    from({ zipTree(new File(shared, 'lwjgl3.jar')) }) { exclude 'META-INF/MANIFEST.MF' }
+    from({ zipTree(uilibArtifacts['gl-renderer'].singleFile) }) { exclude 'META-INF/MANIFEST.MF', 'LICENSE' }
+    from({ zipTree(uilibArtifacts['lwjgl3'].singleFile) }) { exclude 'META-INF/MANIFEST.MF', 'LICENSE' }
     manifest { attributes('FMLModType': 'LIBRARY') }
 }
 def libraryJars = ['core', 'font-adapter', 'media-adapter'].collect { name ->
     tasks.register('library' + name.split('-').collect { it.capitalize() }.join(''), Jar) {
         archiveFileName = 'qz_uilib-' + name + '-java8.jar'
         destinationDirectory = layout.buildDirectory.dir('libraries')
-        from({ zipTree(new File(shared, name + '.jar')) }) { exclude 'META-INF/MANIFEST.MF' }
+        from({ zipTree(uilibArtifacts[name].singleFile) }) { exclude 'META-INF/MANIFEST.MF', 'LICENSE' }
         manifest { attributes('FMLModType': 'LIBRARY') }
     }
 }

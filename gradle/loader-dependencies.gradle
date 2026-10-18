@@ -1,0 +1,38 @@
+// 适用于各独立 wrapper；Gradle 5.6.4 也直接解析标准 Maven 元数据。
+def selectedVersion = findProperty('uilibVersion') ?: '4.11.1'
+def selectedRepository = findProperty('uilibRepository')
+if (selectedRepository) repositories.maven {
+    name = 'UILib'
+    // Gradle5.6的Project.uri(String)会按旧编码再次解码file URI；URI对象保留标准UTF8转义。
+    url = selectedRepository.toString().startsWith('file:') ? new java.net.URI(selectedRepository.toString()) : uri(selectedRepository)
+    content { includeGroup 'club.heiqi.uilib' }
+}
+ext.uilibArtifacts = [:]
+def modules = [core: 'core', 'font-adapter': 'font-adapter', 'gl-renderer': 'gl-renderer',
+               lwjgl2: 'lwjgl2-adapter', lwjgl3: 'lwjgl3-adapter', 'media-adapter': 'media-adapter',
+               gallery: 'gallery', verification: 'core-verification']
+modules.each { name, module ->
+    def configuration = configurations.create('uilib' + name.replace('-', '').capitalize()) {
+        canBeConsumed = false
+        transitive = false
+    }
+    def classifier = module in ['gallery', 'core-verification'] ? '' : (project.uilibJavaTarget == 8 ? ':java8' : '')
+    dependencies.add(configuration.name, 'club.heiqi.uilib:' + module + ':' + selectedVersion + classifier)
+    uilibArtifacts[name] = configuration
+}
+ext.uilibProduction = files(uilibArtifacts.core, uilibArtifacts['font-adapter'], uilibArtifacts['gl-renderer'], uilibArtifacts[project.uilibBinding])
+ext.uilibManual = files(uilibArtifacts.gallery, uilibArtifacts['media-adapter'], uilibArtifacts.verification)
+// 只对本工程解析结果同步安装名；其他工程不读取这个 build 目录。
+ext.uilibResolvedDirectory = layout.buildDirectory.dir('resolved-uilib')
+tasks.register('resolveUilibProduction', Sync) {
+    into uilibResolvedDirectory
+    ['core', 'font-adapter', 'gl-renderer', project.uilibBinding].each { name ->
+        from(uilibArtifacts[name]) { rename { name + '.jar' } }
+    }
+}
+tasks.register('resolveUilibManual', Sync) {
+    into layout.buildDirectory.dir('resolved-uilib-manual')
+    ['core', 'font-adapter', 'gl-renderer', project.uilibBinding, 'gallery', 'media-adapter', 'verification'].each { name ->
+        from(uilibArtifacts[name]) { rename { name + '.jar' } }
+    }
+}

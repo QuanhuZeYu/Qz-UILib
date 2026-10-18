@@ -1,42 +1,54 @@
-name: Build and test
-
+name: Minecraft 独立构建
 on:
-  pull_request:
-    branches: [ 4.0, master, main ]
-  push:
-    branches: [ '**' ]
-
+  workflow_dispatch:
+    inputs:
+      uilibRepository:
+        description: Core 与 Platform 正式 Maven 仓地址
+        required: true
+        type: string
+      uilibVersion:
+        description: UILib 依赖版本
+        required: true
+        default: 4.11.1
+        type: string
 jobs:
-  build-and-test:
-    uses: GTNewHorizons/GTNH-Actions-Workflows/.github/workflows/build-and-test.yml@8d2e9d2fcfd6ea1c5b8f7c7e15359ad031444c7d
-
-  script-host-policy:
-    name: Script host policy
-    runs-on: ubuntu-24.04
+  build:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - directory: .
+            java: '25'
+            tasks: build manualTestJar
+          - directory: platforms/forge112
+            java: '8'
+            tasks: build installBundle
+          - directory: platforms/forge116
+            java: '17'
+            tasks: build installBundle
+          - directory: platforms/neoforge263
+            java: '25'
+            tasks: build installBundle
     steps:
-      - name: Checkout
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
         with:
-          persist-credentials: false
-
-      - name: Reject disallowed tracked files and workflow hosts
+          distribution: temurin
+          java-version: |
+            8
+            17
+            21
+            25
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java }}
+      - uses: gradle/actions/setup-gradle@v4
+      - name: 使用本工程 wrapper 构建
+        working-directory: ${{ matrix.directory }}
+        env:
+          UILIB_REPOSITORY: ${{ inputs.uilibRepository }}
+          UILIB_VERSION: ${{ inputs.uilibVersion }}
         shell: bash
-        run: |
-          python3 - <<'PY'
-          import subprocess
-          from pathlib import Path
-
-          suffix = "." + "p" + "s" + "1"
-          forbidden = ("p" + "wsh", "power" + "shell", suffix)
-          tracked = subprocess.check_output(["git", "ls-files"], text=True).splitlines()
-          bad_files = [path for path in tracked if path.lower().endswith(suffix)]
-          bad_workflows = []
-          for path in Path(".github/workflows").glob("*"):
-              if path.is_file():
-                  text = path.read_text(encoding="utf-8").lower()
-                  hits = [token for token in forbidden if token in text]
-                  if hits:
-                      bad_workflows.append((path.as_posix(), hits))
-          if bad_files or bad_workflows:
-              raise SystemExit(f"disallowed files={bad_files}; workflow tokens={bad_workflows}")
-          PY
+        run: bash ./gradlew ${{ matrix.tasks }} "-PuilibRepository=$UILIB_REPOSITORY" "-PuilibVersion=$UILIB_VERSION"

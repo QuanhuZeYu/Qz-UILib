@@ -8,9 +8,11 @@ version = providers.gradleProperty('uilibVersion').getOrElse('4.11.1')
 base.archivesName = 'qz_uilib-neoforge263'
 
 def repositoryRoot = projectDir.toPath().resolve('../..').normalize().toFile()
-def shared = new File(repositoryRoot, 'build/embedded/java21')
+ext.uilibJavaTarget = 21
+ext.uilibBinding = 'lwjgl3'
+apply from: '../../gradle/loader-dependencies.gradle'
 def productionLibraries = ['core', 'font-adapter', 'gl-renderer', 'lwjgl3']
-def manualLibraries = ['gallery', 'media-adapter']
+def manualLibraries = ['gallery', 'media-adapter', 'verification']
 def productionNestedLibraries = ['core', 'font-adapter']
 def manualNestedLibraries = ['media-adapter']
 
@@ -38,8 +40,8 @@ sourceSets {
 
 repositories { mavenCentral() }
 dependencies {
-    implementation files(productionLibraries.collect { new File(shared, it + '.jar') })
-    manualImplementation files(manualLibraries.collect { new File(shared, it + '.jar') })
+    implementation uilibProduction
+    manualImplementation uilibManual
 }
 
 if (providers.gradleProperty('prismRoot').isPresent()) {
@@ -59,9 +61,9 @@ if (providers.gradleProperty('prismRoot').isPresent()) {
     if (!patched.isFile()) throw new GradleException('指定 Prism 缓存缺少精确 NeoForge 26.3.0.86 patched 客户端')
     libraries.add(patched)
     // MixinExtras 的注入辅助不用于本接入；Mixin API 已由实例 loader 依赖提供。
-    sourceSets.main.compileClasspath = files(libraries, productionLibraries.collect { new File(shared, it + '.jar') })
+    sourceSets.main.compileClasspath = files(libraries, uilibProduction)
     sourceSets.manual.compileClasspath = files(sourceSets.main.output, sourceSets.main.compileClasspath,
-            manualLibraries.collect { new File(shared, it + '.jar') })
+            uilibManual)
 }
 
 tasks.withType(ProcessResources).configureEach {
@@ -73,41 +75,20 @@ tasks.withType(JavaCompile).configureEach {
     options.release = 25
     options.compilerArgs += ['-proc:none']
 }
-tasks.named('compileManualJava', JavaCompile) {
-    // 同一测试路径解析器继续供所有人工宿主使用，不在版本接入中复制。
-    source(new File(repositoryRoot, 'src/testHost/java/club/heiqi/uilib/testing/host/LocalMediaFiles.java'))
-}
-
-def requireShared = { List<String> modules ->
-    modules.each { module ->
-        def artifact = new File(shared, module + '.jar')
-        if (!artifact.isFile()) throw new GradleException('缺少共享产物 ' + artifact + '；请先在根工程执行 prepareEmbedded')
-    }
-}
-def verifyShared = tasks.register('verifySharedArtifacts') {
-    inputs.files(productionLibraries.collect { new File(shared, it + '.jar') })
-    doLast { requireShared(productionLibraries) }
-}
-def verifyManual = tasks.register('verifyManualArtifacts') {
-    dependsOn verifyShared
-    inputs.files(manualLibraries.collect { new File(shared, it + '.jar') })
-    doLast { requireShared(manualLibraries) }
-}
-tasks.named('compileJava') { dependsOn verifyShared }
-tasks.named('compileManualJava') { dependsOn verifyManual }
 
 def nestedResources = { String name, List<String> modules ->
     tasks.register(name) {
-        inputs.files(modules.collect { new File(shared, it + '.jar') })
+        inputs.files(modules.collect { uilibArtifacts[it] })
         outputs.dir(layout.buildDirectory.dir('generated/' + name))
-        dependsOn name.startsWith('manual') ? verifyManual : verifyShared
         doLast {
             def root = layout.buildDirectory.dir('generated/' + name).get().asFile
             def jarjar = new File(root, 'META-INF/jarjar')
             jarjar.mkdirs()
             project.sync {
                 into jarjar
-                from(modules.collect { new File(shared, it + '.jar') })
+                modules.each { module ->
+                    from(uilibArtifacts[module]) { rename { module + '.jar' } }
+                }
             }
             def jars = modules.collect { module -> [identifier: [group: 'club.heiqi.uilib', artifact: module], version: [range: '[' + project.version + ']', artifactVersion: project.version.toString()], path: 'META-INF/jarjar/' + module + '.jar', isObfuscated: false] }
             new File(jarjar, 'metadata.json').text = groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson([jars: jars])) + '\n'
@@ -121,8 +102,8 @@ tasks.named('jar', Jar) {
     from(layout.buildDirectory.dir('generated/productionNestedResources'))
     // GL API 与具体 binding 同包，消费共同编译输出合入此适配，避免 FML 模块 split package。
     ['gl-renderer', 'lwjgl3'].each { module ->
-        from(zipTree(new File(shared, module + '.jar'))) {
-            exclude 'META-INF/MANIFEST.MF', 'META-INF/*.SF', 'META-INF/*.RSA', 'META-INF/*.DSA', 'module-info.class'
+        from({ zipTree(uilibArtifacts[module].singleFile) }) {
+            exclude 'META-INF/MANIFEST.MF', 'LICENSE', 'META-INF/*.SF', 'META-INF/*.RSA', 'META-INF/*.DSA', 'module-info.class'
         }
     }
     from(new File(repositoryRoot, 'LICENSE'))
@@ -133,8 +114,9 @@ def manualJar = tasks.register('manualJar', Jar) {
     archiveBaseName = 'qz_uilib_manualtest-neoforge263'
     dependsOn tasks.named('manualClasses'), manualNested
     from(sourceSets.manual.output)
+    from({ zipTree(uilibArtifacts.verification.singleFile) }) { include 'club/heiqi/uilib/testing/host/LocalMediaFiles*.class' }
     // 图像资产必须属于正式 mod 资源包；普通 JiJ library 不承担 ResourceManager 的资源包身份。
-    from(zipTree(new File(shared, 'gallery.jar'))) { exclude 'META-INF/MANIFEST.MF' }
+    from({ zipTree(uilibArtifacts.gallery.singleFile) }) { exclude 'META-INF/MANIFEST.MF', 'LICENSE' }
     from(layout.buildDirectory.dir('generated/manualNestedResources'))
     from(new File(repositoryRoot, 'LICENSE'))
     manifest.attributes('Implementation-Title': 'Qz UILib NeoForge 26.3 测试广场', 'Implementation-Version': project.version)

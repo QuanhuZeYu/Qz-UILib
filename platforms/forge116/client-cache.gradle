@@ -6,12 +6,16 @@ repositories {
     mavenCentral()
     maven { url = 'https://maven.minecraftforge.net' }
 }
+ext.uilibJavaTarget = 8
+ext.uilibBinding = 'lwjgl3'
+apply from: '../../gradle/loader-dependencies.gradle'
 configurations { prismMappings }
 dependencies { prismMappings 'de.oceanlabs.mcp:mcp_snapshot:20210309-1.16.5@zip' }
 
 def configurePrismBuild = { task, includeManual ->
     task.group = 'build'
     task.description = includeManual ? '显式装配 UILib 宿主、人工广场与媒体运行依赖' : '使用 Prism 输入编译和生产重映射 UILib 正式宿主'
+    task.dependsOn includeManual ? 'resolveUilibManual' : 'resolveUilibProduction'
     task.doFirst {
         if (!project.hasProperty('prismRoot')) throw new GradleException('缺少 -PprismRoot=<Prism Launcher 目录>')
         def jdk = project.findProperty('java8Home') ? file(project.property('java8Home')) :
@@ -20,7 +24,10 @@ def configurePrismBuild = { task, includeManual ->
         def mappings = project.findProperty('mcpMappings') ? file(project.property('mcpMappings')) : configurations.prismMappings.singleFile
         task.commandLine project.findProperty('pythonExecutable') ?: 'python', file('../forge112/build-client-cache.py'),
                 '--target', '116', '--launcher', file(project.property('prismRoot')),
-                '--jdk', jdk, '--snapshot', mappings
+                '--jdk', jdk, '--snapshot', mappings,
+                '--repository', file('../..'), '--project', projectDir,
+                '--shared', layout.buildDirectory.dir(includeManual ? 'resolved-uilib-manual' : 'resolved-uilib').get().asFile,
+                '--version', project.findProperty('uilibVersion') ?: '4.11.1'
         if (includeManual) task.args '--install-bundle'
         task.environment 'PYTHONUTF8', '1'
     }

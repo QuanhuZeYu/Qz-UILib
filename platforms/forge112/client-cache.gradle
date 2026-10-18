@@ -6,12 +6,16 @@ repositories {
     mavenCentral()
     maven { url = 'https://maven.minecraftforge.net' }
 }
+ext.uilibJavaTarget = 8
+ext.uilibBinding = 'lwjgl2'
+apply from: '../../gradle/loader-dependencies.gradle'
 configurations { prismMappings }
 dependencies { prismMappings 'de.oceanlabs.mcp:mcp_snapshot:20171003-1.12@zip' }
 
 def configurePrismBuild = { task, includeManual ->
     task.group = 'build'
     task.description = includeManual ? '显式装配 UILib 宿主、人工广场与媒体运行依赖' : '使用 Prism 输入编译和生产重映射 UILib 正式宿主'
+    task.dependsOn includeManual ? 'resolveUilibManual' : 'resolveUilibProduction'
     task.doFirst {
         if (!project.hasProperty('prismRoot')) throw new GradleException('缺少 -PprismRoot=<Prism Launcher 目录>')
         def jdk = project.findProperty('java8Home') ? file(project.property('java8Home')) : new File(System.getProperty('java.home'))
@@ -22,7 +26,10 @@ def configurePrismBuild = { task, includeManual ->
         def mappings = project.findProperty('mcpMappings') ? file(project.property('mcpMappings')) : configurations.prismMappings.singleFile
         task.commandLine project.findProperty('pythonExecutable') ?: 'python', file('build-client-cache.py'),
                 '--target', '112', '--launcher', file(project.property('prismRoot')),
-                '--jdk', jdk, '--snapshot', mappings
+                '--jdk', jdk, '--snapshot', mappings,
+                '--repository', file('../..'), '--project', projectDir,
+                '--shared', layout.buildDirectory.dir(includeManual ? 'resolved-uilib-manual' : 'resolved-uilib').get().asFile,
+                '--version', project.findProperty('uilibVersion') ?: '4.11.1'
         if (includeManual) task.args '--install-bundle'
         task.environment 'PYTHONUTF8', '1'
     }
@@ -45,7 +52,17 @@ def inputQueueVerification = tasks.register('compileInputQueueVerification', Jav
 }
 tasks.register('verifyInputQueue', JavaExec) {
     dependsOn inputQueueVerification
-    classpath = files(inputQueueVerification.map { it.destinationDir }) + inputQueueVerification.get().classpath
+    def actualClasspath = files(inputQueueVerification.map { it.destinationDir }) + inputQueueVerification.get().classpath
+    inputs.files actualClasspath
+    doFirst {
+        // Java8 Windows launcher不能处理本机中文绝对classpath；以工程目录为工作目录传相对路径。
+        classpath = files()
+        jvmArgs '-cp', actualClasspath.files.collect { artifact ->
+            def location = workingDir.toPath()
+            def path = artifact.toPath().toAbsolutePath()
+            location.root == path.root ? location.relativize(path).toString() : path.toString()
+        }.join(File.pathSeparator)
+    }
     main = 'club.heiqi.uilib.host.forge112.Lwjgl2InputQueueVerification'
     jvmArgs '-Dfile.encoding=UTF-8'
 }
