@@ -80,10 +80,11 @@ public final class GlFontIrisProducer implements GlVertexProducer {
             for (int i = draw.firstQuad; i < draw.firstQuad + draw.quadCount; i++) {
                 Quad q = batch.quads().get(i);
                 boolean emoji = draw.state.material == GlQuadRenderer.COLOR_PREMULT;
-                vertex(q, q.x0, q.y0, q.u0, q.v0, emoji, alpha, normal, entity, midBlock, scope);
-                vertex(q, q.x1, q.y1, q.u1, q.v0, emoji, alpha, normal, entity, midBlock, scope);
-                vertex(q, q.x2, q.y2, q.u1, q.v1, emoji, alpha, normal, entity, midBlock, scope);
-                vertex(q, q.x3, q.y3, q.u0, q.v1, emoji, alpha, normal, entity, midBlock, scope);
+                // 形状裁剪后的UV已逐顶点插值，旧矩形边界不能重建这些采样位置。
+                vertex(q, q.x0, q.y0, q.s0, q.t0, emoji, alpha, normal, entity, midBlock, scope);
+                vertex(q, q.x1, q.y1, q.s1, q.t1, emoji, alpha, normal, entity, midBlock, scope);
+                vertex(q, q.x2, q.y2, q.s2, q.t2, emoji, alpha, normal, entity, midBlock, scope);
+                vertex(q, q.x3, q.y3, q.s3, q.t3, emoji, alpha, normal, entity, midBlock, scope);
             }
         staging.flip();
         long bytes = staging.remaining();
@@ -132,7 +133,8 @@ public final class GlFontIrisProducer implements GlVertexProducer {
                 .putFloat(0)
                 .putFloat(1);
         for (int i = 0; i < 3; i++) staging.putFloat(normal[i]);
-        staging.putFloat((q.u0 + q.u1) * 0.5f).putFloat((q.v0 + q.v1) * 0.5f);
+        staging.putFloat((q.s0 + q.s1 + q.s2 + q.s3) * 0.25f)
+                .putFloat((q.t0 + q.t1 + q.t2 + q.t3) * 0.25f);
         // quad caller平面的切向是+X，handedness为+1；宿主normal matrix处理到目标空间。
         staging.putFloat(1).putFloat(0).putFloat(0).putFloat(1);
         // 仅shader实际声明的known扩展字段读来源generic4；未声明的padding不充当unknown fallback。

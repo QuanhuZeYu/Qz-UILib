@@ -59,8 +59,9 @@ val fontText = scenario("fontTextScenario", "真实共享Unicode/Bidi/脚本与E
 val vanillaThread = scenario("vanillaFontThreadScenario", "Splash线程标准入口隔离", prefix + "VanillaFontThreadScenario", fullRuntime)
 val durability = scenario("minecraftDurabilityScenario", "实际Item耐久事实", "club.heiqi.uilib.host.client.image.MinecraftDurabilityScenario", fullRuntime)
 val asset = scenario("coreAssetResourceScenario", "MC资源链Core资产及用户覆盖重载", "club.heiqi.uilib.host.client.font.CoreAssetResourceScenario", fullRuntime)
+val irisBatch = scenario("irisProducerBatchScenario", "Iris生产producer逐顶点UV上传字节", "club.heiqi.uilib.host.client.gl.IrisProducerGlScenario") { args("pure-batch") }
 val itemFacts = scenario("minecraftItemImageFactsScenario", "真实MC物品提示转换、palette快照与共同绘制输入", "club.heiqi.uilib.host.client.image.MinecraftItemImageFactsScenario")
-tasks.named("check") { dependsOn(cpu, fontProjection, fontText, vanillaThread, durability, asset, itemFacts) }
+tasks.named("check") { dependsOn(cpu, fontProjection, fontText, vanillaThread, durability, asset, itemFacts, irisBatch) }
 
 // 保留显式 GPU 场景入口；普通 check 维持原来的设备需求范围。
 scenario("fontContextGlScenario", "有效字体上下文Core与Compatibility捕获", prefix + "FontProjectionScenario")

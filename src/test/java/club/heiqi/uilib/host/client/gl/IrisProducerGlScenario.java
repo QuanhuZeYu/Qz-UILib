@@ -1,12 +1,15 @@
 package club.heiqi.uilib.host.client.gl;
 
+import java.lang.reflect.Proxy;
 import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.IntBuffer;
 import org.lwjgl.BufferUtils;
 import java.util.ArrayList;
 import java.util.List;
 import org.lwjgl.system.MemoryUtil;
 import club.heiqi.uilib.host.client.font.context.FontRenderContext;
+import club.heiqi.uilib.host.client.font.context.FontProjection;
 import club.heiqi.uilib.ui.render.batch.OrderedQuadBatch;
 import club.heiqi.uilib.ui.render.batch.OrderedQuadCollector;
 import static org.lwjgl.opengl.GL32C.*;
@@ -210,6 +213,109 @@ public final class IrisProducerGlScenario {
                         "IRIS_SYNTHETIC_PRODUCER_ABI_PASS productionEmitter=true rawPackedUv1=true straightWhiteSolid=true historicalAlpha=true capturedMcEntityMidBlock=true realIrisEngine=false");
             }
         }
+    }
+
+    /** 只捕获production producer上传的字节；不创建GL上下文或声称shader采样结果。 */
+    private static void pureBatch() {
+        final ByteBuffer[] uploaded = {null};
+        final int[] generated = {0}, draws = {0}, bound = {0};
+        GlApi api = (GlApi) Proxy.newProxyInstance(GlApi.class.getClassLoader(), new Class<?>[] {GlApi.class},
+                (proxy, method, arguments) -> {
+                    String name = method.getName();
+                    if (name.equals("glGenVertexArrays") || name.equals("glGenBuffers")) return ++generated[0];
+                    if (name.equals("glBufferSubData")) {
+                        if ((Integer) arguments[0] != GL_ARRAY_BUFFER || (Long) arguments[1] != 0L || uploaded[0] != null)
+                            throw new AssertionError("producer上传范围或次数不符");
+                        ByteBuffer source = ((ByteBuffer) arguments[2]).duplicate();
+                        uploaded[0] = ByteBuffer.allocate(source.remaining()).order(ByteOrder.nativeOrder());
+                        uploaded[0].put(source).flip();
+                        return null;
+                    }
+                    if (name.equals("glDrawElements")) {
+                        if ((Integer) arguments[0] != GL_TRIANGLES || (Integer) arguments[1] != 12
+                                || (Integer) arguments[2] != GL_UNSIGNED_INT || (Long) arguments[3] != 0L)
+                            throw new AssertionError("producer批次提交未保留两个四顶点项");
+                        draws[0]++;
+                        return null;
+                    }
+                    if (name.equals("glActiveTexture")) {
+                        if ((Integer) arguments[0] != GL_TEXTURE0) throw new AssertionError("producer使用了额外采样单元");
+                        return null;
+                    }
+                    if (name.equals("glBindTexture")) {
+                        if ((Integer) arguments[0] != GL_TEXTURE_2D || (Integer) arguments[1] != 37)
+                            throw new AssertionError("producer没有使用原批次资源");
+                        return null;
+                    }
+                    if (name.equals("glDeleteBuffers") || name.equals("glDeleteVertexArrays")) return null;
+                    throw new AssertionError("纯批次探针不支持GL操作：" + name);
+                });
+        GlProgramScope scope = new GlProgramScope() {
+            public int programId() { return 1; }
+            public List<GlProgramAttribute> attributes() { return java.util.Collections.emptyList(); }
+            public float[] normal() { return new float[] {0, 0, 1}; }
+            public int packedLight() { return 0; }
+            public float[] extended(String name, int type) { throw new AssertionError(name); }
+            public void configure(int vao, int vbo, int ebo, boolean uv, boolean color, boolean lightmap, boolean normal) {
+                throw new AssertionError("纯批次探针不配置GL输入状态");
+            }
+            public void pointer(int location, int size, int type, boolean normalized, int stride, long offset) {
+                throw new AssertionError("纯批次探针不配置GL属性");
+            }
+            public void disable(int location) { throw new AssertionError("纯批次探针不配置GL属性"); }
+            public void bindTexture2D(int texture) {
+                if (texture != 37) throw new AssertionError("批次纹理改变");
+                bound[0]++;
+            }
+            public void beforeDraw() {}
+            public void close() {}
+        };
+        float[] identity = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+        FontRenderContext context = new FontRenderContext(
+                new FontProjection(identity, identity, new int[] {0, 0, 16, 16}), 0, 16,
+                false, GL_LEQUAL, false, false, new int[] {0, 0, 16, 16},
+                FontRenderContext.MatrixState.ui(identity, identity), new Object(), 1, 0);
+        GlProgramProvider provider = new club.heiqi.uilib.host.client.font.compat.IrisProgramProvider(
+                IrisProducerGlScenario.class.getClassLoader(), api);
+        try (GlVertexProducer producer = provider.createVertexProducer(api, 2)) {
+            long[] submitted = {0};
+            OrderedQuadCollector collector = new OrderedQuadCollector(2, batch -> submitted[0] +=
+                    producer.consume(batch, scope, context, (resource, generation) -> {
+                        if (resource != 11 || generation != 7) throw new AssertionError("批次资源或代际改变");
+                        return new GlQuadRenderer.Texture(GL_TEXTURE_2D, 37);
+                    }));
+            OrderedQuadBatch.State state = new OrderedQuadBatch.State(GlQuadRenderer.MONOCHROME_COVERAGE, 11, 7, null);
+            collector.add(state, new OrderedQuadBatch.Quad(-2, -1, 4, 2, 0.125f, 0.25f, 0.875f, 0.75f, 3, 0xffffffff));
+            collector.add(state, new OrderedQuadBatch.Quad(
+                    -0.8f, -0.7f, 0.9f, -0.2f, 0.1f, 0.8f, 0.1f, 0.8f,
+                    0.125f, 0.25f, 0.75f, 0.375f, 0.375f, 0.875f, 0.375f, 0.875f, 3, 0xffffffff));
+            collector.flush();
+            if (uploaded[0] == null || submitted[0] != 8L * GlFontProgramLayout.STRIDE
+                    || uploaded[0].remaining() != submitted[0] || draws[0] != 1 || bound[0] != 1)
+                throw new AssertionError("producer上传字节数或有序提交次数不符");
+            float[][] expected = {
+                {-2, -1, 0.125f, 0.25f, 0.5f, 0.5f}, {2, -1, 0.875f, 0.25f, 0.5f, 0.5f},
+                {2, 1, 0.875f, 0.75f, 0.5f, 0.5f}, {-2, 1, 0.125f, 0.75f, 0.5f, 0.5f},
+                {-0.8f, -0.7f, 0.125f, 0.25f, 0.40625f, 0.59375f}, {0.9f, -0.2f, 0.75f, 0.375f, 0.40625f, 0.59375f},
+                {0.1f, 0.8f, 0.375f, 0.875f, 0.40625f, 0.59375f}, {0.1f, 0.8f, 0.375f, 0.875f, 0.40625f, 0.59375f}
+            };
+            int[] offsets = {0, 4, 32, 36, 76, 80};
+            for (int vertex = 0; vertex < expected.length; vertex++)
+                for (int field = 0; field < offsets.length; field++) {
+                    float actual = uploaded[0].getFloat(vertex * GlFontProgramLayout.STRIDE + offsets[field]);
+                    if (Float.compare(actual, expected[vertex][field]) != 0)
+                        throw new AssertionError("Iris上传的坐标/UV不符vertex=" + vertex + " field=" + field
+                                + " actual=" + actual + " expected=" + expected[vertex][field]);
+                }
+            System.out.println("IRIS_PRODUCER_BATCH_PASS legacyRectUv=true perVertexTriangleUv=true"
+                    + " actualMidTexCoord=true productionUpload=true bytes=" + submitted[0] + " shaderExecuted=false");
+        }
+    }
+
+    public static void main(String[] args) {
+        if (args.length != 1 || !args[0].equals("pure-batch"))
+            throw new IllegalArgumentException("使用pure-batch运行无GL字节探针");
+        pureBatch();
     }
 
     private static int shader(int type, String source) {
