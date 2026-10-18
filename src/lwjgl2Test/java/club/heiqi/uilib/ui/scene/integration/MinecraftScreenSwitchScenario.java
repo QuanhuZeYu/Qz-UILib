@@ -15,6 +15,10 @@ import club.heiqi.uilib.ui.reactive.ReactiveDomain;
 import club.heiqi.uilib.ui.scene.host.SceneHost;
 import club.heiqi.uilib.ui.scene.host.ScenePageSession;
 import club.heiqi.uilib.ui.scene.input.ScenePointerEvent;
+import club.heiqi.uilib.ui.scene.input.SceneKey;
+import club.heiqi.uilib.ui.scene.input.SceneShortcut;
+import club.heiqi.uilib.ui.scene.control.SceneCommand;
+import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
 import club.heiqi.uilib.ui.scene.layout.Size;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.PaintCommand;
@@ -68,6 +72,7 @@ public final class MinecraftScreenSwitchScenario extends TestApplication {
         final Field field = org.lwjgl.opengl.Display.class.getDeclaredField("display_impl");
         final Object base, original;
         final long offset;
+        boolean available = true;
         ActiveWindow() throws Exception {
             field.setAccessible(true);
             original = field.get(null);
@@ -75,7 +80,7 @@ public final class MinecraftScreenSwitchScenario extends TestApplication {
             offset = access.staticFieldOffset(field);
             Object active = java.lang.reflect.Proxy.newProxyInstance(original.getClass().getClassLoader(),
                     new Class<?>[] {field.getType()}, (proxy, method, arguments) -> {
-                        if (method.getName().equals("isActive")) return true;
+                        if (method.getName().equals("isActive")) return available;
                         method.setAccessible(true);
                         return method.invoke(original, arguments);
                     });
@@ -89,6 +94,8 @@ public final class MinecraftScreenSwitchScenario extends TestApplication {
         final Field buffer = keyboardField("readBuffer"), current = keyboardField("current_event"),
                 scratch = keyboardField("tmp_event");
         final Object oldBuffer, oldCurrent, oldScratch;
+        final ByteBuffer physical = (ByteBuffer) keyboardField("keyDownBuffer").get(null);
+        final byte[] oldPhysical = new byte[physical.capacity()];
         NativeCharacters() throws Exception {
             if (!Keyboard.isCreated()) throw new AssertionError("场景需要实际LWJGL2 Keyboard");
             oldBuffer = buffer.get(null); oldCurrent = current.get(null); oldScratch = scratch.get(null);
@@ -96,6 +103,8 @@ public final class MinecraftScreenSwitchScenario extends TestApplication {
             event.setAccessible(true);
             current.set(null, event.newInstance()); scratch.set(null, event.newInstance());
             buffer.set(null, ByteBuffer.allocate(0));
+            for (int key = 0; key < oldPhysical.length; key++) oldPhysical[key] = physical.get(key);
+            physical();
         }
         static Field keyboardField(String name) throws Exception {
             Field result = Keyboard.class.getDeclaredField(name);
@@ -115,8 +124,27 @@ public final class MinecraftScreenSwitchScenario extends TestApplication {
             read.invoke(producer, payload); payload.flip();
             buffer.set(null, payload);
         }
+        void physical(int... held) {
+            for (int key = 0; key < physical.capacity(); key++) physical.put(key, (byte) 0);
+            for (int key : held) physical.put(key, (byte) 1);
+        }
+        void keys(int[]... events) throws Exception {
+            Class<?> type = Class.forName("org.lwjgl.opengl.WindowsKeyboard");
+            Constructor<?> constructor = type.getDeclaredConstructor(); constructor.setAccessible(true);
+            Object producer = constructor.newInstance();
+            Method put = type.getDeclaredMethod("putEvent", int.class, byte.class, int.class, long.class, boolean.class);
+            Method read = type.getDeclaredMethod("read", ByteBuffer.class);
+            put.setAccessible(true); read.setAccessible(true);
+            for (int i = 0; i < events.length; i++) {
+                int[] event = events[i];
+                put.invoke(producer, event[0], (byte) event[1], event[2], (long) i + 1, event[3] != 0);
+            }
+            ByteBuffer payload = ByteBuffer.allocate(Keyboard.EVENT_SIZE * events.length);
+            read.invoke(producer, payload); payload.flip(); buffer.set(null, payload);
+        }
         public void close() throws Exception {
             buffer.set(null, oldBuffer); current.set(null, oldCurrent); scratch.set(null, oldScratch);
+            for (int key = 0; key < oldPhysical.length; key++) physical.put(key, oldPhysical[key]);
         }
     }
 
@@ -140,7 +168,9 @@ public final class MinecraftScreenSwitchScenario extends TestApplication {
         final club.heiqi.uilib.ui.scene.text.font.FontTextService text =
                 new club.heiqi.uilib.ui.scene.text.font.FontTextService(club.heiqi.uilib.host.font.IsolatedFontEngine.shared());
         final club.heiqi.uilib.ui.scene.edit.SceneEditState[] state = {null};
-        final SceneNode[] node = {null};
+        final SceneNode[] node = {null}, search = {null}, action = {null};
+        final club.heiqi.uilib.ui.scene.edit.SceneEditState[] searchState = {null};
+        int searches, saves, activations;
         final ScenePageSession page;
         NativeField(Minecraft mc) throws Exception {
             field(GuiScreen.class, screen, "mc", mc);
@@ -148,7 +178,19 @@ public final class MinecraftScreenSwitchScenario extends TestApplication {
                 state[0] = new club.heiqi.uilib.ui.scene.edit.SceneEditState(domain, "");
                 node[0] = club.heiqi.uilib.ui.scene.control.SceneTextField.create(context, state[0],
                         domain.signal(club.heiqi.uilib.ui.scene.control.SceneTheme.light()), domain.signal(false), ignored -> {});
-                context.mount(node[0].background(0xff112233));
+                searchState[0] = new club.heiqi.uilib.ui.scene.edit.SceneEditState(domain, "");
+                search[0] = club.heiqi.uilib.ui.scene.control.SceneTextField.create(context, searchState[0],
+                        context.theme(), () -> false, ignored -> {});
+                action[0] = club.heiqi.uilib.ui.scene.control.SceneButton.create(context, () -> "动作", context.theme(),
+                        () -> activations++);
+                context.mount(new SceneNode().size(Size.fill(1), Size.fill(1)).background(0xff112233)
+                        .initialFocus(node[0]).add(node[0]).add(search[0]).add(action[0])
+                        .bind(NodeBinding.shortcuts(SceneShortcut.Scope.PAGE,
+                                SceneShortcut.primary(SceneKey.F, SceneCommand.of(() -> true, () -> {
+                                    searches++;
+                                    pageFocus(context.runtime(), search[0]);
+                                })),
+                                SceneShortcut.primary(SceneKey.S, SceneCommand.of(() -> true, () -> saves++)))));
             });
             installSession(screen, page);
         }
@@ -164,7 +206,74 @@ public final class MinecraftScreenSwitchScenario extends TestApplication {
             domain.execute(() -> value[0] = state[0].snapshot().get().text);
             return value[0];
         }
+        String searchDraft() {
+            String[] value = {null}; domain.execute(() -> value[0] = searchState[0].snapshot().get().text); return value[0];
+        }
         public void close() { try { screen.onGuiClosed(); } finally { text.close(); } }
+    }
+
+    private static int[] down(int key) { return new int[] {key, 1, 0, 0}; }
+    private static int[] up(int key) { return new int[] {key, 0, 0, 0}; }
+    private static int[] repeat(int key) { return new int[] {key, 1, 0, 1}; }
+    private static void pageFocus(club.heiqi.uilib.ui.scene.runtime.SceneRuntime runtime, SceneNode node) {
+        require(runtime.focusRouter().request(runtime.captureMount(node)), "合法当前目标未取得焦点");
+    }
+
+    private void nativeCommands() throws Exception {
+        Minecraft mc = (Minecraft) unsafe().allocateInstance(Minecraft.class);
+        boolean repeats = Keyboard.areRepeatEventsEnabled();
+        Keyboard.enableRepeatEvents(true);
+        try (ActiveWindow active = new ActiveWindow(); NativeCharacters history = new NativeCharacters();
+                NativeField input = new NativeField(mc)) {
+            mc.currentScreen = input.screen;
+            history.physical(Keyboard.KEY_LCONTROL, Keyboard.KEY_F);
+            history.keys(down(Keyboard.KEY_LCONTROL), down(Keyboard.KEY_F), repeat(Keyboard.KEY_F));
+            input.screen.drawScreen(0, 0, 0);
+            require(input.searches == 0, "开屏旧历史激活搜索命令");
+            history.physical(); history.keys(up(Keyboard.KEY_F), up(Keyboard.KEY_LCONTROL));
+            input.screen.drawScreen(0, 0, 0); input.focus();
+
+            history.keys(down(Keyboard.KEY_LCONTROL), down(Keyboard.KEY_F), up(Keyboard.KEY_F),
+                    up(Keyboard.KEY_LCONTROL), new int[] {Keyboard.KEY_NONE, 0, '中', 0});
+            input.screen.drawScreen(0, 0, 0);
+            require(input.searches == 1 && input.draft().isEmpty() && input.searchDraft().equals("中"),
+                    "搜索命令未先于同批文字切换正式编辑目标");
+            history.keys(new int[] {Keyboard.KEY_SPACE, 1, ' ', 0}, new int[] {Keyboard.KEY_SPACE, 1, ' ', 1}, up(Keyboard.KEY_SPACE));
+            input.screen.drawScreen(0, 0, 0);
+            history.load('\uD83D', '\uDE00', 'f', '/'); input.screen.drawScreen(0, 0, 0);
+            require(input.searchDraft().equals("中  😀f/"), "LWJGL2空格起手/repeat、代理对或普通文本丢失/重复");
+
+            history.physical(Keyboard.KEY_LCONTROL, Keyboard.KEY_S);
+            history.keys(down(Keyboard.KEY_LCONTROL), down(Keyboard.KEY_S)); input.screen.drawScreen(0, 0, 0);
+            history.keys(repeat(Keyboard.KEY_S)); input.screen.drawScreen(0, 0, 0);
+            require(input.saves == 1, "应用命令repeat重复执行");
+            active.available = false; input.screen.drawScreen(0, 0, 0);
+            active.available = true;
+            history.keys(repeat(Keyboard.KEY_S)); input.screen.drawScreen(0, 0, 0);
+            require(input.saves == 1, "失焦恢复的旧按压激活应用命令");
+            history.physical(); history.keys(up(Keyboard.KEY_S), up(Keyboard.KEY_LCONTROL)); input.screen.drawScreen(0, 0, 0);
+            history.keys(down(Keyboard.KEY_LCONTROL), down(Keyboard.KEY_S), up(Keyboard.KEY_S), up(Keyboard.KEY_LCONTROL));
+            input.screen.drawScreen(0, 0, 0);
+            require(input.saves == 2, "真实释放后的fresh DOWN未执行命令");
+            history.keys(down(Keyboard.KEY_LCONTROL), down(Keyboard.KEY_LMENU), down(Keyboard.KEY_S), up(Keyboard.KEY_S),
+                    up(Keyboard.KEY_LMENU), down(Keyboard.KEY_LMETA), down(Keyboard.KEY_S), up(Keyboard.KEY_S),
+                    up(Keyboard.KEY_LMETA), up(Keyboard.KEY_LCONTROL)); input.screen.drawScreen(0, 0, 0);
+            require(input.saves == 2, "Alt或额外Meta被错误匹配为精确Primary组合");
+
+            input.focus(); input.page.edit(club.heiqi.uilib.ui.scene.input.SceneEditEvent.composition("候", true)); input.page.frame();
+            history.keys(down(Keyboard.KEY_LCONTROL), down(Keyboard.KEY_F), up(Keyboard.KEY_F), up(Keyboard.KEY_LCONTROL));
+            input.screen.drawScreen(0, 0, 0);
+            input.domain.execute(() -> require(input.searches == 1 && input.page.runtime().focusRouter().focused().get() == input.node[0],
+                    "组字中的应用键抢走当前编辑目标"));
+            input.page.edit(club.heiqi.uilib.ui.scene.input.SceneEditEvent.composition("", false)); input.page.frame();
+            input.domain.execute(() -> pageFocus(input.page.runtime(), input.action[0]));
+            history.keys(down(Keyboard.KEY_RETURN), down(Keyboard.KEY_NUMPADENTER), repeat(Keyboard.KEY_RETURN),
+                    up(Keyboard.KEY_RETURN), up(Keyboard.KEY_NUMPADENTER)); input.screen.drawScreen(0, 0, 0);
+            require(input.activations == 2, "主Enter与小键盘Enter混用物理段或repeat重复激活");
+            System.out.println("MC_NATIVE_COMMAND sameBatchFocus=true oldHistoryBlocked=true focusRecoveryBlocked=true"
+                    + " saves=" + input.saves + " searches=" + input.searches + " enterActivations=" + input.activations
+                    + " spaceAndSurrogates=true modifiersExact=true imeRetained=true");
+        } finally { Keyboard.enableRepeatEvents(repeats); }
     }
 
     private void nativeRenderCadence() throws Exception {
@@ -222,6 +331,7 @@ public final class MinecraftScreenSwitchScenario extends TestApplication {
     @Override
     protected void runTests() throws Exception {
         own(new DisplayTestEnvironment(80, 60, "UILib MC screen same-frame switch"));
+        scenario("原生命令切焦、文本顺序与物理尾部隔离", this::nativeCommands);
         scenario("中间render采集原生字符且后续tick不重放", this::nativeRenderCadence);
         scenario("原生采集中关闭不访问旧会话", () -> closeWhileCollecting(false));
         scenario("原生采集中切页隔离历史尾部", () -> closeWhileCollecting(true));

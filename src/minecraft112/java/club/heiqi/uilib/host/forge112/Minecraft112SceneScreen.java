@@ -25,7 +25,7 @@ public class Minecraft112SceneScreen extends GuiScreen {
     private ScenePageSession session;
     private EmbeddedSceneInputs inputs;
     private boolean repeatEvents, repeatBorrowed;
-    private boolean leftControl, rightControl, leftShift, rightShift;
+    private boolean leftControl, rightControl, leftShift, rightShift, leftAlt, rightAlt, leftMeta, rightMeta;
     private double wheelRemainder;
 
     public Minecraft112SceneScreen(GuiScreen parent, ScenePage page) { this(parent, page, null); }
@@ -83,6 +83,8 @@ public class Minecraft112SceneScreen extends GuiScreen {
         collecting.historyDrained(physical, special, released);
         leftControl = Keyboard.isKeyDown(Keyboard.KEY_LCONTROL); rightControl = Keyboard.isKeyDown(Keyboard.KEY_RCONTROL);
         leftShift = Keyboard.isKeyDown(Keyboard.KEY_LSHIFT); rightShift = Keyboard.isKeyDown(Keyboard.KEY_RSHIFT);
+        leftAlt = Keyboard.isKeyDown(Keyboard.KEY_LMENU); rightAlt = Keyboard.isKeyDown(Keyboard.KEY_RMENU);
+        leftMeta = Keyboard.isKeyDown(Keyboard.KEY_LMETA); rightMeta = Keyboard.isKeyDown(Keyboard.KEY_RMETA);
     }
 
     @Override public void handleKeyboardInput() {
@@ -93,8 +95,13 @@ public class Minecraft112SceneScreen extends GuiScreen {
         if (key == Keyboard.KEY_RCONTROL) rightControl = down;
         if (key == Keyboard.KEY_LSHIFT) leftShift = down;
         if (key == Keyboard.KEY_RSHIFT) rightShift = down;
+        if (key == Keyboard.KEY_LMENU) leftAlt = down;
+        if (key == Keyboard.KEY_RMENU) rightAlt = down;
+        if (key == Keyboard.KEY_LMETA) leftMeta = down;
+        if (key == Keyboard.KEY_RMETA) rightMeta = down;
         if (key != Keyboard.KEY_NONE)
-            inputs.key(key, semantic(key), down, Keyboard.isRepeatEvent(), leftControl || rightControl, leftShift || rightShift);
+            inputs.key(key, semantic(key), down, Keyboard.isRepeatEvent(), leftControl || rightControl,
+                    leftShift || rightShift, leftAlt || rightAlt, leftMeta || rightMeta);
         if (down || key == Keyboard.KEY_NONE) inputs.character(Keyboard.getEventCharacter());
     }
 
@@ -141,11 +148,31 @@ public class Minecraft112SceneScreen extends GuiScreen {
             case Keyboard.KEY_BACK: return Key.BACKSPACE;
             case Keyboard.KEY_DELETE: return Key.DELETE;
             case Keyboard.KEY_A: return Key.A;
+            case Keyboard.KEY_B: return Key.B;
             case Keyboard.KEY_C: return Key.C;
-            case Keyboard.KEY_X: return Key.X;
+            case Keyboard.KEY_D: return Key.D;
+            case Keyboard.KEY_E: return Key.E;
+            case Keyboard.KEY_F: return Key.F;
+            case Keyboard.KEY_G: return Key.G;
+            case Keyboard.KEY_H: return Key.H;
+            case Keyboard.KEY_I: return Key.I;
+            case Keyboard.KEY_J: return Key.J;
+            case Keyboard.KEY_K: return Key.K;
+            case Keyboard.KEY_L: return Key.L;
+            case Keyboard.KEY_M: return Key.M;
+            case Keyboard.KEY_N: return Key.N;
+            case Keyboard.KEY_O: return Key.O;
+            case Keyboard.KEY_P: return Key.P;
+            case Keyboard.KEY_Q: return Key.Q;
+            case Keyboard.KEY_R: return Key.R;
+            case Keyboard.KEY_S: return Key.S;
+            case Keyboard.KEY_T: return Key.T;
+            case Keyboard.KEY_U: return Key.U;
             case Keyboard.KEY_V: return Key.V;
-            case Keyboard.KEY_Z: return Key.Z;
+            case Keyboard.KEY_W: return Key.W;
+            case Keyboard.KEY_X: return Key.X;
             case Keyboard.KEY_Y: return Key.Y;
+            case Keyboard.KEY_Z: return Key.Z;
             default: return Key.OTHER;
         }
     }

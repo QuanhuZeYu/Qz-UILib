@@ -96,13 +96,15 @@ public class Minecraft116SceneScreen extends Screen {
     @Override public boolean keyPressed(int key, int scanCode, int modifiers) {
         collectAvailability(); boolean repeat = !held.add(key);
         if (inputs != null) inputs.key(key, semantic(key), true, repeat,
-                (modifiers & GLFW_MOD_CONTROL) != 0, (modifiers & GLFW_MOD_SHIFT) != 0);
+                (modifiers & GLFW_MOD_CONTROL) != 0, (modifiers & GLFW_MOD_SHIFT) != 0,
+                (modifiers & GLFW_MOD_ALT) != 0, (modifiers & GLFW_MOD_SUPER) != 0);
         return true;
     }
     @Override public boolean keyReleased(int key, int scanCode, int modifiers) {
         collectAvailability(); held.remove(key);
         if (inputs != null) inputs.key(key, semantic(key), false, false,
-                (modifiers & GLFW_MOD_CONTROL) != 0, (modifiers & GLFW_MOD_SHIFT) != 0);
+                (modifiers & GLFW_MOD_CONTROL) != 0, (modifiers & GLFW_MOD_SHIFT) != 0,
+                (modifiers & GLFW_MOD_ALT) != 0, (modifiers & GLFW_MOD_SUPER) != 0);
         return true;
     }
     @Override public boolean charTyped(char character, int modifiers) {
@@ -135,11 +137,31 @@ public class Minecraft116SceneScreen extends Screen {
             case GLFW_KEY_BACKSPACE: return Key.BACKSPACE;
             case GLFW_KEY_DELETE: return Key.DELETE;
             case GLFW_KEY_A: return Key.A;
+            case GLFW_KEY_B: return Key.B;
             case GLFW_KEY_C: return Key.C;
-            case GLFW_KEY_X: return Key.X;
+            case GLFW_KEY_D: return Key.D;
+            case GLFW_KEY_E: return Key.E;
+            case GLFW_KEY_F: return Key.F;
+            case GLFW_KEY_G: return Key.G;
+            case GLFW_KEY_H: return Key.H;
+            case GLFW_KEY_I: return Key.I;
+            case GLFW_KEY_J: return Key.J;
+            case GLFW_KEY_K: return Key.K;
+            case GLFW_KEY_L: return Key.L;
+            case GLFW_KEY_M: return Key.M;
+            case GLFW_KEY_N: return Key.N;
+            case GLFW_KEY_O: return Key.O;
+            case GLFW_KEY_P: return Key.P;
+            case GLFW_KEY_Q: return Key.Q;
+            case GLFW_KEY_R: return Key.R;
+            case GLFW_KEY_S: return Key.S;
+            case GLFW_KEY_T: return Key.T;
+            case GLFW_KEY_U: return Key.U;
             case GLFW_KEY_V: return Key.V;
-            case GLFW_KEY_Z: return Key.Z;
+            case GLFW_KEY_W: return Key.W;
+            case GLFW_KEY_X: return Key.X;
             case GLFW_KEY_Y: return Key.Y;
+            case GLFW_KEY_Z: return Key.Z;
             default: return Key.OTHER;
         }
     }

@@ -4,6 +4,7 @@ import static org.lwjgl.sdl.SDLKeyboard.*;
 import static org.lwjgl.sdl.SDLClipboard.*;
 import static org.lwjgl.sdl.SDLMouse.*;
 import static org.lwjgl.sdl.SDLScancode.*;
+import static org.lwjgl.sdl.SDLKeycode.*;
 import static org.lwjgl.sdl.SDLVideo.*;
 import java.util.EnumSet;
 import java.util.HashSet;
@@ -19,6 +20,7 @@ import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import org.lwjgl.sdl.SDL_Rect;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.input.KeyEvent;
+import net.minecraft.client.input.InputQuirks;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.client.input.PreeditEvent;
 import org.lwjgl.system.MemoryStack;
@@ -110,12 +112,9 @@ final class NeoForgeSceneInput implements AutoCloseable {
         boolean repeat = pressed && !down.add(scan);
         if (!pressed) down.remove(scan);
         Key semantic = key(scan);
-        if (event.isSelectAll()) semantic = Key.A;
-        else if (event.isCopy()) semantic = Key.C;
-        else if (event.isCut()) semantic = Key.X;
-        else if (event.isPaste()) semantic = Key.V;
-        else if (event.hasControlDownWithQuirk() && event.shortcutKey() == 'z') semantic = Key.Z;
-        else if (event.hasControlDownWithQuirk() && event.shortcutKey() == 'y') semantic = Key.Y;
+        // shortcutKey保留宿主键盘布局的字母身份；这里不解释复制、撤销等编辑动作。
+        if (event.shortcutKey() >= 'a' && event.shortcutKey() <= 'z')
+            semantic = Key.valueOf(String.valueOf((char) (event.shortcutKey() - 'a' + 'A')));
         // 旧 source 保留给迟到 commit；只有当前非空预编辑占有新的 IME 确认段。
         // 已占有的按压独立吞到 UP，不随空预编辑或提交结束而转交业务。
         if (imeConfirmKeys.contains(scan)) { if (!pressed) imeConfirmKeys.remove(scan); return; }
@@ -125,7 +124,9 @@ final class NeoForgeSceneInput implements AutoCloseable {
         if (pressed && !repeat && !composing && semantic != Key.ENTER && semantic != Key.KEYPAD_ENTER) {
             composition = null; cancelledComposition = false;
         }
-        inputs.key(scan, semantic, pressed, repeat, event.hasControlDownWithQuirk(), event.hasShiftDown());
+        int extraModifier = InputQuirks.REPLACE_CTRL_KEY_WITH_CMD_KEY ? SDL_KMOD_CTRL : SDL_KMOD_GUI;
+        inputs.key(scan, semantic, pressed, repeat, event.hasControlDownWithQuirk(), event.hasShiftDown(),
+                event.hasAltDown(), (event.modifiers() & extraModifier) != 0);
     }
 
     private static Key key(int scan) {
@@ -147,6 +148,32 @@ final class NeoForgeSceneInput implements AutoCloseable {
             case SDL_SCANCODE_PAGEDOWN -> Key.PAGE_DOWN;
             case SDL_SCANCODE_BACKSPACE -> Key.BACKSPACE;
             case SDL_SCANCODE_DELETE -> Key.DELETE;
+            case SDL_SCANCODE_A -> Key.A;
+            case SDL_SCANCODE_B -> Key.B;
+            case SDL_SCANCODE_C -> Key.C;
+            case SDL_SCANCODE_D -> Key.D;
+            case SDL_SCANCODE_E -> Key.E;
+            case SDL_SCANCODE_F -> Key.F;
+            case SDL_SCANCODE_G -> Key.G;
+            case SDL_SCANCODE_H -> Key.H;
+            case SDL_SCANCODE_I -> Key.I;
+            case SDL_SCANCODE_J -> Key.J;
+            case SDL_SCANCODE_K -> Key.K;
+            case SDL_SCANCODE_L -> Key.L;
+            case SDL_SCANCODE_M -> Key.M;
+            case SDL_SCANCODE_N -> Key.N;
+            case SDL_SCANCODE_O -> Key.O;
+            case SDL_SCANCODE_P -> Key.P;
+            case SDL_SCANCODE_Q -> Key.Q;
+            case SDL_SCANCODE_R -> Key.R;
+            case SDL_SCANCODE_S -> Key.S;
+            case SDL_SCANCODE_T -> Key.T;
+            case SDL_SCANCODE_U -> Key.U;
+            case SDL_SCANCODE_V -> Key.V;
+            case SDL_SCANCODE_W -> Key.W;
+            case SDL_SCANCODE_X -> Key.X;
+            case SDL_SCANCODE_Y -> Key.Y;
+            case SDL_SCANCODE_Z -> Key.Z;
             default -> Key.OTHER;
         };
     }
