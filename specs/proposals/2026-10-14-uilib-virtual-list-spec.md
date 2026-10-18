@@ -1,6 +1,6 @@
 # UILib 虚拟集合候选专题
 
-状态：候选技术专题。[收件箱案例业务规格](<../examples/2026-10-14-uilib-modern-app-cases-spec.md>)与[媒体案例提案](<uilib-media-app-cases-proposal.md>)分别提供已认可案例和后续路线的设计输入。此前“只读标题/说明、单焦点、单选确认”的首版设想已经被真实案例方向替代，不作为待执行公共合同。
+状态：候选技术专题。[收件箱案例业务规格](<../examples/2026-10-14-uilib-modern-app-cases-spec.md>)与[媒体案例提案](<uilib-media-app-cases-proposal.md>)分别提供已认可案例和后续路线的设计输入。
 
 ## 1. 定位
 

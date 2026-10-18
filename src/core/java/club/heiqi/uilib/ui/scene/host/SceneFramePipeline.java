@@ -423,12 +423,18 @@ public final class SceneFramePipeline implements AutoCloseable {
         runtime.prepareViewport(w, h);
         runtime.preparePresentation(frameNanos);
         long nextMetrics = host.metricsRevision();
-        boolean geometryDirty =
-                presentation == null
-                        || geometryRevision != runtime.geometryRevision()
-                        || width != w
-                        || height != h
-                        || metrics != nextMetrics;
+        SceneGeometry geometry = prepareGeometry(frameNanos, w, h, nextMetrics);
+        if (activeInput != null && prepareActiveInput(geometry, frameNanos, activeInput, advanceInput))
+            return prepare(frameNanos, activeInput, false);
+        runtime.prepareTooltips(geometry, text, nextMetrics);
+        publishPresentation(geometry, w, h, nextMetrics);
+        runtime.pointerRouter().prepare(presentation.geometry);
+        return presentation;
+    }
+
+    /** 声明、范围与主动显露使用同一收敛循环；不在绘制收集中补排版。 */
+    private SceneGeometry prepareGeometry(long frameNanos, int w, int h, long nextMetrics) {
+        boolean geometryDirty = geometryDirty(w, h, nextMetrics);
         SceneGeometry prepared = geometryDirty ? null : presentation.geometry;
         long[] arrangedRevision = {runtime.geometryRevision()};
         do {
@@ -441,7 +447,6 @@ public final class SceneFramePipeline implements AutoCloseable {
             runtime.preparePresentation(frameNanos);
             geometryDirty = arrangedRevision[0] != runtime.geometryRevision();
             if (geometryDirty) continue;
-            // 单项导航也消费一次意图；其滚动或范围投影仍在同一声明结算循环中闭合。
             prepared = runtime.revealNavigation(prepared, () -> {
                 SceneGeometry updated = layoutGeometry(w, h, nextMetrics);
                 arrangedRevision[0] = runtime.geometryRevision();
@@ -456,35 +461,40 @@ public final class SceneFramePipeline implements AutoCloseable {
             prepared = runtime.domain().readOnly(() -> layout.refreshTextStyles(located));
             runtime.prepareInputGeometry(prepared);
         }
-        if (activeInput != null) {
-            long beforeInput = runtime.revision();
-            if (advanceInput) runtime.advanceInputFrame(prepared, frameNanos, activeInput);
-            else runtime.refreshInputFrameGeometry(prepared, activeInput);
-            // 普通 value 绑定只登记 dirtyBindings，先结算才能判断命中样式是否使几何/绘制失效。
-            runtime.preparePresentation(frameNanos);
-            // 时间及滚动只推进一次；后续重排仅同步本批参与者，使候选与最终画面同代。
-            // 同步产生的呈现依赖仍沿原结算入口收敛，失败复用同一 activeInput 取消记录。
-            if (beforeInput != runtime.revision()) return prepare(frameNanos, activeInput, false);
-        }
-        runtime.prepareTooltips(prepared,text,nextMetrics);
-        final SceneGeometry geometry = prepared;
-        if (presentation == null
-                || revision != runtime.revision()
-                || geometry != presentation.geometry
-                || width != w
-                || height != h
-                || metrics != nextMetrics
-                || System.nanoTime() >= paint.nextPaintNanos()) {
-            PaintPlan paint = runtime.domain().readOnly(() -> this.paint.collect(geometry, nextMetrics));
-            runtime.capturePresencePaint(this.paint.presenceSnapshots(), geometry);
-            presentation = new ScenePresentation(++generation, geometry, paint);
-            revision = runtime.revision();
-            geometryRevision = runtime.geometryRevision();
-            width = w;
-            height = h;
-            metrics = nextMetrics;
-        }
-        runtime.pointerRouter().prepare(presentation.geometry);
-        return presentation;
+        return prepared;
+    }
+
+    private boolean geometryDirty(int w, int h, long nextMetrics) {
+        return presentation == null || geometryRevision != runtime.geometryRevision()
+                || width != w || height != h || metrics != nextMetrics;
+    }
+
+    /** 一批只推进一次时间；后续重排只同步本批参与者，并复用原失败取消记录。 */
+    private boolean prepareActiveInput(SceneGeometry geometry, long frameNanos,
+            SceneRuntime.InputFrame activeInput, boolean advanceInput) {
+        long beforeInput = runtime.revision();
+        if (advanceInput) runtime.advanceInputFrame(geometry, frameNanos, activeInput);
+        else runtime.refreshInputFrameGeometry(geometry, activeInput);
+        // value 绑定可能只登记 dirtyBindings，结算后才能判断几何或绘制失效。
+        runtime.preparePresentation(frameNanos);
+        return beforeInput != runtime.revision();
+    }
+
+    private boolean paintDirty(SceneGeometry geometry, int w, int h, long nextMetrics) {
+        return presentation == null || revision != runtime.revision() || geometry != presentation.geometry
+                || width != w || height != h || metrics != nextMetrics
+                || System.nanoTime() >= paint.nextPaintNanos();
+    }
+
+    private void publishPresentation(SceneGeometry geometry, int w, int h, long nextMetrics) {
+        if (!paintDirty(geometry, w, h, nextMetrics)) return;
+        PaintPlan plan = runtime.domain().readOnly(() -> paint.collect(geometry, nextMetrics));
+        runtime.capturePresencePaint(paint.presenceSnapshots(), geometry);
+        presentation = new ScenePresentation(++generation, geometry, plan);
+        revision = runtime.revision();
+        geometryRevision = runtime.geometryRevision();
+        width = w;
+        height = h;
+        metrics = nextMetrics;
     }
 }

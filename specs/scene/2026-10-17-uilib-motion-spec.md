@@ -21,7 +21,7 @@
 
 ## 2. 声明与默认策略
 
-页面声明“目标 + 运动方式 + 呈现用途”。常见属性提供有明确失效归属的正式入口；已有绑定的呈现映射可作为扩展能力，不要求普通页面为每个属性重复编写推进逻辑。常用声明见下例及共享动效页面。
+页面声明“目标 + 运动方式 + 呈现用途”。常见属性提供有明确失效归属的正式入口；已有绑定的呈现映射可作为扩展能力，不要求普通页面为每个属性重复编写推进逻辑。入口及其失效归属见 [SceneMotion](<../../src/core/java/club/heiqi/uilib/ui/scene/motion/SceneMotion.java>)，声明用法见[共享动效案例](<../../src/gallery/java/club/heiqi/uilib/testing/gallery/MotionPage.java>)。
 
 业务状态与纯派生继续遵守同步可读合同。呈现值是框架拥有的结果；读取结果不隐含推进时间或执行副作用，也不把业务 Computed 变成带时间状态的求解器。
 
@@ -30,27 +30,6 @@
 策略优先级为用户的动效限制、局部明确声明、主题默认。主题及策略来源均可动态替换，按来源变化通知失效，不在构造期冻结。局部覆盖通过明确来源表达，不新增隐式的主题继承或全局节点注册表。
 
 提供正常、减少动效和关闭三种响应式策略。正常模式保留所声明的弹簧与弹性；减少动效保留可见的短时平稳位移、尺寸与淡入淡出，使用单调曲线收敛，取消弹簧往返、合成惯性和大幅拉伸。关闭时立即落到当前目标并结束退场保留。三种模式不改变业务值、焦点策略或动作次数。系统偏好若由宿主提供，通过同一来源接入，不在核心查询平台 API。
-
-### 2.1 常用声明
-
-展开面板仍声明自然高度；绑定尺寸动效后，正文变化自动进入当前实际排版：
-
-```java
-MotionSpec spring = MotionSpec.spring(.3, .85);
-SceneNode panel = new SceneNode().size(Size.fill(1), Size.natural())
-        .bind(SceneMotion.layoutSize(() -> spring));
-panel.add(SceneLabel.create(context, bodyText, context.theme()));
-```
-
-| 用途 | 入口 |
-| --- | --- |
-| 属性目标 | `SceneMotion.opacity / background / translateX / translateY` |
-| 布局变化 | 容器 `SceneMotion.layoutPositions`；节点 `SceneMotion.layoutSize` |
-| 显隐与结构退场 | `SceneMotion.presence`；带 `PresenceOptions` 的 `NodeBinding.repeat / ownedChildren` |
-| 手势释放 | `SceneDraggable.Options.releaseMotion / elastic`；`SceneMotion.scroll` 或 `SceneScrollArea.Options.motion` |
-| 弹性滑块 | `SceneSlider.Model.elastic(new ElasticOptions(limit, release))`，普通模型不启用形变 |
-| 拖拽排序让位 | `SceneSortable.Options.reorderMotion / dropMotion`，原有限 `Transition` 继续可用 |
-| 动效限制 | `ScenePageContext.motionPolicy`，来源值为 `MotionPolicy.NORMAL / REDUCED / OFF` |
 
 ## 3. 运动语义
 
@@ -76,7 +55,7 @@ panel.add(SceneLabel.create(context, bodyText, context.theme()));
 
 运动归明确的挂载或存在性作用域。普通卸载立即结束运动并解除观察，重新挂载从当前目标开始；明确移动依既有身份与挂载连续性，按新归属重定目标。页面关闭、祖先卸载或永久销毁直接释放所属资源，不等待离场播放。
 
-不建立逐控件线程、宿主专用动画管线或额外逻辑树。核心维护平台中立的运动与几何，绘制继续经过正式 PaintPlan；两个宿主消费同一算法源。
+不建立逐控件线程、宿主专用动画管线或额外逻辑树。核心维护平台中立的运动与几何，绘制继续经过正式 PaintPlan；各宿主消费同一算法源。
 
 ## 5. 布局变化与共同几何
 

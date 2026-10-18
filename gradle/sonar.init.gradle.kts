@@ -18,6 +18,7 @@ import org.sonarqube.gradle.SonarTask
  *
  * 分析入口只依赖编译，不运行测试。扫描失败如实暴露，但普通build/check及CI不依赖此任务。
  * 默认不等待Quality Gate，不新增复杂度/覆盖率阈值；分析结果结合代码职责与真实行为判断。
+ * 本入口分析根工程编译图；platforms中的独立宿主使用各自构建类路径，不能合并不同MC映射库。
  * 固定官方版本：https://github.com/SonarSource/sonar-scanner-gradle/releases/tag/7.5.0.8588
  */
 initscript {
@@ -40,6 +41,13 @@ gradle.rootProject {
         // SDL专项是独立JavaCompile，不属于sourceSet；来源、输出和依赖沿该任务读取。
         val sdl = target.tasks.named<JavaCompile>("compileSdlTextInputScenario")
         val buildRoot = target.layout.buildDirectory.get().asFile.canonicalFile.toPath()
+        val compilations = all.map { target.tasks.named<JavaCompile>(it.compileJavaTaskName).get() } + sdl.get()
+        // 同一分析模块使用所包含源码的最高语法级别；部署字节码仍由各编译任务自己的target/release决定。
+        val languageLevel = compilations.maxOf { JavaVersion.toVersion(it.sourceCompatibility).majorVersion.toInt() }
+        val sourceLevels = compilations.map {
+            it.name + ": source=" + it.sourceCompatibility + ", target=" + it.targetCompatibility +
+                    ", release=" + (it.options.release.orNull?.toString() ?: "未指定")
+        }
 
         fun sourceRoots(names: List<String>) = names.flatMap { sets.getByName(it).java.srcDirs }
             .filter { it.isDirectory && !it.canonicalFile.toPath().startsWith(buildRoot) }
@@ -53,9 +61,8 @@ gradle.rootProject {
         target.extensions.configure<SonarExtension> {
             properties {
                 property("sonar.sourceEncoding", "UTF-8")
-                property("sonar.java.source", "8")
-                property("sonar.java.target", "8")
-                // main含原始lwjgl3文件；desktop的去标记生成副本不重复索引。
+                property("sonar.java.source", languageLevel.toString())
+                // 沿真实源码根索引，desktop的去标记lwjgl3生成副本不重复进入分析。
                 property("sonar.sources", sourceRoots(production.map { it.name }))
                 property("sonar.tests", sourceRoots(tests.map { it.name }) + sdl.get().source.files)
                 property("sonar.java.binaries", binaries(production.map { it.name }))
@@ -105,10 +112,11 @@ gradle.rootProject {
                 // 只输出明确的非秘密输入，不序列化插件全量属性（其中可能含认证信息）。
                 val names = listOf("sonar.sources", "sonar.tests", "sonar.java.binaries",
                     "sonar.java.test.binaries", "sonar.java.libraries", "sonar.java.test.libraries",
-                    "sonar.java.source", "sonar.java.target", "sonar.qualitygate.wait")
+                    "sonar.java.source", "sonar.qualitygate.wait")
                 val file = report.get().asFile
                 file.parentFile.mkdirs()
-                file.writeText(names.joinToString("\n", postfix = "\n") { it + "=" + effective[it].orEmpty() })
+                file.writeText(names.joinToString("\n", postfix = "\n") { it + "=" + effective[it].orEmpty() } +
+                        "\n编译任务的语法与字节码级别：\n" + sourceLevels.joinToString("\n", postfix = "\n"))
                 logger.lifecycle("Sonar本地输入清单：" + file.absolutePath + "；未提交远程分析，未等待Quality Gate。")
             }
         }

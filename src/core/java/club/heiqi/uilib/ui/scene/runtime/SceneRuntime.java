@@ -2,6 +2,7 @@ package club.heiqi.uilib.ui.scene.runtime;
 
 import club.heiqi.uilib.ui.scene.control.SceneScrollResult;
 import club.heiqi.uilib.ui.scene.control.SceneScrollViewport;
+import club.heiqi.uilib.ui.scene.input.SceneEditEvent;
 
 import club.heiqi.uilib.ui.reactive.Observation;
 import club.heiqi.uilib.ui.reactive.Owner;
@@ -121,7 +122,7 @@ public final class SceneRuntime implements AutoCloseable {
     private final List<SceneNode> roots = new ArrayList<>();
     private final Set<SceneNode> dirtyBindings = new LinkedHashSet<>();
     private final Set<SceneNode> inputFrames = new LinkedHashSet<>();
-    private MountHandle inputReveal;
+    private final SceneNavigationReveal navigationReveal = new SceneNavigationReveal(this);
     private boolean inputSampled;
     private long inputNanos;
     private boolean mutation;
@@ -136,10 +137,7 @@ public final class SceneRuntime implements AutoCloseable {
     private boolean layersDeclared;
     private SceneNode logicalModal;
     private boolean logicalModalKnown;
-    private club.heiqi.uilib.ui.scene.input.SceneCompositionSource compositionSource;
-    private MountHandle compositionMount;
-    private club.heiqi.uilib.ui.scene.edit.SceneEditState compositionState;
-    private Object compositionBaseline;
+    private final SceneComposition composition = new SceneComposition(this);
 
     public SceneRuntime(ReactiveDomain domain) {
         this.domain = domain;
@@ -957,95 +955,50 @@ public final class SceneRuntime implements AutoCloseable {
     }
 
     /** 普通编辑按当前焦点；真实组字只投向 BEGIN 建立的仍有效联系。 */
-    public boolean dispatchEdit(club.heiqi.uilib.ui.scene.input.SceneEditEvent event) {
+    public boolean dispatchEdit(SceneEditEvent event) {
         domain.checkWrite();
         command();
-        revalidateComposition();
+        composition.revalidate();
         SceneNode node = focusRouter.focused().get();
         if (event.compositionSource != null) {
-            if (event.compositionPhase
-                    == club.heiqi.uilib.ui.scene.input.SceneEditEvent.CompositionPhase.BEGIN) {
-                if (!event.compositionSource.beginOnce()) return true;
-                invalidateComposition(null);
-                if (node == null || !interactive(node) || node.control() == null
-                        || !node.control().acceptsTextInput(node)
-                        || !(node.control() instanceof club.heiqi.uilib.ui.scene.edit.SceneCompositionTarget))
-                    return true;
-                compositionSource = event.compositionSource;
-                compositionMount = captureMount(node);
-                compositionState = ((club.heiqi.uilib.ui.scene.edit.SceneCompositionTarget)
-                        node.control()).compositionState();
-                compositionBaseline = compositionState.inputBaseline();
-            } else if (event.compositionSource != compositionSource) return true;
-            node = compositionMount.node();
+            node = composition.target(event, node);
+            if (node == null) return true;
+        } else node = editTarget(node, event);
+        return dispatchTargetEdit(node, event);
+    }
+
+    /** 普通命令可由复合控件接管；组字来源始终使用原联系，不遍历新的激活目标。 */
+    private SceneNode editTarget(SceneNode focused, SceneEditEvent event) {
+        if (focused == null || !interactive(focused)) return null;
+        for (SceneNode ancestor = focused.parent(); ancestor != null; ancestor = ancestor.parent()) {
+            SceneNode candidate = ancestor;
+            if (interactive(candidate) && candidate.control() != null
+                    && domain.readOnly(() -> candidate.control().editActivator(candidate, focused, event)))
+                return candidate;
         }
-        if (node == null || !interactive(node)) return false;
-        if (event.compositionSource == null) {
-            SceneNode focused = node;
-            for (SceneNode ancestor = focused.parent(); ancestor != null; ancestor = ancestor.parent()) {
-                SceneNode candidate = ancestor;
-                if (interactive(candidate) && candidate.control() != null
-                        && domain.readOnly(() -> candidate.control().editActivator(candidate, focused, event))) {
-                    node = candidate;
-                    break;
-                }
-            }
-        }
-        if (node.control() == null) return false;
+        return focused;
+    }
+
+    private boolean dispatchTargetEdit(SceneNode node, SceneEditEvent event) {
+        if (node == null || !interactive(node) || node.control() == null) return false;
         focusRouter.keyboardInput();
         boolean previous = routing;
         routing = true;
-        boolean terminal = event.compositionSource != null
-                && (event.compositionPhase
-                        == club.heiqi.uilib.ui.scene.input.SceneEditEvent.CompositionPhase.COMMIT
-                    || event.compositionPhase
-                        == club.heiqi.uilib.ui.scene.input.SceneEditEvent.CompositionPhase.CANCEL);
         try {
             boolean consumed = node.control().edit(node, event, inputGeometry);
-            if (event.command
-                    == club.heiqi.uilib.ui.scene.input.SceneEditEvent.Command.ESCAPE && consumed)
-                invalidateComposition(null);
+            if (event.command == SceneEditEvent.Command.ESCAPE && consumed) composition.invalidate(null);
             return consumed;
         } finally {
-            try {
-                // 最终来源事件即使业务回调失败也结束；异常仍沿页面既有错误通道暴露。
-                if (terminal && compositionSource == event.compositionSource)
-                    invalidateComposition(null);
-            } finally {
-                routing = previous;
-            }
+            try { composition.finish(event); }
+            finally { routing = previous; }
         }
     }
 
     /** 焦点离开及已生效只读资格变化只结束组字，不提交或取消独立草稿。 */
-    public void invalidateComposition(SceneNode target) {
-        domain.checkWrite();
-        if (compositionSource == null
-                || target != null && compositionMount.node() != target) return;
-        club.heiqi.uilib.ui.scene.edit.SceneEditState state = compositionState;
-        Object baseline = compositionBaseline;
-        compositionSource = null;
-        compositionMount = null;
-        compositionState = null;
-        compositionBaseline = null;
-        // reset/cancel 已自行清理；不能反过来修改新基线的组字呈现。
-        if (state.inputBaseline() == baseline) state.composition("", false);
-    }
+    public void invalidateComposition(SceneNode target) { composition.invalidate(target); }
 
     /** 核验已有联系；同范围合法移动不改变挂载或基线身份。 */
-    void revalidateComposition() {
-        domain.checkAccess();
-        if (compositionSource == null) return;
-        SceneNode node = compositionMount.node();
-        if (!compositionMount.active() || focusRouter.focused().get() != node
-                || !interactive(node) || node.control() == null
-                || !node.control().acceptsTextInput(node)
-                || !(node.control() instanceof club.heiqi.uilib.ui.scene.edit.SceneCompositionTarget)
-                || ((club.heiqi.uilib.ui.scene.edit.SceneCompositionTarget)
-                        node.control()).compositionState() != compositionState
-                || compositionState.inputBaseline() != compositionBaseline)
-            invalidateComposition(null);
-    }
+    void revalidateComposition() { composition.revalidate(); }
 
     void dispatchControlFocus(SceneNode node, boolean focused, boolean eligible) {
         domain.checkWrite();
@@ -1222,7 +1175,7 @@ public final class SceneRuntime implements AutoCloseable {
         }
         if (!node.scrollable() || node.axis() != axis) return null;
         int padding = node.padding();
-        club.heiqi.uilib.ui.scene.layout.LayoutBox contentWindow = new club.heiqi.uilib.ui.scene.layout.LayoutBox(
+        LayoutBox contentWindow = new LayoutBox(
                 entry.box.x + padding, entry.box.y + padding, Math.max(0, entry.box.width - padding * 2), Math.max(0, entry.box.height - padding * 2));
         return new SceneScrollViewport.Snapshot(contentWindow, entry.clip,
                 entry.scrollOffset, entry.scrollMaximum, axis == SceneNode.Axis.ROW ? entry.box.width : entry.box.height);
@@ -1264,7 +1217,7 @@ public final class SceneRuntime implements AutoCloseable {
     /** 控件的主动显露意图保持当前焦点；后续结算复用正式祖先显露和同一滚动位置。 */
     public void requestInputReveal(SceneNode node) {
         domain.checkWrite(); checkAlive();
-        if (interactive(node)) inputReveal = captureMount(node);
+        if (interactive(node)) navigationReveal.request(captureMount(node));
     }
 
     /** 按像素改变唯一视图位置；不是 wheel，不调用业务 onScroll。返回实际生效量。 */
@@ -1279,64 +1232,22 @@ public final class SceneRuntime implements AutoCloseable {
         return applied;
     }
 
-    /** spec6.2：在最终布局后消费一次导航意图；重排由管线提供，不递归结算声明。 每个祖先至多处理一次，滚动沿用唯一ScrollPosition，不持有第二套几何或滚动权威。 */
-    public SceneGeometry revealNavigation(
-            SceneGeometry geometry, Supplier<SceneGeometry> relayout) {
+    /** 最终布局后消费一次导航意图；显露复用当前挂载、所属层边界与唯一滚动位置。 */
+    public SceneGeometry revealNavigation(SceneGeometry geometry, Supplier<SceneGeometry> relayout) {
         domain.checkWrite();
         command();
-        MountHandle target = focusRouter.takeReveal();
-        boolean focusIntent = target != null;
-        if (target == null) target = inputReveal;
-        inputReveal = null;
-        if (target == null || !target.active() || !interactive(target.node())) return geometry;
-        final MountHandle revealTarget = target;
-        // 内部视口先消费同一次Tab意图；随后只读事实才能用于逐层祖先显露。
-        if (target.node().control() != null
-                && target.node().control().prepareNavigation(target.node(), geometry)) {
-            invalidateArrangement();
-            geometry = Objects.requireNonNull(relayout.get(), "geometry");
-        }
-        SceneNode boundary = geometry.layerBoundary(target.node());
-        for (SceneNode ancestor = target.node() == boundary ? null : target.node().parent();
-                ancestor != null;
-                ancestor = ancestor == boundary ? null : ancestor.parent()) {
-            if (focusIntent ? !focusRouter.owns(target) : !target.active() || !interactive(target.node())) break;
-            if (ancestor == boundary && !ancestor.scrollable()) break;
-            if (!ancestor.scrollable()) continue;
-            SceneGeometryView.Entry entry = geometry.get(ancestor);
-            SceneGeometry current = geometry;
-            SceneNode container = ancestor;
-            LayoutBox region = domain.readOnly(
-                    () -> SceneGeometry.revealRegion(revealTarget.node(), container, current));
-            if (entry == null || region == null || region.width == 0 || region.height == 0)
-                continue;
-            LayoutBox window = SceneGeometry.revealWindow(ancestor, geometry);
-            if (window.width == 0 || window.height == 0) continue;
-            boolean row = ancestor.axis() == SceneNode.Axis.ROW;
-            long delta =
-                    SceneGeometry.revealDelta(
-                            row ? region.x : region.y,
-                            row ? region.width : region.height,
-                            row ? window.x : window.y,
-                            row ? window.width : window.height);
-            ScrollPosition position = scrolling.get(ancestor);
-            if (position == null || !mounts.containsKey(ancestor)) continue;
-            int next =
-                    (int)
-                            Math.max(
-                                    0L,
-                                    Math.min(
-                                            entry.scrollMaximum,
-                                            (long) entry.scrollOffset + delta));
-            if (next == position.value) continue;
-            position.value = next;
-            invalidateArrangement();
-            // 内层移动改变目标及裁剪后的可见部分；必须用重排后的同代几何求外层，
-            // 最后一次也重排，确保paint和下一事件hit均消费实际偏移后的区域。
-            geometry = Objects.requireNonNull(relayout.get(), "geometry");
-            if (ancestor == boundary) break;
-        }
-        return geometry;
+        return navigationReveal.reveal(geometry, relayout);
+    }
+
+    /** 只改变原位置权威；导航的差值与上限来自同批最终几何。 */
+    boolean revealScrollPosition(SceneNode node, SceneGeometryView.Entry entry, long delta) {
+        ScrollPosition position = scrolling.get(node);
+        if (position == null || !mounts.containsKey(node)) return false;
+        int next = (int) Math.max(0L, Math.min(entry.scrollMaximum, (long) entry.scrollOffset + delta));
+        if (next == position.value) return false;
+        position.value = next;
+        invalidateArrangement();
+        return true;
     }
 
     /**
@@ -1445,7 +1356,7 @@ public final class SceneRuntime implements AutoCloseable {
             clearLogicalModal();
             inputGeometry = null;
             inputGeometryReady = false;
-            inputReveal = null;
+            navigationReveal.clear();
             inputFrames.clear();
             transitions.clear();
             motionChannels.clear();
