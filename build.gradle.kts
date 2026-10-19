@@ -4,7 +4,8 @@ plugins {
 }
 
 group = "club.heiqi.uilib"
-version = providers.gradleProperty("uilibVersion").getOrElse("4.11.1")
+// 工作站本地开发组合与原 -P 共用项目属性，避免依赖和宿主版本分别取值。
+version = findProperty("uilibVersion")?.toString() ?: "4.11.1"
 extra["modVersion"] = version.toString()
 
 apply(from = "gradle/uilib-dependencies.gradle.kts")

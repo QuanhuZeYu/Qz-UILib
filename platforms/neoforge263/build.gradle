@@ -4,7 +4,7 @@ plugins {
 }
 
 group = 'club.heiqi.uilib'
-version = providers.gradleProperty('uilibVersion').getOrElse('4.11.1')
+version = findProperty('uilibVersion') ?: '4.11.1'
 base.archivesName = 'qz_uilib-neoforge263'
 
 def repositoryRoot = projectDir.toPath().resolve('../..').normalize().toFile()
