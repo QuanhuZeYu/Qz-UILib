@@ -33,10 +33,24 @@ public abstract class MinecraftLifecycleMixin {
 
     @Inject(method = "shutdownMinecraftApplet", at = @At("HEAD"))
     private void qz$closeFontServices(CallbackInfo callback) {
+        // 页面先结束输入与所属资源，再结束其借用的应用服务；页面宿主规格第1节。
+        Throwable failure = null;
+        try {
+            net.minecraft.client.gui.GuiScreen screen = Minecraft.getMinecraft().currentScreen;
+            if (screen instanceof club.heiqi.uilib.ui.host.minecraft.MinecraftSceneScreen)
+                screen.onGuiClosed();
+        } catch (RuntimeException | Error next) { failure = next; }
         try {
             club.heiqi.uilib.host.client.image.MinecraftImageServices.closeShared();
-        } finally {
-            MinecraftFontServices.closeShared();
+        } catch (RuntimeException | Error next) {
+            if (failure == null) failure = next; else if (next != failure) failure.addSuppressed(next);
         }
+        try {
+            MinecraftFontServices.closeShared();
+        } catch (RuntimeException | Error next) {
+            if (failure == null) failure = next; else if (next != failure) failure.addSuppressed(next);
+        }
+        if (failure instanceof Error) throw (Error) failure;
+        if (failure instanceof RuntimeException) throw (RuntimeException) failure;
     }
 }

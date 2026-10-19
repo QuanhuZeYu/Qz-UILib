@@ -1,5 +1,6 @@
 package club.heiqi.uilib.host.forge112;
 
+import club.heiqi.uilib.host.lwjgl2.Lwjgl2InputQueue;
 import java.lang.reflect.Field;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;

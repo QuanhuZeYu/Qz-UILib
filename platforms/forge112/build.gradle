@@ -24,7 +24,7 @@ ext.uilibBinding = 'lwjgl2'
 apply from: '../../gradle/loader-dependencies.gradle'
 sourceSets {
     main {
-        java.srcDirs = ['../../src/minecraft112/java']
+        java.srcDirs = ['../../src/minecraft112/java', '../../src/minecraftShared/java']
         resources.srcDirs = ['../../src/minecraft112/resources']
     }
     manual {

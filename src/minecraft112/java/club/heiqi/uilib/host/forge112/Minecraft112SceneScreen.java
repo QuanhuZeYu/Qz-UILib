@@ -1,5 +1,6 @@
 package club.heiqi.uilib.host.forge112;
 
+import club.heiqi.uilib.host.lwjgl2.Lwjgl2InputQueue;
 import club.heiqi.uilib.host.embedded.EmbeddedSceneHost;
 import club.heiqi.uilib.host.embedded.EmbeddedSceneInputs;
 import club.heiqi.uilib.host.embedded.EmbeddedSceneInputs.Key;

@@ -115,8 +115,12 @@ def package_mod(destination: Path, classes: Path, package: str, resources: Path,
                 gallery: Path | None = None, verification: Path | None = None) -> None:
     with zipfile.ZipFile(destination, "w", zipfile.ZIP_DEFLATED) as result:
         result.writestr("META-INF/MANIFEST.MF", manifest)
-        for path in (classes / package).rglob("*.class"):
-            result.write(path, path.relative_to(classes).as_posix())
+        packages = [package]
+        if package == "club/heiqi/uilib/host/forge112":
+            packages.append("club/heiqi/uilib/host/lwjgl2")
+        for current in packages:
+            for path in (classes / current).rglob("*.class"):
+                result.write(path, path.relative_to(classes).as_posix())
         for path in resources.rglob("*"):
             if path.is_file():
                 result.write(path, path.relative_to(resources).as_posix())
@@ -221,6 +225,8 @@ def main() -> None:
     classpath = [cache / "development-client.jar"] + dependencies_list
     classpath += [shared / (name + ".jar") for name in shared_names]
     sources = list((repository / f"src/minecraft{args.target}/java").rglob("*.java"))
+    if args.target == "112":
+        sources += list((repository / "src/minecraftShared/java").rglob("*.java"))
     if args.install_bundle:
         sources += list((repository / f"src/minecraft{args.target}Manual/java").rglob("*.java"))
     run([javac, "-J-Dfile.encoding=UTF-8", "-encoding", "UTF-8", "-source", "8", "-target", "8", "-proc:none", "-cp", ";".join(map(str, classpath)),

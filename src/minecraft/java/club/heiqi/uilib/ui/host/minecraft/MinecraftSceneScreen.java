@@ -126,7 +126,7 @@ public class MinecraftSceneScreen extends GuiScreen {
     @Override
     public void handleInput() {
         Inputs collecting = inputs;
-        super.handleInput();
+        club.heiqi.uilib.host.lwjgl2.Lwjgl2InputQueue.drain(this::handleMouseInput, this::handleKeyboardInput);
         if (collecting != null && inputs == collecting) collecting.historyDrained();
     }
 
@@ -209,6 +209,7 @@ public class MinecraftSceneScreen extends GuiScreen {
                 if (nativeText == null) opened.edit(club.heiqi.uilib.ui.scene.input.SceneEditEvent.text(" "));
             });
             escapeInput = new SceneEscapeInputAdapter(() -> keyInput.key(event(SceneKey.ESCAPE), true));
+            if (nativeText != null) inputAvailability(Display.isActive());
         }
 
         private SceneKeyEvent event(SceneKey key) {
@@ -216,14 +217,17 @@ public class MinecraftSceneScreen extends GuiScreen {
                     leftAlt || rightAlt, leftMeta || rightMeta, repeat, clipboard);
         }
 
-        /** 父类独占Mouse.next/Keyboard.next；本轮历史事件全部消费后，才确认物理全释放并恢复输入。 */
+        /** 同一消费者耗尽历史之后，才确认物理全释放并恢复输入。 */
         void historyDrained() {
             // ESC等键盘事件可能已关闭本页，不能访问已释放的session。
             if (inputs != this || session != opened) return;
             syncInputAvailability();
             if (nativeText != null)
                 for (SceneNativeTextInput.NativeEvent event : nativeText.drain()) {
-                    if (event.edit != null) {
+                    if (inputs != this || session != opened) return;
+                    if (event.focused != null) inputAvailability(event.focused);
+                    else if (event.pointer != null) routePointer(event.pointer);
+                    else if (event.edit != null) {
                         if (pointerWindowActive && editInput.available()) opened.edit(event.edit);
                     } else routeKey(event.key, event.down, event.repeat, (char) 0);
                 }
@@ -262,7 +266,7 @@ public class MinecraftSceneScreen extends GuiScreen {
             }
         }
 
-        /** 父类handleInput是唯一Keyboard.next消费者；按当前历史事件翻译，不读取未来修饰键快照。 */
+        /** 翻译当前游标；增强路径的兼容历史仅耗尽，正式事件来自同一 SDL 消费序。 */
         void handleKeyboardInput() {
             if (inputs != this || session != opened) return;
             syncInputAvailability();
@@ -350,9 +354,9 @@ public class MinecraftSceneScreen extends GuiScreen {
             }
         }
 
-        /** 父类handleInput是唯一Mouse.next消费者；本方法只翻译当前历史事件，不再派发原版鼠标行为。 */
+        /** LWJGL2 翻译当前游标；增强路径不重复投递宿主兼容鼠标队列。 */
         void handleMouseInput() {
-            if (inputs != this || session != opened) return;
+            if (inputs != this || session != opened || nativeText != null) return;
             syncInputAvailability();
             pendingHigh = 0; // 指针焦点意图尚在管线队列中，不能将半代理带到后来的目标。
             int button = Mouse.getEventButton();
@@ -362,23 +366,24 @@ public class MinecraftSceneScreen extends GuiScreen {
                     club.heiqi.uilib.host.client.font.FramebufferCoordinates.mouseY(
                             Display.getHeight(), Mouse.getEventY());
             int wheel = Mouse.getEventDWheel();
-            if (pointerSuspended) {
-                // 失焦/开屏期间不建立新owner，只把旧段的UP交给核心吞尾。
-                if (button >= 0 && !down) opened.pointer(ScenePointerEvent.up(button, x, y));
-                return;
-            }
-            if (button >= 0)
-                opened.pointer(
-                        down
-                                ? ScenePointerEvent.down(button, x, y)
-                                : ScenePointerEvent.up(button, x, y));
-            else opened.pointer(ScenePointerEvent.move(x, y));
-            if (wheel != 0) opened.pointer(ScenePointerEvent.scroll(x, y, Integer.signum(wheel)));
+            if (button >= 0) routePointer(down ? ScenePointerEvent.down(button, x, y)
+                    : ScenePointerEvent.up(button, x, y));
+            else routePointer(ScenePointerEvent.move(x, y));
+            if (wheel != 0) routePointer(ScenePointerEvent.scroll(x, y, Integer.signum(wheel)));
+        }
+
+        private void routePointer(ScenePointerEvent event) {
+            pendingHigh = 0;
+            // 开屏/失焦期间只递交旧段 UP，完整释放确认仍在同一历史耗尽后。
+            if (!pointerSuspended || event.kind == ScenePointerEvent.Kind.UP) opened.pointer(event);
         }
 
         /** 窗口焦点边沿取消手势；重获焦点仍等所有物理键释放，不能借恢复焦点重建旧owner。 */
         private void syncInputAvailability() {
-            boolean active = Display.isActive();
+            if (nativeText == null) inputAvailability(Display.isActive());
+        }
+
+        private void inputAvailability(boolean active) {
             if (nativeText != null) nativeText.availability(active);
             if (editInput != null) editInput.availability(active);
             if (keyInput != null) keyInput.availability(active);
@@ -422,9 +427,7 @@ public class MinecraftSceneScreen extends GuiScreen {
                                         && node.control() != null
                                         && node.control().acceptsTextInput(node);
                         if (textRequested && !requested)
-                            opened.edit(
-                                    club.heiqi.uilib.ui.scene.input.SceneEditEvent.composition(
-                                            "", false));
+                            opened.edit(club.heiqi.uilib.ui.scene.input.SceneEditEvent.composition("", false));
                         textRequested = requested;
                         nativeText.textInput(requested);
                     });

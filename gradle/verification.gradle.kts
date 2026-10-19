@@ -90,7 +90,7 @@ fun display(name: String, description: String, application: String, full: Boolea
 val switch = display("minecraftScreenSwitchScenario", "实际MC屏幕当帧切页与旧输入隔离", prefix + "MinecraftScreenSwitchScenario", true)
 val nativeInput = display("minecraftNativeInputScenario", "无窗口真实历史按压释放与命令文本顺序", prefix + "MinecraftScreenSwitchScenario", true)
 nativeInput.configure { args("native-only") }
-val cleanup = display("minecraftScreenCleanupScenario", "正式session双失败首错与幂等清理", "club.heiqi.uilib.ui.host.minecraft.MinecraftScreenCleanupScenario")
+val cleanup = display("minecraftScreenCleanupScenario", "正式session与客户端停机首错和依赖清理", "club.heiqi.uilib.ui.host.minecraft.MinecraftScreenCleanupScenario", true)
 val shutdown = display("minecraftFontShutdownScenario", "字体桥失败仍结束真实owner", prefix + "MinecraftFontShutdownScenario", true)
 display("imageLwjgl2Scenario", "LWJGL2实际IMAGE像素及item scope", prefix + "ImageLwjgl2Scenario")
 tasks.named("check") { dependsOn(switch, cleanup, shutdown, nativeInput) }
@@ -105,16 +105,26 @@ dependencies {
     add(sdl.name, "org.lwjgl:lwjgl:3.4.2:$classifier")
     add(sdl.name, "org.lwjgl:lwjgl-sdl:3.4.2-20260225.192616-2:$classifier")
 }
+val sdlHost = configurations.create("sdlInputHost") { isCanBeConsumed = false; isTransitive = false }
+dependencies { add(sdlHost.name, "com.github.GTNewHorizons:lwjgl3ify:3.0.31:dev") }
 val sdlClasses = layout.buildDirectory.dir("classes/sdl-text-input")
 val compileSdl = tasks.register<JavaCompile>("compileSdlTextInputScenario") {
     dependsOn("classes"); source("src/sdlTest/java")
-    classpath = main.output + core + support + sdl + content
+    classpath = main.output + core + support + sdl + content + lwjgl2Bindings + main.compileClasspath.filter { !it.name.contains("jabel") }
     destinationDirectory.set(sdlClasses)
     javaCompiler.set(javaToolchains.compilerFor { languageVersion.set(JavaLanguageVersion.of(25)) })
     options.release.set(8); options.compilerArgs.add("-proc:none")
 }
-val sdlScenario = scenario("sdlTextInputScenario", "真实SDL hidden window与生产Watch原子IME", prefix + "SdlTextInputScenario", files(sdlClasses) + main.output + core + support + sdl + content, 25) { dependsOn(compileSdl) }
-tasks.named("check") { dependsOn(sdlScenario) }
+val sdlInputRuntime = configurations.getByName("nativeInputRfbApi") + files(sdlClasses) + main.output + core + support + sdl + sdlHost + content + main.compileClasspath
+val sdlScenario = scenario("sdlTextInputScenario", "显式真实SDL窗口文本生命周期", prefix + "RfbNativeInputScenario", sdlInputRuntime, 25) {
+    dependsOn(compileSdl); args("window")
+    jvmArgs("-Djava.system.class.loader=com.gtnewhorizons.retrofuturabootstrap.RfbSystemClassLoader")
+}
+val nativeSdl = scenario("nativeSdlInputScenario", "无窗口真实RFB消费链与原生事实", prefix + "RfbNativeInputScenario", sdlInputRuntime, 25) {
+    dependsOn(compileSdl)
+    jvmArgs("-Djava.system.class.loader=com.gtnewhorizons.retrofuturabootstrap.RfbSystemClassLoader")
+}
+tasks.named("check") { dependsOn(sdlScenario, nativeSdl) }
 
 val productionNames = listOf("jar", "shadowJar", "reobfJar")
 val hostArtifacts = productionNames.map { tasks.named(it, AbstractArchiveTask::class.java).flatMap { task -> task.archiveFile } }

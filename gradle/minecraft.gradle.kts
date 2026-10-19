@@ -14,10 +14,13 @@ val lwjgl3 = configurations.getByName("uilibLwjgl3_8")
 val content = configurations.getByName("coreContentRuntime")
 val bindings = configurations.getByName("fontBindings")
 val adapters = font + gl + lwjgl2 + lwjgl3
+// RFB只提供可选编译API；独立配置避免宿主api/dev的版本选择提升此固定缓存。
+val nativeInputRfbApi = configurations.create("nativeInputRfbApi") { isCanBeConsumed = false; isTransitive = false }
+dependencies.add(nativeInputRfbApi.name, "com.github.GTNewHorizons:lwjgl3ify:3.0.20:forgePatches")
 val main = sourceSets.getByName("main")
-main.java.setSrcDirs(listOf("src/minecraft/java"))
+main.java.setSrcDirs(listOf("src/minecraft/java", "src/minecraftShared/java"))
 main.resources.setSrcDirs(listOf("src/minecraft/resources"))
-main.compileClasspath += development + adapters + content + bindings
+main.compileClasspath += development + adapters + content + bindings + nativeInputRfbApi
 main.runtimeClasspath += development + adapters + content
 sourceSets.getByName("test") {
     compileClasspath += development + adapters + content + bindings + configurations.getByName("uilibCoreVerification") + configurations.getByName("uilibPlatformVerification")

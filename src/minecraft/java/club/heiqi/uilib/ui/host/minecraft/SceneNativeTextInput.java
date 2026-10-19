@@ -1,81 +1,75 @@
 package club.heiqi.uilib.ui.host.minecraft;
 
 import java.lang.reflect.Field;
-import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
-import java.lang.reflect.Proxy;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.LongConsumer;
-
 import club.heiqi.uilib.ui.scene.input.SceneEditEvent;
+import club.heiqi.uilib.ui.scene.input.ScenePointerEvent;
 
-/** GTNH lwjgl3ify 的可选事实桥；焦点与编辑语义仍归场景唯一输入序列。 */
+/** GTNH lwjgl3ify 的可选事实桥；按宿主唯一 SDL 消费序复制，Core 持有焦点及编辑目标权威。 */
 public final class SceneNativeTextInput implements AutoCloseable {
     private static final AtomicReference<SceneNativeTextInput> OWNER = new AtomicReference<>();
     private final AtomicReference<Throwable> callbackFailure = new AtomicReference<>();
-    private Watch watch;
     private final Bindings bindings;
     private final Object queueLock = new Object();
     private final ConcurrentLinkedQueue<NativeEvent> pending = new ConcurrentLinkedQueue<>();
-    private volatile boolean closed;
-    private volatile boolean receivingText;
-    private boolean windowAvailable = true;
-    private boolean textRequested;
     private boolean compositionSession, compositionActive;
+    private volatile boolean closed;
+    private boolean receivingText, windowAvailable = true, textRequested, textStarted;
 
-    /** 仅检查可选资源，不初始化 SDL 或在普通 LWJGL2 上加载其 native。 */
+    /** 只查可选资源；普通 LWJGL2 的类加载不初始化 SDL。 */
     public static boolean supported() {
         SceneNativeTextInput owner = OWNER.get();
         if (owner != null) owner.checkFailure();
         ClassLoader loader = SceneNativeTextInput.class.getClassLoader();
-        return loader.getResource("org/lwjglx/opengl/Display.class") != null
-                && loader.getResource("me/eigenraven/lwjgl3ify/api/InputEvents.class") != null
-                && loader.getResource("org/lwjgl/sdl/SDLEvents.class") != null
-                && loader.getResource("org/lwjgl/sdl/SDL_EventFilterI.class") != null;
+        return SceneNativeInputSupport.resourcesPresent(loader)
+                && SceneNativeInputSupport.consumerFailure(loader) == null;
     }
 
     public static boolean available() {
-        return supported();
+        ClassLoader loader = SceneNativeTextInput.class.getClassLoader();
+        if (!SceneNativeInputSupport.resourcesPresent(loader)) return false;
+        String failure = SceneNativeInputSupport.consumerFailure(loader);
+        if (failure != null) throw new IllegalStateException("UILib 增强输入消费绑定不兼容: " + failure);
+        try {
+            Class.forName("org.lwjglx.Lwjgl3ifyEventLoop", false, loader).getMethod("uilib$nativeInputCaptureReady");
+        } catch (ReflectiveOperationException missing) {
+            throw new IllegalStateException("UILib 增强输入缺少RFB消费接线，org.lwjglx原排除保持不变", missing);
+        }
+        SceneNativeTextInput owner = OWNER.get();
+        if (owner != null) owner.checkFailure();
+        return true;
     }
 
     public SceneNativeTextInput() {
-        if (!supported())
-            throw new IllegalStateException("Native text input resources are unavailable");
+        if (!available()) throw new IllegalStateException("Native text input resources are unavailable");
         bindings = new Bindings();
         if (!OWNER.compareAndSet(null, this))
             throw new IllegalStateException("Another native text input bridge is registered");
-        try {
-            watch = new Watch(this::observe);
-            checkFailure();
-        } catch (RuntimeException | Error failure) {
-            try {
-                close();
-            } catch (RuntimeException | Error cleanup) {
-                if (failure != cleanup) failure.addSuppressed(cleanup);
-            }
-            throw failure;
-        }
+    }
+
+    /** 可选RFB接线在每项SDL消费前调用；无活动页面时不读取原生事件。 */
+    public static void captureCurrentEvent() {
+        SceneNativeTextInput owner = OWNER.get();
+        if (owner == null) return;
+        try { owner.observe(owner.bindings.currentAddress()); }
+        catch (RuntimeException | Error failure) { owner.callbackFailure.compareAndSet(null, failure); }
     }
 
     private void checkFailure() {
-        if (watch != null) watch.checkFailure();
         Throwable failure = callbackFailure.get();
         if (failure instanceof RuntimeException) throw (RuntimeException) failure;
         if (failure instanceof Error) throw (Error) failure;
     }
 
-    /** active 表示该页仍拥有桥；窗口不可用时保留按键释放尾部供宿主门控。 */
-    public boolean active() {
-        checkFailure();
-        return !closed && OWNER.get() == this;
-    }
+    public boolean active() { checkFailure(); return !closed && OWNER.get() == this; }
 
-    /** 宿主根据场景焦点通知，重复调用不增加 lwjgl3ify 的 textInputDepth。 */
+    /** 重复调用不增加 lwjgl3ify 的 textInputDepth。 */
     public synchronized void textInput(boolean enabled) {
         checkFailure();
         if (closed) return;
@@ -83,7 +77,6 @@ public final class SceneNativeTextInput implements AutoCloseable {
         updateTextInput();
     }
 
-    /** 失去窗口可用性时停止组字并丢弃文本意图，按键事实仍保留。 */
     public synchronized void availability(boolean available) {
         checkFailure();
         if (closed) return;
@@ -91,29 +84,23 @@ public final class SceneNativeTextInput implements AutoCloseable {
         updateTextInput();
     }
 
-    private boolean textStarted;
-
     private void updateTextInput() {
         boolean enabled = textRequested && windowAvailable && !closed;
-        if (!enabled) {
-            synchronized (queueLock) {
-                receivingText = false;
+        synchronized (queueLock) {
+            receivingText = enabled;
+            if (!enabled) {
                 compositionSession = false;
                 compositionActive = false;
                 pending.removeIf(event -> event.edit != null);
             }
         }
         if (enabled == textStarted) return;
-        // begin 可能同步产生 watch 回调，必须在 SDL_StartTextInput 前允许复制文本。
-        synchronized (queueLock) {
-            receivingText = enabled;
-        }
-        // InputEvents 保留 MainThreadExec 和 textInputDepth 配对；调用时不持队列锁。
+        // begin/end 沿宿主 MainThreadExec 配对；调用期间不持队列锁。
         invoke(enabled ? bindings.begin : bindings.end, null);
         textStarted = enabled;
     }
 
-    /** 保留 watch 观察顺序；不承诺与 MC mouse 或 SDL consumer 的绝对历史同序。 */
+    /** 顺序来自 Lwjgl3ifyEventLoop 的同一次逐项消费，不按 Java 递交时刻排序。 */
     public List<NativeEvent> drain() {
         checkFailure();
         synchronized (queueLock) {
@@ -125,262 +112,182 @@ public final class SceneNativeTextInput implements AutoCloseable {
         }
     }
 
-    @Override
-    public void close() {
-        Watch oldWatch;
-        synchronized (this) {
-            if (closed) return;
-            synchronized (queueLock) {
-                closed = true;
-                receivingText = false;
-                compositionSession = false;
-                compositionActive = false;
-                OWNER.compareAndSet(this, null);
-                pending.clear();
-            }
-            oldWatch = watch;
-            watch = null;
+    @Override public synchronized void close() {
+        if (closed) return;
+        synchronized (queueLock) {
+            closed = true;
+            receivingText = false;
+            compositionSession = false;
+            compositionActive = false;
+            OWNER.compareAndSet(this, null);
+            pending.clear();
         }
         Throwable failure = callbackFailure.get();
-        try {
-            updateTextInput();
-        } catch (RuntimeException | Error cleanup) {
-            if (failure == null) failure = cleanup;
-            else if (failure != cleanup) failure.addSuppressed(cleanup);
-        }
-        if (oldWatch != null) {
-            try {
-                oldWatch.close();
-            } catch (RuntimeException | Error cleanup) {
-                if (failure == null) failure = cleanup;
-                else if (failure != cleanup) failure.addSuppressed(cleanup);
-            }
+        try { updateTextInput(); }
+        catch (RuntimeException | Error cleanup) {
+            if (failure == null) failure = cleanup; else if (failure != cleanup) failure.addSuppressed(cleanup);
         }
         if (failure instanceof RuntimeException) throw (RuntimeException) failure;
         if (failure instanceof Error) throw (Error) failure;
     }
 
-    /** SDL watch 可在任意线程调用；仅复制事实，任何异常不得越过 JNI。 */
     private void observe(long eventAddress) {
-        try {
-            synchronized (queueLock) {
-                if (OWNER.get() != this || closed) return;
-                // 复制和入队同一短锁，失焦/关闭边界之后不会重放旧文本。
-                NativeEvent event = bindings.snapshot(eventAddress, receivingText);
-                if (event != null && event.edit != null) {
-                    if (event.edit.compositionEvent) {
-                        // 空 preedit 可能先于 771，保留真实组字会话直到提交或下一次新按压。
-                        compositionActive = event.edit.composing;
-                        if (event.edit.composing) compositionSession = true;
-                    } else {
-                        if (!compositionSession)
-                            event =
-                                    new NativeEvent(
-                                            0, false, false, SceneEditEvent.text(event.edit.text));
-                        compositionSession = false;
-                        compositionActive = false;
-                    }
-                } else if (event != null && event.down && !event.repeat && !compositionActive) {
+        synchronized (queueLock) {
+            if (OWNER.get() != this || closed) return;
+            NativeEvent event = bindings.snapshot(eventAddress);
+            if (event == null) return;
+            if (event.edit != null) {
+                if (!receivingText) return;
+                if (event.edit.compositionEvent) {
+                    // 保持既有兼容入口：空preedit后仍保留本轮组字，直到提交或下一次按压。
+                    compositionActive = event.edit.composing;
+                    if (event.edit.composing) compositionSession = true;
+                } else {
+                    if (!compositionSession) event = NativeEvent.edit(SceneEditEvent.text(event.edit.text));
                     compositionSession = false;
+                    compositionActive = false;
                 }
-                if (event != null) pending.add(event);
+            } else if (event.pointer == null && event.focused == null
+                    && event.down && !event.repeat && !compositionActive) {
+                compositionSession = false;
             }
-        } catch (RuntimeException | Error failure) {
-            callbackFailure.compareAndSet(null, failure);
+            pending.add(event);
         }
     }
 
-    /**
-     * 不可变原生事实；edit 非空表示文字/组字，key 仅按键事实有效。
-     * 当前 SDL 快照及布尔 session 不提供独立组字来源身份，仍走兼容入口；
-     * 不能据此证明跨焦点、重挂或业务重置后的迟到组字隔离。
-     */
+    /** 自包含不可变事实；pointer/focused/edit 各自非空时表示对应事实，其余为键事实。
+     * SDL载荷没有原生组字联系身份，edit保持既有兼容入口；跨目标迟到组字强隔离仍需原生适配补足事实。 */
     public static final class NativeEvent {
         public final int key;
         public final boolean down, repeat;
         public final SceneEditEvent edit;
+        public final ScenePointerEvent pointer;
+        public final Boolean focused;
 
         private NativeEvent(int key, boolean down, boolean repeat, SceneEditEvent edit) {
-            this.key = key;
-            this.down = down;
-            this.repeat = repeat;
-            this.edit = edit;
+            this(key, down, repeat, edit, null, null);
         }
+        private NativeEvent(int key, boolean down, boolean repeat, SceneEditEvent edit,
+                ScenePointerEvent pointer, Boolean focused) {
+            this.key = key; this.down = down; this.repeat = repeat;
+            this.edit = edit; this.pointer = pointer; this.focused = focused;
+        }
+        private static NativeEvent edit(SceneEditEvent edit) { return new NativeEvent(0, false, false, edit); }
     }
 
-    /** SDL 观察资源；独立于 MC 窗口与 core，只在构造时加载可选平台。 */
-    private static final class Watch implements AutoCloseable {
-        private final AtomicReference<Throwable> failure = new AtomicReference<>();
-        private final Method remove, free;
-        private Object callback;
-
-        private Watch(LongConsumer observer) {
-            try {
-                ClassLoader loader = SceneNativeTextInput.class.getClassLoader();
-                Class<?> filterInterface =
-                        Class.forName("org.lwjgl.sdl.SDL_EventFilterI", false, loader);
-                Class<?> filter = Class.forName("org.lwjgl.sdl.SDL_EventFilter", false, loader);
-                Class<?> events = Class.forName("org.lwjgl.sdl.SDLEvents", false, loader);
-                Method create = filter.getMethod("create", filterInterface);
-                Method add = events.getMethod("SDL_AddEventWatch", filterInterface, long.class);
-                remove = events.getMethod("SDL_RemoveEventWatch", filterInterface, long.class);
-                free = filter.getMethod("free");
-                // 精确 LWJGL jar 使用 getDescriptor/callback(long,long)/address 默认方法。
-                // 交给接口本身执行，不复制内部 upcall 协议；GTNH Java25 上反射调用。
-                Method defaultMethod =
-                        InvocationHandler.class.getMethod(
-                                "invokeDefault", Object.class, Method.class, Object[].class);
-                Object proxy =
-                        Proxy.newProxyInstance(
-                                loader,
-                                new Class<?>[] {filterInterface},
-                                (receiver, method, arguments) -> {
-                                    if (method.getName().equals("invoke")) {
-                                        try {
-                                            observer.accept((Long) arguments[1]);
-                                        } catch (RuntimeException | Error problem) {
-                                            failure.compareAndSet(null, problem);
-                                        }
-                                        // SDL 忽略 watch 返回值；始终 true，不消费事件。
-                                        return true;
-                                    }
-                                    if (method.isDefault())
-                                        return invoke(
-                                                defaultMethod, null, receiver, method, arguments);
-                                    if (method.getName().equals("hashCode"))
-                                        return System.identityHashCode(receiver);
-                                    if (method.getName().equals("equals"))
-                                        return receiver == arguments[0];
-                                    if (method.getName().equals("toString"))
-                                        return "SceneNativeTextInput SDL event watch";
-                                    throw new IllegalStateException(
-                                            "Unexpected SDL callback method: " + method);
-                                });
-                callback = invoke(create, null, proxy);
-                try {
-                    if (!(Boolean) invoke(add, null, callback, 0L))
-                        throw new IllegalStateException("SDL_AddEventWatch failed");
-                    checkFailure();
-                } catch (RuntimeException | Error problem) {
-                    try {
-                        close();
-                    } catch (RuntimeException | Error cleanup) {
-                        if (problem != cleanup) problem.addSuppressed(cleanup);
-                    }
-                    throw problem;
-                }
-            } catch (ReflectiveOperationException problem) {
-                throw new IllegalStateException("Cannot bind SDL event watch", problem);
-            }
-        }
-
-        private void checkFailure() {
-            Throwable problem = failure.get();
-            if (problem instanceof RuntimeException) throw (RuntimeException) problem;
-            if (problem instanceof Error) throw (Error) problem;
-        }
-
-        @Override
-        public void close() {
-            Object oldCallback = callback;
-            if (oldCallback == null) return;
-            callback = null;
-            // SDL watch list 锁等待在途 callback；调用处不持 owner/queue 锁，返回后才能 free。
-            invoke(remove, null, oldCallback, 0L);
-            invoke(free, oldCallback);
-            checkFailure();
-        }
-    }
-
-    /** 仅页面选择增强路径时解析；Java8 字节码不硬链接 SDL3 或新版 Java API。 */
+    /** 只在增强路径构造时解析；Java8 字节码不硬链接 SDL 或 org.lwjglx。 */
     private static final class Bindings {
-        final Field windowId;
-        final Method createEvent;
-        final Method type, key, edit, text, keyWindow, editWindow, textWindow;
-        final Method scancode, down, repeat, editString, textString, map, begin, end;
+        final Field windowId, currentEvent;
+        final Method address, createEvent, type, key, edit, text, motion, button, wheel, window, common;
+        final Method keyWindow, editWindow, textWindow, motionWindow, buttonWindow, wheelWindow, focusWindow;
+        final Method scancode, down, repeat, editString, textString, map, begin, end, scale, timestamp;
+        final Method motionX, motionY, buttonX, buttonY, buttonNumber, wheelX, wheelY, wheelDelta;
+        final int focusGained, focusLost;
 
         Bindings() {
             try {
                 ClassLoader loader = SceneNativeTextInput.class.getClassLoader();
                 Class<?> union = Class.forName("org.lwjgl.sdl.SDL_Event", false, loader);
                 Class<?> keyboard = Class.forName("org.lwjgl.sdl.SDL_KeyboardEvent", false, loader);
-                Class<?> editing =
-                        Class.forName("org.lwjgl.sdl.SDL_TextEditingEvent", false, loader);
+                Class<?> editing = Class.forName("org.lwjgl.sdl.SDL_TextEditingEvent", false, loader);
                 Class<?> input = Class.forName("org.lwjgl.sdl.SDL_TextInputEvent", false, loader);
+                Class<?> moving = Class.forName("org.lwjgl.sdl.SDL_MouseMotionEvent", false, loader);
+                Class<?> buttons = Class.forName("org.lwjgl.sdl.SDL_MouseButtonEvent", false, loader);
+                Class<?> scrolling = Class.forName("org.lwjgl.sdl.SDL_MouseWheelEvent", false, loader);
+                Class<?> windows = Class.forName("org.lwjgl.sdl.SDL_WindowEvent", false, loader);
+                Class<?> display = Class.forName("org.lwjglx.opengl.Display", false, loader);
+                Class<?> events = Class.forName("org.lwjgl.sdl.SDLEvents", false, loader);
+                currentEvent = Class.forName("org.lwjglx.Lwjgl3ifyEventLoop", false, loader).getField("event");
+                address = union.getMethod("address");
                 createEvent = union.getMethod("create", long.class);
-                windowId =
-                        Class.forName("org.lwjglx.opengl.Display", false, loader)
-                                .getField("sdlWindowId");
-                type = union.getMethod("type");
-                key = union.getMethod("key");
-                edit = union.getMethod("edit");
-                text = union.getMethod("text");
-                keyWindow = keyboard.getMethod("windowID");
-                editWindow = editing.getMethod("windowID");
-                textWindow = input.getMethod("windowID");
-                scancode = keyboard.getMethod("scancode");
-                down = keyboard.getMethod("down");
-                repeat = keyboard.getMethod("repeat");
-                editString = editing.getMethod("textString");
+                windowId = display.getField("sdlWindowId");
+                scale = display.getMethod("getPixelScaleFactor");
+                type = union.getMethod("type"); key = union.getMethod("key");
+                edit = union.getMethod("edit"); text = union.getMethod("text");
+                motion = union.getMethod("motion"); button = union.getMethod("button");
+                wheel = union.getMethod("wheel"); window = union.getMethod("window"); common = union.getMethod("common");
+                timestamp = Class.forName("org.lwjgl.sdl.SDL_CommonEvent", false, loader).getMethod("timestamp");
+                keyWindow = keyboard.getMethod("windowID"); editWindow = editing.getMethod("windowID");
+                textWindow = input.getMethod("windowID"); motionWindow = moving.getMethod("windowID");
+                buttonWindow = buttons.getMethod("windowID"); wheelWindow = scrolling.getMethod("windowID");
+                focusWindow = windows.getMethod("windowID");
+                scancode = keyboard.getMethod("scancode"); down = keyboard.getMethod("down");
+                repeat = keyboard.getMethod("repeat"); editString = editing.getMethod("textString");
                 textString = input.getMethod("textString");
-                map =
-                        Class.forName("org.lwjglx.input.KeyCodes", false, loader)
-                                .getMethod("sdlScancodeToLwjgl", int.class);
-                Class<?> events =
-                        Class.forName("me.eigenraven.lwjgl3ify.api.InputEvents", false, loader);
-                begin = events.getMethod("beginTextInput");
-                end = events.getMethod("endTextInput");
+                motionX = moving.getMethod("x"); motionY = moving.getMethod("y");
+                buttonX = buttons.getMethod("x"); buttonY = buttons.getMethod("y"); buttonNumber = buttons.getMethod("button");
+                wheelX = scrolling.getMethod("mouse_x"); wheelY = scrolling.getMethod("mouse_y");
+                wheelDelta = scrolling.getMethod("y");
+                focusGained = events.getField("SDL_EVENT_WINDOW_FOCUS_GAINED").getInt(null);
+                focusLost = events.getField("SDL_EVENT_WINDOW_FOCUS_LOST").getInt(null);
+                map = Class.forName("org.lwjglx.input.KeyCodes", false, loader).getMethod("sdlScancodeToLwjgl", int.class);
+                Class<?> inputEvents = Class.forName("me.eigenraven.lwjgl3ify.api.InputEvents", false, loader);
+                begin = inputEvents.getMethod("beginTextInput"); end = inputEvents.getMethod("endTextInput");
             } catch (ReflectiveOperationException failure) {
-                throw new IllegalStateException("Cannot bind lwjgl3ify SDL event watch", failure);
+                throw new IllegalStateException("Cannot bind lwjgl3ify SDL consumer", failure);
             }
         }
 
-        NativeEvent snapshot(long eventAddress, boolean textEnabled) {
+        long currentAddress() {
+            try { return (Long) invoke(address, currentEvent.get(null)); }
+            catch (IllegalAccessException failure) { throw new IllegalStateException("Cannot read current SDL event", failure); }
+        }
+
+        NativeEvent snapshot(long eventAddress) {
             try {
                 Object union = invoke(createEvent, null, eventAddress);
                 int kind = (Integer) invoke(type, union);
-                if (kind != 768 && kind != 769 && (!textEnabled || (kind != 770 && kind != 771)))
-                    return null;
-                Object value =
-                        invoke(kind == 768 || kind == 769 ? key : kind == 770 ? edit : text, union);
-                Method id =
-                        kind == 768 || kind == 769
-                                ? keyWindow
-                                : kind == 770 ? editWindow : textWindow;
+                Object value;
+                Method id;
+                if (kind == 768 || kind == 769) { value = invoke(key, union); id = keyWindow; }
+                else if (kind == 770) { value = invoke(edit, union); id = editWindow; }
+                else if (kind == 771) { value = invoke(text, union); id = textWindow; }
+                else if (kind == 1024) { value = invoke(motion, union); id = motionWindow; }
+                else if (kind == 1025 || kind == 1026) { value = invoke(button, union); id = buttonWindow; }
+                else if (kind == 1027) { value = invoke(wheel, union); id = wheelWindow; }
+                else if (kind == focusGained || kind == focusLost) { value = invoke(window, union); id = focusWindow; }
+                else return null;
                 if ((Integer) invoke(id, value) != windowId.getInt(null)) return null;
                 if (kind == 768 || kind == 769)
-                    return new NativeEvent(
-                            (Integer) invoke(map, null, invoke(scancode, value)),
-                            (Boolean) invoke(down, value),
-                            (Boolean) invoke(repeat, value),
-                            null);
-                // 指针仅在本次 callback 有效，立即复制 UTF-8 为 String，队列不保留 native pointer。
-                String content = (String) invoke(kind == 770 ? editString : textString, value);
-                if (content == null)
-                    throw new IllegalStateException("SDL text event has a null text pointer");
-                return new NativeEvent(
-                        0,
-                        false,
-                        false,
-                        kind == 770
-                                ? SceneEditEvent.composition(content, !content.isEmpty())
-                                : SceneEditEvent.committed(content));
-            } catch (IllegalAccessException failure) {
-                throw new IllegalStateException("Cannot read SDL event watch fact", failure);
+                    return new NativeEvent((Integer) invoke(map, null, invoke(scancode, value)),
+                            (Boolean) invoke(down, value), (Boolean) invoke(repeat, value), null);
+                if (kind == 770 || kind == 771) {
+                    String content = (String) invoke(kind == 770 ? editString : textString, value);
+                    if (content == null) throw new IllegalStateException("SDL text event has a null text pointer");
+                    return NativeEvent.edit(kind == 770 ? SceneEditEvent.composition(content, !content.isEmpty())
+                            : SceneEditEvent.committed(content));
+                }
+                if (kind == focusGained || kind == focusLost)
+                    return new NativeEvent(0, false, false, null, null, kind == focusGained);
+                float ratio = ((Number) invoke(scale, null)).floatValue();
+                Method x = kind == 1024 ? motionX : kind == 1027 ? wheelX : buttonX;
+                Method y = kind == 1024 ? motionY : kind == 1027 ? wheelY : buttonY;
+                int px = (int) Math.floor(((Number) invoke(x, value)).doubleValue() * ratio);
+                int py = (int) Math.floor(((Number) invoke(y, value)).doubleValue() * ratio);
+                ScenePointerEvent pointer;
+                if (kind == 1024) pointer = ScenePointerEvent.move(px, py);
+                else if (kind == 1027) pointer = ScenePointerEvent.scroll(px, py,
+                        (int) Math.signum(((Number) invoke(wheelDelta, value)).doubleValue()));
+                else {
+                    int nativeButton = ((Number) invoke(buttonNumber, value)).intValue();
+                    int mapped = nativeButton == 1 ? 0 : nativeButton == 3 ? 1 : nativeButton == 2 ? 2 : nativeButton - 1;
+                    pointer = kind == 1025 ? ScenePointerEvent.down(mapped, px, py) : ScenePointerEvent.up(mapped, px, py);
+                }
+                pointer = pointer.at((Long) invoke(timestamp, invoke(common, union)));
+                return new NativeEvent(0, false, false, null, pointer, null);
+            } catch (ReflectiveOperationException failure) {
+                throw new IllegalStateException("Cannot copy SDL consumer fact", failure);
             }
         }
     }
 
     private static Object invoke(Method method, Object receiver, Object... arguments) {
-        try {
-            return method.invoke(receiver, arguments);
-        } catch (InvocationTargetException failure) {
+        try { return method.invoke(receiver, arguments); }
+        catch (InvocationTargetException failure) {
             Throwable original = failure.getCause();
             if (original instanceof RuntimeException) throw (RuntimeException) original;
             if (original instanceof Error) throw (Error) original;
-            throw new IllegalStateException("Native text input call failed: " + method, original);
-        } catch (IllegalAccessException failure) {
-            throw new IllegalStateException("Cannot invoke native text input: " + method, failure);
-        }
+            throw new IllegalStateException("Native input call failed: " + method, original);
+        } catch (IllegalAccessException failure) { throw new IllegalStateException("Cannot invoke native input: " + method, failure); }
     }
 }

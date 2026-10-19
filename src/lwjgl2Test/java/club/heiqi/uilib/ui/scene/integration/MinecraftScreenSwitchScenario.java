@@ -507,7 +507,14 @@ public final class MinecraftScreenSwitchScenario extends TestApplication {
     @Override
     protected void runTests() throws Exception {
         nativeOnly = arguments().length == 1 && arguments()[0].equals("native-only");
-        if (nativeOnly) own(new NativeHistoryEnvironment());
+        if (nativeOnly) {
+            scenario("无SDL宿主加载保持Java8普通输入入口", () -> {
+                require(!club.heiqi.uilib.ui.host.minecraft.SceneNativeTextInput.supported()
+                        && !club.heiqi.uilib.ui.host.minecraft.SceneNativeTextInput.available(),
+                        "无SDL消费资源仍选择增强输入");
+            });
+            own(new NativeHistoryEnvironment());
+        }
         else own(new DisplayTestEnvironment(80, 60, "UILib MC screen same-frame switch"));
         scenario("原生命令切焦、文本顺序与物理尾部隔离", this::nativeCommands);
         scenario("原生Space按下释放与焦点取消、双Enter起手", this::nativeKeyPhases);

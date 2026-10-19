@@ -43,7 +43,7 @@ tasks.register('installBundle', Exec) { task ->
 
 // 验证实际 LWJGL2 事件编码与生产合并消费者；不创建窗口或改动游戏事件队列。
 def inputQueueVerification = tasks.register('compileInputQueueVerification', JavaCompile) {
-    source file('../../src/minecraft112/java/club/heiqi/uilib/host/forge112/Lwjgl2InputQueue.java'),
+    source file('../../src/minecraftShared/java/club/heiqi/uilib/host/lwjgl2/Lwjgl2InputQueue.java'),
             file('verification/Lwjgl2InputQueueVerification.java')
     classpath = files(new File(file(project.property('prismRoot')), 'libraries/org/lwjgl/lwjgl/lwjgl/2.9.4-nightly-20150209/lwjgl-2.9.4-nightly-20150209.jar'))
     destinationDir = file('build/verification/input-queue')
