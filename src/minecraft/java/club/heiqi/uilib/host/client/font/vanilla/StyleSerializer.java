@@ -3,7 +3,7 @@ package club.heiqi.uilib.host.client.font.vanilla;
 import club.heiqi.uilib.ui.scene.text.TextEffects;
 import club.heiqi.uilib.ui.scene.text.TextStyle;
 
-/** wrap续行显式恢复全部活动flags；trim不伪造原source字符。 */
+/** 片段恢复活动样式；解析的基色位于palette外，§r保留caller基色，显式颜色才写palette码。 */
 public final class StyleSerializer {
     private StyleSerializer() {}
 

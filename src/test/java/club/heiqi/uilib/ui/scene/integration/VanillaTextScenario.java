@@ -135,10 +135,58 @@ public final class VanillaTextScenario extends TestApplication {
                 }
         }
         require(adapter.trim("A§cB", a, false, s).equals("A"), "prefix吞邻接token");
-        require(adapter.trim("A§cB", a, true, s).equals("§cB"), "suffix未保簇前原始tokenownership");
-        require(
-                adapter.trim("§lABCD", adapter.width("§lD", s), true, s).equals("D"),
-                "reverse trim伪造非原始prefix");
+        String coloredSuffix = adapter.trim("A§cB", a, true, s);
+        TextLayout suffixLayout = adapter.layout(coloredSuffix, s, -1, 1000, TextPolicy.SINGLE_LINE);
+        require(suffixLayout.logicalText.equals("B") && coloredSuffix.endsWith("B")
+                        && suffixLayout.lines().get(0).clusters().get(0).style.color
+                                == adapter.layout("A§cB", s, -1, 1000, TextPolicy.SINGLE_LINE).lines().get(0).clusters().get(1).style.color,
+                "suffix未保原正文和活动颜色");
+        for (String flags : new String[] {"§l", "§o", "§l§o", "§c§l§n§m"}) {
+            String source = flags + "ABCD";
+            String suffix = adapter.trim(source, adapter.width(flags + "D", s), true, s);
+            TextLayout original = adapter.layout(source, s, -1, 1000, TextPolicy.SINGLE_LINE);
+            TextLayout selected = adapter.layout(suffix, s, -1, 1000, TextPolicy.SINGLE_LINE);
+            require(selected.logicalText.equals("D"), "reverse trim改写原片段正文");
+            TextLayout.Cluster expected = original.lines().get(0).clusters().get(3);
+            TextLayout.Cluster actual = selected.lines().get(0).clusters().get(0);
+            require(actual.style.color == expected.style.color && actual.style.effects.equals(expected.style.effects),
+                    "reverse trim丢失活动颜色或样式: " + flags);
+            require(suffix.endsWith(source.substring(expected.sourceStart, expected.sourceEnd)),
+                    "reverse trim未保原source正文");
+        }
+        for (String cluster : new String[] {"e\u0301", "👩🏽‍🚀", "🇨🇳"}) {
+            String suffix = adapter.trim("§l§nA" + cluster, adapter.width("§l§n" + cluster, s), true, s);
+            TextLayout selected = adapter.layout(suffix, s, -1, 1000, TextPolicy.SINGLE_LINE);
+            require(selected.logicalText.equals(cluster), "reverse trim拆分整簇: " + cluster);
+            TextLayout.Cluster actual = selected.lines().get(0).clusters().get(0);
+            require(actual.style.effects.bold && actual.style.effects.underline, "整簇后缀丢失继承样式");
+            require(suffix.endsWith(cluster), "整簇后缀改写原source正文");
+        }
+        String[][] colorSources = {
+            {"AB", "B"}, {"§lAB", "§lB"}, {"§nAB", "§nB"},
+            {"A§fB", "§fB"}, {"A§cB", "§cB"}, {"§cA§rB", "B"}, {"§cA§r§nB", "§nB"}
+        };
+        for (String[] source : colorSources) {
+            int limit = adapter.width(source[1], s);
+            String suffix = adapter.trim(source[0], limit, true, s);
+            String wrapSource = source[0].substring(0, source[0].length() - 1) + " B";
+            List<String> wrapped = adapter.list(wrapSource, limit, s);
+            require(wrapped.size() == 2, "颜色来源场景未实际换行: " + source[0]);
+            for (String fragment : new String[] {suffix, wrapped.get(1)}) {
+                for (int base : new int[] {0x7f12a34b, 0xcc5088dd}) {
+                    TextLayout original = adapter.layout(source[0], s, base, 1000, TextPolicy.SINGLE_LINE);
+                    TextLayout selected = adapter.layout(fragment, s, base, 1000, TextPolicy.SINGLE_LINE);
+                    require(selected.logicalText.equals("B") && fragment.endsWith("B"), "片段未保原正文");
+                    TextLayout.Cluster actual = selected.lines().get(0).clusters().get(0);
+                    TextLayout.Cluster expected = original.lines().get(0).clusters().get(1);
+                    int expectedColor = base;
+                    if (source[0].equals("A§fB")) expectedColor = (base & 0xff000000) | (s.paletteColor(15) & 0xffffff);
+                    if (source[0].equals("A§cB")) expectedColor = (base & 0xff000000) | (s.paletteColor(12) & 0xffffff);
+                    require(actual.style.color == expectedColor && actual.style.effects.equals(expected.style.effects),
+                            "截取/换行丢失继承基色、绝对颜色或效果: " + source[0] + " -> " + fragment);
+                }
+            }
+        }
         String raw = "§lAB §cCD §nEF\n§oGH";
         List<String> lines = adapter.list(raw, a * 3 + 1, s);
         require(lines.size() > 1, "wrap无实际行");

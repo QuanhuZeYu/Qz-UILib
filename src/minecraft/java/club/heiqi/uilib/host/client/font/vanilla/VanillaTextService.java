@@ -297,7 +297,7 @@ public final class VanillaTextService {
                 layout.originalText,
                 layout.generation,
                 layout.diagnostics(),
-                layout.input);
+                layout.input).withPolicy(layout.policy());
     }
 
     /** 彩色码与base颜色重绑到簇，不走HB；显式§f不会误继承新的base颜色。 */
@@ -394,7 +394,7 @@ public final class VanillaTextService {
                 request.originalText,
                 geometry.generation,
                 geometry.diagnostics(),
-                request.input);
+                request.input).withPolicy(geometry.policy());
     }
 
     public TextLayout layout(
@@ -511,6 +511,7 @@ public final class VanillaTextService {
         }
     }
 
+    /** 调色板外的基色保留“继承caller”事实；片段前缀不能把它误写成显式§f。 */
     private static int canonicalColor(Settings settings) {
         int rgb = 0;
         while (true) {
@@ -544,8 +545,8 @@ public final class VanillaTextService {
     }
 
     private int boundary(String raw, int maximum, boolean reverse, Settings settings) {
-        if (maximum <= 0) return reverse ? parse(raw, settings, -1).input.text.length() : 0;
-        AttributedText request = parse(raw, settings, -1);
+        if (maximum <= 0) return reverse ? parse(raw, settings, canonicalColor(settings)).input.text.length() : 0;
+        AttributedText request = parse(raw, settings, canonicalColor(settings));
         TextLayout layout = layout(raw, settings, -1, Integer.MAX_VALUE, TextPolicy.NO_WRAP);
         TreeSet<Integer> safe = new TreeSet<Integer>();
         safe.add(0);
@@ -609,25 +610,22 @@ public final class VanillaTextService {
     public String trim(String raw, int maximum, boolean reverse, Settings settings) {
         Objects.requireNonNull(raw, "raw");
         service();
-        AttributedText request = parse(raw, settings, -1);
+        AttributedText request = parse(raw, settings, canonicalColor(settings));
         int cut = boundary(raw, maximum, reverse, settings);
-        if (reverse)
-            return cut == request.input.text.length()
-                    ? ""
-                    : raw.substring(request.input.sourceLeft(cut));
+        if (reverse) return slice(raw, request, cut, request.input.text.length(), settings);
         return slice(raw, request, 0, cut, settings);
     }
 
     public int sizeToWidth(String raw, int maximum, Settings settings) {
         service();
         int cut = boundary(raw, maximum, false, settings);
-        AttributedText request = parse(raw, settings, -1);
+        AttributedText request = parse(raw, settings, canonicalColor(settings));
         return cut == request.input.text.length() ? raw.length() : request.input.sourceLeft(cut);
     }
 
     public List<String> list(String raw, int maximum, Settings settings) {
         service();
-        AttributedText request = parse(raw, settings, -1);
+        AttributedText request = parse(raw, settings, canonicalColor(settings));
         TextLayout layout = layout(raw, settings, -1, Math.max(0, maximum), TextPolicy.NORMAL);
         List<String> result = new ArrayList<String>();
         for (TextLayout.Line line : layout.lines()) {
@@ -653,8 +651,8 @@ public final class VanillaTextService {
     public String bidiString(String raw, Settings settings) {
         if (!settings.bidi) return raw;
         service();
-        AttributedText request = parse(raw, settings, -1);
-        TextLayout fact = layout(raw, settings, -1, Integer.MAX_VALUE, TextPolicy.NO_WRAP);
+        AttributedText request = parse(raw, settings, canonicalColor(settings));
+        TextLayout fact = layout(raw, settings, canonicalColor(settings), Integer.MAX_VALUE, TextPolicy.NO_WRAP);
         StringBuilder result = new StringBuilder();
         boolean formatted = false;
         for (TextInput.SourceSegment segment : request.input.sourceSegments())
