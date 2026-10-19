@@ -6,6 +6,8 @@ repositories {
     mavenCentral()
     maven { url = 'https://maven.minecraftforge.net' }
 }
+version = findProperty('uilibVersion') ?: '5.0.0-beta1'
+group = findProperty('uilibGroup') ?: (version.toString().startsWith('4.') ? 'club.heiqi.uilib' : 'asia.quanhuzeyu.uilib')
 ext.uilibJavaTarget = 8
 ext.uilibBinding = 'lwjgl3'
 apply from: '../../gradle/loader-dependencies.gradle'
@@ -38,4 +40,12 @@ tasks.register('installBundle', Exec) { task ->
     dependsOn 'clientCacheBuild'
     configurePrismBuild(task, true)
 }
+// 缓存构建器的明确安装输出；旧版本可留在同目录，清单不枚举历史产物。
+ext.uilibInstallHost = 'forge116'
+ext.uilibInstallAssets = [
+        [name: "qz_uilib_forge116-${project.version}.jar"],
+        [name: "qz_uilib_manual_forge116-${project.version}.jar"]
+] + ['core', 'font-adapter', 'gl-adapter', 'media-adapter'].collect { [name: 'qz_uilib-' + it + '-java8.jar'] }
+ext.uilibInstallDependencies = ['core', 'font-adapter', 'media-adapter', 'gl-renderer', 'lwjgl3', 'gallery', 'verification'].collect { uilibArtifacts[it] }
+apply from: '../../gradle/install-manifest.gradle'
 

@@ -112,16 +112,21 @@ task glAdapterJar(type: Jar) {
     // Platform 适配模块携带同一份第三方通知，合并后只保留一份。
     from({ zipTree(uilibArtifacts['lwjgl2'].singleFile) }) { exclude 'META-INF/MANIFEST.MF', 'LICENSE', 'META-INF/THIRD-PARTY-NOTICES.md' }
 }
+def installAssets = ['jar', 'manualJar', 'glAdapterJar'].collect { name ->
+    def artifact = tasks.named(name, Jar)
+    [from: artifact.flatMap { it.archiveFile }, name: artifact.get().archiveFileName.get()]
+} + ['core', 'font-adapter', 'media-adapter'].collect { name ->
+    [from: uilibArtifacts[name], name: 'qz_uilib-' + name + '-java8.jar']
+}
 task installBundle(type: Sync) {
     dependsOn jar, manualJar, glAdapterJar, 'reobfJar', 'reobfManualJar'
     into layout.buildDirectory.dir('install')
-    from jar.archiveFile
-    from manualJar.archiveFile
-    from glAdapterJar.archiveFile
-    ['core', 'font-adapter', 'media-adapter'].each { name ->
-        from(uilibArtifacts[name]) { rename { 'qz_uilib-' + name + '-java8.jar' } }
-    }
+    installAssets.each { asset -> from(asset.from) { rename { asset.name } } }
 }
+ext.uilibInstallHost = 'forge112'
+ext.uilibInstallAssets = installAssets
+ext.uilibInstallDependencies = ['core', 'font-adapter', 'media-adapter', 'gl-renderer', 'lwjgl2', 'gallery', 'verification'].collect { uilibArtifacts[it] }
+apply from: '../../gradle/install-manifest.gradle'
 
 // 正式发行：安装 ZIP 为宿主 + Java8 Core/字体/GL；源包、人工包与媒体附件独立。
 task sourcesJar(type: Jar) {

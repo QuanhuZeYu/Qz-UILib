@@ -230,14 +230,20 @@ tasks.register('galleryBuild') {
     description = '显式构建正式宿主与完整人工广场并核对归档'
     dependsOn tasks.named('build'), verifyManualBundle
 }
+def installAssets = [productionJar, manualJar, mediaJar].collect { artifact ->
+    [from: artifact.flatMap { it.archiveFile }, name: artifact.get().archiveFileName.get()]
+}
 tasks.register('installBundle', Sync) {
     group = 'distribution'
-    description = '装配已核对的正式宿主与人工广场两包'
-    dependsOn tasks.named('build'), verifyManualBundle
+    description = '装配已核对的正式宿主、人工广场与媒体包'
+    dependsOn tasks.named('build'), verifyManualBundle, verifyMediaBundle
     into layout.buildDirectory.dir('install')
-    from productionJar.flatMap { it.archiveFile }
-    from manualJar.flatMap { it.archiveFile }
+    installAssets.each { asset -> from(asset.from) { rename { asset.name } } }
 }
+ext.uilibInstallHost = 'neoforge263'
+ext.uilibInstallAssets = installAssets
+ext.uilibInstallDependencies = (productionLibraries + manualLibraries).collect { uilibArtifacts[it] }
+apply from: '../../gradle/install-manifest.gradle'
 
 // 正式发行：单正式 Jar 内置 Core/font21 与合并 GL；源包与人工包独立。
 def sourcesJar = tasks.register('sourcesJar', Jar) {

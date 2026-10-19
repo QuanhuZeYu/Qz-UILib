@@ -1,0 +1,52 @@
+// 安装集合与 Maven 身份来自各宿主既有 provider；包装正确性仍由所属 verify 入口核对。
+// 调用方提供 uilibInstallHost、uilibInstallAssets（与 installBundle 共用）及 uilibInstallDependencies。
+def installAssets = project.ext.uilibInstallAssets as List
+def installDependencies = project.ext.uilibInstallDependencies as List
+def installTask = tasks.named('installBundle')
+def installSources = installAssets.collect { asset ->
+    installTask.map { layout.buildDirectory.file('install/' + asset.name).get().asFile }
+}
+def manifestFile = layout.buildDirectory.file('install-manifest.json')
+def sha256 = { File file ->
+    def hash = java.security.MessageDigest.getInstance('SHA-256')
+    file.withInputStream { input ->
+        byte[] buffer = new byte[8192]
+        int count
+        while ((count = input.read(buffer)) != -1) hash.update(buffer, 0, count)
+    }
+    hash.digest().encodeHex().toString()
+}
+tasks.register('installManifest') {
+    group = 'distribution'
+    description = '冻结本宿主安装集合及实际解析的 Maven 组合身份'
+    dependsOn tasks.named('installBundle'), tasks.named('check')
+    inputs.property('host', project.ext.uilibInstallHost)
+    inputs.property('uilibVersion', project.version.toString())
+    inputs.property('uilibGroup', project.group.toString())
+    inputs.property('installNames', installAssets.collect { it.name })
+    inputs.files(installSources)
+    inputs.files(installDependencies)
+    outputs.file(manifestFile)
+    doLast {
+        def names = installAssets.collect { it.name }
+        if (names.toSet().size() != names.size()) throw new GradleException('安装集合存在重复名称')
+        def dependencies = installDependencies.collect { configuration ->
+            def artifacts = configuration.resolvedConfiguration.resolvedArtifacts
+            if (artifacts.size() != 1) throw new GradleException('安装依赖必须解析唯一 Maven 产物：' + configuration.name)
+            def artifact = artifacts.first()
+            def coordinate = artifact.moduleVersion.id
+            if (coordinate.version != project.version.toString())
+                throw new GradleException('安装依赖版本与宿主不同：' + coordinate)
+            [group: coordinate.group, module: coordinate.name, version: coordinate.version,
+             classifier: artifact.classifier ?: '', source: artifact.file.canonicalPath, sha256: sha256(artifact.file)]
+        }
+        def manifest = [schemaVersion: 1, host: project.ext.uilibInstallHost, version: project.version.toString(),
+                        files: installSources.collect { provider ->
+                            def source = provider.get()
+                            [source: source.canonicalPath, name: source.name, sha256: sha256(source)]
+                        }, dependencies: dependencies]
+        def output = manifestFile.get().asFile
+        output.parentFile.mkdirs()
+        output.setText(groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(manifest)) + '\n', 'UTF-8')
+    }
+}

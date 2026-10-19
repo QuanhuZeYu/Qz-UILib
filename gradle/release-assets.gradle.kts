@@ -23,10 +23,11 @@ val installAssets = listOf(
     Triple<Any, String, String>(core8, "qz_uilib-core-java8.jar", "Java8 正式核心库"),
     Triple<Any, String, String>(font8, "qz_uilib-font-adapter-java8.jar", "Java8 正式字体适配库")
 )
+val manualTestAsset = Triple<Any, String, String>(archiveProvider("manualTestJar"), "qz_uilib_manualtest-$releaseVersion.jar", "人工测试附加包（可选）")
 val topLevelAssets = listOf(
     Triple<Any, String, String>(archiveProvider("reobfJar"), "qz_uilib-$releaseVersion.jar", "正式 Mod"),
     Triple<Any, String, String>(archiveProvider("sourcesJar"), "qz_uilib-$releaseVersion-sources.jar", "正式源码包"),
-    Triple<Any, String, String>(archiveProvider("manualTestJar"), "qz_uilib_manualtest-$releaseVersion.jar", "人工测试附加包（可选）"),
+    manualTestAsset,
     Triple<Any, String, String>(media8, "qz_uilib-media-adapter-$releaseVersion-java8.jar", "媒体适配可选包（人工测试媒体页依赖）")
 )
 val requirements = listOf(
@@ -65,6 +66,23 @@ val installZip = tasks.register<Zip>("releaseInstallZip") {
     installAssets.forEach { asset -> from(asset.first) { rename { asset.second } } }
     from(assetsManifest) { rename { "MANIFEST.txt" } }
 }
+
+// 实例安装复用上述正式与人工附件 provider；安装集合不从 release 目录枚举。
+val runtimeInstallAssets = installAssets.map { mapOf("from" to it.first, "name" to it.second) } + listOf(
+    mapOf("from" to manualTestAsset.first, "name" to manualTestAsset.second),
+    mapOf("from" to media8, "name" to "qz_uilib-media-adapter-java8.jar")
+)
+tasks.register<Sync>("installBundle") {
+    group = "distribution"
+    dependsOn("build", "reobfJar", "manualTestJar")
+    into(layout.buildDirectory.dir("install"))
+    runtimeInstallAssets.forEach { asset -> from(asset.getValue("from")) { rename { asset.getValue("name").toString() } } }
+}
+extra["uilibInstallHost"] = "legacy"
+extra["uilibInstallAssets"] = runtimeInstallAssets
+extra["uilibInstallDependencies"] = listOf("uilibCore8", "uilibFont8", "uilibMedia8", "uilibGl8",
+    "uilibLwjgl2", "uilibLwjgl3_8", "uilibGallery", "uilibCoreVerification").map { configurations.getByName(it) }
+apply(from = "gradle/install-manifest.gradle")
 
 tasks.register<Sync>("releaseAssets") {
     group = "distribution"

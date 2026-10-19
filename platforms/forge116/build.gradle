@@ -91,14 +91,18 @@ def libraryJars = ['core', 'font-adapter', 'media-adapter'].collect { name ->
         manifest { attributes('FMLModType': 'LIBRARY') }
     }
 }
+def installAssets = (['jar', 'manualJar', 'glAdapterJar'].collect { tasks.named(it, Jar) } + libraryJars).collect { artifact ->
+    [from: artifact.flatMap { it.archiveFile }, name: artifact.get().archiveFileName.get()]
+}
 task installBundle(type: Sync) {
     dependsOn jar, manualJar, glAdapterJar, 'reobfJar', 'reobfManualJar', libraryJars
     into layout.buildDirectory.dir('install')
-    from jar.archiveFile
-    from manualJar.archiveFile
-    from glAdapterJar.archiveFile
-    libraryJars.each { from(it.flatMap { library -> library.archiveFile }) }
+    installAssets.each { asset -> from(asset.from) { rename { asset.name } } }
 }
+ext.uilibInstallHost = 'forge116'
+ext.uilibInstallAssets = installAssets
+ext.uilibInstallDependencies = ['core', 'font-adapter', 'media-adapter', 'gl-renderer', 'lwjgl3', 'gallery', 'verification'].collect { uilibArtifacts[it] }
+apply from: '../../gradle/install-manifest.gradle'
 
 // 正式发行：安装 ZIP 为宿主 + FML LIBRARY 核心/字体 + GL 适配；源包与人工包独立。
 task sourcesJar(type: Jar) {
