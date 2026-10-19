@@ -18,7 +18,7 @@ ext.uilibBinding = 'lwjgl3'
 apply from: '../../gradle/loader-dependencies.gradle'
 sourceSets {
     main {
-        java.srcDirs = ['../../src/minecraft116/java']
+        java.srcDirs = ['../../src/minecraft116/java', '../../src/minecraftResource/java']
         resources.srcDirs = ['../../src/minecraft116/resources']
     }
     manual {
@@ -28,6 +28,7 @@ sourceSets {
         runtimeClasspath += output + compileClasspath
     }
 }
+apply from: '../../gradle/host-font-resources.gradle'
 dependencies { compileOnly uilibProduction }
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
@@ -49,6 +50,14 @@ task manualJar(type: Jar) {
     finalizedBy 'reobfManualJar'
 }
 reobf { manualJar {} }
+tasks.named('check') {
+    dependsOn 'jar', 'reobfJar'
+    doLast {
+        new java.util.zip.ZipFile(tasks.named('jar', Jar).get().archiveFile.get().asFile).withCloseable { zip ->
+            verifyHostFontResources(zip)
+        }
+    }
+}
 
 // Forge 36 从 FMLModType 装载独立库；消费 Maven 正式产物，不把核心装进宿主 Mod。
 task glAdapterJar(type: Jar) {

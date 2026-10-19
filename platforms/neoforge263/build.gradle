@@ -29,7 +29,7 @@ if (!providers.gradleProperty('prismRoot').isPresent()) {
 
 sourceSets {
     main {
-        java.srcDirs = [new File(repositoryRoot, 'src/minecraft263/java')]
+        java.srcDirs = [new File(repositoryRoot, 'src/minecraft263/java'), new File(repositoryRoot, 'src/minecraftResource/java')]
         resources.srcDirs = [new File(repositoryRoot, 'src/minecraft263/resources')]
     }
     manual {
@@ -40,6 +40,7 @@ sourceSets {
     }
 }
 
+apply from: '../../gradle/host-font-resources.gradle'
 repositories { mavenCentral() }
 dependencies {
     implementation uilibProduction
@@ -167,8 +168,11 @@ def verifyBundle = { File artifact, boolean manual ->
                 if (directory.isEmpty()) throw new GradleException('随包核心验证目录为空')
                 if (providers.hasNext()) throw new GradleException('人工广场重复登记 GalleryChecks 服务')
             }
-        } else if (zip.entries().toList().any { it.name.startsWith('club/heiqi/uilib/testing/') })
-            throw new GradleException('正式宿主不能包含测试广场')
+        } else {
+            verifyHostFontResources(zip)
+            if (zip.entries().toList().any { it.name.startsWith('club/heiqi/uilib/testing/') })
+                throw new GradleException('正式宿主不能包含测试广场')
+        }
     }
 }
 def productionJar = tasks.named('jar', Jar)

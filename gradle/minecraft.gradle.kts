@@ -18,7 +18,7 @@ val adapters = font + gl + lwjgl2 + lwjgl3
 val nativeInputRfbApi = configurations.create("nativeInputRfbApi") { isCanBeConsumed = false; isTransitive = false }
 dependencies.add(nativeInputRfbApi.name, "com.github.GTNewHorizons:lwjgl3ify:3.0.20:forgePatches")
 val main = sourceSets.getByName("main")
-main.java.setSrcDirs(listOf("src/minecraft/java", "src/minecraftShared/java"))
+main.java.setSrcDirs(listOf("src/minecraft/java", "src/minecraftShared/java", "src/minecraftResource/java"))
 main.resources.setSrcDirs(listOf("src/minecraft/resources"))
 main.compileClasspath += development + adapters + content + bindings + nativeInputRfbApi
 main.runtimeClasspath += development + adapters + content

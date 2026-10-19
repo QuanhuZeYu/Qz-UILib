@@ -112,10 +112,12 @@ def dependencies(launcher: Path, minecraft: str, forge: str, target: str) -> lis
 
 
 def package_mod(destination: Path, classes: Path, package: str, resources: Path, manifest: str, repository: Path,
-                gallery: Path | None = None, verification: Path | None = None) -> None:
+                gallery: Path | None = None, verification: Path | None = None, fonts: Path | None = None) -> None:
     with zipfile.ZipFile(destination, "w", zipfile.ZIP_DEFLATED) as result:
         result.writestr("META-INF/MANIFEST.MF", manifest)
         packages = [package]
+        if package in ("club/heiqi/uilib/host/forge112", "club/heiqi/uilib/host/forge116"):
+            packages.append("club/heiqi/uilib/host/resource")
         if package == "club/heiqi/uilib/host/forge112":
             packages.append("club/heiqi/uilib/host/lwjgl2")
         for current in packages:
@@ -125,6 +127,12 @@ def package_mod(destination: Path, classes: Path, package: str, resources: Path,
             if path.is_file():
                 result.write(path, path.relative_to(resources).as_posix())
         result.write(repository / "LICENSE", "LICENSE")
+        if fonts:
+            # 仅字体树及随树许可证进入外层Mod；普通Core库不属于ResourceManager资源包。
+            with zipfile.ZipFile(fonts) as source:
+                for entry in source.infolist():
+                    if not entry.is_dir() and entry.filename.startswith("assets/qz_uilib/fonts/"):
+                        result.writestr(entry, source.read(entry))
         if gallery:
             with zipfile.ZipFile(gallery) as source:
                 for entry in source.infolist():
@@ -138,16 +146,32 @@ def package_mod(destination: Path, classes: Path, package: str, resources: Path,
                         result.writestr(entry, source.read(entry))
 
 
-def verify(install: Path, target: str) -> None:
-    for path in install.glob("*.jar"):
+def verify(artifacts: list[Path], target: str, core: Path) -> None:
+    with zipfile.ZipFile(core) as source:
+        font_sizes = {entry.filename: entry.file_size for entry in source.infolist()
+                      if not entry.is_dir() and entry.filename.startswith("assets/qz_uilib/fonts/")}
+        core_classes = {name for name in source.namelist() if name.endswith(".class")}
+    required = ["unifont/unifont-16.0.04.otf", "unifont/LICENSE.txt", "noto/NotoSansArabic.ttf",
+                "noto/NotoColorEmoji.ttf", "noto/LICENSE-Noto.txt", "noto/LICENSE-NotoEmoji.txt",
+                "noto/LICENSE-NotoEmoji-mono.txt"]
+    for name in required:
+        if "assets/qz_uilib/fonts/" + name not in font_sizes:
+            raise RuntimeError("正式Core缺少字体或许可证: " + name)
+    for path in artifacts:
         with zipfile.ZipFile(path) as source:
             names = source.namelist()
             for name in names:
                 if name.endswith(".class") and not name.startswith("META-INF/versions/"):
                     if struct.unpack(">H", source.read(name)[6:8])[0] > 52:
                         raise RuntimeError("产物不兼容 Java8: " + name)
-            if "forge" in path.name and "club/heiqi/uilib/ui/reactive/Signal.class" in names:
-                raise RuntimeError("宿主重复携带核心: " + path.name)
+            if "forge" in path.name:
+                repeated = core_classes.intersection(names)
+                if repeated:
+                    raise RuntimeError("宿主重复携带核心: " + path.name + " " + str(sorted(repeated)))
+                if "manual" not in path.name:
+                    for name, size in font_sizes.items():
+                        if name not in names or source.getinfo(name).file_size != size:
+                            raise RuntimeError("外层宿主资源包缺少字体或许可证: " + str(path) + " " + name)
             if "manual" in path.name:
                 for required in ["club/heiqi/uilib/testing/gallery/TestGallery.class", "uilib-media/segment.ts",
                                  "META-INF/services/club.heiqi.uilib.testing.gallery.GalleryChecks",
@@ -225,6 +249,7 @@ def main() -> None:
     classpath = [cache / "development-client.jar"] + dependencies_list
     classpath += [shared / (name + ".jar") for name in shared_names]
     sources = list((repository / f"src/minecraft{args.target}/java").rglob("*.java"))
+    sources += list((repository / "src/minecraftResource/java").rglob("*.java"))
     if args.target == "112":
         sources += list((repository / "src/minecraftShared/java").rglob("*.java"))
     if args.install_bundle:
@@ -235,25 +260,31 @@ def main() -> None:
     host_manifest = base_manifest
     if args.target == "112":
         host_manifest += "FMLCorePlugin: club.heiqi.uilib.host.forge112.loading.UILibLoadingPlugin\r\nFMLCorePluginContainsFMLMod: true\r\n"
+    # 输出目录可保留旧版本；本次验证只检查实际生成的组合，不把历史包混入当前验收。
+    produced = []
     for kind in (["host", "manual"] if args.install_bundle else ["host"]):
         development = staging / (kind + "-dev.jar")
         package_mod(development, classes, f"club/heiqi/uilib/{'host' if kind == 'host' else 'manual'}/forge{args.target}",
                     repository / f"src/minecraft{args.target}{'Manual' if kind == 'manual' else ''}/resources",
                     (host_manifest if kind == "host" else base_manifest) + "\r\n", repository,
                     shared / "gallery.jar" if kind == "manual" else None,
-                    shared / "verification.jar" if kind == "manual" else None)
+                    shared / "verification.jar" if kind == "manual" else None,
+                    shared / "core.jar" if kind == "host" else None)
         production = output / (f"qz_uilib_{'manual_' if kind == 'manual' else ''}forge{args.target}-{args.version}.jar")
         live_classpath = tools + classpath + [development]
         run([java, "-Xmx1G", "-cp", ";".join(map(str, live_classpath)), "net.md_5.specialsource.SpecialSource", "--live",
              "--in-jar", str(development), "--out-jar", str(production), "--srg-in", str(cache / "to-production.srg"), "--quiet"], repository)
+        produced.append(production)
     library_names = ["core", "font-adapter", "gl-adapter"]
     if args.install_bundle:
         library_names.append("media-adapter")
     for name in library_names:
         inputs = [shared / (name + ".jar")] if name != "gl-adapter" else [shared / "gl-renderer.jar", shared / (binding + ".jar")]
         manifest = "Manifest-Version: 1.0\r\n" + ("FMLModType: LIBRARY\r\n" if args.target == "116" else "") + "\r\n"
-        merge_archives(output / (f"qz_uilib-{name}-java8.jar"), inputs, manifest)
-    verify(output, args.target)
+        library = output / (f"qz_uilib-{name}-java8.jar")
+        merge_archives(library, inputs, manifest)
+        produced.append(library)
+    verify(produced, args.target, shared / "core.jar")
     print("已生成 Forge" + args.target + (" 安装组合: " if args.install_bundle else " 生产组合: ") + str(output), flush=True)
 
 

@@ -3,6 +3,7 @@ package club.heiqi.uilib.host.forge112;
 import club.heiqi.uilib.host.client.gl.Lwjgl2GlApi;
 import club.heiqi.uilib.host.embedded.EmbeddedSceneServices;
 import club.heiqi.uilib.host.font.IsolatedFontEngine;
+import club.heiqi.uilib.host.resource.ResourceManagerFontSources;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import net.minecraft.client.Minecraft;
@@ -12,6 +13,7 @@ import net.minecraft.util.ResourceLocation;
 /** 应用服务在首次打开页面时取得 GL；资源重载和退出均在 Minecraft 客户端线程处理。 */
 public final class Forge112Client {
     private static EmbeddedSceneServices services;
+    private static ResourceManagerFontSources fontSources;
     private static Thread thread;
     private static boolean installed;
     private Forge112Client() {}
@@ -20,7 +22,7 @@ public final class Forge112Client {
         if (installed) return;
         installed = true;
         ((IReloadableResourceManager) Minecraft.getMinecraft().getResourceManager()).registerReloadListener(manager -> {
-            if (services != null) services.resourcesReloaded();
+            if (services != null) { fontSources.resourcesReloaded(); services.resourcesReloaded(); }
         });
     }
 
@@ -29,9 +31,11 @@ public final class Forge112Client {
         Minecraft minecraft = Minecraft.getMinecraft();
         thread = Thread.currentThread();
         try {
+            fontSources = new ResourceManagerFontSources(Forge112Client.class.getClassLoader(),
+                    id -> minecraft.getResourceManager().getResource(new ResourceLocation(id)).getInputStream());
             services = EmbeddedSceneServices.open(minecraft.mcDataDir.toPath().resolve("config/qz_uilib.yml"),
                     Forge112Client.class.getClassLoader(), IsolatedFontEngine.shared(), new Lwjgl2GlApi(),
-                    id -> minecraft.getResourceManager().getResource(new ResourceLocation(id)).getInputStream());
+                    id -> minecraft.getResourceManager().getResource(new ResourceLocation(id)).getInputStream(), fontSources);
             return services;
         } catch (IOException failure) { throw new UncheckedIOException("UILib 宿主服务初始化失败", failure); }
     }

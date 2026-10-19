@@ -3,6 +3,7 @@ package club.heiqi.uilib.host.forge116;
 import club.heiqi.uilib.host.client.gl.Lwjgl3GlApi;
 import club.heiqi.uilib.host.embedded.EmbeddedSceneServices;
 import club.heiqi.uilib.host.font.IsolatedFontEngine;
+import club.heiqi.uilib.host.resource.ResourceManagerFontSources;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import net.minecraft.client.Minecraft;
@@ -14,6 +15,7 @@ import net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent;
 /** 惰性应用服务；资源与退出回调在 Minecraft 的呈现线程执行。 */
 public final class Forge116Client {
     private static EmbeddedSceneServices services;
+    private static ResourceManagerFontSources fontSources;
     private static Thread thread;
     private Forge116Client() {}
 
@@ -23,7 +25,7 @@ public final class Forge116Client {
     private static void initialize(FMLClientSetupEvent event) {
         event.enqueueWork(() -> ((IReloadableResourceManager) Minecraft.getInstance().getResourceManager())
                 .addReloadListener((IResourceManagerReloadListener) manager -> {
-                    if (services != null) services.resourcesReloaded();
+                    if (services != null) { fontSources.resourcesReloaded(); services.resourcesReloaded(); }
                 }));
     }
     public static EmbeddedSceneServices services() {
@@ -31,9 +33,11 @@ public final class Forge116Client {
         Minecraft minecraft = Minecraft.getInstance();
         thread = Thread.currentThread();
         try {
+            fontSources = new ResourceManagerFontSources(Forge116Client.class.getClassLoader(),
+                    id -> minecraft.getResourceManager().getResource(new ResourceLocation(id)).getInputStream());
             services = EmbeddedSceneServices.open(minecraft.gameDir.toPath().resolve("config/qz_uilib.yml"),
                     Forge116Client.class.getClassLoader(), IsolatedFontEngine.shared(), new Lwjgl3GlApi(),
-                    id -> minecraft.getResourceManager().getResource(new ResourceLocation(id)).getInputStream());
+                    id -> minecraft.getResourceManager().getResource(new ResourceLocation(id)).getInputStream(), fontSources);
             return services;
         } catch (IOException failure) { throw new UncheckedIOException("UILib 宿主服务初始化失败", failure); }
     }

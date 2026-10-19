@@ -49,7 +49,8 @@ val cpu = listOf(
     Triple("fontRealStyleScenario", "真实系统字族可变字体实际样式", "FontRealStyleScenario"),
     Triple("attributedTextScenario", "整簇属性格式来源与采样分离", "AttributedTextScenario"),
     Triple("legacyFontConfigurationScenario", "旧字体文件迁移及损坏失败", "LegacyFontConfigurationScenario"),
-    Triple("fontConfigurationFilesScenario", "宿主YAML权威及三来源迁移", "FontConfigurationFilesScenario")
+    Triple("fontConfigurationFilesScenario", "宿主YAML权威及三来源迁移", "FontConfigurationFilesScenario"),
+    Triple("resourceManagerFontSourcesScenario", "游戏资源字体快照与退休代际", "ResourceManagerFontSourcesScenario")
 ).map { (name, description, type) -> scenario(name, description, prefix + type) }
 val fontProjection = scenario("fontProjectionScenario", "透视矩阵与有界光栅档位", prefix + "FontProjectionScenario") { args("cpu") }
 val fontText = scenario("fontTextScenario", "真实共享Unicode/Bidi/脚本与Emoji17全量匹配", prefix + "FontTextScenario") {

@@ -5,6 +5,7 @@ import java.io.UncheckedIOException;
 import club.heiqi.uilib.host.embedded.EmbeddedSceneServices;
 import club.heiqi.uilib.host.client.gl.Lwjgl3GlApi;
 import club.heiqi.uilib.host.font.IsolatedFontEngine;
+import club.heiqi.uilib.host.resource.ResourceManagerFontSources;
 import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.Minecraft;
 import net.minecraft.resources.Identifier;
@@ -22,6 +23,7 @@ import net.neoforged.neoforge.common.NeoForge;
 @Mod(value = "qz_uilib", dist = Dist.CLIENT)
 public final class NeoForgeUILib {
     private static EmbeddedSceneServices services;
+    private static ResourceManagerFontSources fontSources;
 
     public NeoForgeUILib(IEventBus modBus) {
         NeoForge.EVENT_BUS.addListener(NeoForgeUILib::renderFrame);
@@ -34,9 +36,11 @@ public final class NeoForgeUILib {
         if (services == null) {
             Minecraft minecraft = Minecraft.getInstance();
             try {
+                fontSources = new ResourceManagerFontSources(NeoForgeUILib.class.getClassLoader(),
+                        id -> minecraft.getResourceManager().open(Identifier.parse(id)));
                 services = EmbeddedSceneServices.open(FMLPaths.CONFIGDIR.get().resolve("qz_uilib.yaml"),
                         NeoForgeUILib.class.getClassLoader(), IsolatedFontEngine.shared(), new Lwjgl3GlApi(),
-                        id -> minecraft.getResourceManager().open(Identifier.parse(id)));
+                        id -> minecraft.getResourceManager().open(Identifier.parse(id)), fontSources);
             } catch (IOException failure) {
                 throw new UncheckedIOException("UILib 26.3 应用服务初始化失败", failure);
             }
@@ -53,7 +57,7 @@ public final class NeoForgeUILib {
                 (ResourceManagerReloadListener) manager -> {
                     EmbeddedSceneServices current = services;
                     if (current != null) Minecraft.getInstance().execute(() -> {
-                        if (services == current) current.resourcesReloaded();
+                        if (services == current) { fontSources.resourcesReloaded(); current.resourcesReloaded(); }
                     });
                 });
     }
