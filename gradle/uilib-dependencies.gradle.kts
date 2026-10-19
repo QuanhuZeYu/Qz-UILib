@@ -1,11 +1,11 @@
 // 跨仓只解析正式 Maven 产物；开发包提供原包名，发行仍使用私有重定位核心。
-val uilibVersion = providers.gradleProperty("uilibVersion").getOrElse("4.11.1")
+val uilibVersion = project.version.toString()
 repositories.maven {
     name = "MojangICU"
     url = uri("https://libraries.minecraft.net")
     content { includeModule("com.ibm.icu", "icu4j") }
 }
-providers.gradleProperty("uilibRepository").orNull?.let { repository ->
+findProperty("uilibRepository")?.toString()?.let { repository ->
     val uilibMaven = repositories.maven { name = "UILib"; url = uri(repository) }
     repositories.exclusiveContent {
         forRepositories(uilibMaven)
