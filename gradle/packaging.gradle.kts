@@ -19,7 +19,8 @@ val manualTestDevJar by tasks.registering(Zip::class) {
     destinationDirectory.set(layout.buildDirectory.dir("manual-test"))
     from(manual.output)
     from(provider { zipTree(gallery.singleFile) }) { exclude("META-INF/MANIFEST.MF") }
-    from(provider { zipTree(verification.singleFile) }) { include("club/heiqi/uilib/testing/host/LocalMediaFiles*.class") }
+    // 核心验证页的服务实现和数据随人工广场提供，生产包仍不带测试代码。
+    from(provider { zipTree(verification.singleFile) }) { exclude("META-INF/MANIFEST.MF") }
 }
 val manualTestJar by tasks.registering(ReobfuscatedJar::class) {
     dependsOn(manualTestDevJar, "reobfJar")
@@ -34,12 +35,11 @@ val manualTestJar by tasks.registering(ReobfuscatedJar::class) {
     extraSrgEntries.set(emptyList<String>())
     doLast {
         ZipFile(archiveFile.get().asFile).use { zip ->
-            listOf("club/heiqi/uilib/manualtest/ManualTestMod.class", "club/heiqi/uilib/internal/devtools/CoreLoopScreen.class", "club/heiqi/uilib/internal/devtools/PerformanceScreen.class", "club/heiqi/uilib/testing/gallery/TestGallery.class", "club/heiqi/uilib/testing/gallery/mail/MailboxPage.class", "club/heiqi/uilib/testing/gallery/PerformanceGallery.class", "club/heiqi/uilib/testing/host/LocalMediaFiles.class", "uilib-media/segment.ts").forEach { check(zip.getEntry(it) != null) { "人工附加包缺少 $it" } }
+            listOf("club/heiqi/uilib/manualtest/ManualTestMod.class", "club/heiqi/uilib/internal/devtools/CoreLoopScreen.class", "club/heiqi/uilib/internal/devtools/PerformanceScreen.class", "club/heiqi/uilib/testing/gallery/TestGallery.class", "club/heiqi/uilib/testing/gallery/mail/MailboxPage.class", "club/heiqi/uilib/testing/gallery/PerformanceGallery.class", "club/heiqi/uilib/testing/host/LocalMediaFiles.class", "uilib-media/segment.ts", "META-INF/services/club.heiqi.uilib.testing.gallery.GalleryChecks", "club/heiqi/uilib/testing/gallery/verification/CoreGalleryChecks.class").forEach { check(zip.getEntry(it) != null) { "人工附加包缺少 $it" } }
             check(zip.getEntry("club/heiqi/uilib/ui/reactive/Signal.class") == null) { "附加包不能重复打入核心" }
             val removed = listOf("CoreLoopPage", "CoreLocalizationPage", "CoreRichTextPage", "CoreImagePage", "CoreMathPage", "CoreDocumentPage", "UsageScenarios", "ProjectSettings", "TextScenarios", "MediaScenarios", "InteractionScenarios", "ResourceScenarios", "GallerySamples")
             check(zip.entries().asSequence().none { entry -> removed.any { entry.name.startsWith("club/heiqi/uilib/testing/gallery/$it") } })
-            check(zip.getEntry("assets/qz_uilib_test/textures/sample.png") == null)
-            check(zip.getEntry("uilib/localization/core-loop/zh_CN.properties") == null)
+            // 核心验证用的字体、图像与语言样本属于本人工附加包；旧页面类仍按上方清单排除。
         }
     }
 }

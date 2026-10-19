@@ -48,7 +48,8 @@ jar {
 task manualJar(type: Jar) {
     archiveBaseName = 'qz_uilib_manual_forge112'
     from sourceSets.manual.output
-    from({ zipTree(uilibArtifacts.verification.singleFile) }) { include 'club/heiqi/uilib/testing/host/LocalMediaFiles*.class' }
+    // 核心验证服务及其资源只随人工测试包交付。
+    from({ zipTree(uilibArtifacts.verification.singleFile) }) { exclude 'META-INF/MANIFEST.MF', 'LICENSE' }
     from('../../LICENSE')
     from({ zipTree(uilibArtifacts.gallery.singleFile) }) { exclude 'META-INF/MANIFEST.MF', 'LICENSE' }
     finalizedBy 'reobfManualJar'

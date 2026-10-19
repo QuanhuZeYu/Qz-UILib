@@ -129,7 +129,8 @@ def package_mod(destination: Path, classes: Path, package: str, resources: Path,
         if verification:
             with zipfile.ZipFile(verification) as source:
                 for entry in source.infolist():
-                    if entry.filename.startswith("club/heiqi/uilib/testing/host/LocalMediaFiles") and entry.filename.endswith(".class"):
+                    # 人工包需要共享核心验证的服务实现、用例和资源。
+                    if not entry.is_dir() and entry.filename not in ("META-INF/MANIFEST.MF", "LICENSE"):
                         result.writestr(entry, source.read(entry))
 
 
@@ -144,7 +145,9 @@ def verify(install: Path, target: str) -> None:
             if "forge" in path.name and "club/heiqi/uilib/ui/reactive/Signal.class" in names:
                 raise RuntimeError("宿主重复携带核心: " + path.name)
             if "manual" in path.name:
-                for required in ["club/heiqi/uilib/testing/gallery/TestGallery.class", "uilib-media/segment.ts"]:
+                for required in ["club/heiqi/uilib/testing/gallery/TestGallery.class", "uilib-media/segment.ts",
+                                 "META-INF/services/club.heiqi.uilib.testing.gallery.GalleryChecks",
+                                 "club/heiqi/uilib/testing/gallery/verification/CoreGalleryChecks.class"]:
                     if required not in names:
                         raise RuntimeError("人工附加包缺少 " + required)
             elif any(name.startswith("club/heiqi/uilib/testing/gallery/") for name in names):

@@ -6,7 +6,7 @@ license="LGPL-3.0-or-later"
 modId="qz_uilib_manualtest"
 version="${uilibVersion}"
 displayName="UILib 测试广场"
-description="通过主菜单和 /qzcore 运行共同测试广场。"
+description="通过 /qzcore 运行共同测试广场。"
 
 [[dependencies.qz_uilib_manualtest]]
 modId="qz_uilib"

@@ -15,6 +15,8 @@ def productionLibraries = ['core', 'font-adapter', 'gl-renderer', 'lwjgl3']
 def manualLibraries = ['gallery', 'media-adapter', 'verification']
 def productionNestedLibraries = ['core', 'font-adapter']
 def manualNestedLibraries = ['media-adapter']
+def manualVerificationLibraries = [core: 'core.jar', gallery: 'gallery.jar', verification: 'core-verification.jar']
+def manualVerificationRoot = 'META-INF/uilib-verification'
 
 java.toolchain.languageVersion = JavaLanguageVersion.of(25)
 // 正常开发使用官方 NeoForm；已有精确实例可显式选择其明文 patched 客户端编译。
@@ -97,6 +99,13 @@ def nestedResources = { String name, List<String> modules ->
 }
 def productionNested = nestedResources('productionNestedResources', productionNestedLibraries)
 def manualNested = nestedResources('manualNestedResources', manualNestedLibraries)
+// 普通测试资源不登记到 FML JiJ；同包核心检查只在独立加载器中运行。
+def manualVerification = tasks.register('manualVerificationResources', Sync) {
+    into layout.buildDirectory.dir('generated/manualVerificationResources')
+    manualVerificationLibraries.each { module, filename ->
+        from(uilibArtifacts[module]) { rename { filename } }
+    }
+}
 tasks.named('jar', Jar) {
     dependsOn productionNested
     from(layout.buildDirectory.dir('generated/productionNestedResources'))
@@ -112,9 +121,11 @@ tasks.named('jar', Jar) {
 }
 def manualJar = tasks.register('manualJar', Jar) {
     archiveBaseName = 'qz_uilib_manualtest-neoforge263'
-    dependsOn tasks.named('manualClasses'), manualNested
+    dependsOn tasks.named('manualClasses'), manualNested, manualVerification
     from(sourceSets.manual.output)
+    // 媒体页沿用共享路径 helper；验证实现及生产同包场景保留在独立 Jar 中。
     from({ zipTree(uilibArtifacts.verification.singleFile) }) { include 'club/heiqi/uilib/testing/host/LocalMediaFiles*.class' }
+    from(manualVerification) { into manualVerificationRoot }
     // 图像资产必须属于正式 mod 资源包；普通 JiJ library 不承担 ResourceManager 的资源包身份。
     from({ zipTree(uilibArtifacts.gallery.singleFile) }) { exclude 'META-INF/MANIFEST.MF', 'LICENSE' }
     from(layout.buildDirectory.dir('generated/manualNestedResources'))
@@ -129,7 +140,34 @@ def verifyBundle = { File artifact, boolean manual ->
         metadata.jars.each { nested ->
             if (zip.getEntry(nested.path) == null) throw new GradleException('JiJ 引用缺少产物: ' + nested.path)
         }
-        if (!manual && zip.entries().toList().any { it.name.startsWith('club/heiqi/uilib/testing/') })
+        if (manual) {
+            manualVerificationLibraries.values().each { filename ->
+                def path = manualVerificationRoot + '/' + filename
+                if (zip.getEntry(path) == null) throw new GradleException('人工广场缺少独立核心验证资源: ' + path)
+                if (metadata.jars.any { it.path == path }) throw new GradleException('核心验证资源不能登记为 FML JiJ: ' + path)
+            }
+            def packages = { java.util.zip.ZipFile archive ->
+                archive.entries().toList().findAll { entry ->
+                    entry.name.endsWith('.class') && !entry.name.startsWith('META-INF/') && entry.name.contains('/')
+                }.collect { entry -> entry.name.substring(0, entry.name.lastIndexOf('/')) }.toSet()
+            }
+            new java.util.zip.ZipFile(uilibArtifacts.core.singleFile).withCloseable { core ->
+                def shared = packages(zip).intersect(packages(core))
+                if (!shared.isEmpty()) throw new GradleException('人工 FML 模块与正式 Core 拆包冲突: ' + shared.sort())
+            }
+            // 真实加载外层 SPI；适配器同时从内嵌三 Jar 读取独立服务目录，不能只检查 class 名称。
+            new URLClassLoader([artifact.toURI().toURL()] as URL[], (ClassLoader) null).withCloseable { loader ->
+                def contract = loader.loadClass('club.heiqi.uilib.testing.gallery.GalleryChecks')
+                def providers = ServiceLoader.load(contract, loader).iterator()
+                if (!providers.hasNext()) throw new GradleException('人工广场缺少 GalleryChecks 服务')
+                def service = providers.next()
+                if (service.class.name != 'club.heiqi.uilib.manual.neoforge263.IsolatedCoreGalleryChecks')
+                    throw new GradleException('人工广场必须使用隔离核心验证适配器')
+                def directory = contract.getMethod('checks').invoke(service)
+                if (directory.isEmpty()) throw new GradleException('随包核心验证目录为空')
+                if (providers.hasNext()) throw new GradleException('人工广场重复登记 GalleryChecks 服务')
+            }
+        } else if (zip.entries().toList().any { it.name.startsWith('club/heiqi/uilib/testing/') })
             throw new GradleException('正式宿主不能包含测试广场')
     }
 }
