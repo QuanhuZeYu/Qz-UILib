@@ -1,37 +1,146 @@
 name: Minecraft 独立构建
+
+# 普通分支与 PR 只构建并上传 Actions artifact；发布由 release.yml 的 workflow_dispatch 执行。
 on:
+  push:
+  pull_request:
   workflow_dispatch:
     inputs:
-      uilibRepository:
-        description: Core 与 Platform 正式 Maven 仓地址
-        required: true
-        type: string
       uilibVersion:
-        description: UILib 依赖版本
-        required: true
-        default: 4.11.1
+        description: 覆盖 gradle.properties 的 UILib 版本
+        required: false
         type: string
+      uilibGroup:
+        description: 覆盖 gradle.properties 的 UILib Maven group
+        required: false
+        type: string
+      uilibRepository:
+        description: 既定 Maven 仓地址；设置后跳过上游 Release ZIP 下载
+        required: false
+        type: string
+      coreRepository:
+        description: Core 仓库 owner/name
+        required: false
+        default: QuanhuZeYu/Qz-UILib-Core
+        type: string
+      platformRepository:
+        description: Platform 仓库 owner/name
+        required: false
+        default: QuanhuZeYu/Qz-UILib-Platform
+        type: string
+
+permissions:
+  contents: read
+
 jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.read.outputs.version }}
+      group: ${{ steps.read.outputs.group }}
+      repository: ${{ steps.read.outputs.repository }}
+      download: ${{ steps.read.outputs.download }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: 解析版本与 Maven 输入
+        id: read
+        env:
+          OVERRIDE_VERSION: ${{ inputs.uilibVersion }}
+          OVERRIDE_GROUP: ${{ inputs.uilibGroup }}
+          OVERRIDE_REPOSITORY: ${{ inputs.uilibRepository }}
+        run: |
+          set -euo pipefail
+          version="${OVERRIDE_VERSION}"
+          if [ -z "$version" ]; then
+            version="$(sed -n 's/^uilibVersion[[:space:]]*=[[:space:]]*//p' gradle.properties | head -n 1)"
+          fi
+          group="${OVERRIDE_GROUP}"
+          if [ -z "$group" ]; then
+            group="$(sed -n 's/^uilibGroup[[:space:]]*=[[:space:]]*//p' gradle.properties | head -n 1)"
+          fi
+          if [ -z "$group" ]; then
+            case "$version" in 4.*) group=club.heiqi.uilib ;; *) group=asia.quanhuzeyu.uilib ;; esac
+          fi
+          if [ -z "$version" ]; then
+            echo "无法从 gradle.properties 解析 uilibVersion" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "group=$group" >> "$GITHUB_OUTPUT"
+          if [ -n "${OVERRIDE_REPOSITORY}" ]; then
+            echo "repository=${OVERRIDE_REPOSITORY}" >> "$GITHUB_OUTPUT"
+            echo "download=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "repository=" >> "$GITHUB_OUTPUT"
+            echo "download=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  maven:
+    needs: resolve
+    if: needs.resolve.outputs.download == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: 下载同 tag Core 与 Platform Maven ZIP
+        env:
+          UILIB_VERSION: ${{ needs.resolve.outputs.version }}
+          UILIB_GROUP: ${{ needs.resolve.outputs.group }}
+          CORE_REPOSITORY: ${{ inputs.coreRepository }}
+          PLATFORM_REPOSITORY: ${{ inputs.platformRepository }}
+        run: |
+          set -euo pipefail
+          core_repo="${CORE_REPOSITORY:-QuanhuZeYu/Qz-UILib-Core}"
+          platform_repo="${PLATFORM_REPOSITORY:-QuanhuZeYu/Qz-UILib-Platform}"
+          group_path="$(printf '%s' "$UILIB_GROUP" | tr '.' '/')"
+          mkdir -p uilib-maven
+          fetch() {
+            curl -fsSL --retry 3 -o "$3" "https://github.com/$1/releases/download/${UILIB_VERSION}/$2"
+          }
+          fetch "$core_repo" "qz-uilib-core-${UILIB_VERSION}-maven.zip" core.zip \
+            || { echo "缺少 $core_repo 的 ${UILIB_VERSION} Maven ZIP；发布顺序必须为 Core → Platform → Minecraft" >&2; exit 1; }
+          fetch "$platform_repo" "qz-uilib-platform-${UILIB_VERSION}-maven.zip" platform.zip \
+            || { echo "缺少 $platform_repo 的 ${UILIB_VERSION} Maven ZIP；请先完成 Platform 发布" >&2; exit 1; }
+          unzip -q core.zip -d uilib-maven
+          unzip -q platform.zip -d uilib-maven
+          test -f "uilib-maven/${group_path}/core/${UILIB_VERSION}/core-${UILIB_VERSION}-java8.jar" \
+            || { echo "Core ZIP 根不是标准 Maven group 路径" >&2; exit 1; }
+          test -f "uilib-maven/${group_path}/font-adapter/${UILIB_VERSION}/font-adapter-${UILIB_VERSION}-java8.jar" \
+            || { echo "Platform ZIP 缺少 Java8 字体适配产物" >&2; exit 1; }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: uilib-maven
+          path: uilib-maven
+          if-no-files-found: error
+
   build:
+    needs: [resolve, maven]
+    if: always() && needs.resolve.result == 'success' && (needs.maven.result == 'success' || needs.maven.result == 'skipped')
     runs-on: windows-latest
     strategy:
       fail-fast: false
       matrix:
         include:
-          - directory: .
+          - host: 1.7.10
+            directory: .
             java: '25'
-            tasks: build manualTestJar
-          - directory: platforms/forge112
+            tasks: build manualTestJar releaseAssets
+          - host: forge112
+            directory: platforms/forge112
             java: '8'
-            tasks: build installBundle
-          - directory: platforms/forge116
+            tasks: build releaseAssets
+          - host: forge116
+            directory: platforms/forge116
             java: '17'
-            tasks: build installBundle
-          - directory: platforms/neoforge263
+            tasks: build releaseAssets
+          - host: neoforge263
+            directory: platforms/neoforge263
             java: '25'
-            tasks: build installBundle
+            tasks: build releaseAssets
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -45,10 +154,37 @@ jobs:
           distribution: temurin
           java-version: ${{ matrix.java }}
       - uses: gradle/actions/setup-gradle@v4
+      - uses: actions/download-artifact@v4
+        if: needs.maven.result == 'success'
+        with:
+          name: uilib-maven
+          path: uilib-maven
       - name: 使用本工程 wrapper 构建
         working-directory: ${{ matrix.directory }}
-        env:
-          UILIB_REPOSITORY: ${{ inputs.uilibRepository }}
-          UILIB_VERSION: ${{ inputs.uilibVersion }}
         shell: bash
-        run: bash ./gradlew ${{ matrix.tasks }} "-PuilibRepository=$UILIB_REPOSITORY" "-PuilibVersion=$UILIB_VERSION"
+        env:
+          UILIB_VERSION: ${{ needs.resolve.outputs.version }}
+          UILIB_GROUP: ${{ needs.resolve.outputs.group }}
+          UILIB_REPOSITORY: ${{ needs.resolve.outputs.repository }}
+          GRADLE_TASKS: ${{ matrix.tasks }}
+          UILIB_JDK8: ${{ env.JAVA_HOME_8_X64 }}
+        run: |
+          set -euo pipefail
+          # Java8 原生参数按 UTF-8 解码；Forge 根地址要求可接受的 User-Agent。
+          export JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS--Dsun.jnu.encoding=UTF-8 -Dhttp.agent=Mozilla/5.0}"
+          if [ -z "${UILIB_REPOSITORY}" ]; then
+            UILIB_REPOSITORY="file:///$(cygpath -m "$GITHUB_WORKSPACE/uilib-maven")"
+          fi
+          bash ./gradlew $GRADLE_TASKS "-PuilibVersion=$UILIB_VERSION" "-PuilibGroup=$UILIB_GROUP" "-PuilibRepository=$UILIB_REPOSITORY"
+      - name: 检查发行资产
+        working-directory: ${{ matrix.directory }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -d build/release
+          ls -l build/release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.host }}
+          path: ${{ matrix.directory }}/build/release/*
+          if-no-files-found: error

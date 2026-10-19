@@ -1,11 +1,12 @@
 // 适用于各独立 wrapper；Gradle 5.6.4 也直接解析标准 Maven 元数据。
-def selectedVersion = findProperty('uilibVersion') ?: '4.11.1'
+def selectedVersion = findProperty('uilibVersion') ?: '5.0.0-beta1'
+def selectedGroup = findProperty('uilibGroup') ?: (selectedVersion.toString().startsWith('4.') ? 'club.heiqi.uilib' : 'asia.quanhuzeyu.uilib')
 def selectedRepository = findProperty('uilibRepository')
 if (selectedRepository) repositories.maven {
     name = 'UILib'
     // Gradle5.6的Project.uri(String)会按旧编码再次解码file URI；URI对象保留标准UTF8转义。
     url = selectedRepository.toString().startsWith('file:') ? new java.net.URI(selectedRepository.toString()) : uri(selectedRepository)
-    content { includeGroup 'club.heiqi.uilib' }
+    content { includeGroup selectedGroup }
 }
 ext.uilibArtifacts = [:]
 def modules = [core: 'core', 'font-adapter': 'font-adapter', 'gl-renderer': 'gl-renderer',
@@ -17,7 +18,7 @@ modules.each { name, module ->
         transitive = false
     }
     def classifier = module in ['gallery', 'core-verification'] ? '' : (project.uilibJavaTarget == 8 ? ':java8' : '')
-    dependencies.add(configuration.name, 'club.heiqi.uilib:' + module + ':' + selectedVersion + classifier)
+    dependencies.add(configuration.name, selectedGroup + ':' + module + ':' + selectedVersion + classifier)
     uilibArtifacts[name] = configuration
 }
 ext.uilibProduction = files(uilibArtifacts.core, uilibArtifacts['font-adapter'], uilibArtifacts['gl-renderer'], uilibArtifacts[project.uilibBinding])

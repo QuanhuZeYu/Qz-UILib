@@ -3,8 +3,8 @@ plugins {
     id 'net.neoforged.moddev' version '2.0.148'
 }
 
-group = 'club.heiqi.uilib'
-version = findProperty('uilibVersion') ?: '4.11.1'
+version = findProperty('uilibVersion') ?: '5.0.0-beta1'
+group = findProperty('uilibGroup') ?: (version.toString().startsWith('4.') ? 'club.heiqi.uilib' : 'asia.quanhuzeyu.uilib')
 base.archivesName = 'qz_uilib-neoforge263'
 
 def repositoryRoot = projectDir.toPath().resolve('../..').normalize().toFile()
@@ -82,6 +82,8 @@ tasks.withType(JavaCompile).configureEach {
 def nestedResources = { String name, List<String> modules ->
     tasks.register(name) {
         inputs.files(modules.collect { uilibArtifacts[it] })
+        inputs.property('uilibVersion', project.version.toString())
+        inputs.property('uilibGroup', project.group.toString())
         outputs.dir(layout.buildDirectory.dir('generated/' + name))
         doLast {
             def root = layout.buildDirectory.dir('generated/' + name).get().asFile
@@ -93,13 +95,47 @@ def nestedResources = { String name, List<String> modules ->
                     from(uilibArtifacts[module]) { rename { module + '.jar' } }
                 }
             }
-            def jars = modules.collect { module -> [identifier: [group: 'club.heiqi.uilib', artifact: module], version: [range: '[' + project.version + ']', artifactVersion: project.version.toString()], path: 'META-INF/jarjar/' + module + '.jar', isObfuscated: false] }
+            def jars = modules.collect { module -> [identifier: [group: project.group.toString(), artifact: module], version: [range: '[' + project.version + ']', artifactVersion: project.version.toString()], path: 'META-INF/jarjar/' + module + '.jar', isObfuscated: false] }
             new File(jarjar, 'metadata.json').text = groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson([jars: jars])) + '\n'
         }
     }
 }
 def productionNested = nestedResources('productionNestedResources', productionNestedLibraries)
 def manualNested = nestedResources('manualNestedResources', manualNestedLibraries)
+
+// 媒体可按需安装；独立资源 Mod 只携带正式媒体 JiJ，不依赖人工广场。
+// FML 12 直接支持无入口类的模组，不需要已废弃的 lowcodefml。
+def mediaNested = nestedResources('mediaNestedResources', ['media-adapter'])
+def mediaJar = tasks.register('mediaJar', Jar) {
+    archiveBaseName = 'qz_uilib-media-neoforge263'
+    dependsOn mediaNested
+    inputs.property('uilibVersion', project.version.toString())
+    from(new File(repositoryRoot, 'src/minecraft263Media/resources')) {
+        filesMatching('META-INF/neoforge.mods.toml') { expand(uilibVersion: project.version.toString()) }
+    }
+    from(layout.buildDirectory.dir('generated/mediaNestedResources'))
+    from(new File(repositoryRoot, 'LICENSE'))
+    manifest.attributes('Implementation-Version': project.version)
+}
+def verifyMediaBundle = tasks.register('verifyMediaBundle') {
+    group = 'verification'
+    dependsOn mediaJar
+    inputs.file(mediaJar.flatMap { it.archiveFile })
+    doLast {
+        new java.util.zip.ZipFile(mediaJar.get().archiveFile.get().asFile).withCloseable { zip ->
+            if (zip.getEntry('META-INF/neoforge.mods.toml') == null || zip.getEntry('LICENSE') == null)
+                throw new GradleException('媒体可选包缺少模组元数据或许可')
+            def metadata = new groovy.json.JsonSlurper().parse(zip.getInputStream(zip.getEntry('META-INF/jarjar/metadata.json')))
+            if (metadata.jars.size() != 1 || metadata.jars[0].identifier.artifact != 'media-adapter' ||
+                    metadata.jars[0].version.range != '[' + project.version + ']' ||
+                    zip.getEntry(metadata.jars[0].path) == null)
+                throw new GradleException('媒体可选包必须使用精确版本的正式媒体 JiJ')
+            if (zip.entries().toList().any { it.name.endsWith('.class') || it.name.startsWith('META-INF/uilib-verification/') })
+                throw new GradleException('媒体可选包不能混入宿主或测试类')
+        }
+    }
+}
+
 // 普通测试资源不登记到 FML JiJ；同包核心检查只在独立加载器中运行。
 def manualVerification = tasks.register('manualVerificationResources', Sync) {
     into layout.buildDirectory.dir('generated/manualVerificationResources')
@@ -114,6 +150,8 @@ tasks.named('jar', Jar) {
     ['gl-renderer', 'lwjgl3'].each { module ->
         from({ zipTree(uilibArtifacts[module].singleFile) }) {
             exclude 'META-INF/MANIFEST.MF', 'LICENSE', 'META-INF/*.SF', 'META-INF/*.RSA', 'META-INF/*.DSA', 'module-info.class'
+            // Platform 适配模块携带同一份第三方通知，合并后只保留一份。
+            if (module != 'gl-renderer') exclude 'META-INF/THIRD-PARTY-NOTICES.md'
         }
     }
     from(new File(repositoryRoot, 'LICENSE'))
@@ -200,3 +238,27 @@ tasks.register('installBundle', Sync) {
     from productionJar.flatMap { it.archiveFile }
     from manualJar.flatMap { it.archiveFile }
 }
+
+// 正式发行：单正式 Jar 内置 Core/font21 与合并 GL；源包与人工包独立。
+def sourcesJar = tasks.register('sourcesJar', Jar) {
+    archiveBaseName = 'qz_uilib-neoforge263'
+    archiveClassifier = 'sources'
+    from sourceSets.main.allSource
+    from(new File(repositoryRoot, 'LICENSE'))
+}
+ext.uilibReleaseHost = 'neoforge263'
+ext.uilibReleaseRequirements = [
+        'Minecraft 26.3 + NeoForge 26.3.0.86（客户端）',
+        '正式包不携带 gallery/manual 测试代码；媒体可选包与人工测试附加包独立提供'
+]
+ext.uilibReleaseInstallAssets = [
+        [from: tasks.named('jar'), name: "qz_uilib-neoforge263-${project.version}.jar", role: 'NeoForge 26.3 正式宿主（内置 Core/font21 与合并 GL）']
+]
+ext.uilibReleaseTopLevelAssets = [
+        [from: tasks.named('jar'), name: "qz_uilib-neoforge263-${project.version}.jar", role: '正式 Mod'],
+        [from: sourcesJar, name: "qz_uilib-neoforge263-${project.version}-sources.jar", role: '正式源码包'],
+        [from: manualJar, name: "qz_uilib_manualtest-neoforge263-${project.version}.jar", role: '人工测试附加包（可选）'],
+        [from: mediaJar, name: "qz_uilib-media-neoforge263-${project.version}.jar", role: '媒体适配可选包（精确版本 JiJ）']
+]
+ext.uilibReleaseExtraDependencies = ['verifyManualBundle', 'verifyMediaBundle']
+apply from: '../../gradle/release-assets.gradle'

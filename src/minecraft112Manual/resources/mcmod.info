@@ -1,1 +1,1 @@
-[{"modid":"qz_uilib_manualtest","name":"UILib 测试广场","version":"4.11.1","mcversion":"1.12.2","description":"共享案例广场的人工验收入口","clientSideOnly":true}]
+[{"modid":"qz_uilib_manualtest","name":"UILib 测试广场","version":"${version}","mcversion":"1.12.2","description":"共享案例广场的人工验收入口","clientSideOnly":true}]

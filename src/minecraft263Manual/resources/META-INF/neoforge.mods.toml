@@ -1,6 +1,6 @@
 modLoader="javafml"
 loaderVersion="[12,)"
-license="LGPL-3.0-or-later"
+license="MIT"
 
 [[mods]]
 modId="qz_uilib_manualtest"

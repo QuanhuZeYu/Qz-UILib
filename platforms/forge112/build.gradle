@@ -11,8 +11,8 @@ apply plugin: 'java'
 sourceCompatibility = targetCompatibility = '1.8'
 minecraft { mappings channel: 'snapshot', version: '20171003-1.12' }
 dependencies { minecraft 'net.minecraftforge:forge:1.12.2-14.23.5.2864' }
-group = 'club.heiqi.uilib'
-version = findProperty('uilibVersion') ?: '4.11.1'
+version = findProperty('uilibVersion') ?: '5.0.0-beta1'
+group = findProperty('uilibGroup') ?: (version.toString().startsWith('4.') ? 'club.heiqi.uilib' : 'asia.quanhuzeyu.uilib')
 
 repositories {
     maven { url = uri('.gradle/maven') }
@@ -33,6 +33,36 @@ sourceSets {
         compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath + uilibManual
         runtimeClasspath += output + compileClasspath
     }
+}
+// 1.12 的 @Mod 注解与 mcmod.info 必须携带正式版本：注解用构建期常量，资源在 processResources 展开。
+def uilibReleaseVersion = project.version.toString()
+def generatedVersionDir = file("$buildDir/generated/uilib-version")
+def generatedManualVersionDir = file("$buildDir/generated/uilib-manual-version")
+def generateVersionSources = tasks.register('generateVersionSources') {
+    inputs.property 'uilibVersion', uilibReleaseVersion
+    outputs.dir generatedVersionDir
+    outputs.dir generatedManualVersionDir
+    doLast {
+        def write = { File target, String packageName ->
+            target.parentFile.mkdirs()
+            target.text = 'package ' + packageName + ';\n\n' +
+                    '/** 构建期生成：Mod 元数据版本必须与正式产物一致。 */\n' +
+                    'public final class UILibVersion {\n' +
+                    '    public static final String VALUE = "' + uilibReleaseVersion + '";\n\n' +
+                    '    private UILibVersion() {}\n' +
+                    '}\n'
+        }
+        write(new File(generatedVersionDir, 'club/heiqi/uilib/host/forge112/UILibVersion.java'), 'club.heiqi.uilib.host.forge112')
+        write(new File(generatedManualVersionDir, 'club/heiqi/uilib/manual/forge112/UILibVersion.java'), 'club.heiqi.uilib.manual.forge112')
+    }
+}
+sourceSets.main.java.srcDir generatedVersionDir
+sourceSets.manual.java.srcDir generatedManualVersionDir
+tasks.named('compileJava') { dependsOn generateVersionSources }
+tasks.named(sourceSets.manual.compileJavaTaskName) { dependsOn generateVersionSources }
+tasks.withType(ProcessResources).configureEach {
+    inputs.property 'uilibVersion', uilibReleaseVersion
+    filesMatching('mcmod.info') { expand version: uilibReleaseVersion }
 }
 apply from: '../../gradle/host-font-resources.gradle'
 dependencies { compileOnly uilibProduction }
@@ -61,6 +91,8 @@ tasks.named('check') {
     doLast {
         new java.util.zip.ZipFile(tasks.named('jar', Jar).get().archiveFile.get().asFile).withCloseable { zip ->
             verifyHostFontResources(zip)
+            if (zip.entries().toList().any { it.name.startsWith('club/heiqi/uilib/testing/') || it.name.startsWith('club/heiqi/uilib/internal/devtools/') })
+                throw new GradleException('正式宿主不能包含测试代码')
         }
     }
 }
@@ -71,7 +103,8 @@ task glAdapterJar(type: Jar) {
     from('../../LICENSE')
     destinationDirectory = layout.buildDirectory.dir('libraries')
     from({ zipTree(uilibArtifacts['gl-renderer'].singleFile) }) { exclude 'META-INF/MANIFEST.MF', 'LICENSE' }
-    from({ zipTree(uilibArtifacts['lwjgl2'].singleFile) }) { exclude 'META-INF/MANIFEST.MF', 'LICENSE' }
+    // Platform 适配模块携带同一份第三方通知，合并后只保留一份。
+    from({ zipTree(uilibArtifacts['lwjgl2'].singleFile) }) { exclude 'META-INF/MANIFEST.MF', 'LICENSE', 'META-INF/THIRD-PARTY-NOTICES.md' }
 }
 task installBundle(type: Sync) {
     dependsOn jar, manualJar, glAdapterJar, 'reobfJar', 'reobfManualJar'
@@ -83,3 +116,30 @@ task installBundle(type: Sync) {
         from(uilibArtifacts[name]) { rename { 'qz_uilib-' + name + '-java8.jar' } }
     }
 }
+
+// 正式发行：安装 ZIP 为宿主 + Java8 Core/字体/GL；源包、人工包与媒体附件独立。
+task sourcesJar(type: Jar) {
+    archiveBaseName = 'qz_uilib_forge112'
+    archiveClassifier = 'sources'
+    from sourceSets.main.allSource
+    from('../../LICENSE')
+}
+ext.uilibReleaseHost = 'forge112'
+ext.uilibReleaseRequirements = [
+        'Minecraft 1.12.2 + Forge 14.23.5.2864',
+        '正式包不携带 gallery/manual 测试代码；人工验收另附人工测试附加包与媒体适配包'
+]
+ext.uilibReleaseInstallAssets = [
+        [from: tasks.named('jar'), name: "qz_uilib_forge112-${project.version}.jar", role: 'Forge 1.12 正式宿主'],
+        [from: uilibArtifacts.core, name: 'qz_uilib-core-java8.jar', role: 'Java8 正式核心库'],
+        [from: uilibArtifacts['font-adapter'], name: 'qz_uilib-font-adapter-java8.jar', role: 'Java8 正式字体适配库'],
+        [from: glAdapterJar, name: 'qz_uilib-gl-adapter-java8.jar', role: 'Java8 正式 GL 适配库（LWJGL2）']
+]
+ext.uilibReleaseTopLevelAssets = [
+        [from: tasks.named('jar'), name: "qz_uilib_forge112-${project.version}.jar", role: '正式 Mod'],
+        [from: tasks.named('sourcesJar'), name: "qz_uilib_forge112-${project.version}-sources.jar", role: '正式源码包'],
+        [from: tasks.named('manualJar'), name: "qz_uilib_manual_forge112-${project.version}.jar", role: '人工测试附加包（可选）'],
+        [from: uilibArtifacts['media-adapter'], name: "qz_uilib-media-forge112-${project.version}.jar", role: '媒体适配可选包']
+]
+ext.uilibReleaseExtraDependencies = ['reobfJar', 'reobfManualJar']
+apply from: '../../gradle/release-assets.gradle'

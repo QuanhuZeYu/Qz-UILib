@@ -15,7 +15,7 @@ tasks.named<JavaCompile>(manual.compileJavaTaskName) {
 }
 val manualTestDevJar by tasks.registering(Zip::class) {
     dependsOn("classes", "manualTestClasses")
-    archiveBaseName.set("qz_uilib_manualtest"); archiveVersion.set("core-loop-1"); archiveClassifier.set("dev"); archiveExtension.set("jar")
+    archiveBaseName.set("qz_uilib_manualtest"); archiveVersion.set(project.version.toString()); archiveClassifier.set("dev"); archiveExtension.set("jar")
     destinationDirectory.set(layout.buildDirectory.dir("manual-test"))
     from(manual.output)
     from(provider { zipTree(gallery.singleFile) }) { exclude("META-INF/MANIFEST.MF") }
@@ -26,7 +26,7 @@ val manualTestJar by tasks.registering(ReobfuscatedJar::class) {
     dependsOn(manualTestDevJar, "reobfJar")
     val production = tasks.named<ReobfuscatedJar>("reobfJar")
     inputJar.set(manualTestDevJar.flatMap { it.archiveFile })
-    archiveBaseName.set("qz_uilib_manualtest"); archiveVersion.set("core-loop-1"); archiveClassifier.set("")
+    archiveBaseName.set("qz_uilib_manualtest"); archiveVersion.set(project.version.toString()); archiveClassifier.set("")
     destinationDirectory.set(layout.buildDirectory.dir("manual-test"))
     mcVersion.set(production.flatMap { it.mcVersion }); srg.set(production.flatMap { it.srg })
     fieldCsv.set(production.flatMap { it.fieldCsv }); methodCsv.set(production.flatMap { it.methodCsv })
@@ -44,6 +44,13 @@ val manualTestJar by tasks.registering(ReobfuscatedJar::class) {
     }
 }
 tasks.register("galleryBuild") { group = "build"; description = "显式装配 Minecraft 1.7.10 人工广场"; dependsOn(manualTestJar) }
+// 外层 Jar 与根 MIT 许可同步；第三方许可随各自组件保留。
+// Gradle 9 的 jvm.Jar 与 bundling.Jar 互不继承，按 CopySpec 配置避免类型分叉。
+val licenseFile = rootProject.file("LICENSE")
+listOf("jar", "shadowJar", "sourcesJar", "apiJar", "reobfJar", "manualTestDevJar").forEach { name ->
+    tasks.named(name) { (this as org.gradle.api.file.CopySpec).from(licenseFile) }
+}
+
 val forbidden = "club/heiqi/uilib/internal/devtools/"
 tasks.withType<Jar>().configureEach { exclude("$forbidden**", "META-INF/versions/**") }
 tasks.withType<org.gradle.jvm.tasks.Jar>().configureEach { exclude("$forbidden**") }

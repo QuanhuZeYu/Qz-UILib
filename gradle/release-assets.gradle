@@ -1,0 +1,65 @@
+// 正式发行装配：每个 wrapper 独立产出 build/release，跨版本同名 GL 库只存在于各自安装 ZIP 内。
+// 调用方在 apply 之前提供：
+//   ext.uilibReleaseHost            宿主标签（forge112 / forge116 / neoforge263）
+//   ext.uilibReleaseRequirements    运行要求说明
+//   ext.uilibReleaseInstallAssets   [from:, name:, role:] 安装 ZIP 内容
+//   ext.uilibReleaseTopLevelAssets  [from:, name:, role:] 顶层附件
+//   ext.uilibReleaseExtraDependencies 可选，例如 reobf 任务
+def releaseVersion = project.version.toString()
+def releaseHost = project.ext.uilibReleaseHost
+def releaseDir = layout.buildDirectory.dir('release')
+def releaseInputDir = layout.buildDirectory.dir('release-input')
+def assetsName = "qz-uilib-minecraft-${releaseVersion}-${releaseHost}-assets.txt"
+def manifestFile = layout.buildDirectory.file("release-input/${assetsName}")
+def installAssets = project.ext.uilibReleaseInstallAssets as List
+def topLevelAssets = project.ext.uilibReleaseTopLevelAssets as List
+def requirements = project.ext.has('uilibReleaseRequirements') ? (project.ext.uilibReleaseRequirements as List) : []
+def extraDependencies = project.ext.has('uilibReleaseExtraDependencies') ? (project.ext.uilibReleaseExtraDependencies as List) : []
+
+def manifestTask = tasks.register('releaseAssetsManifest') {
+    inputs.property 'uilibVersion', releaseVersion
+    inputs.property 'requirements', requirements
+    inputs.property 'installAssets', installAssets.collect { [it.name, it.role] }
+    inputs.property 'topLevelAssets', topLevelAssets.collect { [it.name, it.role] }
+    outputs.file manifestFile
+    doLast {
+        def text = new StringBuilder()
+        text.append("Qz-UILib Minecraft ${releaseHost} 正式安装包 ${releaseVersion}\n")
+        text.append('许可：自有代码 MIT；第三方组件保留各自许可。\n\n')
+        text.append('运行要求：\n')
+        requirements.each { text.append('- ').append(it).append('\n') }
+        text.append('\n安装包内容：\n')
+        installAssets.each { text.append('- ').append(it.name).append('：').append(it.role).append('\n') }
+        text.append('\n本次顶层附件：\n')
+        topLevelAssets.each { text.append('- ').append(it.name).append('：').append(it.role).append('\n') }
+        def file = manifestFile.get().asFile
+        file.parentFile.mkdirs()
+        file.text = text.toString()
+    }
+}
+
+def installZip = tasks.register('releaseInstallZip', Zip) {
+    dependsOn manifestTask
+    dependsOn extraDependencies
+    archiveFileName = "qz-uilib-minecraft-${releaseVersion}-${releaseHost}.zip"
+    destinationDirectory = releaseInputDir
+    installAssets.each { asset ->
+        def target = asset.name
+        from(asset.from) { rename { String original -> target } }
+    }
+    from(manifestTask) { rename { 'MANIFEST.txt' } }
+}
+
+tasks.register('releaseAssets', Sync) {
+    group = 'distribution'
+    description = "装配 ${releaseHost} 的 GitHub Release 资产：安装包、正式 Mod、源包与可选附件"
+    dependsOn installZip
+    dependsOn extraDependencies
+    into releaseDir
+    from(installZip)
+    from(manifestTask)
+    topLevelAssets.each { asset ->
+        def target = asset.name
+        from(asset.from) { rename { String original -> target } }
+    }
+}

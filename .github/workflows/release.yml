@@ -1,0 +1,261 @@
+name: Minecraft 发布
+
+# 仅手动触发：接收既存 tag 与确认短语，从该 tag 完整构建后再创建或更新同一 Release。
+# tag 由用户创建，工作流不创建、不移动、不重写 tag。
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 既存发布 tag（例如 5.0.0-beta1）
+        required: true
+        type: string
+      confirm:
+        description: 输入 PUBLISH <tag> 确认发布
+        required: true
+        type: string
+      uilibGroup:
+        description: UILib Maven group
+        required: false
+        type: string
+      coreRepository:
+        description: Core 仓库 owner/name
+        required: false
+        default: QuanhuZeYu/Qz-UILib-Core
+        type: string
+      platformRepository:
+        description: Platform 仓库 owner/name
+        required: false
+        default: QuanhuZeYu/Qz-UILib-Platform
+        type: string
+
+permissions:
+  contents: read
+
+# 同一 tag 的发布串行执行，不取消进行中的发布。
+concurrency:
+  group: uilib-minecraft-release-${{ inputs.tag }}
+  cancel-in-progress: false
+
+env:
+  RELEASE_TAG: ${{ inputs.tag }}
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    outputs:
+      prerelease: ${{ steps.check.outputs.prerelease }}
+      group: ${{ steps.check.outputs.group }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ inputs.tag }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: 校验 tag、确认短语与静态说明
+        id: check
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+          OVERRIDE_GROUP: ${{ inputs.uilibGroup }}
+        run: |
+          set -euo pipefail
+          if [ "$CONFIRM" != "PUBLISH $RELEASE_TAG" ]; then
+            echo "确认短语必须为：PUBLISH $RELEASE_TAG" >&2
+            exit 1
+          fi
+          test "$(git rev-parse HEAD)" = "$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")"
+          test -f ".changelogs/${RELEASE_TAG}.md" \
+            || { echo "缺少静态发布说明" >&2; exit 1; }
+          node <<'NODE'
+          const fs = require('node:fs');
+          const tag = process.env.RELEASE_TAG;
+          const match = /^\d+\.\d+\.\d+(?:[.-](alpha|beta|rc)(?:[.-]?[0-9A-Za-z]+)?)?$/.exec(tag);
+          if (!match) throw new Error('tag 必须是 x.y.z 或 alpha/beta/rc 连续编号写法');
+          const group = process.env.OVERRIDE_GROUP || (tag.startsWith('4.') ? 'club.heiqi.uilib' : 'asia.quanhuzeyu.uilib');
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `prerelease=${Boolean(match[1])}\ngroup=${group}\n`);
+          NODE
+
+  maven:
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: 下载同 tag Core 与 Platform Maven ZIP
+        env:
+          UILIB_GROUP: ${{ needs.validate.outputs.group }}
+          CORE_REPOSITORY: ${{ inputs.coreRepository }}
+          PLATFORM_REPOSITORY: ${{ inputs.platformRepository }}
+        run: |
+          set -euo pipefail
+          core_repo="${CORE_REPOSITORY:-QuanhuZeYu/Qz-UILib-Core}"
+          platform_repo="${PLATFORM_REPOSITORY:-QuanhuZeYu/Qz-UILib-Platform}"
+          group_path="$(printf '%s' "$UILIB_GROUP" | tr '.' '/')"
+          mkdir -p uilib-maven
+          fetch() {
+            curl -fsSL --retry 3 -o "$3" "https://github.com/$1/releases/download/${RELEASE_TAG}/$2"
+          }
+          fetch "$core_repo" "qz-uilib-core-${RELEASE_TAG}-maven.zip" core.zip \
+            || { echo "缺少 $core_repo 的 ${RELEASE_TAG} Maven ZIP；发布顺序必须为 Core → Platform → Minecraft" >&2; exit 1; }
+          fetch "$platform_repo" "qz-uilib-platform-${RELEASE_TAG}-maven.zip" platform.zip \
+            || { echo "缺少 $platform_repo 的 ${RELEASE_TAG} Maven ZIP；请先完成 Platform 发布" >&2; exit 1; }
+          unzip -q core.zip -d uilib-maven
+          unzip -q platform.zip -d uilib-maven
+          test -f "uilib-maven/${group_path}/core/${RELEASE_TAG}/core-${RELEASE_TAG}-java8.jar" \
+            || { echo "Core ZIP 根不是标准 Maven group 路径" >&2; exit 1; }
+          test -f "uilib-maven/${group_path}/font-adapter/${RELEASE_TAG}/font-adapter-${RELEASE_TAG}-java8.jar" \
+            || { echo "Platform ZIP 缺少 Java8 字体适配产物" >&2; exit 1; }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: uilib-maven
+          path: uilib-maven
+          if-no-files-found: error
+
+  build:
+    needs: [validate, maven]
+    outputs:
+      commit: ${{ steps.revision.outputs.commit }}
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - host: 1.7.10
+            directory: .
+            java: '25'
+            tasks: build manualTestJar releaseAssets
+          - host: forge112
+            directory: platforms/forge112
+            java: '8'
+            tasks: build releaseAssets
+          - host: forge116
+            directory: platforms/forge116
+            java: '17'
+            tasks: build releaseAssets
+          - host: neoforge263
+            directory: platforms/neoforge263
+            java: '25'
+            tasks: build releaseAssets
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ inputs.tag }}
+          persist-credentials: false
+      - name: 记录实际构建的 tag commit
+        id: revision
+        shell: bash
+        run: |
+          set -euo pipefail
+          commit="$(git rev-parse HEAD)"
+          test "$commit" = "$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")"
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: |
+            8
+            17
+            21
+            25
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java }}
+      - uses: gradle/actions/setup-gradle@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: uilib-maven
+          path: uilib-maven
+      - name: 从 tag 使用本工程 wrapper 构建
+        working-directory: ${{ matrix.directory }}
+        shell: bash
+        env:
+          UILIB_GROUP: ${{ needs.validate.outputs.group }}
+          GRADLE_TASKS: ${{ matrix.tasks }}
+          UILIB_JDK8: ${{ env.JAVA_HOME_8_X64 }}
+        run: |
+          set -euo pipefail
+          # Java8 原生参数按 UTF-8 解码；Forge 根地址要求可接受的 User-Agent。
+          export JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS--Dsun.jnu.encoding=UTF-8 -Dhttp.agent=Mozilla/5.0}"
+          UILIB_REPOSITORY="file:///$(cygpath -m "$GITHUB_WORKSPACE/uilib-maven")"
+          bash ./gradlew $GRADLE_TASKS "-PuilibVersion=$RELEASE_TAG" "-PuilibGroup=$UILIB_GROUP" "-PuilibRepository=$UILIB_REPOSITORY"
+      - name: 检查发行资产
+        working-directory: ${{ matrix.directory }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -d build/release
+          ls -l build/release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.host }}
+          path: ${{ matrix.directory }}/build/release/*
+          if-no-files-found: error
+
+  publish:
+    needs: [validate, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.build.outputs.commit }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: dist
+          merge-multiple: true
+      - name: 组装发布正文
+        env:
+          PRERELEASE: ${{ needs.validate.outputs.prerelease }}
+          BUILT_SHA: ${{ needs.build.outputs.commit }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$BUILT_SHA"
+          test "$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")" = "$BUILT_SHA"
+          changelog=".changelogs/${RELEASE_TAG}.md"
+          test -f "$changelog" || { echo "缺少 $changelog" >&2; exit 1; }
+          test -n "$(find dist -maxdepth 1 -type f -print -quit)" || { echo "没有可发布的构建资产" >&2; exit 1; }
+          {
+            cat "$changelog"
+            echo
+            echo '---'
+            echo
+            echo '## 发布证据'
+            echo
+            echo "- tag: \`$RELEASE_TAG\`"
+            echo "- commit: \`$BUILT_SHA\`"
+            echo "- 工作流运行: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            echo '- 本次上传资产:'
+            find dist -maxdepth 1 -type f -printf '%f\n' | sort | sed 's/^/- \`/; s/$/\`/'
+          } > release-body.md
+          cat release-body.md
+      - name: 创建或更新 Release（精确 404、同名资产 clobber、不删除 Release）
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PRERELEASE: ${{ needs.validate.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+          set +e
+          existing="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" --include 2>&1)"
+          status=$?
+          set -e
+          if [ $status -ne 0 ]; then
+            if printf '%s' "$existing" | grep -Eq '^HTTP/[0-9.]+ 404([[:space:]]|$)'; then
+              gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --draft \
+                --title "$RELEASE_TAG" --notes-file release-body.md
+            else
+              printf '%s\n' "$existing" >&2
+              echo '查询 Release 失败，未按新建处理' >&2
+              exit 1
+            fi
+          fi
+          gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=true
+          gh release upload "$RELEASE_TAG" dist/* --repo "$GITHUB_REPOSITORY" --clobber
+          if [ "$PRERELEASE" = 'true' ]; then
+            gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false \
+              --title "$RELEASE_TAG" --notes-file release-body.md --prerelease --latest=false
+          else
+            gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false \
+              --title "$RELEASE_TAG" --notes-file release-body.md --prerelease=false --latest
+          fi

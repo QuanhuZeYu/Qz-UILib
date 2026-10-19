@@ -1,0 +1,13 @@
+license="MIT"
+
+[[mods]]
+modId="qz_uilib_media"
+version="${uilibVersion}"
+displayName="Qz UILib Media"
+description="UILib 的可选媒体适配库。"
+
+[[dependencies.qz_uilib_media]]
+modId="qz_uilib"
+type="required"
+versionRange="[${uilibVersion}]"
+side="CLIENT"

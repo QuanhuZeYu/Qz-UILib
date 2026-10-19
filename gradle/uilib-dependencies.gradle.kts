@@ -1,5 +1,7 @@
 // 跨仓只解析正式 Maven 产物；开发包提供原包名，发行仍使用私有重定位核心。
 val uilibVersion = project.version.toString()
+val uilibGroup = findProperty("uilibGroup")?.toString()
+    ?: if (uilibVersion.startsWith("4.")) "club.heiqi.uilib" else "asia.quanhuzeyu.uilib"
 repositories.maven {
     name = "MojangICU"
     url = uri("https://libraries.minecraft.net")
@@ -9,13 +11,13 @@ findProperty("uilibRepository")?.toString()?.let { repository ->
     val uilibMaven = repositories.maven { name = "UILib"; url = uri(repository) }
     repositories.exclusiveContent {
         forRepositories(uilibMaven)
-        filter { includeGroup("club.heiqi.uilib") }
+        filter { includeGroup(uilibGroup) }
     }
 }
 fun artifact(name: String, module: String, classifier: String = "") = configurations.create(name) {
     isCanBeConsumed = false
     isTransitive = false
-    dependencies.add(project.dependencies.create("club.heiqi.uilib:$module:$uilibVersion" + if (classifier.isEmpty()) "" else ":$classifier"))
+    dependencies.add(project.dependencies.create("$uilibGroup:$module:$uilibVersion" + if (classifier.isEmpty()) "" else ":$classifier"))
 }
 artifact("uilibCore8", "core", "java8")
 artifact("uilibCore21", "core")

@@ -29,7 +29,7 @@ def configurePrismBuild = { task, includeManual ->
                 '--jdk', jdk, '--snapshot', mappings,
                 '--repository', file('../..'), '--project', projectDir,
                 '--shared', layout.buildDirectory.dir(includeManual ? 'resolved-uilib-manual' : 'resolved-uilib').get().asFile,
-                '--version', project.findProperty('uilibVersion') ?: '4.11.1'
+                '--version', project.findProperty('uilibVersion') ?: '5.0.0-beta1'
         if (includeManual) task.args '--install-bundle'
         task.environment 'PYTHONUTF8', '1'
     }

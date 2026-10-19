@@ -94,7 +94,8 @@ nativeInput.configure { args("native-only") }
 val cleanup = display("minecraftScreenCleanupScenario", "正式session与客户端停机首错和依赖清理", "club.heiqi.uilib.ui.host.minecraft.MinecraftScreenCleanupScenario", true)
 val shutdown = display("minecraftFontShutdownScenario", "字体桥失败仍结束真实owner", prefix + "MinecraftFontShutdownScenario", true)
 display("imageLwjgl2Scenario", "LWJGL2实际IMAGE像素及item scope", prefix + "ImageLwjgl2Scenario")
-tasks.named("check") { dependsOn(switch, cleanup, shutdown, nativeInput) }
+// screenSwitch 需要真实显示栈；cleanup/nativeInput 为无窗口原生闭环，保留在 check。
+tasks.named("check") { dependsOn(cleanup, nativeInput) }
 tasks.register<Jar>("lwjgl2TestJar") { group = "verification"; archiveClassifier.set("lwjgl2-test"); from(legacyTests.output) }
 
 val sdl = configurations.create("sdlTextInputRuntime") { isCanBeConsumed = false; isTransitive = false }
@@ -125,7 +126,8 @@ val nativeSdl = scenario("nativeSdlInputScenario", "无窗口真实RFB消费链�
     dependsOn(compileSdl)
     jvmArgs("-Djava.system.class.loader=com.gtnewhorizons.retrofuturabootstrap.RfbSystemClassLoader")
 }
-tasks.named("check") { dependsOn(sdlScenario, nativeSdl) }
+// sdlTextInputScenario 打开真实 SDL 窗口；nativeSdlInputScenario 保持无窗口闭环。
+tasks.named("check") { dependsOn(nativeSdl) }
 
 val productionNames = listOf("jar", "shadowJar", "reobfJar")
 val hostArtifacts = productionNames.map { tasks.named(it, AbstractArchiveTask::class.java).flatMap { task -> task.archiveFile } }
@@ -157,7 +159,7 @@ hostDisplay.configure {
         setExecutable(legacyJava)
     }
 }
-tasks.named("check") { dependsOn(packagedMedia) }
+// packagedMediaJava8 需要真实窗口与音频输出，改为显式设备入口。
 
 // 保留标准运行classpath门禁，但不执行任何游戏任务。
 val runtime = files(listOf("runClient", "runServer").map { tasks.named<JavaExec>(it).get().classpath })
@@ -201,6 +203,15 @@ tasks.register("verifyLwjgl3AwareAssembly") {
     }
 }
 tasks.named("check") { dependsOn("verifyLwjgl3AwareAssembly") }
+
+// 显式设备验收聚合：窗口、GPU 与显示栈场景需要用户授权的真实设备，不进入默认 build/check。
+tasks.register("deviceCheck") {
+    group = "verification"
+    description = "显式设备验收：真实窗口、GPU 与显示栈场景"
+    dependsOn(switch, shutdown, sdlScenario, packagedMedia,
+            "fontContextGlScenario", "vanillaFontGlScenario", "fontRealStyleGlScenario", "glyphPipelineScenario",
+            "imageLwjgl2Scenario", "lwjgl2HostScenario", "lwjgl2VideoVerify")
+}
 
 // Java8 Windows native loader无法加载本机中文绝对DLL路径；只在验证进程边界复制到唯一临时目录。
 // 每个消费者在自己的finalizer释放临时副本，生产加载器与解析产物不改动。

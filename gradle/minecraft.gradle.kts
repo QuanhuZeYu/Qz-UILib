@@ -72,9 +72,10 @@ val prepareMinecraftLwjgl3Binding by tasks.registering {
 listOf("jar", "shadowJar").forEach { name ->
     tasks.named<Jar>(name) {
         dependsOn(prepareMinecraftLwjgl3Binding)
+        // Platform 各适配模块携带同一份第三方通知；合并后只保留 gl-renderer 的一份，避免重复条目。
         from(provider { zipTree(gl.singleFile) }) { exclude("META-INF/MANIFEST.MF", "LICENSE") }
-        from(provider { zipTree(lwjgl2.singleFile) }) { exclude("META-INF/MANIFEST.MF", "LICENSE") }
-        from(provider { zipTree(lwjgl3.singleFile) }) { exclude("META-INF/MANIFEST.MF", "LICENSE", bindingClass) }
+        from(provider { zipTree(lwjgl2.singleFile) }) { exclude("META-INF/MANIFEST.MF", "LICENSE", "META-INF/THIRD-PARTY-NOTICES.md") }
+        from(provider { zipTree(lwjgl3.singleFile) }) { exclude("META-INF/MANIFEST.MF", "LICENSE", bindingClass, "META-INF/THIRD-PARTY-NOTICES.md") }
         from(markedDirectory)
     }
 }

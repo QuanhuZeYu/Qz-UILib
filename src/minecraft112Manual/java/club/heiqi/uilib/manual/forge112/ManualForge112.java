@@ -25,7 +25,7 @@ import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.common.gameevent.TickEvent;
 
 /** 人工附加包只安装广场入口；页面、样本和媒体不进入正式宿主。 */
-@Mod(modid = "qz_uilib_manualtest", name = "UILib 测试广场", version = "4.11.1",
+@Mod(modid = "qz_uilib_manualtest", name = "UILib 测试广场", version = UILibVersion.VALUE,
         dependencies = "required-after:qz_uilib", clientSideOnly = true, acceptableRemoteVersions = "*")
 public final class ManualForge112 {
     private boolean pending;
