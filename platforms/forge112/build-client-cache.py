@@ -112,7 +112,7 @@ def dependencies(launcher: Path, minecraft: str, forge: str, target: str) -> lis
 
 
 def package_mod(destination: Path, classes: Path, package: str, resources: Path, manifest: str, repository: Path,
-                gallery: Path | None = None, verification: Path | None = None, fonts: Path | None = None) -> None:
+                version: str, gallery: Path | None = None, verification: Path | None = None, fonts: Path | None = None) -> None:
     with zipfile.ZipFile(destination, "w", zipfile.ZIP_DEFLATED) as result:
         result.writestr("META-INF/MANIFEST.MF", manifest)
         packages = [package]
@@ -125,7 +125,11 @@ def package_mod(destination: Path, classes: Path, package: str, resources: Path,
                 result.write(path, path.relative_to(classes).as_posix())
         for path in resources.rglob("*"):
             if path.is_file():
-                result.write(path, path.relative_to(resources).as_posix())
+                name = path.relative_to(resources).as_posix()
+                if name == "mcmod.info":
+                    result.writestr(name, path.read_text(encoding="utf-8").replace("${version}", version))
+                else:
+                    result.write(path, name)
         result.write(repository / "LICENSE", "LICENSE")
         if fonts:
             # 仅字体树及随树许可证进入外层Mod；普通Core库不属于ResourceManager资源包。
@@ -133,17 +137,14 @@ def package_mod(destination: Path, classes: Path, package: str, resources: Path,
                 for entry in source.infolist():
                     if not entry.is_dir() and entry.filename.startswith("assets/qz_uilib/fonts/"):
                         result.writestr(entry, source.read(entry))
-        if gallery:
-            with zipfile.ZipFile(gallery) as source:
-                for entry in source.infolist():
-                    if not entry.is_dir() and entry.filename != "META-INF/MANIFEST.MF":
-                        result.writestr(entry, source.read(entry))
-        if verification:
-            with zipfile.ZipFile(verification) as source:
-                for entry in source.infolist():
-                    # 人工包需要共享核心验证的服务实现、用例和资源。
-                    if not entry.is_dir() and entry.filename not in ("META-INF/MANIFEST.MF", "LICENSE"):
-                        result.writestr(entry, source.read(entry))
+        # 独立包各自携带 MIT；合并时保留来源目录，不能覆盖外层宿主许可证。
+        for archive, component in [(gallery, "core-gallery"), (verification, "core-verification")]:
+            if archive:
+                with zipfile.ZipFile(archive) as source:
+                    for entry in source.infolist():
+                        if not entry.is_dir() and entry.filename != "META-INF/MANIFEST.MF":
+                            name = "META-INF/licenses/" + component + "/LICENSE" if entry.filename == "LICENSE" else entry.filename
+                            result.writestr(name, source.read(entry))
 
 
 def verify(artifacts: list[Path], target: str, core: Path) -> None:
@@ -160,6 +161,8 @@ def verify(artifacts: list[Path], target: str, core: Path) -> None:
     for path in artifacts:
         with zipfile.ZipFile(path) as source:
             names = source.namelist()
+            if len(names) != len(set(names)):
+                raise RuntimeError("产物存在重复归档路径: " + path.name)
             for name in names:
                 if name.endswith(".class") and not name.startswith("META-INF/versions/"):
                     if struct.unpack(">H", source.read(name)[6:8])[0] > 52:
@@ -175,7 +178,11 @@ def verify(artifacts: list[Path], target: str, core: Path) -> None:
             if "manual" in path.name:
                 for required in ["club/heiqi/uilib/testing/gallery/TestGallery.class", "uilib-media/segment.ts",
                                  "META-INF/services/club.heiqi.uilib.testing.gallery.GalleryChecks",
-                                 "club/heiqi/uilib/testing/gallery/verification/CoreGalleryChecks.class"]:
+                                 "club/heiqi/uilib/testing/gallery/verification/CoreGalleryChecks.class",
+                                 "LICENSE", "META-INF/licenses/core-gallery/LICENSE",
+                                 "META-INF/licenses/core-verification/LICENSE", "META-INF/THIRD-PARTY-NOTICES.md",
+                                 "assets/qz_uilib/unicode/emoji17/LICENSE.txt",
+                                 "assets/qz_uilib/math/catalog/LICENSE-KaTeX.txt"]:
                     if required not in names:
                         raise RuntimeError("人工附加包缺少 " + required)
             elif any(name.startswith("club/heiqi/uilib/testing/gallery/") for name in names):
@@ -254,6 +261,16 @@ def main() -> None:
         sources += list((repository / "src/minecraftShared/java").rglob("*.java"))
     if args.install_bundle:
         sources += list((repository / f"src/minecraft{args.target}Manual/java").rglob("*.java"))
+    if args.target == "112":
+        # 与标准 ForgeGradle 入口相同：@Mod 必须编译进本次产物的版本常量。
+        for kind in (["host", "manual"] if args.install_bundle else ["host"]):
+            package = f"club.heiqi.uilib.{kind}.forge112"
+            generated = staging / "generated-version" / package.replace(".", "/") / "UILibVersion.java"
+            generated.parent.mkdir(parents=True, exist_ok=True)
+            generated.write_text("package " + package + ";\n\npublic final class UILibVersion {\n"
+                                 "    public static final String VALUE = " + json.dumps(args.version) + ";\n"
+                                 "    private UILibVersion() {}\n}\n", encoding="utf-8")
+            sources.append(generated)
     run([javac, "-J-Dfile.encoding=UTF-8", "-encoding", "UTF-8", "-source", "8", "-target", "8", "-proc:none", "-cp", ";".join(map(str, classpath)),
          "-d", str(classes)] + list(map(str, sources)), repository)
     base_manifest = "Manifest-Version: 1.0\r\nImplementation-Version: " + args.version + "\r\n"
@@ -266,7 +283,7 @@ def main() -> None:
         development = staging / (kind + "-dev.jar")
         package_mod(development, classes, f"club/heiqi/uilib/{'host' if kind == 'host' else 'manual'}/forge{args.target}",
                     repository / f"src/minecraft{args.target}{'Manual' if kind == 'manual' else ''}/resources",
-                    (host_manifest if kind == "host" else base_manifest) + "\r\n", repository,
+                    (host_manifest if kind == "host" else base_manifest) + "\r\n", repository, args.version,
                     shared / "gallery.jar" if kind == "manual" else None,
                     shared / "verification.jar" if kind == "manual" else None,
                     shared / "core.jar" if kind == "host" else None)

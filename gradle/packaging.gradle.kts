@@ -18,9 +18,16 @@ val manualTestDevJar by tasks.registering(Zip::class) {
     archiveBaseName.set("qz_uilib_manualtest"); archiveVersion.set(project.version.toString()); archiveClassifier.set("dev"); archiveExtension.set("jar")
     destinationDirectory.set(layout.buildDirectory.dir("manual-test"))
     from(manual.output)
-    from(provider { zipTree(gallery.singleFile) }) { exclude("META-INF/MANIFEST.MF") }
-    // 核心验证页的服务实现和数据随人工广场提供，生产包仍不带测试代码。
-    from(provider { zipTree(verification.singleFile) }) { exclude("META-INF/MANIFEST.MF") }
+    // 独立消费包各自带 MIT；合并时按来源保留，避免与外层宿主 LICENSE 同名冲突。
+    from(provider { zipTree(gallery.singleFile) }) {
+        exclude("META-INF/MANIFEST.MF")
+        filesMatching("LICENSE") { path = "META-INF/licenses/core-gallery/LICENSE" }
+    }
+    // 核心验证页的服务实现、数据及第三方通知随人工广场提供，生产包仍不带测试代码。
+    from(provider { zipTree(verification.singleFile) }) {
+        exclude("META-INF/MANIFEST.MF")
+        filesMatching("LICENSE") { path = "META-INF/licenses/core-verification/LICENSE" }
+    }
 }
 val manualTestJar by tasks.registering(ReobfuscatedJar::class) {
     dependsOn(manualTestDevJar, "reobfJar")
@@ -36,6 +43,7 @@ val manualTestJar by tasks.registering(ReobfuscatedJar::class) {
     doLast {
         ZipFile(archiveFile.get().asFile).use { zip ->
             listOf("club/heiqi/uilib/manualtest/ManualTestMod.class", "club/heiqi/uilib/internal/devtools/CoreLoopScreen.class", "club/heiqi/uilib/internal/devtools/PerformanceScreen.class", "club/heiqi/uilib/testing/gallery/TestGallery.class", "club/heiqi/uilib/testing/gallery/mail/MailboxPage.class", "club/heiqi/uilib/testing/gallery/PerformanceGallery.class", "club/heiqi/uilib/testing/host/LocalMediaFiles.class", "uilib-media/segment.ts", "META-INF/services/club.heiqi.uilib.testing.gallery.GalleryChecks", "club/heiqi/uilib/testing/gallery/verification/CoreGalleryChecks.class").forEach { check(zip.getEntry(it) != null) { "人工附加包缺少 $it" } }
+            listOf("LICENSE", "META-INF/licenses/core-gallery/LICENSE", "META-INF/licenses/core-verification/LICENSE", "META-INF/THIRD-PARTY-NOTICES.md", "assets/qz_uilib/unicode/emoji17/LICENSE.txt", "assets/qz_uilib/math/catalog/LICENSE-KaTeX.txt").forEach { check(zip.getEntry(it) != null) { "人工附加包缺少许可或关联通知：$it" } }
             check(zip.getEntry("club/heiqi/uilib/ui/reactive/Signal.class") == null) { "附加包不能重复打入核心" }
             val removed = listOf("CoreLoopPage", "CoreLocalizationPage", "CoreRichTextPage", "CoreImagePage", "CoreMathPage", "CoreDocumentPage", "UsageScenarios", "ProjectSettings", "TextScenarios", "MediaScenarios", "InteractionScenarios", "ResourceScenarios", "GallerySamples")
             check(zip.entries().asSequence().none { entry -> removed.any { entry.name.startsWith("club/heiqi/uilib/testing/gallery/$it") } })
