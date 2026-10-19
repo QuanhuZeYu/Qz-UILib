@@ -156,13 +156,8 @@ public final class VanillaTextService {
         ParseKey key = new ParseKey(raw, settings, color);
         AttributedText cached = parsed.get(key);
         if (cached != null) return cached;
-        TextDecoration decoration =
-                new TextDecoration(
-                        settings.lineHeight - 1 - settings.baseline,
-                        1,
-                        -1,
-                        settings.lineHeight / 2 - 1 - settings.baseline,
-                        1);
+        // 装饰相对字形基线；旧行框下沿与中线不能作为现代字体的下划线或删除线位置。
+        TextDecoration decoration = TextDecoration.NONE.fromEm(settings.logicalEm, true, true);
         TextStyle base =
                 new TextStyle(
                         "minecraft",

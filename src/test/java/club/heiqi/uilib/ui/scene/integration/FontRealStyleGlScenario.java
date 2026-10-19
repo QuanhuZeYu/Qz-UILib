@@ -137,6 +137,26 @@ public final class FontRealStyleGlScenario extends TestApplication {
                                 if (r > 120 && g > 120 && b > 120) ink++;
                             }
                         require(ink > 0, "真实样式GL全空白");
+                        int decorationPixels = 0;
+                        for (PaintCommand command : plan.commands()) {
+                            if (command.text == null) continue;
+                            for (TextLayout.Line line : command.text.lines())
+                                for (TextLayout.Decoration d : line.decorations()) {
+                                    if (d.kind == TextLayout.Decoration.Kind.UNDERLINE)
+                                        require(d.y > line.baseline, "GPU 载荷中的下划线仍压在基线上");
+                                    else if (d.kind == TextLayout.Decoration.Kind.STRIKE)
+                                        require(d.y + d.height < line.baseline, "GPU 载荷中的删除线未进入字身");
+                                    else continue;
+                                    int x = (int) Math.floor((command.box.x + d.x + d.width / 2) * 3),
+                                            y = (int) Math.floor((command.box.y + d.y + d.height / 2) * 3);
+                                    require(x >= 0 && x < W && y >= 0 && y < H, "装饰线像素样本超出目标");
+                                    int rgb = image.getRGB(x, y);
+                                    require((rgb & 0xffffff) == 0xffffff, "正确基线偏移处没有真实装饰线像素");
+                                    decorationPixels++;
+                                }
+                        }
+                        require(decorationPixels > 0, "GPU 场景没有覆盖文本装饰线");
+                        System.out.println("DECORATION_GL underlineBelowBaseline=true strikeInsideEm=true pixels=" + decorationPixels);
                         Path output = Paths.get(arguments()[0]);
                         Files.createDirectories(output.getParent());
                         ImageIO.write(image, "png", output.toFile());

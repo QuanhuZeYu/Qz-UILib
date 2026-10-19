@@ -213,6 +213,50 @@ public final class VanillaTextScenario extends TestApplication {
                 "PASS vanilla width/char/raw safe trim/token ownership/formatwrap/bidi/fixedbaseline/palette");
     }
 
+    private static void decorations(VanillaTextService adapter) {
+        for (float em : new float[] {9, 18.5f, 27})
+            for (float[] frame : new float[][] {{9, 9}, {23, 5}}) {
+                Settings settings = new Settings(em, frame[0], frame[1], false, false, palette());
+                TextLayout plain = adapter.layout("ABC\n世界", settings, -1, 1000, TextPolicy.NO_WRAP);
+                TextLayout marked = adapter.layout("§n§mABC\n世界", settings, -1, 1000, TextPolicy.NO_WRAP);
+                require(marked.advanceWidth == plain.advanceWidth && marked.advanceHeight == plain.advanceHeight,
+                        "装饰线改变了标准文字测量");
+                require(marked.lines().size() == 2, "装饰回归未覆盖多行文本");
+                for (int lineIndex = 0; lineIndex < marked.lines().size(); lineIndex++) {
+                    TextLayout.Line line = marked.lines().get(lineIndex);
+                    require(line.baseline == frame[1] + lineIndex * frame[0]
+                                    && line.lineHeight == frame[0], "装饰线改动了 caller 基线或行高");
+                    boolean underline = false, strike = false;
+                    for (TextLayout.Decoration d : line.decorations()) {
+                        if (d.kind == TextLayout.Decoration.Kind.UNDERLINE) {
+                            underline = true;
+                            require(d.y > line.baseline, "下划线压在字形基线：em=" + em + " y=" + d.y + " baseline=" + line.baseline);
+                        } else if (d.kind == TextLayout.Decoration.Kind.STRIKE) {
+                            strike = true;
+                            require(d.y + d.height < line.baseline && d.y > line.baseline - em,
+                                    "删除线没有落在当前字号的字身内部");
+                        }
+                    }
+                    require(underline && strike, "格式转换丢失下划线或删除线");
+                }
+                for (float density : new float[] {1, 1.5f, 2, 3}) {
+                    TextLayout sampled = adapter.sample(marked, new RasterSampling(density, 1), 0, 0);
+                    for (int i = 0; i < marked.lines().size(); i++) {
+                        List<TextLayout.Decoration> expected = marked.lines().get(i).decorations();
+                        List<TextLayout.Decoration> actual = sampled.lines().get(i).decorations();
+                        require(expected.size() == actual.size(), "光栅采样改变了装饰线数量");
+                        for (int j = 0; j < expected.size(); j++) {
+                            TextLayout.Decoration a = expected.get(j), b = actual.get(j);
+                            require(a.x == b.x && a.y == b.y && a.width == b.width && a.height == b.height,
+                                    "GUI 采样密度重复缩放了装饰几何");
+                        }
+                    }
+                }
+                System.out.println("DECORATION em=" + em + " callerHeight=" + frame[0] + " callerBaseline=" + frame[1]
+                        + " underlineBelowBaseline=true strikeInsideEm=true sampleDensity=1,1.5,2,3");
+            }
+    }
+
     private static void sampling(VanillaTextService adapter, Settings s) {
         String raw = "§k§lAB §cC §kبـب क्षि 👩‍💻";
         TextLayout logical = adapter.layout(raw, s, -1, 1000, TextPolicy.SINGLE_LINE);
@@ -475,6 +519,7 @@ public final class VanillaTextScenario extends TestApplication {
         scenario("字体度量校准", () -> calibration(font));
         scenario("原生alpha墨迹观测", () -> actualAlpha(font));
         scenario("标准文字API语义", () -> semantics(adapter, settings));
+        scenario("装饰线相对字形基线且不受旧行框与采样密度影响", () -> decorations(adapter));
         scenario("完整簇混淆采样", () -> sampling(adapter, settings));
         scenario("普通阴影几何共享", () -> shadowReuse(adapter, settings));
         scenario("CPU热缓存及容量边界", () -> performance(adapter, settings));
