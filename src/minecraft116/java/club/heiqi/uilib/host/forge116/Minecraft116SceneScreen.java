@@ -59,6 +59,8 @@ public class Minecraft116SceneScreen extends Screen {
     @Override protected void init() {
         if (session != null) return;
         EmbeddedSceneServices services = Forge116Client.services();
+        services.pumpResources();
+        if (!services.ready().isDone() || services.ready().isCompletedExceptionally()) return;
         EmbeddedSceneHost host = new EmbeddedSceneHost(services, this::framebufferWidth, this::framebufferHeight, media);
         semanticHost = host;
         boolean[] owned = {false};
@@ -78,6 +80,7 @@ public class Minecraft116SceneScreen extends Screen {
         }
     }
     @Override public void render(MatrixStack matrices, int mouseX, int mouseY, float partialTicks) {
+        if (session == null) init();
         ScenePageSession opened = session;
         if (opened == null || minecraft.currentScreen != this) return;
         collectAvailability();

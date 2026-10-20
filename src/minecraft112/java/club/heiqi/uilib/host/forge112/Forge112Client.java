@@ -21,11 +21,21 @@ public final class Forge112Client {
     static void install() {
         if (installed) return;
         installed = true;
+        net.minecraftforge.common.MinecraftForge.EVENT_BUS.register(new Forge112Client());
         ((IReloadableResourceManager) Minecraft.getMinecraft().getResourceManager()).registerReloadListener(manager -> {
-            if (services != null) { fontSources.resourcesReloaded(); services.resourcesReloaded(); }
+            if (services != null) { observeReload(services.resourcesReloaded()); }
         });
     }
 
+    @net.minecraftforge.fml.common.eventhandler.SubscribeEvent
+    public void tick(net.minecraftforge.fml.common.gameevent.TickEvent.ClientTickEvent event) {
+        if (event.phase == net.minecraftforge.fml.common.gameevent.TickEvent.Phase.START && services != null) services.pumpResources();
+    }
+    private static void observeReload(java.util.concurrent.CompletableFuture<Void> result) {
+        result.whenComplete((ignored, failure) -> {
+            if (failure != null) org.apache.logging.log4j.LogManager.getLogger("Qz-UILib").error("字体资源重载失败", failure);
+        });
+    }
     public static EmbeddedSceneServices services() {
         if (services != null) { checkThread(); return services; }
         Minecraft minecraft = Minecraft.getMinecraft();

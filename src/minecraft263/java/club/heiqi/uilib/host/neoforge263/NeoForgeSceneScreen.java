@@ -61,6 +61,8 @@ public class NeoForgeSceneScreen extends Screen {
         coordinates = NeoForgeSceneCoordinates.input(minecraft.getWindow());
         if (session != null) return;
         EmbeddedSceneServices services = NeoForgeUILib.services();
+        services.pumpResources();
+        if (!services.ready().isDone() || services.ready().isCompletedExceptionally()) return;
         EmbeddedSceneHost host = new EmbeddedSceneHost(services, () -> coordinates.width(), () -> coordinates.height(), media);
         semanticHost = host;
         boolean[] owned = {false};
@@ -84,6 +86,7 @@ public class NeoForgeSceneScreen extends Screen {
     @Override public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {}
 
     final void present() {
+        if (session == null) init();
         if (session == null || session.ended() || minecraft.gui.screen() != this) return;
         var target = minecraft.gameRenderer.mainRenderTarget();
         // GameRenderer 已按本帧 WindowRenderState 重建目标；不能再与下一次 OS 尺寸作跨代比较。

@@ -31,7 +31,11 @@ public final class ManualForge116 {
     }
     @SubscribeEvent public void tick(TickEvent.ClientTickEvent event) {
         if (event.phase != TickEvent.Phase.END || !pending) return;
+        club.heiqi.uilib.host.embedded.EmbeddedSceneServices resources = Forge116Client.services();
+        resources.pumpResources();
+        if (!resources.ready().isDone()) return;
         pending = false;
+        if (resources.ready().isCompletedExceptionally()) return;
         Minecraft client = Minecraft.getInstance();
         client.displayGuiScreen(new GalleryScreen(client.currentScreen));
     }

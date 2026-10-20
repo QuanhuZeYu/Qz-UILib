@@ -79,3 +79,33 @@ listOf("jar", "shadowJar").forEach { name ->
         from(markedDirectory)
     }
 }
+// 资源管理器只看到外层Mod，不能依赖Core嵌套库恰巧可作为资源包。
+val coreResourceArtifact = configurations.getByName("uilibCore8")
+val fontResourceRoots = listOf("assets/qz_uilib/fonts/", "assets/qz_uilib/unicode/emoji17/")
+tasks.named<ProcessResources>("processResources") {
+    from(provider { zipTree(coreResourceArtifact.singleFile) }) {
+        include(fontResourceRoots.map { it + "**" })
+    }
+}
+val fontHostArchives = listOf("jar", "shadowJar", "reobfJar").map { tasks.named(it, AbstractArchiveTask::class.java).flatMap { task -> task.archiveFile } }
+tasks.register("verifyHostFontResources") {
+    group = "verification"; dependsOn("jar", "shadowJar", "reobfJar")
+    inputs.files(coreResourceArtifact, fontHostArchives)
+    doLast {
+        ZipFile(coreResourceArtifact.singleFile).use { core ->
+            val entries = core.entries().asSequence().filter { !it.isDirectory && fontResourceRoots.any { root -> it.name.startsWith(root) } }.toList()
+            val required = listOf("emoji-data.txt", "emoji-sequences.txt", "emoji-zwj-sequences.txt", "emoji-variation-sequences.txt", "LICENSE.txt")
+                    .map { "assets/qz_uilib/unicode/emoji17/$it" }
+            required.forEach { check(core.getEntry(it) != null) { "Core缺少当代Unicode资源：$it" } }
+            fontHostArchives.forEach { artifact ->
+                ZipFile(artifact.get().asFile).use { host ->
+                    entries.forEach { entry ->
+                        check(host.getEntry(entry.name)?.size == entry.size) { "正式宿主未完整导入字体/Unicode资源：${entry.name}" }
+                    }
+                    logger.lifecycle("外层Mod字体、Unicode与许可证已验证: {} 条 {}", entries.size, host.name)
+                }
+            }
+        }
+    }
+}
+tasks.named("check") { dependsOn("verifyHostFontResources") }

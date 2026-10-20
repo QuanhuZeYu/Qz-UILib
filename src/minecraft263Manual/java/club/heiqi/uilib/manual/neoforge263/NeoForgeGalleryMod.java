@@ -33,6 +33,8 @@ public final class NeoForgeGalleryMod {
     private static void open() {
         Minecraft minecraft = Minecraft.getInstance();
         EmbeddedSceneServices services = NeoForgeUILib.services();
+        if (!services.ready().isDone()) { services.ready().thenRun(NeoForgeGalleryMod::open); return; }
+        if (services.ready().isCompletedExceptionally()) return;
         GalleryMediaResources media = new GalleryMediaResources(new MediaService(IsolatedMediaAdapters.decoderFactory(),
                 IsolatedMediaAdapters.audioSinkFactory(), MediaBudget.DEFAULT), new BilibiliResolver());
         GalleryScreen screen = null;

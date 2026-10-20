@@ -8,6 +8,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicReference;
+import club.heiqi.uilib.ui.scene.input.SceneCompositionSource;
 import club.heiqi.uilib.ui.scene.input.SceneEditEvent;
 import club.heiqi.uilib.ui.scene.input.ScenePointerEvent;
 
@@ -18,7 +19,7 @@ public final class SceneNativeTextInput implements AutoCloseable {
     private final Bindings bindings;
     private final Object queueLock = new Object();
     private final ConcurrentLinkedQueue<NativeEvent> pending = new ConcurrentLinkedQueue<>();
-    private boolean compositionSession, compositionActive;
+    private SceneCompositionSource composition;
     private volatile boolean closed;
     private boolean receivingText, windowAvailable = true, textRequested, textStarted;
 
@@ -86,17 +87,25 @@ public final class SceneNativeTextInput implements AutoCloseable {
 
     private void updateTextInput() {
         boolean enabled = textRequested && windowAvailable && !closed;
+        if (enabled == textStarted) return;
         synchronized (queueLock) {
-            receivingText = enabled;
+            receivingText = false;
             if (!enabled) {
-                compositionSession = false;
-                compositionActive = false;
                 pending.removeIf(event -> event.edit != null);
+                if (composition != null) pending.add(NativeEvent.edit(SceneEditEvent.compositionCancel(composition)));
             }
         }
-        if (enabled == textStarted) return;
-        // begin/end 沿宿主 MainThreadExec 配对；调用期间不持队列锁。
-        invoke(enabled ? bindings.begin : bindings.end, null);
+        // SDL_StopTextInput取消组字但不承诺最终提交，也不清空已排队文本。
+        // 在原SDL线程用原消费者耗尽旧事实后退休来源；整个边界内文本不进入新capture。
+        invoke(bindings.mainThread, null, (Runnable) () -> {
+            if (!enabled) invoke(bindings.end, null);
+            invoke(bindings.pump, null);
+            if (enabled) invoke(bindings.begin, null);
+            synchronized (queueLock) {
+                composition = null;
+                receivingText = enabled;
+            }
+        });
         textStarted = enabled;
     }
 
@@ -117,8 +126,7 @@ public final class SceneNativeTextInput implements AutoCloseable {
         synchronized (queueLock) {
             closed = true;
             receivingText = false;
-            compositionSession = false;
-            compositionActive = false;
+            composition = null;
             OWNER.compareAndSet(this, null);
             pending.clear();
         }
@@ -137,40 +145,47 @@ public final class SceneNativeTextInput implements AutoCloseable {
             NativeEvent event = bindings.snapshot(eventAddress);
             if (event == null) return;
             if (event.edit != null) {
-                if (!receivingText) return;
-                if (event.edit.compositionEvent) {
-                    // 保持既有兼容入口：空preedit后仍保留本轮组字，直到提交或下一次按压。
-                    compositionActive = event.edit.composing;
-                    if (event.edit.composing) compositionSession = true;
+                String text = event.edit.text;
+                if (event.preedit) {
+                    if (!receivingText) return;
+                    if (composition == null) {
+                        if (text.isEmpty()) return;
+                        composition = new SceneCompositionSource();
+                        event = NativeEvent.edit(SceneEditEvent.compositionBegin(composition, text));
+                    } else event = NativeEvent.edit(SceneEditEvent.compositionUpdate(composition, text, !text.isEmpty()));
                 } else {
-                    if (!compositionSession) event = NativeEvent.edit(SceneEditEvent.text(event.edit.text));
-                    compositionSession = false;
-                    compositionActive = false;
+                    SceneCompositionSource source = composition;
+                    composition = null;
+                    if (!receivingText) return;
+                    event = NativeEvent.edit(source == null ? SceneEditEvent.text(text)
+                            : SceneEditEvent.compositionCommit(source, text));
                 }
-            } else if (event.pointer == null && event.focused == null
-                    && event.down && !event.repeat && !compositionActive) {
-                compositionSession = false;
             }
             pending.add(event);
         }
     }
 
-    /** 自包含不可变事实；pointer/focused/edit 各自非空时表示对应事实，其余为键事实。
-     * SDL载荷没有原生组字联系身份，edit保持既有兼容入口；跨目标迟到组字强隔离仍需原生适配补足事实。 */
+    /** 自包含不可变事实；组字在采集时关联来源，drain不读取焦点或改写其所属联系。
+     * pointer/focused/edit各自非空时表示对应事实，其余为键事实。 */
     public static final class NativeEvent {
         public final int key;
         public final boolean down, repeat;
         public final SceneEditEvent edit;
         public final ScenePointerEvent pointer;
         public final Boolean focused;
+        private final boolean preedit;
 
         private NativeEvent(int key, boolean down, boolean repeat, SceneEditEvent edit) {
             this(key, down, repeat, edit, null, null);
         }
         private NativeEvent(int key, boolean down, boolean repeat, SceneEditEvent edit,
                 ScenePointerEvent pointer, Boolean focused) {
+            this(key, down, repeat, edit, pointer, focused, false);
+        }
+        private NativeEvent(int key, boolean down, boolean repeat, SceneEditEvent edit,
+                ScenePointerEvent pointer, Boolean focused, boolean preedit) {
             this.key = key; this.down = down; this.repeat = repeat;
-            this.edit = edit; this.pointer = pointer; this.focused = focused;
+            this.edit = edit; this.pointer = pointer; this.focused = focused; this.preedit = preedit;
         }
         private static NativeEvent edit(SceneEditEvent edit) { return new NativeEvent(0, false, false, edit); }
     }
@@ -180,7 +195,7 @@ public final class SceneNativeTextInput implements AutoCloseable {
         final Field windowId, currentEvent;
         final Method address, createEvent, type, key, edit, text, motion, button, wheel, window, common;
         final Method keyWindow, editWindow, textWindow, motionWindow, buttonWindow, wheelWindow, focusWindow;
-        final Method scancode, down, repeat, editString, textString, map, begin, end, scale, timestamp;
+        final Method scancode, down, repeat, editString, textString, map, begin, end, mainThread, pump, scale, timestamp;
         final Method motionX, motionY, buttonX, buttonY, buttonNumber, wheelX, wheelY, wheelDelta;
         final int focusGained, focusLost;
 
@@ -223,6 +238,9 @@ public final class SceneNativeTextInput implements AutoCloseable {
                 map = Class.forName("org.lwjglx.input.KeyCodes", false, loader).getMethod("sdlScancodeToLwjgl", int.class);
                 Class<?> inputEvents = Class.forName("me.eigenraven.lwjgl3ify.api.InputEvents", false, loader);
                 begin = inputEvents.getMethod("beginTextInput"); end = inputEvents.getMethod("endTextInput");
+                mainThread = Class.forName("me.eigenraven.lwjgl3ify.client.MainThreadExec", false, loader)
+                        .getMethod("runOnMainThread", Runnable.class);
+                pump = Class.forName("org.lwjglx.Lwjgl3ifyEventLoop", false, loader).getMethod("pumpEvents");
             } catch (ReflectiveOperationException failure) {
                 throw new IllegalStateException("Cannot bind lwjgl3ify SDL consumer", failure);
             }
@@ -254,8 +272,7 @@ public final class SceneNativeTextInput implements AutoCloseable {
                 if (kind == 770 || kind == 771) {
                     String content = (String) invoke(kind == 770 ? editString : textString, value);
                     if (content == null) throw new IllegalStateException("SDL text event has a null text pointer");
-                    return NativeEvent.edit(kind == 770 ? SceneEditEvent.composition(content, !content.isEmpty())
-                            : SceneEditEvent.committed(content));
+                    return new NativeEvent(0, false, false, SceneEditEvent.text(content), null, null, kind == 770);
                 }
                 if (kind == focusGained || kind == focusLost)
                     return new NativeEvent(0, false, false, null, null, kind == focusGained);

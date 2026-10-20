@@ -8,9 +8,13 @@ import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import club.heiqi.uilib.testing.TestApplication;
 import club.heiqi.uilib.host.client.font.FontConfigurationFiles;
 import club.heiqi.uilib.ui.config.ConfigCodecs;
+import club.heiqi.uilib.ui.config.ConfigDocument;
 import club.heiqi.uilib.ui.config.ConfigKey;
 import club.heiqi.uilib.ui.config.ConfigSchema;
 import club.heiqi.uilib.ui.config.ConfigSession;
@@ -60,11 +64,45 @@ public final class FontConfigurationFilesScenario extends TestApplication {
             catch (IllegalArgumentException | UncheckedIOException expected) { failed = true; }
             require(failed, "YAML权威来源错误必须上抛，不切换来源");
         });
+        scenario("非法Properties不改旧文件也不向Forge降级", () -> {
+            Path old = fixture();
+            Path properties = old.resolveSibling("font.properties");
+            byte[] bytes = "font.candidates.count=1".getBytes(StandardCharsets.UTF_8);
+            Files.write(properties, bytes);
+            Files.write(old, String.join(System.lineSeparator(), "font {", "}", "").getBytes(StandardCharsets.UTF_8));
+            boolean failed = false;
+            try { load(old, true, FontCandidateConfiguration.defaults(builtins)); }
+            catch (IllegalArgumentException | UncheckedIOException expected) { failed = true; }
+            require(failed && !Files.exists(FontConfigurationFiles.yamlPath(old)), "非法迁移不启用目标或选择低优先级来源");
+            require(Arrays.equals(bytes, Files.readAllBytes(properties)), "失败不改Properties原文件");
+        });
         scenario("缺来源生成默认YAML且完整候选可往返", () -> {
             Path old = fixture();
             load(old, true, FontCandidateConfiguration.defaults(builtins));
             require(!Files.exists(old) && !Files.exists(old.resolveSibling("font.properties")), "默认生成不制造旧来源");
             load(old, true, FontCandidateConfiguration.defaults(builtins));
+        });
+        scenario("worker读取文档后由原域显式发布", () -> {
+            Path old = fixture();
+            Files.write(FontConfigurationFiles.yamlPath(old), String.join(System.lineSeparator(),
+                    "mc:", "  replaceVanillaFont: false", "font:", "  candidates: []", "").getBytes(StandardCharsets.UTF_8));
+            ConfigSchema schema = ConfigSchema.of(enabled, candidates);
+            ReactiveDomain domain = ReactiveDomain.direct();
+            AtomicReference<ConfigSession> live = new AtomicReference<>();
+            domain.execute(() -> live.set(new ConfigSession(domain, schema)));
+            AtomicReference<Thread> worker = new AtomicReference<>();
+            ConfigDocument document = CompletableFuture.supplyAsync(() -> {
+                worker.set(Thread.currentThread());
+                try { return FontConfigurationFiles.prepare(schema, old, enabled, candidates, builtins); }
+                catch (IOException failure) { throw new UncheckedIOException(failure); }
+            }).get(10, TimeUnit.SECONDS);
+            require(worker.get() != Thread.currentThread(), "迁移文档确实在worker完成");
+            domain.execute(() -> {
+                require(live.get().get(enabled) && live.get().get(candidates).equals(FontCandidateConfiguration.defaults(builtins)),
+                        "worker读取不提前修改应用会话");
+                live.get().publish(document);
+                require(!live.get().get(enabled) && live.get().get(candidates).isEmpty(), "同声明文档由原域完整发布");
+            });
         });
     }
 
@@ -78,15 +116,17 @@ public final class FontConfigurationFilesScenario extends TestApplication {
     }
 
     private void load(Path old, boolean expectedEnabled, List<String> expectedCandidates) {
+        ConfigSchema schema = ConfigSchema.of(enabled, candidates);
+        ConfigDocument document;
+        try { document = FontConfigurationFiles.prepare(schema, old, enabled, candidates, builtins); }
+        catch (IOException error) { throw new UncheckedIOException(error); }
+        require(FontConfigurationFiles.yamlPath(old).equals(old.resolveSibling("font.yaml")), "正式来源使用.yaml");
         ReactiveDomain domain = ReactiveDomain.direct();
         domain.execute(() -> {
-            ConfigSession config = new ConfigSession(domain, ConfigSchema.of(enabled, candidates));
-            try {
-                Path selected = FontConfigurationFiles.initialize(config, old, enabled, candidates, builtins);
-                require(selected.equals(old.resolveSibling("font.yaml")), "正式来源使用.yaml");
-                require(config.get(enabled) == expectedEnabled && config.get(candidates).equals(expectedCandidates),
-                        "单来源有效值和候选顺序不变");
-            } catch (IOException error) { throw new UncheckedIOException(error); }
+            ConfigSession config = new ConfigSession(domain, schema);
+            config.publish(document);
+            require(config.get(enabled) == expectedEnabled && config.get(candidates).equals(expectedCandidates),
+                    "单来源有效值和候选顺序不变");
         });
     }
 }

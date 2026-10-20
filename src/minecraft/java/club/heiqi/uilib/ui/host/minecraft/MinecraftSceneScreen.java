@@ -159,8 +159,6 @@ public class MinecraftSceneScreen extends GuiScreen {
         private SceneKeyInputAdapter keyInput;
         private boolean leftCtrl, rightCtrl, leftShift, rightShift, leftAlt, rightAlt, leftMeta, rightMeta, repeat;
         private SceneNativeTextInput nativeText;
-        private club.heiqi.uilib.ui.scene.node.SceneNode textOwner;
-        private boolean textRequested;
         private char pendingHigh;
         private club.heiqi.uilib.ui.scene.node.SceneNode pendingTextOwner;
         private final club.heiqi.uilib.ui.scene.input.SceneEditEvent.Clipboard clipboard =
@@ -417,18 +415,12 @@ public class MinecraftSceneScreen extends GuiScreen {
                     () -> {
                         club.heiqi.uilib.ui.scene.node.SceneNode node =
                                 opened.runtime().focusRouter().focused().get();
-                        if (textOwner != node) {
-                            nativeText.textInput(false);
-                            textOwner = node;
-                        }
+                        // 目标与组字失效归Core；切换可编辑字段不重置SDL原来源。
                         boolean requested =
                                 node != null
                                         && opened.runtime().interactive(node)
                                         && node.control() != null
                                         && node.control().acceptsTextInput(node);
-                        if (textRequested && !requested)
-                            opened.edit(club.heiqi.uilib.ui.scene.input.SceneEditEvent.composition("", false));
-                        textRequested = requested;
                         nativeText.textInput(requested);
                     });
         }

@@ -4,6 +4,7 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.nio.FloatBuffer;
+import java.nio.IntBuffer;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import club.heiqi.uilib.host.client.gl.GlApi;
@@ -18,6 +19,10 @@ import club.heiqi.uilib.host.client.font.context.FontRenderContext.MatrixState;
 public final class AngelicaMatrixStateProvider
         implements LwjglFontContextCapture.MatrixStateProvider {
     private final GlApi gl;
+    // 同一provider只在所属GL线程同步查询；三种view共用有界scratch，结果在下一次查询前复制。
+    private final ByteBuffer queryBytes = ByteBuffer.allocateDirect(1024).order(ByteOrder.nativeOrder());
+    private final FloatBuffer queryFloats = queryBytes.asFloatBuffer();
+    private final IntBuffer queryIntegers = queryBytes.asIntBuffer();
 
     @Override
     public GlApi gl() {
@@ -187,7 +192,7 @@ public final class AngelicaMatrixStateProvider
             int packed = 0;
             if (lit) {
                 float[] m = new float[16];
-                FloatBuffer out = buffer(64).asFloatBuffer();
+                FloatBuffer out = floats(16);
                 matrixGet.invoke(unitMatrix.invoke(textures, 1), out);
                 for (int i = 0; i < 16; i++) m[i] = out.get(i);
                 Object context = getContext.invoke(null);
@@ -249,7 +254,10 @@ public final class AngelicaMatrixStateProvider
     @Override
     public int[] integers(int name, int count) {
         try {
-            java.nio.IntBuffer out = buffer(count * 4).asIntBuffer();
+            checkCount(count, queryIntegers.capacity());
+            queryIntegers.clear();
+            queryIntegers.limit(Math.max(16, count));
+            IntBuffer out = queryIntegers;
             getIntegers.invoke(null, name, out);
             int[] a = new int[count];
             for (int i = 0; i < count; i++) a[i] = out.get(i);
@@ -271,7 +279,10 @@ public final class AngelicaMatrixStateProvider
     @Override
     public boolean[] booleans(int name, int count) {
         try {
-            java.nio.ByteBuffer out = buffer(count);
+            checkCount(count, queryBytes.capacity());
+            queryBytes.clear();
+            queryBytes.limit(Math.max(16, count));
+            ByteBuffer out = queryBytes;
             getBooleans.invoke(null, name, out);
             boolean[] a = new boolean[count];
             for (int i = 0; i < count; i++) a[i] = out.get(i) != 0;
@@ -341,9 +352,16 @@ public final class AngelicaMatrixStateProvider
         }
     }
 
-    private static ByteBuffer buffer(int size) {
-        if (size < 0 || size > 1024) throw new IllegalArgumentException("有效状态buffer越界");
-        return ByteBuffer.allocateDirect(size).order(ByteOrder.nativeOrder());
+    private FloatBuffer floats(int count) {
+        checkCount(count, queryFloats.capacity());
+        queryFloats.clear();
+        // GLSM未缓存的枚举仍可进入LWJGL2；小向量查询也必须保留至少16个元素。
+        queryFloats.limit(Math.max(16, count));
+        return queryFloats;
+    }
+
+    private static void checkCount(int count, int capacity) {
+        if (count < 0 || count > capacity) throw new IllegalArgumentException("有效状态buffer越界");
     }
 
     private static IllegalStateException failure(Exception error) {
@@ -355,7 +373,7 @@ public final class AngelicaMatrixStateProvider
     }
 
     private float[] read(int name, int length) throws ReflectiveOperationException {
-        FloatBuffer buffer = buffer(length * 4).asFloatBuffer();
+        FloatBuffer buffer = floats(length);
         getFloat.invoke(null, name, buffer);
         float[] result = new float[length];
         for (int i = 0; i < length; i++) result[i] = buffer.get(i);

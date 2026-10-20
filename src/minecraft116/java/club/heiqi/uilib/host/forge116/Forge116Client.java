@@ -20,13 +20,23 @@ public final class Forge116Client {
     private Forge116Client() {}
 
     public static void install() {
+        net.minecraftforge.common.MinecraftForge.EVENT_BUS.register(new Forge116Client());
         net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext.get().getModEventBus().addListener(Forge116Client::initialize);
     }
     private static void initialize(FMLClientSetupEvent event) {
         event.enqueueWork(() -> ((IReloadableResourceManager) Minecraft.getInstance().getResourceManager())
                 .addReloadListener((IResourceManagerReloadListener) manager -> {
-                    if (services != null) { fontSources.resourcesReloaded(); services.resourcesReloaded(); }
+                    if (services != null) { observeReload(services.resourcesReloaded()); }
                 }));
+    }
+    @net.minecraftforge.eventbus.api.SubscribeEvent
+    public void tick(net.minecraftforge.event.TickEvent.ClientTickEvent event) {
+        if (event.phase == net.minecraftforge.event.TickEvent.Phase.START && services != null) services.pumpResources();
+    }
+    private static void observeReload(java.util.concurrent.CompletableFuture<Void> result) {
+        result.whenComplete((ignored, failure) -> {
+            if (failure != null) org.apache.logging.log4j.LogManager.getLogger("Qz-UILib").error("字体资源重载失败", failure);
+        });
     }
     public static EmbeddedSceneServices services() {
         if (services != null) { checkThread(); return services; }

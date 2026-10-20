@@ -26,7 +26,7 @@ import club.heiqi.uilib.ui.scene.text.font.nativefont.FontSession;
 public final class ResourceManagerFontSourcesScenario extends TestApplication {
     public static void main(String[] args) throws Exception { new ResourceManagerFontSourcesScenario().run(); }
     @Override protected void runTests() throws Exception {
-        scenario("真实资源位置与两代懒来源不混读", this::resourceGenerations);
+        scenario("主线程捕获独立流，后台读并锁定本代内容", this::resourceGenerations);
         scenario("可用来源读取错误不回退classpath", this::resourceFailure);
         scenario("资源包字体字节经正式服务重载并改变真实度量", this::resourceLayout);
     }
@@ -34,37 +34,47 @@ public final class ResourceManagerFontSourcesScenario extends TestApplication {
     private void resourceGenerations() throws Exception {
         ResourceManager manager = new ResourceManager();
         ResourceManagerFontSources sources = new ResourceManagerFontSources(getClass().getClassLoader(), manager);
-        List<FontSource> first = sources.forGeneration(10);
-        require(manager.reads == 0 && !first.get(0).isLoaded(), "默认来源失去懒加载");
-        byte[] frozen = bytes(first.get(0));
-        List<FontSource> validation = sources.forGeneration(11);
-        require(new String(bytes(first.get(1)), StandardCharsets.UTF_8).startsWith("1:qz_uilib:fonts/"),
-                "配置校验错误地退休了当前来源");
-        require(!first.get(2).isLoaded(), "旧代未读反例未建立");
+        club.heiqi.uilib.host.client.font.FontResourcePreparation.Sources first = sources.capture(10);
+        int captured = manager.reads;
         manager.version = 2;
         sources.resourcesReloaded();
-        List<FontSource> second = sources.forGeneration(12);
-        require(!second.get(2).isLoaded(), "新代未读反例未建立");
-        int beforeLateRead = manager.reads;
-        try { bytes(first.get(2)); throw new AssertionError("退休旧来源读取了新资源包"); }
-        catch (IllegalStateException retired) { require(retired.getMessage().contains("退休"), "旧代失败缺少退休诊断"); }
-        require(manager.reads == beforeLateRead, "旧代迟读仍访问ResourceManager");
-        require(Arrays.equals(frozen, bytes(first.get(0))), "已加载旧字体字节快照被换代覆盖");
-        require(new String(bytes(second.get(2)), StandardCharsets.UTF_8).startsWith("2:qz_uilib:fonts/"),
-                "新代懒加载没有读取当前资源包");
-        require(validation.get(0).revision == 11 && second.get(0).revision == 12, "字体候选来源代际丢失");
-        require(manager.closed == manager.reads, "资源输入流未由FontSource结束");
-        System.out.println("MC_FONT_RESOURCE namespace=qz_uilib path=fonts/* loadedOldSnapshot=true unreadOldRetired=true unreadNewCurrent=true validationKeepsLive=true streamsClosed=true");
+        club.heiqi.uilib.host.client.font.FontResourcePreparation.Sources second = sources.capture(12);
+        java.util.concurrent.ExecutorService worker = java.util.concurrent.Executors.newSingleThreadExecutor();
+        try {
+            java.util.concurrent.Future<byte[]> old = worker.submit(() -> {
+                try (AutoCloseable streams = (AutoCloseable) first.loader) { return bytes(first.builtins.get(0)); }
+            });
+            byte[] frozen = old.get();
+            require(new String(frozen, StandardCharsets.UTF_8).startsWith("1:qz_uilib:fonts/"), "旧代流迟读串入新资源包");
+            require(manager.reads == captured * 2, "worker重新打开当前manager");
+            byte[] current = worker.submit(() -> {
+                try (AutoCloseable streams = (AutoCloseable) second.loader) { return bytes(second.builtins.get(0)); }
+            }).get();
+            require(new String(current, StandardCharsets.UTF_8).startsWith("2:qz_uilib:fonts/"), "新代未读取捕获内容");
+            require(Arrays.equals(frozen, bytes(first.builtins.get(0))), "已准备旧source不再是只读快照");
+            require(manager.closed.get() == manager.reads, "本代未消费stream没有由worker关闭");
+            System.out.println("MC_FONT_RESOURCE captureOwner=true workerReadClose=true oldLateReadFrozen=true noManagerReopen=true streamsClosed=true");
+        } finally { worker.shutdown(); }
     }
 
     private void resourceFailure() throws Exception {
         IOException missing = new IOException("资源包缺失字体");
         ResourceManagerFontSources sources = new ResourceManagerFontSources(getClass().getClassLoader(), id -> { throw missing; });
-        try { bytes(sources.forGeneration(1).get(0)); throw new AssertionError("资源失败被classpath静默覆盖"); }
-        catch (IllegalStateException failure) {
-            require(failure.getCause() == missing && failure.getMessage().contains("assets/qz_uilib/fonts/"),
-                    "来源读取失败丢失实际资源位置或首因");
-        }
+        club.heiqi.uilib.host.client.font.FontResourcePreparation.Sources captured = sources.capture(1);
+        java.util.concurrent.ExecutorService worker = java.util.concurrent.Executors.newSingleThreadExecutor();
+        try {
+            java.util.concurrent.Future<?> failed = worker.submit(() -> {
+                try (AutoCloseable streams = (AutoCloseable) captured.loader) { bytes(captured.builtins.get(0)); }
+                catch (RuntimeException failure) { throw failure; }
+                catch (Exception failure) { throw new IllegalStateException(failure); }
+            });
+            try { failed.get(); throw new AssertionError("资源失败被classpath覆盖"); }
+            catch (java.util.concurrent.ExecutionException expected) {
+                Throwable cause = expected.getCause();
+                while (cause.getCause() != null) cause = cause.getCause();
+                require(cause == missing && expected.getCause().getMessage().contains("assets/qz_uilib/fonts/"), "资源位置或原始失败丢失");
+            }
+        } finally { worker.shutdown(); }
     }
 
     private void resourceLayout() throws Exception {
@@ -76,12 +86,13 @@ public final class ResourceManagerFontSourcesScenario extends TestApplication {
         Path directory = Files.createTempDirectory("uilib-game-font-");
         Path path = directory.resolve("settings.yaml");
         try (EmbeddedSceneServices service = EmbeddedSceneServices.open(path, loader, IsolatedFontEngine.shared(), gl, pack, sources)) {
+            await(service, service.ready());
             TextStyle style = new TextStyle("default", 18, -1);
             TextLayout old = service.fonts().layout("MW", style, 1000);
             FontSource previous = old.lines().get(0).glyphs().get(0).source;
             byte[] oldBytes = bytes(previous);
             pack.replacement = "assets/qz_uilib/fonts/noto/NotoSansDevanagari.ttf";
-            sources.resourcesReloaded(); service.resourcesReloaded();
+            sources.resourcesReloaded(); await(service, service.resourcesReloaded());
             TextLayout next = service.fonts().layout("MW", style, 1000);
             FontSource changed = next.lines().get(0).glyphs().get(0).source;
             require(previous.id.equals(changed.id) && previous != changed && next.generation > old.generation,
@@ -100,7 +111,7 @@ public final class ResourceManagerFontSourcesScenario extends TestApplication {
         int unifontReads;
         ResourcePack(ClassLoader loader) { this.loader = loader; }
         public InputStream snapshot(String id) throws IOException {
-            if (!id.startsWith("qz_uilib:fonts/")) throw new IOException("字体namespace/path不正确: " + id);
+            if (!id.startsWith("qz_uilib:fonts/") && !id.startsWith("qz_uilib:unicode/")) throw new IOException("字体namespace/path不正确: " + id);
             String path = "assets/qz_uilib/" + id.substring("qz_uilib:".length());
             if (id.equals("qz_uilib:fonts/unifont/unifont-16.0.04.otf")) {
                 unifontReads++;
@@ -124,13 +135,27 @@ public final class ResourceManagerFontSourcesScenario extends TestApplication {
     }
 
     private static final class ResourceManager implements JavaImageLoader.Resources {
-        int version = 1, reads, closed;
+        int version = 1, reads;
+        final Thread owner = Thread.currentThread();
+        final java.util.concurrent.atomic.AtomicInteger closed = new java.util.concurrent.atomic.AtomicInteger();
         @Override public InputStream snapshot(String id) throws IOException {
-            if (!id.startsWith("qz_uilib:fonts/")) throw new IOException("资源位置错误: " + id);
+            if (!id.startsWith("qz_uilib:fonts/") && !id.startsWith("qz_uilib:unicode/")) throw new IOException("资源位置错误: " + id);
+            require(Thread.currentThread() == owner, "manager开流不在主线程");
             reads++;
             return new ByteArrayInputStream((version + ":" + id).getBytes(StandardCharsets.UTF_8)) {
-                @Override public void close() throws IOException { closed++; super.close(); }
+                @Override public synchronized int read(byte[] bytes, int offset, int length) { require(Thread.currentThread() != owner, "UI读资源包字节"); return super.read(bytes, offset, length); }
+                @Override public void close() throws IOException { require(Thread.currentThread() != owner, "UI关闭资源流"); closed.incrementAndGet(); super.close(); }
             };
         }
     }
+    private static void await(EmbeddedSceneServices services, java.util.concurrent.CompletableFuture<Void> future) throws Exception {
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(10);
+        while (!future.isDone() && System.nanoTime() < deadline) {
+            services.pumpResources();
+            if (!future.isDone()) Thread.sleep(1);
+        }
+        if (!future.isDone()) throw new AssertionError("资源准备未完成");
+        future.get();
+    }
+
 }

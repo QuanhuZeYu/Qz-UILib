@@ -1,6 +1,10 @@
 package club.heiqi.uilib.host.client.font;
 
 import java.io.IOException;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import club.heiqi.uilib.ui.scene.text.font.FontResources;
+import club.heiqi.uilib.host.resource.ResourceManagerFontSources;
 import club.heiqi.uilib.host.client.settings.MinecraftApplicationConfiguration;
 import club.heiqi.uilib.host.font.IsolatedFontEngine;
 import club.heiqi.uilib.host.client.gl.GlApi;
@@ -9,6 +13,7 @@ import java.io.InputStream;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Collections;
 import cpw.mods.fml.common.FMLLog;
 import club.heiqi.uilib.ui.scene.text.font.FontSource;
 import club.heiqi.uilib.ui.scene.text.font.FontTextService;
@@ -26,8 +31,12 @@ import net.minecraft.util.ResourceLocation;
 public final class MinecraftFontServices {
     private static ClientFontServices shared;
     private static ResourceFonts loader;
+    private static FontResourcePreparation preparation;
+    private static FontResourcePreparation.Sources sources;
+    private static long request, resourceRequest;
+    private static final java.util.Set<CompletableFuture<Void>> pending = new java.util.LinkedHashSet<>();
     private static Thread thread;
-    private static long revision;
+    private static long revision, resourceRevision;
     private static boolean installed;
     // 显式资源重载先读取文件，再统一换代；避免同一load触发配置effect重复换代。
     private static boolean resourceReloading;
@@ -47,21 +56,21 @@ public final class MinecraftFontServices {
             throw new IllegalStateException("字体资源要求可重载MC ResourceManager");
         ResourceFonts initial = new ResourceFonts(resources, thread);
         try {
+            // 1.7 init():void 后立即安装原版测量入口，尚无异步bootstrap屏障。
+            // 此处显式同步准备整代；运行中的配置/资源变化全部经同一owner的worker准备。
+            long generation = ++resourceRevision;
+            revision = generation;
+            List<FontSource> builtins = FontTextService.defaultSources(initial, generation);
+            FontResources prepared = FontResources.prepare(initial, generation, builtins,
+                    resolveCandidates(VanillaFontOptions.candidates(), builtins, generation));
             GlApi gl = MinecraftGlHost.create();
-            shared =
-                    new ClientFontServices(
-                            initial,
-                            ++revision,
-                            ClientFontServices.Settings.defaults(),
-                            true,
-                            IsolatedFontEngine.shared(),
-                            gl,
-                            new IrisProgramProvider(
-                                    MinecraftFontServices.class.getClassLoader(), gl));
+            shared = new ClientFontServices(prepared, ClientFontServices.Settings.defaults(), true,
+                    IsolatedFontEngine.shared(), gl,
+                    new IrisProgramProvider(MinecraftFontServices.class.getClassLoader(), gl));
+            preparation = new FontResourcePreparation();
+            sources = FontResourcePreparation.preparedSources(initial, prepared, builtins);
             loader = initial;
-        } catch (IOException failure) {
-            throw new IllegalStateException("客户端字体服务安装失败", failure);
-        }
+        } catch (IOException failure) { throw new IllegalStateException("客户端字体服务安装失败", failure); }
         installed = true;
         // MC注册listener会立即回调；安装期也从同一入口建立配置+内置候选的新代际。
         ((IReloadableResourceManager) resources)
@@ -72,11 +81,18 @@ public final class MinecraftFontServices {
                                 if (shared == null) return;
                                 checkThread();
                                 resourceReloading = true;
-                                try {
-                                    MinecraftApplicationConfiguration.reload();
-                                    MinecraftApplicationConfiguration.updateFontResourcesOrThrow(
-                                            () -> reloadSources(manager, VanillaFontOptions.candidates()));
-                                } finally { resourceReloading = false; }
+                                long reload = ++resourceRequest;
+                                FontResourcePreparation.Sources captured = captureSources(manager);
+                                preparation.prepare(captured, FontCandidateConfiguration.defaults(captured.builtins), Collections.emptyList());
+                                MinecraftApplicationConfiguration.reload().whenComplete((ignored, failure) -> executeOwner(() -> {
+                                    if (shared == null || reload != resourceRequest) return;
+                                    if (failure != null) { resourceReloading = false; reportFailure(failure); return; }
+                                    sources = captured;
+                                    applyCandidates(VanillaFontOptions.candidates()).whenComplete((unused, error) -> executeOwner(() -> {
+                                        if (reload == resourceRequest) resourceReloading = false;
+                                        if (error != null) reportFailure(error);
+                                    }));
+                                }));
                             }
                         });
     }
@@ -89,59 +105,84 @@ public final class MinecraftFontServices {
     }
 
     /** apply只消费当前发布值；文件读取属于显式F3T或共享配置页reload。 */
-    public static void configurationChanged(List<String> declarations) {
-        if (shared == null) return;
+    public static CompletableFuture<Void> configurationChanged(List<String> declarations) {
+        if (shared == null) return CompletableFuture.completedFuture(null);
         checkThread();
-        if (resourceReloading) return;
-        reloadSources(Minecraft.getMinecraft().getResourceManager(), declarations);
+        if (resourceReloading) return CompletableFuture.completedFuture(null);
+        return applyCandidates(declarations);
     }
 
-    /** 页面校验复用同一来源解析，不发布配置或资源代际，也不读取配置文件。 */
-    public static void validateCandidates(List<String> declarations) {
+    /** 异步校验与随后apply复用同代、同声明的准备future；不发布配置或native状态。 */
+    public static CompletableFuture<Void> validateCandidates(List<String> declarations) {
         if (shared == null) throw new IllegalStateException("客户端字体服务尚未安装/已关闭");
         checkThread();
-        try { resolveCandidates(declarations, loader, revision + 1); }
-        catch (IOException failure) { throw new java.io.UncheckedIOException(failure); }
+        return preparation.validate(sources, declarations, systemDirectories()).thenApply(prepared -> null);
     }
 
-    private static void reloadSources(IResourceManager resources, List<String> declarations) {
+    private static FontResourcePreparation.Sources captureSources(IResourceManager manager) {
         checkThread();
-        ResourceFonts next = new ResourceFonts(resources, thread);
-        long nextRevision = revision + 1;
         try {
-            List<FontSource> candidates = resolveCandidates(declarations, next, nextRevision);
-            shared.reload(candidates);
-            revision = nextRevision;
-            loader.retire();
-            loader = next;
-            StringBuilder origins = new StringBuilder();
-            for (FontSource source : candidates) {
-                if (origins.length() > 0) origins.append(", ");
-                origins.append(source.id).append(" origin=").append(source.origin);
-            }
-            FMLLog.info("[Qz-UILib] 字体候选换代 revision=%s candidates=[%s]", revision, origins);
-        } catch (IOException | RuntimeException failure) {
-            next.retire();
-            throw new IllegalStateException("客户端字体候选重载失败，revision=" + nextRevision, failure);
-        }
+            // 只在当前主线程捕获streams，worker绝不打开当前manager。
+            ResourceManagerFontSources captured = new ResourceManagerFontSources(MinecraftFontServices.class.getClassLoader(),
+                    id -> manager.getResource(new ResourceLocation(id)).getInputStream());
+            return captured.capture(++resourceRevision);
+        } catch (IOException failure) { throw new java.io.UncheckedIOException(failure); }
     }
-
-    private static List<FontSource> resolveCandidates(
-            List<String> declarations, ClassLoader resources, long generation) throws IOException {
-        List<String> paths = FontCandidateConfiguration.files(declarations);
-        List<java.nio.file.Path> configured = new ArrayList<java.nio.file.Path>();
-        for (String path : paths) configured.add(Paths.get(path));
-        List<java.nio.file.Path> directories = new ArrayList<java.nio.file.Path>();
+    private static CompletableFuture<Void> applyCandidates(List<String> declarations) {
+        long current = ++request;
+        CompletableFuture<Void> completion = new CompletableFuture<>();
+        pending.add(completion);
+        completion.whenComplete((ignored, failure) -> pending.remove(completion));
+        FontResourcePreparation.Sources requestedSources = sources;
+        preparation.prepare(requestedSources, declarations, systemDirectories()).whenComplete((prepared, failure) -> executeOwner(() -> {
+            if (shared == null || current != request) { completion.cancel(false); return; }
+            MinecraftApplicationConfiguration.applyFontResources(() -> {
+                if (shared == null || current != request) { completion.cancel(false); return; }
+                if (failure != null) throw resourceFailure(failure);
+                shared.reload(prepared);
+                revision = prepared.revision;
+                preparation.applied(requestedSources, declarations);
+                if (loader != null) { loader.retire(); loader = null; }
+                FMLLog.info("[Qz-UILib] 字体候选换代 revision=%s candidates=%s", revision, declarations);
+            }).whenComplete((ignored, error) -> {
+                if (error == null) completion.complete(null);
+                else { completion.completeExceptionally(error); reportFailure(error); }
+            });
+        }));
+        return completion;
+    }
+    private static void executeOwner(Runnable action) {
+        if (Thread.currentThread() == thread) action.run(); else Minecraft.getMinecraft().func_152344_a(action);
+    }
+    private static RuntimeException resourceFailure(Throwable failure) {
+        while (failure instanceof CompletionException && failure.getCause() != null) failure = failure.getCause();
+        if (failure instanceof Error) throw (Error) failure;
+        return failure instanceof RuntimeException ? (RuntimeException) failure : new IllegalStateException("MC字体资源准备失败", failure);
+    }
+    private static void reportFailure(Throwable failure) {
+        FMLLog.log(org.apache.logging.log4j.Level.ERROR, failure, "[Qz-UILib] 字体资源准备/发布失败");
+    }
+    private static List<java.nio.file.Path> systemDirectories() {
+        List<java.nio.file.Path> directories = new ArrayList<>();
         String windows = System.getenv("WINDIR"), local = System.getenv("LOCALAPPDATA");
         if (windows != null) directories.add(Paths.get(windows, "Fonts"));
         if (local != null) directories.add(Paths.get(local, "Microsoft", "Windows", "Fonts"));
+        return directories;
+    }
+
+    private static List<FontSource> resolveCandidates(
+            List<String> declarations, List<FontSource> builtins, long generation) throws IOException {
+        List<String> paths = FontCandidateConfiguration.files(declarations);
+        List<java.nio.file.Path> configured = new ArrayList<java.nio.file.Path>();
+        for (String path : paths) configured.add(Paths.get(path));
+        List<java.nio.file.Path> directories = systemDirectories();
         club.heiqi.uilib.ui.scene.text.font.FontFamilyResolver resolver =
                 paths.isEmpty() ? null : new club.heiqi.uilib.ui.scene.text.font.FontFamilyResolver(
                         configured, directories, generation,
                         message -> FMLLog.warning("[Qz-UILib] %s", message));
         // 完整列表只消费已声明来源；默认内置资源作为可选目录，不再自动追加尾链。
         return FontCandidateConfiguration.resolve(
-                declarations, FontTextService.defaultSources(resources, generation),
+                declarations, builtins,
                 (path, position) -> resolver.family(Paths.get(path), "system-file-" + position));
     }
 
@@ -174,10 +215,15 @@ public final class MinecraftFontServices {
         checkThread();
         ClientFontServices owner = shared;
         shared = null;
-        // 桥先关闭；其失败也必须结束共享owner，标准资源块保留首错和suppressed。
-        try (ClientFontServices closing = owner) {
+        for (CompletableFuture<Void> update : new ArrayList<>(pending)) update.cancel(false);
+        // 应用配置先终止异步观察，桥和native owner仍按同一主线程生命周期释放。
+        try (ClientFontServices closing = owner; AutoCloseable configuration = MinecraftApplicationConfiguration::close) {
             MinecraftVanillaFont.close();
-        } finally {
+        } catch (RuntimeException | Error failure) { throw failure; }
+        catch (Exception failure) { throw new IllegalStateException("MC字体资源退出失败", failure); }
+        finally {
+            if (preparation != null) { preparation.close(); preparation = null; }
+            sources = null;
             if (loader != null) {
                 loader.retire();
                 loader = null;

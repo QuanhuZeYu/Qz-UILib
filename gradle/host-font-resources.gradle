@@ -1,18 +1,21 @@
 // ResourceManager只把外层Mod识别为资源包；正式Core库/JiJ只提供类，不承担资源包身份。
 def fontRoot = 'assets/qz_uilib/fonts/'
+def unicodeRoot = 'assets/qz_uilib/unicode/emoji17/'
+def resourceRoots = [fontRoot, unicodeRoot]
 def required = [
         'unifont/unifont-16.0.04.otf', 'unifont/LICENSE.txt',
         'noto/NotoSansArabic.ttf', 'noto/NotoColorEmoji.ttf',
         'noto/LICENSE-Noto.txt', 'noto/LICENSE-NotoEmoji.txt', 'noto/LICENSE-NotoEmoji-mono.txt'
 ].collect { fontRoot + it }
+required += ['emoji-data.txt', 'emoji-sequences.txt', 'emoji-zwj-sequences.txt', 'emoji-variation-sequences.txt', 'LICENSE.txt'].collect { unicodeRoot + it }
 
 tasks.named('processResources', org.gradle.language.jvm.tasks.ProcessResources) {
-    from({ zipTree(uilibArtifacts.core.singleFile) }) { include fontRoot + '**' }
+    from({ zipTree(uilibArtifacts.core.singleFile) }) { include resourceRoots.collect { it + '**' } }
 }
 
 ext.verifyHostFontResources = { java.util.zip.ZipFile host ->
     new java.util.zip.ZipFile(uilibArtifacts.core.singleFile).withCloseable { core ->
-        def fonts = core.entries().toList().findAll { !it.directory && it.name.startsWith(fontRoot) }
+        def fonts = core.entries().toList().findAll { !it.directory && resourceRoots.any { root -> it.name.startsWith(root) } }
         required.each { path ->
             if (core.getEntry(path) == null || host.getEntry(path) == null)
                 throw new GradleException('正式宿主资源包缺少字体或许可证: ' + path)
@@ -25,6 +28,6 @@ ext.verifyHostFontResources = { java.util.zip.ZipFile host ->
         def coreClasses = core.entries().toList().findAll { it.name.endsWith('.class') }.collect { it.name }.toSet()
         def repeated = host.entries().toList().findAll { coreClasses.contains(it.name) }.collect { it.name }
         if (!repeated.isEmpty()) throw new GradleException('正式宿主重复内嵌Core类: ' + repeated)
-        logger.lifecycle('外层Mod字体资源和许可证已验证: {} 条，Core类无重复', fonts.size())
+        logger.lifecycle('外层Mod字体、Unicode与许可证已验证: {} 条，Core类无重复', fonts.size())
     }
 }

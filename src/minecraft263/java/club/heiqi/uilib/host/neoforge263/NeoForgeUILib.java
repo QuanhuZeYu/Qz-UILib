@@ -49,6 +49,7 @@ public final class NeoForgeUILib {
     }
 
     private static void renderFrame(RenderFrameEvent.Post event) {
+        if (services != null) services.pumpResources();
         if (Minecraft.getInstance().gui.screen() instanceof NeoForgeSceneScreen screen) screen.present();
     }
 
@@ -57,7 +58,11 @@ public final class NeoForgeUILib {
                 (ResourceManagerReloadListener) manager -> {
                     EmbeddedSceneServices current = services;
                     if (current != null) Minecraft.getInstance().execute(() -> {
-                        if (services == current) { fontSources.resourcesReloaded(); current.resourcesReloaded(); }
+                        if (services == current) {
+                            current.resourcesReloaded().whenComplete((ignored, failure) -> {
+                                if (failure != null) org.slf4j.LoggerFactory.getLogger("Qz-UILib").error("字体资源重载失败", failure);
+                            });
+                        }
                     });
                 });
     }

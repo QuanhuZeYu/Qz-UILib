@@ -57,6 +57,8 @@ public class Minecraft112SceneScreen extends GuiScreen {
     @Override public void initGui() {
         if (session != null) return;
         EmbeddedSceneServices services = Forge112Client.services();
+        services.pumpResources();
+        if (!services.ready().isDone() || services.ready().isCompletedExceptionally()) return;
         EmbeddedSceneHost host = new EmbeddedSceneHost(services, Display::getWidth, Display::getHeight, media);
         semanticHost = host;
         boolean[] owned = {false};
@@ -81,6 +83,7 @@ public class Minecraft112SceneScreen extends GuiScreen {
     }
 
     @Override public void drawScreen(int mouseX, int mouseY, float partialTicks) {
+        if (session == null) initGui();
         ScenePageSession opened = session;
         if (opened == null || mc.currentScreen != this) return;
         handleInput();

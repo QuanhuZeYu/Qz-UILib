@@ -161,6 +161,7 @@ public final class ImageLwjgl2Scenario extends TestApplication {
 
     @Override
     protected void runTests() throws Exception {
+        scenario("兼容查询scratch复用且满足LWJGL2小向量容量", this::compatQueryScratch);
         scenario(
                 "actual IMAGE透明rect原序及后续实际glyph",
                 () -> {
@@ -222,6 +223,29 @@ public final class ImageLwjgl2Scenario extends TestApplication {
         scenario("compat scope normal状态逐项对照", () -> scope(false));
         scenario("compat scope异常漏matrix与attrib push状态逐项对照", () -> scope(true));
         require(glGetError() == GL_NO_ERROR, "LWJGL2 IMAGE/scope留下GLerror");
+    }
+
+    private void compatQueryScratch() throws Exception {
+        Class<?> type = Class.forName("club.heiqi.uilib.host.client.font.compat.CompatBuffers");
+        java.lang.reflect.Method floats = type.getDeclaredMethod("floats", int.class);
+        floats.setAccessible(true);
+        float[] previous = value(GL_CURRENT_COLOR);
+        try {
+            glColor4f(.25f, .5f, .75f, 1);
+            FloatBuffer first = (FloatBuffer) floats.invoke(null, 4);
+            glGetFloat(GL_CURRENT_COLOR, first); // LWJGL2在驱动调用前实际检查至少16个元素。
+            require(first.get(0) == .25f && first.get(2) == .75f, "小向量查询未取得真实颜色");
+            first.position(4).limit(4);
+            FloatBuffer matrix = (FloatBuffer) floats.invoke(null, 16);
+            require(first == matrix && matrix.position() == 0 && matrix.remaining() >= 16, "兼容查询未重置并复用所属线程scratch");
+            glGetFloat(GL_MODELVIEW_MATRIX, matrix);
+            FloatBuffer large = (FloatBuffer) floats.invoke(null, 256);
+            require(large == matrix && large.remaining() == 256, "有界容量内仍重新分配scratch");
+            FloatBuffer color = (FloatBuffer) floats.invoke(null, 4);
+            glGetFloat(GL_CURRENT_COLOR, color);
+            require(color.get(1) == .5f && color.get(3) == 1, "大查询后小向量容量或结果受污染");
+            System.out.println("COMPAT_QUERY_SCRATCH lwjgl2SmallVector=true sameOwnerBuffer=true resetPosition=true bounded=true");
+        } finally { glColor4f(previous[0], previous[1], previous[2], previous[3]); }
     }
 
     /** 与RenderItem.renderIcon相同顶点/UV/z及Tessellator的固定管线client数组提交，不运行MC。 */
