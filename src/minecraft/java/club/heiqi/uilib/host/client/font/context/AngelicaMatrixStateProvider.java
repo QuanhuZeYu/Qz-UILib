@@ -10,7 +10,7 @@ import club.heiqi.uilib.host.client.gl.GlApi;
 import club.heiqi.uilib.host.client.gl.GlTokens;
 import club.heiqi.uilib.host.client.font.context.FontRenderContext.MatrixState;
 
-/** 可选Angelica 2.2.10有效状态读取，仅缓存反射入口、不持mutable JOML实例。
+/** 可选Angelica有效状态读取，仅缓存反射入口、不持mutable JOML或GL上下文实例。
  * 固定来源：GLSM glGetFloat(int,FloatBuffer)、getEffectiveAlphaState、texture-unit1 matrix；
  * raster/viewport/depth/scissor统一经GLSM有效query；无缓存特例的枚举由GLSM回退driver。
  * 存在但不匹配时显式失败，不假装driver等价。
@@ -38,7 +38,8 @@ public final class AngelicaMatrixStateProvider
             blockEntity,
             lightingFactor,
             unitState,
-            unitEnabled;
+            unitEnabled,
+            getContext;
     private final Constructor<?> alphaConstructor, vectorConstructor;
     private final Method alphaFunction, alphaReference;
     private final Method getInteger,
@@ -146,8 +147,10 @@ public final class AngelicaMatrixStateProvider
             Class<?> config =
                     Class.forName(
                             "com.gtnewhorizons.angelica.glsm.hooks.GLSMConfig", false, loader);
-            brightnessX = config.getField("lastBrightnessX");
-            brightnessY = config.getField("lastBrightnessY");
+            // 2.2.28的亮度属于当前GLContextState，与packedLastBrightness使用同一公开来源。
+            getContext = glsm.getMethod("ctx");
+            brightnessX = getContext.getReturnType().getField("lastBrightnessX");
+            brightnessY = getContext.getReturnType().getField("lastBrightnessY");
             packedLight = config.getMethod("packedLastBrightness");
             Class<?> captured =
                     Class.forName(
@@ -159,7 +162,7 @@ public final class AngelicaMatrixStateProvider
                             "com.gtnewhorizons.angelica.glsm.ffp.FFPVertexLighting", false, loader);
             lightingFactor = lighting.getMethod("modulatesVertexColor", vector);
         } catch (ReflectiveOperationException | LinkageError error) {
-            throw new IllegalStateException("Angelica 2.2.10有效状态ABI不匹配", error);
+            throw new IllegalStateException("Angelica有效状态ABI不匹配", error);
         }
     }
 
@@ -187,7 +190,8 @@ public final class AngelicaMatrixStateProvider
                 FloatBuffer out = buffer(64).asFloatBuffer();
                 matrixGet.invoke(unitMatrix.invoke(textures, 1), out);
                 for (int i = 0; i < 16; i++) m[i] = out.get(i);
-                float x = brightnessX.getFloat(null), y = brightnessY.getFloat(null);
+                Object context = getContext.invoke(null);
+                float x = brightnessX.getFloat(context), y = brightnessY.getFloat(context);
                 u = m[0] * x + m[4] * y + m[12];
                 v = m[1] * x + m[5] * y + m[13];
                 packed = ((Number) packedLight.invoke(null)).intValue();
