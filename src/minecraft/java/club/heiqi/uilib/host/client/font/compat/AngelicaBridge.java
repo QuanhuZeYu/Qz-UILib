@@ -198,7 +198,7 @@ public final class AngelicaBridge implements OptionalFontHostBridge {
         Object match = find((List<?>) read(segments, owner), owner, start, end);
         if (match == null) match = find((List<?>) read(deferred, null), owner, start, end);
         if (match != null) {
-            // pipeline尝试返回false后会再走direct helper，同一segment的屏障只能消费一次。
+            // 同一segment的屏障只消费一次，避免重复提交已经回放的UILib文字。
             if (replayed.containsKey(match)) return;
             if (!queue.containsOld(match))
                 throw new IllegalStateException("旧font segment未被seal hook登记");

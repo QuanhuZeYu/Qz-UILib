@@ -27,7 +27,7 @@ public abstract class AngelicaFontOrderMixin {
     }
 
     // WrapOperation使用Injector.validateParams，同维引用数组可Coerce；CallbackInjector的数组分支不允许。
-    // 保留实际owner，两个renderer可以都有[0,1)；原helper调用次数和boolean返回值不变。
+    // 保留实际owner，两个renderer可以都有[0,1)；保序通知在原helper调用之前执行。
     @WrapOperation(
             method = {"flushDeferredTextInner()V", "flushBatchInner()V"},
             at =
@@ -46,15 +46,16 @@ public abstract class AngelicaFontOrderMixin {
         original.call(commands, from, to, owner);
     }
 
+    // Angelica 2.2.28 的管线helper返回void；沿MC渲染规格第3.2节复用相同保序桥。
     @WrapOperation(
             method = {"flushDeferredThroughPipeline()V", "flushBatchThroughPipeline()V"},
             at =
                     @At(
                             value = "INVOKE",
                             target =
-                                    "Lcom/gtnewhorizons/angelica/client/font/BatchingFontRenderer;emitRangeThroughPipeline(Lcom/gtnewhorizons/angelica/client/font/BatchingFontRenderer;[Lcom/gtnewhorizons/angelica/client/font/BatchingFontRenderer$FontDrawCmd;IIIFFF)Z"),
+                                    "Lcom/gtnewhorizons/angelica/client/font/BatchingFontRenderer;emitRangeThroughPipeline(Lcom/gtnewhorizons/angelica/client/font/BatchingFontRenderer;[Lcom/gtnewhorizons/angelica/client/font/BatchingFontRenderer$FontDrawCmd;IIIFFF)V"),
             require = 3)
-    private static boolean uilibBeforePipeline(
+    private static void uilibBeforePipeline(
             @Coerce Object owner,
             @Coerce Object[] commands,
             int from,
@@ -63,9 +64,9 @@ public abstract class AngelicaFontOrderMixin {
             float nx,
             float ny,
             float nz,
-            Operation<Boolean> original) {
+            Operation<Void> original) {
         AngelicaBridge.beforeOldReplay(owner, from, to);
-        return original.call(owner, commands, from, to, light, nx, ny, nz);
+        original.call(owner, commands, from, to, light, nx, ny, nz);
     }
 
     @Inject(
