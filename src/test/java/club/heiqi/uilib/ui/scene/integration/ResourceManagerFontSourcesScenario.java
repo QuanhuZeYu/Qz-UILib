@@ -91,10 +91,14 @@ public final class ResourceManagerFontSourcesScenario extends TestApplication {
             TextLayout old = service.fonts().layout("MW", style, 1000);
             FontSource previous = old.lines().get(0).glyphs().get(0).source;
             byte[] oldBytes = bytes(previous);
-            pack.replacement = "assets/qz_uilib/fonts/noto/NotoSansDevanagari.ttf";
+            // 覆盖字体必须实际包含 MW；缺字会正确转入后续候选，不能据其来源变化判断重载失败。
+            pack.replacement = "assets/qz_uilib/fonts/math/STIXTwoMath-Regular.otf";
             sources.resourcesReloaded(); await(service, service.resourcesReloaded());
             TextLayout next = service.fonts().layout("MW", style, 1000);
             FontSource changed = next.lines().get(0).glyphs().get(0).source;
+            for (TextLayout layout : Arrays.asList(old, next))
+                for (TextLayout.Glyph glyph : layout.lines().get(0).glyphs())
+                    require(!glyph.replacement && glyph.glyphId > 0, "资源包替换前后必须使用实际覆盖MW的字体字形");
             require(previous.id.equals(changed.id) && previous != changed && next.generation > old.generation,
                     "游戏字体重载未保持来源id并建立新代实例");
             require(!Arrays.equals(oldBytes, bytes(changed)), "新代布局仍读取classpath原字体而非资源包覆盖");
