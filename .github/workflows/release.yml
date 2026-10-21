@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 既存发布 tag（例如 5.0.0-beta1）
+        description: 既存发布 tag（例如 5.0.0-beta3）
         required: true
         type: string
       confirm:
@@ -42,6 +42,7 @@ env:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       prerelease: ${{ steps.check.outputs.prerelease }}
       group: ${{ steps.check.outputs.group }}
@@ -58,25 +59,15 @@ jobs:
           OVERRIDE_GROUP: ${{ inputs.uilibGroup }}
         run: |
           set -euo pipefail
-          if [ "$CONFIRM" != "PUBLISH $RELEASE_TAG" ]; then
-            echo "确认短语必须为：PUBLISH $RELEASE_TAG" >&2
-            exit 1
-          fi
+          node .github/scripts/release-inputs.cjs release
           test "$(git rev-parse HEAD)" = "$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")"
           test -f ".changelogs/${RELEASE_TAG}.md" \
             || { echo "缺少静态发布说明" >&2; exit 1; }
-          node <<'NODE'
-          const fs = require('node:fs');
-          const tag = process.env.RELEASE_TAG;
-          const match = /^\d+\.\d+\.\d+(?:[.-](alpha|beta|rc)(?:[.-]?[0-9A-Za-z]+)?)?$/.exec(tag);
-          if (!match) throw new Error('tag 必须是 x.y.z 或 alpha/beta/rc 连续编号写法');
-          const group = process.env.OVERRIDE_GROUP || (tag.startsWith('4.') ? 'club.heiqi.uilib' : 'asia.quanhuzeyu.uilib');
-          fs.appendFileSync(process.env.GITHUB_OUTPUT, `prerelease=${Boolean(match[1])}\ngroup=${group}\n`);
-          NODE
 
   maven:
     needs: validate
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: 下载同 tag Core 与 Platform Maven ZIP
         env:
@@ -107,12 +98,14 @@ jobs:
           name: uilib-maven
           path: uilib-maven
           if-no-files-found: error
+          compression-level: 0
 
   build:
     needs: [validate, maven]
     outputs:
       commit: ${{ steps.revision.outputs.commit }}
     runs-on: windows-latest
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
@@ -120,19 +113,19 @@ jobs:
           - host: 1.7.10
             directory: .
             java: '25'
-            tasks: build manualTestJar releaseAssets
+            tasks: build manualTestJar releaseAssets installManifest minecraftMavenZip
           - host: forge112
             directory: platforms/forge112
             java: '8'
-            tasks: build releaseAssets
+            tasks: build releaseAssets installManifest
           - host: forge116
             directory: platforms/forge116
             java: '17'
-            tasks: build releaseAssets
+            tasks: build releaseAssets installManifest
           - host: neoforge263
             directory: platforms/neoforge263
             java: '25'
-            tasks: build releaseAssets
+            tasks: build releaseAssets installManifest
     steps:
       - uses: actions/checkout@v4
         with:
@@ -159,6 +152,14 @@ jobs:
           distribution: temurin
           java-version: ${{ matrix.java }}
       - uses: gradle/actions/setup-gradle@v4
+        with:
+          # 发布检出既存 tag，只读取普通默认分支 CI 生成的缓存。
+          cache-read-only: true
+          # action 自带的 matrix 缓存身份区分各 wrapper；保留其分发包以免重复下载。
+          gradle-home-cache-includes: |
+            caches
+            notifications
+            wrapper/dists
       - uses: actions/download-artifact@v4
         with:
           name: uilib-maven
@@ -175,23 +176,64 @@ jobs:
           # Java8 原生参数按 UTF-8 解码；Forge 根地址要求可接受的 User-Agent。
           export JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS--Dsun.jnu.encoding=UTF-8 -Dhttp.agent=Mozilla/5.0}"
           UILIB_REPOSITORY="file:///$(cygpath -m "$GITHUB_WORKSPACE/uilib-maven")"
-          bash ./gradlew $GRADLE_TASKS "-PuilibVersion=$RELEASE_TAG" "-PuilibGroup=$UILIB_GROUP" "-PuilibRepository=$UILIB_REPOSITORY"
-      - name: 检查发行资产
+          bash ./gradlew $GRADLE_TASKS "-PuilibVersion=$RELEASE_TAG" "-PuilibGroup=$UILIB_GROUP" "-PuilibRepository=$UILIB_REPOSITORY" \
+            "-PuilibPublicationRepository=file:///$(cygpath -m "$GITHUB_WORKSPACE/build/minecraft-maven")"
+      - name: 检查发行资产与安装清单
         working-directory: ${{ matrix.directory }}
         shell: bash
+        env:
+          UILIB_VERSION: ${{ inputs.tag }}
+          UILIB_GROUP: ${{ needs.validate.outputs.group }}
+          RELEASE_HOST: ${{ matrix.host }}
         run: |
           set -euo pipefail
-          test -d build/release
+          test -s "build/release/qz-uilib-minecraft-${UILIB_VERSION}-${RELEASE_HOST}.zip"
+          test -s "build/release/qz-uilib-minecraft-${UILIB_VERSION}-${RELEASE_HOST}-assets.txt"
+          node <<'NODE'
+          const fs = require('node:fs');
+          const crypto = require('node:crypto');
+          const manifest = JSON.parse(fs.readFileSync('build/install-manifest.json', 'utf8'));
+          if (manifest.schemaVersion !== 1 || manifest.version !== process.env.UILIB_VERSION)
+            throw new Error('安装清单版本与本次构建不同');
+          if (!manifest.dependencies?.length || manifest.dependencies.some(dependency =>
+            dependency.group !== process.env.UILIB_GROUP || dependency.version !== process.env.UILIB_VERSION))
+            throw new Error('安装依赖未使用本次精确 Maven 坐标');
+          if (!manifest.files?.length) throw new Error('安装清单为空');
+          for (const file of [...manifest.files, ...manifest.dependencies]) {
+            const sha256 = crypto.createHash('sha256').update(fs.readFileSync(file.source)).digest('hex');
+            if (sha256 !== file.sha256) throw new Error('安装清单 SHA256 不符：' + file.source);
+          }
+          NODE
           ls -l build/release
       - uses: actions/upload-artifact@v4
         with:
           name: release-${{ matrix.host }}
           path: ${{ matrix.directory }}/build/release/*
           if-no-files-found: error
+          compression-level: 0
+      - name: 上传 Minecraft 开发接口 Maven ZIP
+        if: matrix.host == '1.7.10'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-maven
+          path: build/release-maven/qz-uilib-minecraft-${{ inputs.tag }}-maven.zip
+          if-no-files-found: error
+          compression-level: 0
+      - name: 上传构建报告与安装清单
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports-${{ matrix.host }}
+          path: |
+            ${{ matrix.directory }}/build/reports/
+            ${{ matrix.directory }}/build/test-results/
+            ${{ matrix.directory }}/build/install-manifest.json
+          if-no-files-found: ignore
 
   publish:
     needs: [validate, build]
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: write
     steps:
@@ -215,7 +257,11 @@ jobs:
           test "$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")" = "$BUILT_SHA"
           changelog=".changelogs/${RELEASE_TAG}.md"
           test -f "$changelog" || { echo "缺少 $changelog" >&2; exit 1; }
-          test -n "$(find dist -maxdepth 1 -type f -print -quit)" || { echo "没有可发布的构建资产" >&2; exit 1; }
+          test -s "dist/qz-uilib-minecraft-${RELEASE_TAG}-maven.zip"
+          for host in 1.7.10 forge112 forge116 neoforge263; do
+            test -s "dist/qz-uilib-minecraft-${RELEASE_TAG}-${host}.zip"
+            test -s "dist/qz-uilib-minecraft-${RELEASE_TAG}-${host}-assets.txt"
+          done
           {
             cat "$changelog"
             echo
