@@ -33,21 +33,12 @@ public interface OptionalFontHostBridge extends AutoCloseable {
             ClassLoader loader, GlApi gl, ReplaySink sink, int queueCapacity) {
         Objects.requireNonNull(loader, "loader");
         Objects.requireNonNull(sink, "sink");
-        try {
-            return new AngelicaBridge(
-                    Class.forName(
-                            "com.gtnewhorizons.angelica.client.font.BatchingFontRenderer",
-                            false,
-                            loader),
-                    loader,
-                    Objects.requireNonNull(gl, "Angelica bridge须注入GlApi"),
-                    sink,
-                    queueCapacity);
-        } catch (ClassNotFoundException absent) {
-            return new Direct(sink);
-        } catch (LinkageError incompatible) {
-            throw new IllegalStateException("可选Angelica存在但加载失败，禁止静默旧字体回退", incompatible);
+        for (club.heiqi.uilib.host.client.extension.MinecraftHostExtension service :
+                club.heiqi.uilib.host.client.extension.MinecraftHostExtensions.services()) {
+            OptionalFontHostBridge bridge = service.fontBridge(loader, gl, sink, queueCapacity);
+            if (bridge != null) return bridge;
         }
+        return new Direct(sink);
     }
 
     final class Direct implements OptionalFontHostBridge {

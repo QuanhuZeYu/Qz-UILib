@@ -8,7 +8,7 @@ import club.heiqi.uilib.host.resource.ResourceManagerFontSources;
 import club.heiqi.uilib.host.client.settings.MinecraftApplicationConfiguration;
 import club.heiqi.uilib.host.font.IsolatedFontEngine;
 import club.heiqi.uilib.host.client.gl.GlApi;
-import club.heiqi.uilib.host.client.font.compat.IrisProgramProvider;
+import club.heiqi.uilib.host.client.extension.MinecraftHostExtensions;
 import java.io.InputStream;
 import java.nio.file.Paths;
 import java.util.ArrayList;
@@ -66,7 +66,7 @@ public final class MinecraftFontServices {
             GlApi gl = MinecraftGlHost.create();
             shared = new ClientFontServices(prepared, ClientFontServices.Settings.defaults(), true,
                     IsolatedFontEngine.shared(), gl,
-                    new IrisProgramProvider(MinecraftFontServices.class.getClassLoader(), gl));
+                    MinecraftHostExtensions.programs(MinecraftFontServices.class.getClassLoader(), gl));
             preparation = new FontResourcePreparation();
             sources = FontResourcePreparation.preparedSources(initial, prepared, builtins);
             loader = initial;
@@ -188,6 +188,11 @@ public final class MinecraftFontServices {
 
     private static void checkThread() {
         if (Thread.currentThread() != thread) throw new IllegalStateException("MC字体资源仅限客户端主线程");
+    }
+
+    /** 已发布字体排版代际；同来源候选变更也换代，外部缓存不能用来源revision代替。 */
+    public static long fontGeneration() {
+        return shared().fonts().generation();
     }
 
     public static long resourceRevision() {

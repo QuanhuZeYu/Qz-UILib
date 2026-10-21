@@ -40,8 +40,6 @@ dependencies {
 
     devOnlyNonPublishable(project.elytraModpackVersion.gtnhdev("GT5-Unofficial"))
     devOnlyNonPublishable(project.elytraModpackVersion.gtnhdev("LootGames"))
-    devOnlyNonPublishable(project.elytraModpackVersion.gtnhdev("lwjgl3ify"))
-    testCompileOnly(project.elytraModpackVersion.gtnhdev("lwjgl3ify"))
     devOnlyNonPublishable("ganymedes01.etfuturum:Et-Futurum-Requiem:${elytraModpackVersion["Et-Futurum-Requiem"]}")
     devOnlyNonPublishable(project.elytraModpackVersion.gtnhdev("GTNHLib"))
     devOnlyNonPublishable(project.elytraModpackVersion.gtnhdev("NewHorizonsCoreMod"))
@@ -50,9 +48,7 @@ dependencies {
 
     runtimeOnlyNonPublishable(project.elytraModpackVersion.gtnhdev("ServerUtilities"))
     runtimeOnlyNonPublishable(project.elytraModpackVersion.gtnhdev("NotEnoughItems"))
-    runtimeOnlyNonPublishable(project.elytraModpackVersion.gtnhdev("Applied-Energistics-2-Unofficial"))
     runtimeOnlyNonPublishable(project.elytraModpackVersion.gtnhdev("AppleCore"))
-    devOnlyNonPublishable(project.elytraModpackVersion.gtnhdev("Angelica"))
 
     testImplementation("junit:junit:4.13.2")
     // 门禁参考渲染器（CommonMark 0.29 规范实现），testImplementation 不进生产 jar（2026-09-06 用户裁定引入）

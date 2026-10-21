@@ -22,6 +22,7 @@ tasks.register('installManifest') {
     dependsOn tasks.named('installBundle'), tasks.named('check')
     inputs.property('host', project.ext.uilibInstallHost)
     inputs.property('uilibVersion', project.version.toString())
+    inputs.property('uilibDependencyVersion', findProperty('uilibDependencyVersion')?.toString() ?: project.version.toString())
     inputs.property('uilibGroup', project.group.toString())
     inputs.property('installNames', installAssets.collect { it.name })
     inputs.files(installSources)
@@ -35,8 +36,8 @@ tasks.register('installManifest') {
             if (artifacts.size() != 1) throw new GradleException('安装依赖必须解析唯一 Maven 产物：' + configuration.name)
             def artifact = artifacts.first()
             def coordinate = artifact.moduleVersion.id
-            if (coordinate.version != project.version.toString())
-                throw new GradleException('安装依赖版本与宿主不同：' + coordinate)
+            if (coordinate.version != (findProperty('uilibDependencyVersion')?.toString() ?: project.version.toString()))
+                throw new GradleException('安装依赖版本与显式组合不同：' + coordinate)
             [group: coordinate.group, module: coordinate.name, version: coordinate.version,
              classifier: artifact.classifier ?: '', source: artifact.file.canonicalPath, sha256: sha256(artifact.file)]
         }

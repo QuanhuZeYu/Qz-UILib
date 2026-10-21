@@ -8,8 +8,7 @@
   "mixins": [],
   "client": [
     "client.MinecraftLifecycleMixin",
-    "client.VanillaFontRendererMixin",
-    "client.AngelicaFontOrderMixin"
+    "client.VanillaFontRendererMixin"
   ],
   "server": [],
   "injectors": {

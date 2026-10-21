@@ -19,10 +19,6 @@ public final class FontMixinPlugin implements IMixinConfigPlugin {
 
     @Override
     public boolean shouldApplyMixin(String targetClassName, String mixinClassName) {
-        if (mixinClassName.contains(".Angelica") || mixinClassName.contains(".DisplayList")) {
-            String path = targetClassName.replace('.', '/') + ".class";
-            return FontMixinPlugin.class.getClassLoader().getResource(path) != null;
-        }
         return true;
     }
 

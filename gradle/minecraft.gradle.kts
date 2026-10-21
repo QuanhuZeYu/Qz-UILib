@@ -14,13 +14,10 @@ val lwjgl3 = configurations.getByName("uilibLwjgl3_8")
 val content = configurations.getByName("coreContentRuntime")
 val bindings = configurations.getByName("fontBindings")
 val adapters = font + gl + lwjgl2 + lwjgl3
-// RFB只提供可选编译API；独立配置避免宿主api/dev的版本选择提升此固定缓存。
-val nativeInputRfbApi = configurations.create("nativeInputRfbApi") { isCanBeConsumed = false; isTransitive = false }
-dependencies.add(nativeInputRfbApi.name, "com.github.GTNewHorizons:lwjgl3ify:3.0.20:forgePatches")
 val main = sourceSets.getByName("main")
 main.java.setSrcDirs(listOf("src/minecraft/java", "src/minecraftShared/java", "src/minecraftResource/java"))
 main.resources.setSrcDirs(listOf("src/minecraft/resources"))
-main.compileClasspath += development + adapters + content + bindings + nativeInputRfbApi
+main.compileClasspath += development + adapters + content + bindings
 main.runtimeClasspath += development + adapters + content
 sourceSets.getByName("test") {
     compileClasspath += development + adapters + content + bindings + configurations.getByName("uilibCoreVerification") + configurations.getByName("uilibPlatformVerification")
@@ -43,40 +40,11 @@ listOf("runClient", "runServer").forEach { name ->
     tasks.named<JavaExec>(name) { classpath = content + development + font + configurations.getByName("uilibMedia8") + classpath }
 }
 
-// Platform 只编译一个无 MC 标记的 binding。1.7.10 装配时仅给该 class 加官方标记，方法直接保留原字节码。
-val bindingClass = "club/heiqi/uilib/host/client/gl/Lwjgl3GlApi.class"
-val markedDirectory = layout.buildDirectory.dir("generated/minecraft-lwjgl3")
-val prepareMinecraftLwjgl3Binding by tasks.registering {
-    inputs.files(lwjgl3)
-    outputs.dir(markedDirectory)
-    doLast {
-        ZipFile(lwjgl3.singleFile).use { jar ->
-            val reader = ClassReader(jar.getInputStream(jar.getEntry(bindingClass)).use { it.readBytes() })
-            val writer = ClassWriter(reader, 0)
-            reader.accept(object : ClassVisitor(Opcodes.ASM9, writer) {
-                override fun visitAnnotation(descriptor: String, visible: Boolean): org.objectweb.asm.AnnotationVisitor? {
-                    check(descriptor != "Lme/eigenraven/lwjgl3ify/api/Lwjgl3Aware;") { "Platform binding必须保持无MC标记" }
-                    return super.visitAnnotation(descriptor, visible)
-                }
-                override fun visitEnd() {
-                    writer.visitAnnotation("Lme/eigenraven/lwjgl3ify/api/Lwjgl3Aware;", true).visitEnd()
-                    super.visitEnd()
-                }
-            }, 0)
-            val target = markedDirectory.get().file(bindingClass).asFile
-            target.parentFile.mkdirs()
-            target.writeBytes(writer.toByteArray())
-        }
-    }
-}
+// 只装配中性平台；非原版LWJGL3ify binding装配归独立Compat。
 listOf("jar", "shadowJar").forEach { name ->
     tasks.named<Jar>(name) {
-        dependsOn(prepareMinecraftLwjgl3Binding)
-        // Platform 各适配模块携带同一份第三方通知；合并后只保留 gl-renderer 的一份，避免重复条目。
         from(provider { zipTree(gl.singleFile) }) { exclude("META-INF/MANIFEST.MF", "LICENSE") }
         from(provider { zipTree(lwjgl2.singleFile) }) { exclude("META-INF/MANIFEST.MF", "LICENSE", "META-INF/THIRD-PARTY-NOTICES.md") }
-        from(provider { zipTree(lwjgl3.singleFile) }) { exclude("META-INF/MANIFEST.MF", "LICENSE", bindingClass, "META-INF/THIRD-PARTY-NOTICES.md") }
-        from(markedDirectory)
     }
 }
 // 资源管理器只看到外层Mod，不能依赖Core嵌套库恰巧可作为资源包。

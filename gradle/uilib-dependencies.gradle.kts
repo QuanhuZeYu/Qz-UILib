@@ -1,5 +1,5 @@
 // 跨仓只解析正式 Maven 产物；开发包提供原包名，发行仍使用私有重定位核心。
-val uilibVersion = project.version.toString()
+val uilibVersion = findProperty("uilibDependencyVersion")?.toString() ?: project.version.toString()
 val uilibGroup = findProperty("uilibGroup")?.toString()
     ?: if (uilibVersion.startsWith("4.")) "club.heiqi.uilib" else "asia.quanhuzeyu.uilib"
 repositories.maven {

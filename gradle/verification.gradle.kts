@@ -60,15 +60,12 @@ val fontText = scenario("fontTextScenario", "真实共享Unicode/Bidi/脚本与E
 val vanillaThread = scenario("vanillaFontThreadScenario", "Splash线程标准入口隔离", prefix + "VanillaFontThreadScenario", fullRuntime)
 val durability = scenario("minecraftDurabilityScenario", "实际Item耐久事实", "club.heiqi.uilib.host.client.image.MinecraftDurabilityScenario", fullRuntime)
 val asset = scenario("coreAssetResourceScenario", "MC资源链Core资产及用户覆盖重载", "club.heiqi.uilib.host.client.font.CoreAssetResourceScenario", fullRuntime)
-val irisBatch = scenario("irisProducerBatchScenario", "Iris生产producer逐顶点UV上传字节", "club.heiqi.uilib.host.client.gl.IrisProducerGlScenario") { args("pure-batch") }
 val itemFacts = scenario("minecraftItemImageFactsScenario", "真实MC物品提示转换、palette快照与共同绘制输入", "club.heiqi.uilib.host.client.image.MinecraftItemImageFactsScenario")
-tasks.named("check") { dependsOn(cpu, fontProjection, fontText, vanillaThread, durability, asset, itemFacts, irisBatch) }
+tasks.named("check") { dependsOn(cpu, fontProjection, fontText, vanillaThread, durability, asset, itemFacts) }
 
 // 保留显式 GPU 场景入口；普通 check 维持原来的设备需求范围。
 scenario("fontContextGlScenario", "有效字体上下文Core与Compatibility捕获", prefix + "FontProjectionScenario")
-scenario("vanillaFontGlScenario", "原版世界文字与Iris实际GPU", prefix + "VanillaFontGlScenario") { args(providers.gradleProperty("fontWorldAtlasMode").getOrElse("2d")) }
 scenario("fontRealStyleGlScenario", "真实微软雅黑原版样式GPU图像", prefix + "FontRealStyleGlScenario") { args(layout.buildDirectory.file("font-real-style/font-real-style-msyh.png").get().asFile.absolutePath) }
-scenario("glyphPipelineScenario", "共享定位光栅图集和GL回放对照", prefix + "GlyphPipelineScenario") { args(layout.buildDirectory.dir("font-machine/glyph").get().asFile.absolutePath) }
 
 val lwjgl2NativeDirectory = layout.buildDirectory.dir("lwjgl2-test/natives")
 val nativeJars = configurations.named("compileClasspath").map { configuration -> configuration.files.filter { it.name.startsWith("lwjgl-platform-") }.sortedBy { it.name } }
@@ -97,37 +94,6 @@ display("imageLwjgl2Scenario", "LWJGL2实际IMAGE像素及item scope", prefix + 
 // screenSwitch 需要真实显示栈；cleanup/nativeInput 为无窗口原生闭环，保留在 check。
 tasks.named("check") { dependsOn(cleanup, nativeInput) }
 tasks.register<Jar>("lwjgl2TestJar") { group = "verification"; archiveClassifier.set("lwjgl2-test"); from(legacyTests.output) }
-
-val sdl = configurations.create("sdlTextInputRuntime") { isCanBeConsumed = false; isTransitive = false }
-dependencies {
-    add(sdl.name, "org.lwjgl:lwjgl:3.4.2")
-    add(sdl.name, "org.lwjgl:lwjgl-sdl:3.4.2-20260225.192616-2")
-    val os = System.getProperty("os.name").lowercase(); val arch = System.getProperty("os.arch").lowercase()
-    val classifier = when { os.contains("win") -> if(arch == "aarch64") "natives-windows-arm64" else if(arch == "x86") "natives-windows-x86" else "natives-windows"; os.contains("mac") -> if(arch == "aarch64") "natives-macos-arm64" else "natives-macos"; else -> if(arch == "aarch64") "natives-linux-arm64" else "natives-linux" }
-    add(sdl.name, "org.lwjgl:lwjgl:3.4.2:$classifier")
-    add(sdl.name, "org.lwjgl:lwjgl-sdl:3.4.2-20260225.192616-2:$classifier")
-}
-val sdlHost = configurations.create("sdlInputHost") { isCanBeConsumed = false; isTransitive = false }
-dependencies { add(sdlHost.name, "com.github.GTNewHorizons:lwjgl3ify:3.0.31:dev") }
-val sdlClasses = layout.buildDirectory.dir("classes/sdl-text-input")
-val compileSdl = tasks.register<JavaCompile>("compileSdlTextInputScenario") {
-    dependsOn("classes"); source("src/sdlTest/java")
-    classpath = main.output + core + support + sdl + content + lwjgl2Bindings + main.compileClasspath.filter { !it.name.contains("jabel") }
-    destinationDirectory.set(sdlClasses)
-    javaCompiler.set(javaToolchains.compilerFor { languageVersion.set(JavaLanguageVersion.of(25)) })
-    options.release.set(8); options.compilerArgs.add("-proc:none")
-}
-val sdlInputRuntime = configurations.getByName("nativeInputRfbApi") + files(sdlClasses) + main.output + core + support + sdl + sdlHost + content + main.compileClasspath
-val sdlScenario = scenario("sdlTextInputScenario", "显式真实SDL窗口文本生命周期", prefix + "RfbNativeInputScenario", sdlInputRuntime, 25) {
-    dependsOn(compileSdl); args("window")
-    jvmArgs("-Djava.system.class.loader=com.gtnewhorizons.retrofuturabootstrap.RfbSystemClassLoader")
-}
-val nativeSdl = scenario("nativeSdlInputScenario", "无窗口真实RFB消费链与原生事实", prefix + "RfbNativeInputScenario", sdlInputRuntime, 25) {
-    dependsOn(compileSdl)
-    jvmArgs("-Djava.system.class.loader=com.gtnewhorizons.retrofuturabootstrap.RfbSystemClassLoader")
-}
-// sdlTextInputScenario 打开真实 SDL 窗口；nativeSdlInputScenario 保持无窗口闭环。
-tasks.named("check") { dependsOn(nativeSdl) }
 
 val productionNames = listOf("jar", "shadowJar", "reobfJar")
 val hostArtifacts = productionNames.map { tasks.named(it, AbstractArchiveTask::class.java).flatMap { task -> task.archiveFile } }
@@ -176,40 +142,12 @@ tasks.named("verifyRunClasspathIsolation") {
         }
     }
 }
-val binding = "club/heiqi/uilib/host/client/gl/Lwjgl3GlApi.class"
-val marker = "Lme/eigenraven/lwjgl3ify/api/Lwjgl3Aware;"
-tasks.register("verifyLwjgl3AwareAssembly") {
-    dependsOn(productionNames); inputs.files(hostArtifacts, configurations.getByName("uilibLwjgl3_8"))
-    doLast {
-        val platformBinding = configurations.getByName("uilibLwjgl3_8").singleFile
-        val original = ZipFile(platformBinding).use { zip -> zip.getInputStream(zip.getEntry(binding)).use { it.readBytes() } }
-        fun canonical(bytes: ByteArray): ByteArray {
-            val writer = ClassWriter(0)
-            ClassReader(bytes).accept(object : ClassVisitor(Opcodes.ASM9, writer) {
-                override fun visitAnnotation(descriptor: String, visible: Boolean): AnnotationVisitor? = if (descriptor == marker) null else super.visitAnnotation(descriptor, visible)
-            }, 0)
-            return writer.toByteArray()
-        }
-        val expected = canonical(original)
-        hostArtifacts.forEach { artifact -> ZipFile(artifact.get().asFile).use { zip ->
-            val actual = zip.getInputStream(zip.getEntry(binding)).use { it.readBytes() }
-            check(canonical(actual).contentEquals(expected)) { "MC装配改写了binding代码或其他属性" }
-            val marked = zip.entries().asSequence().filter { it.name.endsWith(".class") }.filter { entry ->
-                val node = ClassNode(); ClassReader(zip.getInputStream(entry).use { it.readBytes() }).accept(node, ClassReader.SKIP_CODE or ClassReader.SKIP_DEBUG or ClassReader.SKIP_FRAMES)
-                (node.visibleAnnotations.orEmpty() + node.invisibleAnnotations.orEmpty()).any { it.desc == marker }
-            }.map { it.name }.toList()
-            check(marked == listOf(binding)) { "LWJGL3ify只允许binding标记：$marked" }
-        } }
-    }
-}
-tasks.named("check") { dependsOn("verifyLwjgl3AwareAssembly") }
-
 // 显式设备验收聚合：窗口、GPU 与显示栈场景需要用户授权的真实设备，不进入默认 build/check。
 tasks.register("deviceCheck") {
     group = "verification"
     description = "显式设备验收：真实窗口、GPU 与显示栈场景"
-    dependsOn(switch, shutdown, sdlScenario, packagedMedia,
-            "fontContextGlScenario", "vanillaFontGlScenario", "fontRealStyleGlScenario", "glyphPipelineScenario",
+    dependsOn(switch, shutdown, packagedMedia,
+            "fontContextGlScenario", "fontRealStyleGlScenario",
             "imageLwjgl2Scenario", "lwjgl2HostScenario", "lwjgl2VideoVerify")
 }
 

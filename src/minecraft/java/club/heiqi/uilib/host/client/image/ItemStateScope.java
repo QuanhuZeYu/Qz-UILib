@@ -32,8 +32,14 @@ public final class ItemStateScope implements AutoCloseable {
     public ItemStateScope(GlApi gl) {
         this.gl = java.util.Objects.requireNonNull(gl, "gl");
         ClassLoader loader = ItemStateScope.class.getClassLoader();
-        raw = new Port(loader, false);
-        effective = Port.effective(loader);
+        raw = new Port(loader);
+        Port selected = null;
+        for (club.heiqi.uilib.host.client.extension.MinecraftHostExtension service :
+                club.heiqi.uilib.host.client.extension.MinecraftHostExtensions.services()) {
+            selected = service.itemPort(loader);
+            if (selected != null) break;
+        }
+        effective = selected;
         program = gl.glGetInteger(GL_CURRENT_PROGRAM);
         vao = gl.glGetInteger(GL_VERTEX_ARRAY_BINDING);
         vbo = gl.glGetInteger(GL_ARRAY_BUFFER_BINDING);
@@ -239,7 +245,7 @@ public final class ItemStateScope implements AutoCloseable {
     private static final class LegacySnapshot {
         final Port p;
         final int mode, active, vao, vbo, ebo, attribDepth, clientDepth, program, drawFbo, readFbo;
-        final Captured captured;
+        final Runnable captured;
         final float[] normal;
         final List<Matrix> matrices = new ArrayList<>();
         boolean pushed, clientPushed, defaultClientPushed;
@@ -257,7 +263,13 @@ public final class ItemStateScope implements AutoCloseable {
             drawFbo = p.cached ? p.integer(GL_DRAW_FRAMEBUFFER_BINDING) : 0;
             readFbo = p.cached ? p.integer(36010) : 0;
             clientDepth = p.clientDepth();
-            captured = p.cached ? Captured.read(p.type.getClassLoader()) : null;
+            Runnable selected = null;
+            if (p.cached) for (club.heiqi.uilib.host.client.extension.MinecraftHostExtension service :
+                    club.heiqi.uilib.host.client.extension.MinecraftHostExtensions.services()) {
+                selected = service.captureItemContext(p.type.getClassLoader());
+                if (selected != null) break;
+            }
+            captured = selected;
             normal = p.cached ? p.normal() : p.floats(GL_CURRENT_NORMAL, 3);
             try {
                 matrices.add(new Matrix(p, GL_PROJECTION, active));
@@ -389,7 +401,7 @@ public final class ItemStateScope implements AutoCloseable {
                 else failure.addSuppressed(error);
             } finally {
                 try {
-                    if (captured != null) captured.restore();
+                    if (captured != null) captured.run();
                 } finally {
                     p.active(active);
                     p.mode(mode);
@@ -399,83 +411,29 @@ public final class ItemStateScope implements AutoCloseable {
         }
     }
 
-    /** Iris item/entity/block uniform 跟随有效宿主上下文，不能从 driver GL 推导。 */
-    private static final class Captured {
-        final Object state;
-        final int block, entity, item;
-        final Method setBlock, setEntity;
-
-        Captured(Class<?> type) throws ReflectiveOperationException {
-            state = type.getField("INSTANCE").get(null);
-            block =
-                    ((Number) type.getMethod("getCurrentRenderedBlockEntity").invoke(state))
-                            .intValue();
-            entity = ((Number) type.getMethod("getCurrentRenderedEntity").invoke(state)).intValue();
-            item = ((Number) type.getMethod("getCurrentRenderedItem").invoke(state)).intValue();
-            setBlock = type.getMethod("setCurrentBlockEntity", int.class);
-            setEntity = type.getMethod("setCurrentEntityAndItem", int.class, int.class);
-        }
-
-        static Captured read(ClassLoader loader) {
-            try {
-                return new Captured(
-                        Class.forName(
-                                "net.coderbot.iris.uniforms.CapturedRenderingState",
-                                false,
-                                loader));
-            } catch (ClassNotFoundException absent) {
-                return null;
-            } catch (ReflectiveOperationException error) {
-                throw new IllegalStateException("无法保存Iris物品上下文", error);
-            }
-        }
-
-        void restore() {
-            try {
-                setEntity.invoke(state, entity, item);
-                setBlock.invoke(state, block);
-            } catch (ReflectiveOperationException error) {
-                throw new IllegalStateException("无法归还Iris物品上下文", error);
-            }
-        }
-    }
-
     /** 宿主反射端口同时支持 LWJGL2/3；core GlApi 不携带 MC 固定管线类型。 */
-    private static final class Port {
-        final Class<?> type, multitexture;
-        final boolean cached;
+    public static class Port {
+        protected final Class<?> type, multitexture;
+        protected final boolean cached;
 
-        Port(ClassLoader loader, boolean cached) {
-            this.cached = cached;
+        public Port(ClassLoader loader) {
+            cached = false;
             try {
-                type =
-                        Class.forName(
-                                cached
-                                        ? "com.gtnewhorizons.angelica.glsm.GLStateManager"
-                                        : "org.lwjgl.opengl.GL11",
-                                false,
-                                loader);
-                multitexture =
-                        cached ? type : Class.forName("org.lwjgl.opengl.GL13", false, loader);
-            } catch (ClassNotFoundException error) {
-                throw new IllegalStateException("缺少物品固定管线端口", error);
-            }
+                type = Class.forName("org.lwjgl.opengl.GL11", false, loader);
+                multitexture = Class.forName("org.lwjgl.opengl.GL13", false, loader);
+            } catch (ClassNotFoundException error) { throw new IllegalStateException("缺少固定管线端口", error); }
+        }
+        protected Port(Class<?> effectiveType) {
+            cached = true;
+            type = effectiveType;
+            multitexture = effectiveType;
         }
 
-        static Port effective(ClassLoader loader) {
-            try {
-                Class.forName("com.gtnewhorizons.angelica.glsm.GLStateManager", false, loader);
-                return new Port(loader, true);
-            } catch (ClassNotFoundException absent) {
-                return null;
-            }
-        }
-
-        Object call(String name, Class<?>[] signature, Object... args) {
+        protected Object call(String name, Class<?>[] signature, Object... args) {
             return invoke(type, name, signature, args);
         }
 
-        Object none(String name) {
+        protected Object none(String name) {
             return call(name, new Class<?>[0]);
         }
 
@@ -483,7 +441,7 @@ public final class ItemStateScope implements AutoCloseable {
             call(name, new Class<?>[] {int.class}, value);
         }
 
-        int integer(int name) {
+        protected int integer(int name) {
             return ((Number) call("glGetInteger", new Class<?>[] {int.class}, name)).intValue();
         }
 
@@ -550,38 +508,8 @@ public final class ItemStateScope implements AutoCloseable {
             call("glAlphaFunc", new Class<?>[] {int.class, float.class}, 516, .1f);
         }
 
-        int clientDepth() {
-            if (!cached) return integer(2993);
-            try {
-                Method ctx = type.getDeclaredMethod("ctx");
-                ctx.setAccessible(true);
-                Object context = ctx.invoke(null);
-                java.lang.reflect.Field depth =
-                        context.getClass().getDeclaredField("clientAttribStackPointer");
-                depth.setAccessible(true);
-                return depth.getInt(context);
-            } catch (ReflectiveOperationException error) {
-                throw new IllegalStateException("无法读取有效client attrib栈", error);
-            }
-        }
-
-        float[] normal() {
-            try {
-                Class<?> shader =
-                        Class.forName(
-                                "com.gtnewhorizons.angelica.glsm.ffp.ShaderManager",
-                                false,
-                                type.getClassLoader());
-                Object n = shader.getMethod("getCurrentNormal").invoke(null);
-                return new float[] {
-                    n.getClass().getField("x").getFloat(n),
-                    n.getClass().getField("y").getFloat(n),
-                    n.getClass().getField("z").getFloat(n)
-                };
-            } catch (ReflectiveOperationException error) {
-                throw new IllegalStateException("无法读取有效normal", error);
-            }
-        }
+        public int clientDepth() { return integer(2993); }
+        public float[] normal() { return floats(GL_CURRENT_NORMAL, 3); }
 
         int depth(int mode) {
             if (!cached)
@@ -597,7 +525,7 @@ public final class ItemStateScope implements AutoCloseable {
                     .asFloatBuffer();
         }
 
-        static Object invoke(Class<?> target, String name, Class<?>[] signature, Object... args) {
+        protected static Object invoke(Class<?> target, String name, Class<?>[] signature, Object... args) {
             try {
                 Method method;
                 try {

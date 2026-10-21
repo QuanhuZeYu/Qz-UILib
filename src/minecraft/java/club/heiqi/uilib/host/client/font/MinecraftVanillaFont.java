@@ -6,7 +6,7 @@ import java.util.Map;
 import java.util.WeakHashMap;
 import org.lwjgl.opengl.Display;
 import club.heiqi.uilib.host.client.font.compat.OptionalFontHostBridge;
-import club.heiqi.uilib.host.client.font.context.AngelicaMatrixStateProvider;
+import club.heiqi.uilib.host.client.extension.MinecraftHostExtensions;
 import club.heiqi.uilib.host.client.font.context.FontRenderContext;
 import club.heiqi.uilib.host.client.font.context.FontPlanSampling;
 import club.heiqi.uilib.host.client.font.context.LwjglFontContextCapture;
@@ -210,7 +210,7 @@ public final class MinecraftVanillaFont {
             capture =
                     new LwjglFontContextCapture(
                             owner.gl(),
-                            AngelicaMatrixStateProvider.optional(
+                            MinecraftHostExtensions.matrices(
                                     MinecraftVanillaFont.class.getClassLoader(), owner.gl()));
         FontRenderContext context =
                 capture.capture(Display.getHeight(), MinecraftFontServices.resourceRevision(), 0);

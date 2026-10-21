@@ -41,3 +41,9 @@
 各宿主的 `installManifest` 任务从既有安装任务与实际 Maven 解析结果生成 `build/install-manifest.json`：协议版本、宿主、精确 UILib 版本、安装 Jar 的 source/name/SHA256，以及组合依赖的 Maven 坐标、classifier、来源与 SHA256。集合包含本次人工验收所需的宿主、人工附加包与媒体包；内嵌的 GL/binding、gallery 与核心验证依赖同样记录来源身份。构建端负责装配和包装验证，安装端只消费冻结集合；本次指定 Maven 仓中的对应产物必须与构建时身份一致，不依据文件名、ZIP 条目或目录枚举另行推断组合。
 
 安装变更限于 UILib 和被实际兼容故障阻塞的调用方接入产物。部署先对全部目标完成清单、来源 SHA256、Maven 身份与目标预检，再直接覆盖，全部新包 SHA256 通过后仅删除明确 allowlist 内的旧 UILib；不自动构建，也不创建备份、staging 或 rollback。现有世界与业务用法沿用；必要调用方适配保留相同业务请求、字段含义和使用条件。兼容故障在所属接入边界定位，不能以删除既有功能或改变核心合同通过验收。
+
+## 可选 Mod 扩展边界
+
+原版宿主只保留中性 MinecraftHostExtension SPI，外部实现通过 ServiceLoader 按需提供字体提交屏障、有效矩阵/光栅状态、program、物品状态和增强输入事实。扩展缺席时使用原版即时字体、原始固定管线及普通输入，不解析目标 Mod 类或安装其 Mixin。扩展仍复用同一 scene、信号、PaintPlan、字体与 GPU 资源所有权。非原版版本选择、Iris/Angelica、lwjgl3ify/RFB 和 AE2 接缝归独立 Qz-UILib-Compat。
+
+独立扩展单向消费 `asia.quanhuzeyu.uilib:minecraft-host:<宿主版本>:development-java8` 正式 Maven 开发接口；该 Jar 只包含本仓编译输出，不携带邻仓源码或复制平台算法。宿主提供中性光栅捕获及quad索引复用入口。`fontGeneration()` 返回已发布 FontTextService 排版代际，同来源候选调整与资源重新发布均使外部布局缓存失效，不能以来源资源 revision 替代。`uilibDependencyVersion` 可明确选择上游 Maven 组合；未提供时沿用宿主版本，安装清单逐项记录实际坐标与 SHA256。

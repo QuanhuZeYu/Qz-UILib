@@ -12,7 +12,7 @@ import java.util.Set;
 import org.lwjgl.BufferUtils;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL30;
-import club.heiqi.uilib.host.client.font.context.AngelicaMatrixStateProvider;
+import club.heiqi.uilib.host.client.extension.MinecraftHostExtensions;
 import club.heiqi.uilib.host.client.font.context.FontProjection;
 import club.heiqi.uilib.host.client.font.context.FontRenderContext;
 import club.heiqi.uilib.host.client.font.context.LwjglFontContextCapture;
@@ -169,7 +169,7 @@ public final class FontProjectionScenario extends TestApplication {
                     context =
                             new LwjglFontContextCapture(
                                             new Lwjgl3GlApi(),
-                                            AngelicaMatrixStateProvider.optional(
+                                            MinecraftHostExtensions.matrices(
                                                     FontProjectionScenario.class.getClassLoader(),
                                                     new Lwjgl3GlApi()))
                                     .capture(768, 9, 1);
