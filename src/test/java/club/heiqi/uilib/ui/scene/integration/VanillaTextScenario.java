@@ -45,6 +45,71 @@ public final class VanillaTextScenario extends TestApplication {
         return result;
     }
 
+    private static void mappingSourceRanges() {
+        String raw = "§l\uE007§r\uD834\uDD1E\uE008";
+        club.heiqi.uilib.ui.scene.text.AttributedText parsed =
+                club.heiqi.uilib.host.text.MinecraftFormat.parse(raw, new TextStyle("minecraft", 12, -1),
+                        new club.heiqi.uilib.host.text.MinecraftFormat.Context() {
+                            public int paletteColor(int index) { return palette()[index]; }
+                            public int codePoint(int cp) {
+                                return cp == 0xE007 ? 0x1D11E : cp == 0x1D11E ? 'B' : cp == 0xE008 ? 'A' : cp;
+                            }
+                            public club.heiqi.uilib.ui.scene.text.TextEffects effects(
+                                    boolean b, boolean i, boolean u, boolean s, boolean k) {
+                                return new club.heiqi.uilib.ui.scene.text.TextEffects(b, i, u, s, k, 0, 0);
+                            }
+                            public club.heiqi.uilib.ui.scene.text.TextDecoration decoration() {
+                                return club.heiqi.uilib.ui.scene.text.TextDecoration.NONE;
+                            }
+                        });
+        require(parsed.input.text.equals("\uD834\uDD1EBA"), "格式解析没有应用显示码点映射");
+        require(parsed.originalText.equals(raw), "映射改写了原始业务文本");
+        require(parsed.input.sourceStart(0) == 2 && parsed.input.sourceEnd(1) == 3
+                        && parsed.input.sourceStart(2) == 5 && parsed.input.sourceEnd(2) == 7
+                        && parsed.input.sourceStart(3) == 7 && parsed.input.sourceEnd(3) == 8,
+                "映射前后UTF16长度变化丢失原始完整来源范围");
+        require(parsed.styleAt(1).effects.bold && !parsed.styleAt(2).effects.bold,
+                "格式状态未按映射后的逻辑范围归属");
+    }
+
+    private static void mappedVanilla(VanillaTextService adapter, Settings base) {
+        java.util.function.IntUnaryOperator mapping = cp -> cp == 0xE007 ? 'W' : cp == 0xE008 ? 'i' : cp;
+        Settings on = new Settings(base.logicalEm, base.lineHeight, base.baseline,
+                base.bidi, base.unicode, palette(), mapping);
+        Settings same = new Settings(base.logicalEm, base.lineHeight, base.baseline,
+                base.bidi, base.unicode, palette(), mapping);
+        require(on.equals(same) && on.hashCode() == same.hashCode()
+                        && !on.equals(base) && on.shadow().textMapping == mapping,
+                "映射快照未进入设置身份或阴影丢失快照");
+        adapter.clear();
+        String raw = "§l\uE007§r\uE008";
+        TextLayout mapped = adapter.layout(raw, on, -1, 1000, TextPolicy.SINGLE_LINE);
+        TextLayout unmapped = adapter.layout(raw, base, -1, 1000, TextPolicy.SINGLE_LINE);
+        require(mapped.logicalText.equals("Wi") && unmapped.logicalText.equals("\uE007\uE008")
+                        && mapped.originalText.equals(raw) && adapter.cachedLayoutCount() == 2,
+                "开关变化复用了旧解析或几何缓存");
+        require(adapter.layout(raw, same, -1, 1000, TextPolicy.SINGLE_LINE) == mapped,
+                "稳定映射快照未复用热缓存");
+        require(adapter.width(raw, on) == adapter.width("§lW§ri", base)
+                        && adapter.charWidth('\uE007', on) == adapter.charWidth('W', base),
+                "测宽/charWidth未使用同一显示映射");
+        int limit = (int) Math.ceil(adapter.layout("§lW", base, -1, 1000, TextPolicy.SINGLE_LINE).advanceWidth);
+        require(adapter.trim(raw, limit, false, on).equals("§l\uE007")
+                        && adapter.sizeToWidth(raw, limit, on) == 3,
+                "裁剪返回映射文字或丢失原始PUA/token范围");
+        int plainLimit = (int) Math.ceil(adapter.layout("W", base, -1, 1000, TextPolicy.SINGLE_LINE).advanceWidth);
+        List<String> lines = adapter.list("§n\uE007 \uE007", plainLimit, on);
+        require(lines.size() == 2, "映射换行反例未实际换行");
+        for (String line : lines)
+            require(line.contains("\uE007") && !line.contains("W")
+                            && adapter.layout(line, on, -1, 1000, TextPolicy.SINGLE_LINE).logicalText.equals("W"),
+                    "换行结果未保留原始PUA源切片/活动格式");
+        TextLayout shadow = adapter.layout(raw, on.shadow(), -1, 1000, TextPolicy.SINGLE_LINE);
+        require(shadow.logicalText.equals("Wi") && shadow.advanceWidth == mapped.advanceWidth
+                        && mapped.logicalText.equals("Wi"), "阴影映射或旧不可变计划被开关污染");
+        System.out.println("VANILLA_MAPPING settingsSnapshot=true shadow=true widthChar=true rawTrimWrap=true cacheIsolation=true");
+    }
+
     private static void calibration(FontTextService font) {
         for (int em : new int[] {8, 9, 10, 12}) {
             TextStyle style = new TextStyle("minecraft", em, -1);
@@ -516,6 +581,8 @@ public final class VanillaTextScenario extends TestApplication {
 
     @Override
     protected void runTests() throws Exception {
+        scenario("格式后码点映射保持原始来源与代理对范围", VanillaTextScenario::mappingSourceRanges);
+        scenario("映射快照统一测绘、裁剪、换行与开关缓存", () -> mappedVanilla(adapter, settings));
         scenario("字体度量校准", () -> calibration(font));
         scenario("原生alpha墨迹观测", () -> actualAlpha(font));
         scenario("标准文字API语义", () -> semantics(adapter, settings));

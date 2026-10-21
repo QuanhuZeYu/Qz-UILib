@@ -50,6 +50,8 @@ public final class VanillaTextService {
         public final float logicalEm, lineHeight, baseline;
         public final boolean bidi, unicode;
         private final int[] palette;
+        /** 可空的不可变映射快照；以实例身份区分解析和几何缓存。 */
+        public final java.util.function.IntUnaryOperator textMapping;
 
         public Settings(
                 float logicalEm,
@@ -58,6 +60,11 @@ public final class VanillaTextService {
                 boolean bidi,
                 boolean unicode,
                 int[] palette) {
+            this(logicalEm, lineHeight, baseline, bidi, unicode, palette, null);
+        }
+
+        public Settings(float logicalEm, float lineHeight, float baseline, boolean bidi,
+                boolean unicode, int[] palette, java.util.function.IntUnaryOperator textMapping) {
             if (!Float.isFinite(logicalEm)
                     || logicalEm <= 0
                     || logicalEm > 32767
@@ -71,6 +78,7 @@ public final class VanillaTextService {
             this.bidi = bidi;
             this.unicode = unicode;
             this.palette = palette.clone();
+            this.textMapping = textMapping;
         }
 
         public int paletteColor(int index) {
@@ -81,7 +89,7 @@ public final class VanillaTextService {
         public Settings shadow() {
             int[] p = palette.clone();
             System.arraycopy(palette, 16, p, 0, 16);
-            return new Settings(logicalEm, lineHeight, baseline, bidi, unicode, p);
+            return new Settings(logicalEm, lineHeight, baseline, bidi, unicode, p, textMapping);
         }
 
         @Override
@@ -93,13 +101,15 @@ public final class VanillaTextService {
                     && baseline == s.baseline
                     && bidi == s.bidi
                     && unicode == s.unicode
+                    && textMapping == s.textMapping
                     && Arrays.equals(palette, s.palette);
         }
 
         @Override
         public int hashCode() {
             return Objects.hash(
-                    logicalEm, lineHeight, baseline, bidi, unicode, Arrays.hashCode(palette));
+                    logicalEm, lineHeight, baseline, bidi, unicode,
+                    System.identityHashCode(textMapping), Arrays.hashCode(palette));
         }
     }
 
@@ -171,6 +181,10 @@ public final class VanillaTextService {
                         raw,
                         base,
                         new MinecraftFormat.Context() {
+                            public int codePoint(int cp) {
+                                return settings.textMapping == null ? cp : settings.textMapping.applyAsInt(cp);
+                            }
+
                             public int paletteColor(int i) {
                                 return settings.paletteColor(i);
                             }
@@ -736,6 +750,7 @@ public final class VanillaTextService {
                     && settings.baseline == k.settings.baseline
                     && settings.bidi == k.settings.bidi
                     && settings.unicode == k.settings.unicode
+                    && settings.textMapping == k.settings.textMapping
                     && width == k.width
                     && policy.equals(k.policy);
         }
@@ -749,6 +764,7 @@ public final class VanillaTextService {
                     settings.baseline,
                     settings.bidi,
                     settings.unicode,
+                    System.identityHashCode(settings.textMapping),
                     width,
                     policy);
         }

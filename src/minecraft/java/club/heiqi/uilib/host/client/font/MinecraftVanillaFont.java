@@ -57,13 +57,15 @@ public final class MinecraftVanillaFont {
         int height = font.qz$fontHeight();
         if (height <= 0) throw new IllegalArgumentException("标准FONT_HEIGHT须为正数");
         int[] palette = font.qz$palette();
+        java.util.function.IntUnaryOperator mapping = MinecraftHostExtensions.textMapping();
         SettingsEntry entry = SETTINGS.get(font);
         if (entry == null
                 || entry.height != height
                 || entry.unicode != font.qz$unicode()
                 || entry.bidi != font.qz$bidi()
+                || entry.normal.textMapping != mapping
                 || !Arrays.equals(entry.palette, palette)) {
-            entry = new SettingsEntry(height, font.qz$unicode(), font.qz$bidi(), palette);
+            entry = new SettingsEntry(height, font.qz$unicode(), font.qz$bidi(), palette, mapping);
             SETTINGS.put(font, entry);
         }
         return shadow ? entry.shadow : entry.normal;
@@ -75,7 +77,8 @@ public final class MinecraftVanillaFont {
         final int[] palette;
         final VanillaTextService.Settings normal, shadow;
 
-        SettingsEntry(int height, boolean unicode, boolean bidi, int[] palette) {
+        SettingsEntry(int height, boolean unicode, boolean bidi, int[] palette,
+                java.util.function.IntUnaryOperator mapping) {
             if (palette == null || palette.length < 32)
                 throw new IllegalArgumentException("标准字体须提供32色调色板");
             this.height = height;
@@ -86,8 +89,8 @@ public final class MinecraftVanillaFont {
             for (int i = 0; i < 16; i++) dark[i] = palette[i + 16];
             // 原版替代按宿主FONT_HEIGHT设置em；测宽、裁剪与绘制共用此值，基线保留宿主行距。
             float em = height * (9f / 9f), baseline = height;
-            normal = new VanillaTextService.Settings(em, height, baseline, bidi, unicode, palette);
-            shadow = new VanillaTextService.Settings(em, height, baseline, bidi, unicode, dark);
+            normal = new VanillaTextService.Settings(em, height, baseline, bidi, unicode, palette, mapping);
+            shadow = new VanillaTextService.Settings(em, height, baseline, bidi, unicode, dark, mapping);
         }
     }
 

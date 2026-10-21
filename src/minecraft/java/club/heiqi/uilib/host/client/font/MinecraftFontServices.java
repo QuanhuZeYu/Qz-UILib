@@ -80,6 +80,9 @@ public final class MinecraftFontServices {
                             public void onResourceManagerReload(IResourceManager manager) {
                                 if (shared == null) return;
                                 checkThread();
+                                for (club.heiqi.uilib.host.client.extension.MinecraftHostExtension extension
+                                        : club.heiqi.uilib.host.client.extension.MinecraftHostExtensions.services())
+                                    extension.resourcesReloaded();
                                 resourceReloading = true;
                                 long reload = ++resourceRequest;
                                 FontResourcePreparation.Sources captured = captureSources(manager);

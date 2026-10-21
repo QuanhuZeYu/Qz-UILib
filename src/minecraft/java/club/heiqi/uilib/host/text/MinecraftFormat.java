@@ -22,6 +22,9 @@ public final class MinecraftFormat {
     public interface Context {
         int paletteColor(int index);
 
+        /** 宿主显示码点快照；不改raw或来源范围，格式标记先于本转换消费。 */
+        default int codePoint(int codePoint) { return codePoint; }
+
         TextEffects effects(
                 boolean bold,
                 boolean italic,
@@ -128,8 +131,12 @@ public final class MinecraftFormat {
                 i = end;
                 continue;
             }
-            text.appendCodePoint(cp);
-            for (int j = i; j < next; j++) {
+            int mapped = context.codePoint(cp);
+            if (!Character.isValidCodePoint(mapped) || mapped >= 0xD800 && mapped <= 0xDFFF)
+                throw new IllegalArgumentException("宿主映射必须返回Unicode标量: " + mapped);
+            text.appendCodePoint(mapped);
+            // 显示码点可改变UTF16长度；每个输出单元仍指向原完整码点。
+            for (int j = 0; j < Character.charCount(mapped); j++) {
                 starts.add(i);
                 ends.add(next);
             }

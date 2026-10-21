@@ -11,6 +11,7 @@ import club.heiqi.uilib.host.client.font.context.LwjglFontContextCapture;
 /** 仅发现正式SPI；主仓不包含任何可选Mod类名或版本判断。服务实例不持有GL上下文。 */
 public final class MinecraftHostExtensions {
     private static final List<MinecraftHostExtension> SERVICES = discover();
+    private static final java.util.function.IntUnaryOperator IDENTITY = value -> value;
     private MinecraftHostExtensions() {}
     private static List<MinecraftHostExtension> discover() {
         List<MinecraftHostExtension> result = new ArrayList<>();
@@ -19,6 +20,14 @@ public final class MinecraftHostExtensions {
         return Collections.unmodifiableList(result);
     }
     public static List<MinecraftHostExtension> services() { return SERVICES; }
+    /** 服务顺序与其他宿主能力一致；空缺时共用稳定identity实例。 */
+    public static java.util.function.IntUnaryOperator textMapping() {
+        for (MinecraftHostExtension service : SERVICES) {
+            java.util.function.IntUnaryOperator mapping = service.textMapping();
+            if (mapping != null) return mapping;
+        }
+        return IDENTITY;
+    }
     public static LwjglFontContextCapture.MatrixStateProvider matrices(ClassLoader loader, GlApi gl) {
         for (MinecraftHostExtension service : SERVICES) {
             LwjglFontContextCapture.MatrixStateProvider value = service.matrices(loader, gl);

@@ -46,4 +46,6 @@
 
 原版宿主只保留中性 MinecraftHostExtension SPI，外部实现通过 ServiceLoader 按需提供字体提交屏障、有效矩阵/光栅状态、program、物品状态和增强输入事实。扩展缺席时使用原版即时字体、原始固定管线及普通输入，不解析目标 Mod 类或安装其 Mixin。扩展仍复用同一 scene、信号、PaintPlan、字体与 GPU 资源所有权。非原版版本选择、Iris/Angelica、lwjgl3ify/RFB 和 AE2 接缝归独立 Qz-UILib-Compat。
 
+原版文字入口可消费扩展提供的 `textMapping()` 不可变码点映射快照，缺席时恒等。转换在共同 `MinecraftFormat` 入口消费 § 格式后执行，每个原码点转换为一个 Unicode 标量；保留原始文本及完整 UTF16/byte 来源范围，裁剪与换行返回原源切片。测量、单字符宽度和绘制使用同一映射；解析、布局及阴影缓存包含映射快照身份。映射事实改变时扩展发布不同稳定实例，配置读取只发生在启动或显式资源重载，不能每字符访问文件。具体字符表与开关归独立兼容仓，不进入 Core 或通用字体匹配。
+
 独立扩展单向消费 `asia.quanhuzeyu.uilib:minecraft-host:<宿主版本>:development-java8` 正式 Maven 开发接口；该 Jar 只包含本仓编译输出，不携带邻仓源码或复制平台算法。宿主提供中性光栅捕获及quad索引复用入口。`fontGeneration()` 返回已发布 FontTextService 排版代际，同来源候选调整与资源重新发布均使外部布局缓存失效，不能以来源资源 revision 替代。`uilibDependencyVersion` 可明确选择上游 Maven 组合；未提供时沿用宿主版本，安装清单逐项记录实际坐标与 SHA256。
