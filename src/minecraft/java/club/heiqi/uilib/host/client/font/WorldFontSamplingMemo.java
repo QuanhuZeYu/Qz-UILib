@@ -12,7 +12,9 @@ import java.util.LinkedHashMap;
  * logical布局只提供不可变墨迹；当前tick的混淆布局仍由text.sample重新产生。
  * 不保存context、pipeline、图集、UV或GL scope，字体换代通知及owner关闭清空旧布局引用。 */
 final class WorldFontSamplingMemo {
-    private static final int LIMIT = 128;
+    // #81 实机确认稳定key的复用距离超过128会让顺序扫描整轮淘汰；只调整纯CPU预算，
+    // MVP、viewport、revision和布局身份仍精确失效，票据容量及资源生命周期不变。
+    private static final int LIMIT = 256;
     private final LinkedHashMap<Key, RasterSampling> values = new LinkedHashMap<>(LIMIT, .75f, true);
     private long revision;
     private final RasterPolicy policy;

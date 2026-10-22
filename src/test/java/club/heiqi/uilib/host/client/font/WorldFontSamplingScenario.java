@@ -59,10 +59,21 @@ public final class WorldFontSamplingScenario {
         WorldFontSamplingMemo memo=new WorldFontSamplingMemo(POLICY);
         WorldFontSampling.Source source=WorldFontSampling.Source.capture(first);
         RasterSampling oldest=memo.sample(a,first,source);
-        for(int i=0;i<128;i++) memo.sample(PaintCommand.text(new LayoutBox(i+2,2,300,30),null,logical),first,source);
+        for(int i=0;i<1024;i++) memo.sample(PaintCommand.text(new LayoutBox(i+2,2,300,30),null,logical),first,source);
         Field values=WorldFontSamplingMemo.class.getDeclaredField("values"); values.setAccessible(true);
-        require(((Map<?,?>)values.get(memo)).size()==128,"数值memo容量失控");
+        require(((Map<?,?>)values.get(memo)).size()<=512,"数值memo超过纯CPU预算上界");
         require(memo.sample(a,first,source)!=oldest,"LRU退役后仍返回旧值对象");
+        // #81 实机热态每轮156个精确key；旧128项LRU会每帧全部重算，不能只测单key复用。
+        WorldFontSamplingMemo dense=new WorldFontSamplingMemo(POLICY);
+        PaintCommand[] commands=new PaintCommand[156];
+        RasterSampling[] samples=new RasterSampling[commands.length];
+        for(int i=0;i<commands.length;i++) {
+            commands[i]=PaintCommand.text(new LayoutBox(i+1,2,300,30),null,logical);
+            samples[i]=dense.sample(commands[i],first,source);
+        }
+        for(int frame=0;frame<2;frame++) for(int i=0;i<commands.length;i++)
+            require(dense.sample(commands[i],equal,WorldFontSampling.Source.capture(equal))==samples[i],
+                    "稳定文字工作集循环扫描使纯CPU采样每帧重算");
         facts.clear(); require(sample(facts,a,first,false)!=initial,"资源通知或close未清纯CPU结果");
         facts.clear();
     }
