@@ -171,7 +171,8 @@ public final class FontHostOrderScenario extends TestApplication {
                                         @Override
                                         public void registerVisible(
                                                 PaintPlan value, FontRenderContext snapshot) {
-                                            callbacks[0]++;
+                                            // #81 即时路径由prepare准备需求，重复登记会让每次drawString做两遍可见性准备。
+                                            callbacks[0] += 100;
                                         }
 
                                         @Override
@@ -183,7 +184,7 @@ public final class FontHostOrderScenario extends TestApplication {
                     onClose(bridge::close);
                     bridge.submit(plan, context, () -> closes[0]++);
                     require(
-                            callbacks[0] == 2 && closes[0] == 7 && bridge.pending() == 0,
+                            callbacks[0] == 1 && closes[0] == 7 && bridge.pending() == 0,
                             "absent host共享sink即时路径");
                 });
         System.out.println(

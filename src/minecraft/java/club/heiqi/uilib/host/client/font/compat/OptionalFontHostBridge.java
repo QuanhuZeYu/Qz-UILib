@@ -11,6 +11,7 @@ public interface OptionalFontHostBridge extends AutoCloseable {
     interface ReplaySink {
         void draw(PaintPlan plan, FontRenderContext context);
 
+        /** 仅供延期回放：提交时先把可见字形并入本帧需求。即时draw自带需求准备，不应再先登记。 */
         void registerVisible(PaintPlan plan, FontRenderContext context);
 
         FontRenderContext capture();
@@ -54,7 +55,8 @@ public interface OptionalFontHostBridge extends AutoCloseable {
             Objects.requireNonNull(lease, "lease");
             try {
                 if (closed) throw new IllegalStateException("font bridge已关闭");
-                sink.registerVisible(plan, context);
+                // #81 即时回放的prepare已按同一plan/context并入整帧需求并请求光栅；
+                // registerVisible只服务延期回放，在此重复会使每次drawString采样与可见性准备各做两遍。
                 sink.draw(plan, context);
             } finally {
                 FontHostOrderQueue.release(lease);
