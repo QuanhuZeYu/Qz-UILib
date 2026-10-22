@@ -9,6 +9,7 @@ import java.util.Collections;
 import club.heiqi.uilib.host.client.settings.MinecraftApplicationConfiguration;
 import club.heiqi.uilib.ui.config.ConfigCodecs;
 import club.heiqi.uilib.ui.config.ConfigKey;
+import club.heiqi.uilib.ui.render.batch.BatchingConfiguration;
 import club.heiqi.uilib.ui.scene.control.ThemeConfiguration;
 import club.heiqi.uilib.ui.scene.text.font.FontCandidateConfiguration;
 import club.heiqi.uilib.ui.scene.text.font.FontTextService;
@@ -19,9 +20,8 @@ public final class VanillaFontOptions {
     public static final ConfigKey<Boolean> REPLACE_VANILLA =
             new ConfigKey<>("mc.replaceVanillaFont", ConfigCodecs.BOOLEAN, true)
                     .withComment("是否使用 UILib 接管 MC 原版文字绘制。");
-    public static final ConfigKey<Boolean> AGGRESSIVE_BATCHING =
-            new ConfigKey<>("render.aggressiveBatching", ConfigCodecs.BOOLEAN, false)
-                    .withComment("按兼容绘制状态集中提交以减少纹理切换；开启可改变重叠文字、阴影或透明图元的覆盖顺序。修改后通过 F3+T 资源重载生效。");
+    // 保留MC既有声明入口；共享配置页与桌面消费同一Core键身份。
+    public static final ConfigKey<Boolean> AGGRESSIVE_BATCHING = BatchingConfiguration.KEY;
     private static volatile Settings settings = defaults();
     private VanillaFontOptions() {}
     private static Settings defaults() {
