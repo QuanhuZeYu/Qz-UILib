@@ -69,6 +69,7 @@ public final class MinecraftFontServices {
             shared = new ClientFontServices(prepared, fontSettings(gl), true,
                     IsolatedFontEngine.shared(), gl,
                     MinecraftHostExtensions.programs(MinecraftFontServices.class.getClassLoader(), gl));
+            shared.allowBatchReordering(VanillaFontOptions.aggressiveBatching());
             preparation = new FontResourcePreparation();
             sources = FontResourcePreparation.preparedSources(initial, prepared, builtins);
             loader = initial;
@@ -194,6 +195,13 @@ public final class MinecraftFontServices {
         return FontCandidateConfiguration.resolve(
                 declarations, builtins,
                 (path, position) -> resolver.family(Paths.get(path), "system-file-" + position));
+    }
+
+    /** 配置Effect沿原owner线程推送，不在绘制期间轮询文件或创建额外监听。 */
+    public static void batchingChanged(boolean enabled) {
+        if (shared == null) return;
+        checkThread();
+        shared.allowBatchReordering(enabled);
     }
 
     private static ClientFontServices.Settings fontSettings(GlApi gl) {
