@@ -4,7 +4,9 @@ name: Minecraft 独立构建
 on:
   push:
     branches: ['**']
+    paths-ignore: ['**/*.md']
   pull_request:
+    paths-ignore: ['**/*.md']
   workflow_dispatch:
     inputs:
       uilibVersion:
@@ -46,6 +48,7 @@ jobs:
       group: ${{ steps.read.outputs.group }}
       repository: ${{ steps.read.outputs.repository }}
       download: ${{ steps.read.outputs.download }}
+      ready: ${{ steps.upstreams.outputs.ready }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -59,10 +62,29 @@ jobs:
         run: |
           set -euo pipefail
           node .github/scripts/release-inputs.cjs ci
+      - name: 检查上游 Release 就绪状态
+        id: upstreams
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPLICIT_MAVEN_REPOSITORY: ${{ steps.read.outputs.repository }}
+          UILIB_VERSION: ${{ steps.read.outputs.version }}
+          CORE_REPOSITORY: ${{ inputs.coreRepository }}
+          PLATFORM_REPOSITORY: ${{ inputs.platformRepository }}
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          process.env.UPSTREAM_RELEASES = JSON.stringify([
+            { repo: process.env.CORE_REPOSITORY || 'QuanhuZeYu/Qz-UILib-Core',
+              tag: process.env.UILIB_VERSION, asset: 'qz-uilib-core-' + process.env.UILIB_VERSION + '-maven.zip' },
+            { repo: process.env.PLATFORM_REPOSITORY || 'QuanhuZeYu/Qz-UILib-Platform',
+              tag: process.env.UILIB_VERSION, asset: 'qz-uilib-platform-' + process.env.UILIB_VERSION + '-maven.zip' }
+          ]);
+          require('./.github/scripts/upstream-ready.cjs');
+          NODE
 
   maven:
     needs: resolve
-    if: needs.resolve.outputs.download == 'true'
+    if: needs.resolve.outputs.ready == 'true' && needs.resolve.outputs.download == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -100,7 +122,10 @@ jobs:
 
   build:
     needs: [resolve, maven]
-    if: always() && needs.resolve.result == 'success' && (needs.maven.result == 'success' || needs.maven.result == 'skipped')
+    if: >-
+      always() && needs.resolve.result == 'success' && needs.resolve.outputs.ready == 'true' &&
+      ((needs.resolve.outputs.download == 'true' && needs.maven.result == 'success') ||
+      (needs.resolve.outputs.download == 'false' && needs.maven.result == 'skipped'))
     runs-on: windows-latest
     timeout-minutes: 90
     strategy:
