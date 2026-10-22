@@ -242,6 +242,13 @@ jobs:
           ref: ${{ needs.build.outputs.commit }}
           fetch-depth: 0
           persist-credentials: false
+      - name: 读取本次工作流的静态发布说明
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .release-notes
+          sparse-checkout: .changelogs
+          persist-credentials: false
       - uses: actions/download-artifact@v4
         with:
           pattern: release-*
@@ -262,19 +269,9 @@ jobs:
             test -s "dist/qz-uilib-minecraft-${RELEASE_TAG}-${host}.zip"
             test -s "dist/qz-uilib-minecraft-${RELEASE_TAG}-${host}-assets.txt"
           done
-          {
-            cat "$changelog"
-            echo
-            echo '---'
-            echo
-            echo '## 发布证据'
-            echo
-            echo "- tag: \`$RELEASE_TAG\`"
-            echo "- commit: \`$BUILT_SHA\`"
-            echo "- 工作流运行: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
-            echo '- 本次上传资产:'
-            find dist -maxdepth 1 -type f -printf '%f\n' | sort | sed 's/^/- \`/; s/$/\`/'
-          } > release-body.md
+          reviewed_changelog=".release-notes/.changelogs/${RELEASE_TAG}.md"
+          test -f "$reviewed_changelog" || { echo "缺少 $reviewed_changelog" >&2; exit 1; }
+          cp "$reviewed_changelog" release-body.md
           cat release-body.md
       - name: 创建或更新 Release（精确 404、同名资产 clobber、不删除 Release）
         env:
