@@ -8,6 +8,8 @@ import club.heiqi.uilib.host.resource.ResourceManagerFontSources;
 import club.heiqi.uilib.host.client.settings.MinecraftApplicationConfiguration;
 import club.heiqi.uilib.host.font.IsolatedFontEngine;
 import club.heiqi.uilib.host.client.gl.GlApi;
+import club.heiqi.uilib.host.client.gl.GlGlyphAtlas;
+import club.heiqi.uilib.host.client.gl.GlTokens;
 import club.heiqi.uilib.host.client.extension.MinecraftHostExtensions;
 import java.io.InputStream;
 import java.nio.file.Paths;
@@ -64,7 +66,7 @@ public final class MinecraftFontServices {
             FontResources prepared = FontResources.prepare(initial, generation, builtins,
                     resolveCandidates(VanillaFontOptions.candidates(), builtins, generation));
             GlApi gl = MinecraftGlHost.create();
-            shared = new ClientFontServices(prepared, ClientFontServices.Settings.defaults(), true,
+            shared = new ClientFontServices(prepared, fontSettings(gl), true,
                     IsolatedFontEngine.shared(), gl,
                     MinecraftHostExtensions.programs(MinecraftFontServices.class.getClassLoader(), gl));
             preparation = new FontResourcePreparation();
@@ -192,6 +194,17 @@ public final class MinecraftFontServices {
         return FontCandidateConfiguration.resolve(
                 declarations, builtins,
                 (path, position) -> resolver.family(Paths.get(path), "system-file-" + position));
+    }
+
+    private static ClientFontServices.Settings fontSettings(GlApi gl) {
+        ClientFontServices.Settings base = ClientFontServices.Settings.defaults();
+        GlGlyphAtlas.Budget atlas = base.atlas;
+        // 世界文字保持原顺序时，较大二维页可减少glyph跨页拆批；仍受真实GL能力和原总预算约束。
+        int page = Math.min(1024, gl.glGetInteger(GlTokens.GL_MAX_TEXTURE_SIZE));
+        return new ClientFontServices.Settings(base.cpu, base.mode,
+                new GlGlyphAtlas.Budget(page, atlas.layers, atlas.maxGroups,
+                        atlas.maxResidents, atlas.maxDemand, atlas.gpuBytes),
+                base.upload, base.quadCapacity, base.maxDemand);
     }
 
     private static void checkThread() {
