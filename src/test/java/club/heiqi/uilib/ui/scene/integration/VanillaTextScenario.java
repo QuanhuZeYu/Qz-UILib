@@ -590,6 +590,9 @@ public final class VanillaTextScenario extends TestApplication {
         scenario("完整簇混淆采样", () -> sampling(adapter, settings));
         scenario("普通阴影几何共享", () -> shadowReuse(adapter, settings));
         scenario("CPU热缓存及容量边界", () -> performance(adapter, settings));
+        scenario("票据范围采样事实复用与退役", () ->
+                club.heiqi.uilib.host.client.font.WorldFontSamplingScenario.verify(
+                        adapter.layout("告示牌 ABC", settings, -1, 1000, TextPolicy.NO_WRAP)));
         scenario(
                 "资源代际失效缓存",
                 () -> {
