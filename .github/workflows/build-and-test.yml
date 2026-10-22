@@ -167,6 +167,8 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           cache-read-only: ${{ github.ref != format('refs/heads/{0}', github.event.repository.default_branch) }}
+          # 保留缓存读写，避免收尾另起 runner 全局 Gradle 执行 noop 清理。
+          cache-cleanup: never
           # action 自带的 matrix 缓存身份区分各 wrapper；保留其分发包以免重复下载。
           gradle-home-cache-includes: |
             caches
