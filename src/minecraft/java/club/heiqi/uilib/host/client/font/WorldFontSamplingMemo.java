@@ -23,24 +23,42 @@ final class WorldFontSamplingMemo {
 
     RasterSampling sample(PaintCommand command, FontRenderContext context,
             WorldFontSampling.Source source) {
-        if (command.kind != PaintCommand.Kind.TEXT || command.text == null)
-            throw new IllegalArgumentException("采样需要文本计划");
-        // revision也属于key；此清理避免旧代际占据有界空间，通知负责无后续消费时的退役。
-        if (revision != source.revision) {
-            values.clear();
-            revision = source.revision;
+        // #81临时探针：MC_SAMPLING_MEMO及真实缓存分支，性能报告定位后统一移除。
+        long probeToken = FontPerformanceProbe.begin(4); // #81临时探针：MC_SAMPLING_MEMO。
+        try {
+            if (command.kind != PaintCommand.Kind.TEXT || command.text == null)
+                throw new IllegalArgumentException("采样需要文本计划");
+            // revision也属于key；此清理避免旧代际占据有界空间，通知负责无后续消费时的退役。
+            if (revision != source.revision) {
+                values.clear();
+                revision = source.revision;
+                FontPerformanceProbe.count(3, 1); // #81临时探针：MEMO_RESET。 // #81临时探针：MEMO_RESET实际换代清理。
+            }
+            Key key = new Key(command, source);
+            RasterSampling result = values.get(key);
+            if (result != null) {
+                FontPerformanceProbe.count(0, 1); // #81临时探针：MEMO_HIT。
+                return result;
+            }
+            FontPerformanceProbe.count(1, 1); // #81临时探针：MEMO_MISS。
+            result = FontPlanSampling.sampling(command, context, policy);
+            values.put(key, result);
+            if (values.size() > LIMIT) {
+                values.remove(values.keySet().iterator().next());
+                FontPerformanceProbe.count(2, 1); // #81临时探针：MEMO_EVICT实际移除。
+            }
+            return result;
+        } finally {
+            FontPerformanceProbe.observe(0, values.size()); // #81临时探针：MEMO_SIZE。 // #81临时探针：MEMO_SIZE。
+            FontPerformanceProbe.end(4, probeToken); // #81临时探针：MC_SAMPLING_MEMO。
         }
-        Key key = new Key(command, source);
-        RasterSampling result = values.get(key);
-        if (result != null) return result;
-        result = FontPlanSampling.sampling(command, context, policy);
-        values.put(key, result);
-        if (values.size() > LIMIT) values.remove(values.keySet().iterator().next());
-        return result;
     }
 
     void clear() {
         values.clear();
+        // #81临时探针：MEMO_RESET显式清理与MEMO_SIZE，性能报告定位后统一移除。
+        FontPerformanceProbe.count(3, 1); // #81临时探针：MEMO_RESET。
+        FontPerformanceProbe.observe(0, values.size()); // #81临时探针：MEMO_SIZE。
     }
 
     private static final class Key {

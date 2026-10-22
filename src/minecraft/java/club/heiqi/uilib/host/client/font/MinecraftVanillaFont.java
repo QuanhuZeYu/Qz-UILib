@@ -155,74 +155,92 @@ public final class MinecraftVanillaFont {
 
     public static int draw(
             FontRendererAccess font, String source, int x, int y, int color, boolean shadow) {
-        if (source == null) {
+        // #81临时探针：MC_DRAW_ENTRY绘制入口采用inclusive计时，性能报告定位后统一移除。
+        long probeToken = FontPerformanceProbe.begin(0); // #81临时探针：MC_DRAW_ENTRY。
+        try {
+            if (source == null) {
+                font.qz$enableAlpha();
+                return 0;
+            }
+            color = normalizeColor(color);
+            VanillaTextService.Settings style = settings(font, false);
+            if (source.isEmpty()) {
+                font.qz$tailState(color);
+                return x + (shadow ? 1 : 0);
+            }
+            TextLayout logical = text.layout(source, style, color, Float.MAX_VALUE, TextPolicy.NO_WRAP);
             font.qz$enableAlpha();
-            return 0;
-        }
-        color = normalizeColor(color);
-        VanillaTextService.Settings style = settings(font, false);
-        if (source.isEmpty()) {
-            font.qz$tailState(color);
-            return x + (shadow ? 1 : 0);
-        }
-        TextLayout logical = text.layout(source, style, color, Float.MAX_VALUE, TextPolicy.NO_WRAP);
-        font.qz$enableAlpha();
-        FontRenderContext context = capture();
-        PaintPlanBuilder plans = new PaintPlanBuilder();
-        if (shadow)
+            FontRenderContext context = capture();
+            PaintPlanBuilder plans = new PaintPlanBuilder();
+            if (shadow)
+                plans.add(
+                        PaintCommand.text(
+                                new LayoutBox(
+                                        x + 1,
+                                        y + 1 + DRAW_Y_OFFSET,
+                                        (int) Math.ceil(logical.advanceWidth),
+                                        logical.height),
+                                null,
+                                text.layout(
+                                        source,
+                                        settings(font, true),
+                                        shadowColor(color),
+                                        Float.MAX_VALUE,
+                                        TextPolicy.NO_WRAP)));
             plans.add(
                     PaintCommand.text(
                             new LayoutBox(
-                                    x + 1,
-                                    y + 1 + DRAW_Y_OFFSET,
+                                    x,
+                                    y + DRAW_Y_OFFSET,
                                     (int) Math.ceil(logical.advanceWidth),
                                     logical.height),
                             null,
-                            text.layout(
-                                    source,
-                                    settings(font, true),
-                                    shadowColor(color),
-                                    Float.MAX_VALUE,
-                                    TextPolicy.NO_WRAP)));
-        plans.add(
-                PaintCommand.text(
-                        new LayoutBox(
-                                x,
-                                y + DRAW_Y_OFFSET,
-                                (int) Math.ceil(logical.advanceWidth),
-                                logical.height),
-                        null,
-                        logical));
-        PaintPlan plan = plans.build();
-        WorldFontSampling facts = samplingFacts;
-        hostBridge().submit(plan, context, () -> facts.forget(plan));
-        font.qz$tailState(text.terminalColor(source, style, color));
-        return (int) (x + logical.advanceWidth + (shadow ? 1 : 0));
+                            logical));
+            PaintPlan plan = plans.build();
+            WorldFontSampling facts = samplingFacts;
+            hostBridge().submit(plan, context, () -> facts.forget(plan));
+            font.qz$tailState(text.terminalColor(source, style, color));
+            return (int) (x + logical.advanceWidth + (shadow ? 1 : 0));
+        } finally {
+            FontPerformanceProbe.end(0, probeToken); // #81临时探针：MC_DRAW_ENTRY。
+        }
     }
 
     public static void drawSplit(
             FontRendererAccess font, String source, int x, int y, int width, int color) {
-        color = normalizeColor(color);
-        VanillaTextService.Settings style = settings(font, false);
-        TextLayout logical = text.layout(source, style, color, width, TextPolicy.NORMAL);
-        font.qz$enableAlpha();
-        PaintPlan plan = plan(logical, x, y);
-        WorldFontSampling facts = samplingFacts;
-        hostBridge().submit(plan, capture(), () -> facts.forget(plan));
-        font.qz$tailState(text.terminalColor(source, style, color));
+        // #81临时探针：MC_DRAW_ENTRY分行绘制入口采用inclusive计时，性能报告定位后统一移除。
+        long probeToken = FontPerformanceProbe.begin(0); // #81临时探针：MC_DRAW_ENTRY。
+        try {
+            color = normalizeColor(color);
+            VanillaTextService.Settings style = settings(font, false);
+            TextLayout logical = text.layout(source, style, color, width, TextPolicy.NORMAL);
+            font.qz$enableAlpha();
+            PaintPlan plan = plan(logical, x, y);
+            WorldFontSampling facts = samplingFacts;
+            hostBridge().submit(plan, capture(), () -> facts.forget(plan));
+            font.qz$tailState(text.terminalColor(source, style, color));
+        } finally {
+            FontPerformanceProbe.end(0, probeToken); // #81临时探针：MC_DRAW_ENTRY。
+        }
     }
 
     private static FontRenderContext capture() {
-        ClientFontServices owner = MinecraftFontServices.shared();
-        if (capture == null)
-            capture =
-                    new LwjglFontContextCapture(
-                            owner.gl(),
-                            MinecraftHostExtensions.matrices(
-                                    MinecraftVanillaFont.class.getClassLoader(), owner.gl()));
-        FontRenderContext context =
-                capture.capture(Display.getHeight(), MinecraftFontServices.resourceRevision(), 0);
-        return StandardFontContext.from(context);
+        // #81临时探针：MC_CONTEXT_CAPTURE上下文捕获采用inclusive计时，性能报告定位后统一移除。
+        long probeToken = FontPerformanceProbe.begin(1); // #81临时探针：MC_CONTEXT_CAPTURE。
+        try {
+            ClientFontServices owner = MinecraftFontServices.shared();
+            if (capture == null)
+                capture =
+                        new LwjglFontContextCapture(
+                                owner.gl(),
+                                MinecraftHostExtensions.matrices(
+                                        MinecraftVanillaFont.class.getClassLoader(), owner.gl()));
+            FontRenderContext context =
+                    capture.capture(Display.getHeight(), MinecraftFontServices.resourceRevision(), 0);
+            return StandardFontContext.from(context);
+        } finally {
+            FontPerformanceProbe.end(1, probeToken); // #81临时探针：MC_CONTEXT_CAPTURE。
+        }
     }
 
     private static OptionalFontHostBridge hostBridge() {
@@ -277,20 +295,26 @@ public final class MinecraftVanillaFont {
     /** 逻辑计划不重排；列表播放的新变换只改变采样身份。正clip-w候选用于穿过近裁面的计划。 */
     private static PaintPlan sampled(PaintPlan plan, FontRenderContext context,
             WorldFontSampling facts, boolean remember) {
-        WorldFontSampling.Source source = WorldFontSampling.Source.capture(context);
-        PaintPlanBuilder builder = new PaintPlanBuilder();
-        long tick = System.nanoTime() / 50000000L;
-        for (PaintCommand command : plan.commands()) {
-            if (command.kind != PaintCommand.Kind.TEXT) {
-                builder.add(command);
-                continue;
+        // #81临时探针：MC_SAMPLED_PLAN采样计划采用inclusive计时，性能报告定位后统一移除。
+        long probeToken = FontPerformanceProbe.begin(3); // #81临时探针：MC_SAMPLED_PLAN。
+        try {
+            WorldFontSampling.Source source = WorldFontSampling.Source.capture(context);
+            PaintPlanBuilder builder = new PaintPlanBuilder();
+            long tick = System.nanoTime() / 50000000L;
+            for (PaintCommand command : plan.commands()) {
+                if (command.kind != PaintCommand.Kind.TEXT) {
+                    builder.add(command);
+                    continue;
+                }
+                TextLayout layout = command.text;
+                RasterSampling sampling = facts.sample(command, context, source, remember);
+                TextLayout sample = text.sample(layout, sampling, tick, layout.input.text.hashCode());
+                builder.add(PaintCommand.text(command.box, null, sample));
             }
-            TextLayout layout = command.text;
-            RasterSampling sampling = facts.sample(command, context, source, remember);
-            TextLayout sample = text.sample(layout, sampling, tick, layout.input.text.hashCode());
-            builder.add(PaintCommand.text(command.box, null, sample));
+            return builder.build();
+        } finally {
+            FontPerformanceProbe.end(3, probeToken); // #81临时探针：MC_SAMPLED_PLAN。
         }
-        return builder.build();
     }
 
     public static void beforePresent() {

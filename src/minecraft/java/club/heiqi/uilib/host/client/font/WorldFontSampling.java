@@ -69,11 +69,23 @@ final class WorldFontSampling {
         if (!remember) {
             // 先消费再比较；不同投影必须正常重算，旧事实不能留给另一票据误用。
             Entry entry = entries.remove(command);
-            if (entry != null && entry.source.same(source)) return entry.sampling;
+            if (entry != null) {
+                if (entry.source.same(source)) {
+                    FontPerformanceProbe.count(4, 1); // #81临时探针：TICKET_HIT，报告定位后统一移除。
+                    return entry.sampling;
+                }
+                FontPerformanceProbe.count(6, 1); // #81临时探针：TICKET_MISMATCH。
+            } else {
+                FontPerformanceProbe.count(5, 1); // #81临时探针：TICKET_MISS。
+            }
         }
         RasterSampling result = recent.sample(command, context, source);
-        if (remember && (entries.size() < limit || entries.containsKey(command)))
+        if (remember && (entries.size() < limit || entries.containsKey(command))) {
             entries.put(command, new Entry(source, result));
+            FontPerformanceProbe.count(7, 1); // #81临时探针：TICKET_REMEMBER实际记住。
+        } else if (remember) {
+            FontPerformanceProbe.count(8, 1); // #81临时探针：TICKET_FULL实际拒绝记住。
+        }
         return result;
     }
 

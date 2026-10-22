@@ -240,8 +240,13 @@ public final class MinecraftFontServices {
     public static void beforePresent() {
         if (shared == null) return;
         checkThread();
-        MinecraftVanillaFont.beforePresent();
-        if (shared.presentationStats().active) shared.endPresentation();
+        // #81临时探针：只在有效owner主线程结束原呈现流程后记帧，性能报告定位后统一移除。
+        try {
+            MinecraftVanillaFont.beforePresent();
+            if (shared.presentationStats().active) shared.endPresentation();
+        } finally {
+            FontPerformanceProbe.frame(); // #81临时探针：真实帧边界。
+        }
     }
 
     public static void closeShared() {

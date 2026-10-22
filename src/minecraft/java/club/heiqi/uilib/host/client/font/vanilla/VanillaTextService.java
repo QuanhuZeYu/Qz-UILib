@@ -1,5 +1,7 @@
 package club.heiqi.uilib.host.client.font.vanilla;
 
+// #81临时探针：字体性能报告定位后统一移除。
+import club.heiqi.uilib.host.client.font.FontPerformanceProbe;
 import club.heiqi.uilib.host.text.MinecraftFormat;
 import club.heiqi.uilib.ui.scene.text.AttributedText;
 import club.heiqi.uilib.ui.scene.text.RasterSampling;
@@ -138,6 +140,9 @@ public final class VanillaTextService {
         samples.clear();
         painted.clear();
         planSamples.clear();
+        // #81临时探针：逻辑/采样layout缓存清理后的真实size，报告定位后统一移除。
+        FontPerformanceProbe.observe(1, layouts.size()); // #81临时探针：LOGICAL_LAYOUT_SIZE。
+        FontPerformanceProbe.observe(2, cachedSampleCount()); // #81临时探针：SAMPLED_LAYOUT_SIZE。
     }
 
     public int cachedLayoutCount() {
@@ -408,27 +413,37 @@ public final class VanillaTextService {
 
     public TextLayout layout(
             String raw, Settings settings, int baseColor, float width, TextPolicy inputPolicy) {
-        FontTextService font = service();
-        Objects.requireNonNull(raw, "raw");
-        Objects.requireNonNull(settings, "settings");
-        TextPolicy p = policy(settings, inputPolicy);
-        LayoutKey key = new LayoutKey(raw, settings, width, p);
-        TextLayout geometry = layouts.get(key);
-        if (geometry == null) {
-            int canonical = canonicalColor(settings);
-            geometry =
-                    align(
-                            font.layout(measurable(parse(raw, settings, canonical)), width, p),
-                            settings);
-            if (raw.length() <= TEXT_LIMIT) put(layouts, key, geometry);
+        // #81临时探针：MC_TEXT_LAYOUT含解析/缓存/布局/着色，性能报告定位后统一移除。
+        long probeToken = FontPerformanceProbe.begin(2); // #81临时探针：MC_TEXT_LAYOUT。
+        try {
+            FontTextService font = service();
+            Objects.requireNonNull(raw, "raw");
+            Objects.requireNonNull(settings, "settings");
+            TextPolicy p = policy(settings, inputPolicy);
+            LayoutKey key = new LayoutKey(raw, settings, width, p);
+            TextLayout geometry = layouts.get(key);
+            if (geometry == null) {
+                FontPerformanceProbe.count(10, 1); // #81临时探针：LOGICAL_LAYOUT_MISS。
+                int canonical = canonicalColor(settings);
+                geometry =
+                        align(
+                                font.layout(measurable(parse(raw, settings, canonical)), width, p),
+                                settings);
+                if (raw.length() <= TEXT_LIMIT) put(layouts, key, geometry);
+            } else {
+                FontPerformanceProbe.count(9, 1); // #81临时探针：LOGICAL_LAYOUT_HIT。
+            }
+            SampleKey paintKey = new SampleKey(key, baseColor, RasterSampling.LOGICAL, 0, 0);
+            TextLayout result = painted.get(paintKey);
+            if (result == null) {
+                result = paint(geometry, parse(raw, settings, baseColor));
+                if (raw.length() <= TEXT_LIMIT) put(painted, paintKey, result);
+            }
+            return result;
+        } finally {
+            FontPerformanceProbe.observe(1, layouts.size()); // #81临时探针：LOGICAL_LAYOUT_SIZE。 // #81临时探针：LOGICAL_LAYOUT_SIZE。
+            FontPerformanceProbe.end(2, probeToken); // #81临时探针：MC_TEXT_LAYOUT。
         }
-        SampleKey paintKey = new SampleKey(key, baseColor, RasterSampling.LOGICAL, 0, 0);
-        TextLayout result = painted.get(paintKey);
-        if (result == null) {
-            result = paint(geometry, parse(raw, settings, baseColor));
-            if (raw.length() <= TEXT_LIMIT) put(painted, paintKey, result);
-        }
-        return result;
     }
 
     public TextLayout sample(
@@ -452,12 +467,19 @@ public final class VanillaTextService {
                         obfuscated ? tick : 0,
                         obfuscated ? salt : 0);
         TextLayout result = samples.get(key);
-        if (result != null) return result;
+        // #81临时探针：按raw-key真实查找记采样layout命中/未命中，报告定位后统一移除。
+        if (result != null) {
+            FontPerformanceProbe.count(11, 1); // #81临时探针：SAMPLED_LAYOUT_HIT。
+            FontPerformanceProbe.observe(2, cachedSampleCount()); // #81临时探针：SAMPLED_LAYOUT_SIZE。 // #81临时探针：SAMPLED_LAYOUT_SIZE。
+            return result;
+        }
+        FontPerformanceProbe.count(12, 1); // #81临时探针：SAMPLED_LAYOUT_MISS。
         TextLayout logical = layout(raw, settings, baseColor, width, policy);
         result = sample(logical, sampling, tick, salt);
         if (raw.length() <= TEXT_LIMIT) put(samples, key, result);
         while (samples.size() + planSamples.size() > ENTRY_LIMIT && !planSamples.isEmpty())
             planSamples.remove(planSamples.keySet().iterator().next());
+        FontPerformanceProbe.observe(2, cachedSampleCount()); // #81临时探针：SAMPLED_LAYOUT_SIZE。 // #81临时探针：SAMPLED_LAYOUT_SIZE。
         return result;
     }
 
@@ -472,7 +494,13 @@ public final class VanillaTextService {
                 new IdentitySampleKey(
                         logical, sampling, obfuscated ? tick : 0, obfuscated ? salt : 0);
         TextLayout result = planSamples.get(key);
-        if (result != null) return result;
+        // #81临时探针：按logical身份的真实查找记采样layout命中/未命中，报告定位后统一移除。
+        if (result != null) {
+            FontPerformanceProbe.count(11, 1); // #81临时探针：SAMPLED_LAYOUT_HIT。
+            FontPerformanceProbe.observe(2, cachedSampleCount()); // #81临时探针：SAMPLED_LAYOUT_SIZE。 // #81临时探针：SAMPLED_LAYOUT_SIZE。
+            return result;
+        }
+        FontPerformanceProbe.count(12, 1); // #81临时探针：SAMPLED_LAYOUT_MISS。
         TextLayout prepared = obfuscated ? font.obfuscate(logical, tick, salt) : logical;
         result = font.sample(prepared, sampling);
         if (logical.logicalText.length() <= TEXT_LIMIT) {
@@ -482,6 +510,7 @@ public final class VanillaTextService {
                 else samples.remove(samples.keySet().iterator().next());
             }
         }
+        FontPerformanceProbe.observe(2, cachedSampleCount()); // #81临时探针：SAMPLED_LAYOUT_SIZE。 // #81临时探针：SAMPLED_LAYOUT_SIZE。
         return result;
     }
 
