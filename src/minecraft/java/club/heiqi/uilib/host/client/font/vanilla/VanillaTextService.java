@@ -107,7 +107,7 @@ public final class VanillaTextService {
 
         @Override
         public int hashCode() {
-            // 保持旧 Objects.hash 的 seed、字段次序及位语义，兼容热更前 Map entry 已存的哈希。
+            // 沿原字段次序计算哈希，避免装箱和 varargs 分配。
             int hash = 1;
             hash = 31 * hash + Float.hashCode(logicalEm);
             hash = 31 * hash + Float.hashCode(lineHeight);
@@ -475,7 +475,7 @@ public final class VanillaTextService {
         FontTextService font = service();
         // #81 混淆资格属于不可变logical；热命中不再为判断资格反复扫描全部cluster。
         // key只定位布局/采样对，动态tick/salt由entry精确核对，合法的(0,0)不是静态标记。
-        IdentitySampleKey key = new IdentitySampleKey(logical, sampling, 0, 0);
+        IdentitySampleKey key = new IdentitySampleKey(logical, sampling);
         SampleEntry entry = planSamples.get(key);
         if (entry != null && (!entry.obfuscated || entry.tick == tick && entry.salt == salt)) {
             return entry.result;
@@ -520,14 +520,12 @@ public final class VanillaTextService {
     private static final class IdentitySampleKey {
         final TextLayout logical;
         final float density;
-        final long revision, tick, salt;
+        final long revision;
 
-        IdentitySampleKey(TextLayout logical, RasterSampling sample, long tick, long salt) {
+        IdentitySampleKey(TextLayout logical, RasterSampling sample) {
             this.logical = logical;
             density = sample.pixelsPerLayoutUnit;
             revision = sample.revision;
-            this.tick = tick;
-            this.salt = salt;
         }
 
         @Override
@@ -536,9 +534,7 @@ public final class VanillaTextService {
             IdentitySampleKey k = (IdentitySampleKey) o;
             return logical == k.logical
                     && density == k.density
-                    && revision == k.revision
-                    && tick == k.tick
-                    && salt == k.salt;
+                    && revision == k.revision;
         }
 
         @Override
@@ -547,8 +543,6 @@ public final class VanillaTextService {
             hash = 31 * hash + System.identityHashCode(logical);
             hash = 31 * hash + Float.hashCode(density);
             hash = 31 * hash + Long.hashCode(revision);
-            hash = 31 * hash + Long.hashCode(tick);
-            hash = 31 * hash + Long.hashCode(salt);
             return hash;
         }
     }
@@ -589,7 +583,7 @@ public final class VanillaTextService {
     private int boundary(String raw, int maximum, boolean reverse, Settings settings) {
         if (maximum <= 0) return reverse ? parse(raw, settings, canonicalColor(settings)).input.text.length() : 0;
         AttributedText request = parse(raw, settings, canonicalColor(settings));
-        TextLayout layout = layout(raw, settings, -1, Integer.MAX_VALUE, TextPolicy.NO_WRAP);
+        TextLayout layout = layout(raw, settings, -1, Float.MAX_VALUE, TextPolicy.NO_WRAP);
         TreeSet<Integer> safe = new TreeSet<Integer>();
         safe.add(0);
         safe.add(request.input.text.length());

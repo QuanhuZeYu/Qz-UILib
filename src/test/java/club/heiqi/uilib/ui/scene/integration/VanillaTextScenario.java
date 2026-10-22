@@ -554,6 +554,10 @@ public final class VanillaTextScenario extends TestApplication {
                 "测宽后绘制重复建立无换行几何或改变旧度量/硬换行");
         require(!adapter.bidiString(raw, s).isEmpty() && adapter.cachedLayoutCount() == 1,
                 "Bidi视觉串未复用绘制的无换行几何");
+        require(adapter.sizeToWidth(raw, Integer.MAX_VALUE, s) == raw.length()
+                        && adapter.trim(raw, Integer.MAX_VALUE, false, s).equals(raw)
+                        && adapter.cachedLayoutCount() == 1,
+                "测宽后截取边界重复建立同一原串的无换行几何");
         List<TextLayout.Glyph> old = glyphs(legacy), a = glyphs(measured), b = glyphs(command.text);
         require(old.size() == a.size() && a.size() == b.size(), "无换行测绘glyph数量改变");
         for (int i = 0; i < a.size(); i++) {
