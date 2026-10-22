@@ -370,6 +370,17 @@ public final class VanillaTextScenario extends TestApplication {
                 glyphs(frozen).get(0).resolvedStyle.effects.obfuscated
                         && frozen.lines().get(0).clusters().get(0).style.effects.obfuscated,
                 "冻结plan丢混淆flag");
+        RasterSampling frozenSampling = new RasterSampling(3, 12);
+        TextLayout zero = adapter.sample(frozen, frozenSampling, 0, 0);
+        require(adapter.sample(frozen, frozenSampling, 0, 0) == zero, "零tick/salt热采样未复用");
+        TextLayout changedTick = adapter.sample(frozen, frozenSampling, 1, 0);
+        require(changedTick != zero && adapter.sample(frozen, frozenSampling, 1, 0) == changedTick,
+                "混淆零参数被当成静态缓存或同tick不复用");
+        require(adapter.sample(frozen, frozenSampling, 1, 1) != changedTick, "混淆salt变化复用旧采样");
+        TextLayout plain = adapter.layout("普通 ABC", s, -1, 1000, TextPolicy.SINGLE_LINE);
+        TextLayout stable = adapter.sample(plain, frozenSampling, 0, 0);
+        require(adapter.sample(plain, frozenSampling, 2, 9) == stable, "普通文字随tick/salt重复采样");
+        require(adapter.sample(plain, new RasterSampling(3, 13), 2, 9) != stable, "采样revision未失效");
         TextLayout replay = adapter.sample(frozen, new RasterSampling(3, 12), 4, 2);
         require(
                 adapter.sample(frozen, new RasterSampling(3, 12), 4, 2) == replay

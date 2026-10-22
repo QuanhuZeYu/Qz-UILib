@@ -34,8 +34,8 @@ import java.util.function.Supplier;
 public final class VanillaTextService {
     private static final int ENTRY_LIMIT = 128, TEXT_LIMIT = 8192;
     private final Supplier<FontTextService> provider;
-    private final LinkedHashMap<IdentitySampleKey, TextLayout> planSamples =
-            new LinkedHashMap<IdentitySampleKey, TextLayout>(16, .75f, true);
+    private final LinkedHashMap<IdentitySampleKey, SampleEntry> planSamples =
+            new LinkedHashMap<IdentitySampleKey, SampleEntry>(16, .75f, true);
     private final LinkedHashMap<SampleKey, TextLayout> painted =
             new LinkedHashMap<SampleKey, TextLayout>(16, .75f, true);
     private FontTextService current;
@@ -486,25 +486,27 @@ public final class VanillaTextService {
     /** 播放时仅使用已冻结的logical glyph/cluster/source/style快照；不重新读取raw或宿主设置。 */
     public TextLayout sample(TextLayout logical, RasterSampling sampling, long tick, long salt) {
         FontTextService font = service();
-        boolean obfuscated = false;
-        for (TextLayout.Line line : logical.lines())
-            for (TextLayout.Cluster cluster : line.clusters())
-                obfuscated |= cluster.style.effects.obfuscated;
-        IdentitySampleKey key =
-                new IdentitySampleKey(
-                        logical, sampling, obfuscated ? tick : 0, obfuscated ? salt : 0);
-        TextLayout result = planSamples.get(key);
+        // #81 混淆资格属于不可变logical；热命中不再为判断资格反复扫描全部cluster。
+        // key只定位布局/采样对，动态tick/salt由entry精确核对，合法的(0,0)不是静态标记。
+        IdentitySampleKey key = new IdentitySampleKey(logical, sampling, 0, 0);
+        SampleEntry entry = planSamples.get(key);
         // #81临时探针：按logical身份的真实查找记采样layout命中/未命中，报告定位后统一移除。
-        if (result != null) {
+        if (entry != null && (!entry.obfuscated || entry.tick == tick && entry.salt == salt)) {
             FontPerformanceProbe.count(11, 1); // #81临时探针：SAMPLED_LAYOUT_HIT。
             FontPerformanceProbe.observe(2, cachedSampleCount()); // #81临时探针：SAMPLED_LAYOUT_SIZE。 // #81临时探针：SAMPLED_LAYOUT_SIZE。
-            return result;
+            return entry.result;
         }
         FontPerformanceProbe.count(12, 1); // #81临时探针：SAMPLED_LAYOUT_MISS。
+        boolean obfuscated = entry != null && entry.obfuscated;
+        if (entry == null) for (TextLayout.Line line : logical.lines()) {
+            for (TextLayout.Cluster cluster : line.clusters())
+                if (cluster.style.effects.obfuscated) { obfuscated = true; break; }
+            if (obfuscated) break;
+        }
         TextLayout prepared = obfuscated ? font.obfuscate(logical, tick, salt) : logical;
-        result = font.sample(prepared, sampling);
+        TextLayout result = font.sample(prepared, sampling);
         if (logical.logicalText.length() <= TEXT_LIMIT) {
-            planSamples.put(key, result);
+            planSamples.put(key, new SampleEntry(obfuscated, tick, salt, result));
             while (planSamples.size() + samples.size() > ENTRY_LIMIT) {
                 if (samples.isEmpty()) planSamples.remove(planSamples.keySet().iterator().next());
                 else samples.remove(samples.keySet().iterator().next());
@@ -517,6 +519,20 @@ public final class VanillaTextService {
     public int terminalColor(String raw, Settings settings, int baseColor) {
         service();
         return parse(raw, settings, baseColor).trailingStyle.color;
+    }
+
+    /** 只随有界采样缓存存活；代际清理与LRU淘汰同时退役资格和最近采样，不保存外部状态。 */
+    static final class SampleEntry {
+        final boolean obfuscated;
+        final long tick, salt;
+        final TextLayout result;
+
+        SampleEntry(boolean obfuscated, long tick, long salt, TextLayout result) {
+            this.obfuscated = obfuscated;
+            this.tick = tick;
+            this.salt = salt;
+            this.result = result;
+        }
     }
 
     private static final class IdentitySampleKey {
