@@ -107,9 +107,16 @@ public final class VanillaTextService {
 
         @Override
         public int hashCode() {
-            return Objects.hash(
-                    logicalEm, lineHeight, baseline, bidi, unicode,
-                    System.identityHashCode(textMapping), Arrays.hashCode(palette));
+            // 保持旧 Objects.hash 的 seed、字段次序及位语义，兼容热更前 Map entry 已存的哈希。
+            int hash = 1;
+            hash = 31 * hash + Float.hashCode(logicalEm);
+            hash = 31 * hash + Float.hashCode(lineHeight);
+            hash = 31 * hash + Float.hashCode(baseline);
+            hash = 31 * hash + Boolean.hashCode(bidi);
+            hash = 31 * hash + Boolean.hashCode(unicode);
+            hash = 31 * hash + System.identityHashCode(textMapping);
+            hash = 31 * hash + Arrays.hashCode(palette);
+            return hash;
         }
     }
 
@@ -536,7 +543,13 @@ public final class VanillaTextService {
 
         @Override
         public int hashCode() {
-            return Objects.hash(System.identityHashCode(logical), density, revision, tick, salt);
+            int hash = 1;
+            hash = 31 * hash + System.identityHashCode(logical);
+            hash = 31 * hash + Float.hashCode(density);
+            hash = 31 * hash + Long.hashCode(revision);
+            hash = 31 * hash + Long.hashCode(tick);
+            hash = 31 * hash + Long.hashCode(salt);
+            return hash;
         }
     }
 
@@ -555,7 +568,7 @@ public final class VanillaTextService {
         return raw == null
                 ? 0
                 : (int)
-                        layout(raw, settings, -1, Integer.MAX_VALUE, TextPolicy.NO_WRAP)
+                        layout(raw, settings, -1, Float.MAX_VALUE, TextPolicy.NO_WRAP)
                                 .advanceWidth;
     }
 
@@ -681,7 +694,7 @@ public final class VanillaTextService {
         if (!settings.bidi) return raw;
         service();
         AttributedText request = parse(raw, settings, canonicalColor(settings));
-        TextLayout fact = layout(raw, settings, canonicalColor(settings), Integer.MAX_VALUE, TextPolicy.NO_WRAP);
+        TextLayout fact = layout(raw, settings, canonicalColor(settings), Float.MAX_VALUE, TextPolicy.NO_WRAP);
         StringBuilder result = new StringBuilder();
         boolean formatted = false;
         for (TextInput.SourceSegment segment : request.input.sourceSegments())
@@ -742,7 +755,11 @@ public final class VanillaTextService {
 
         @Override
         public int hashCode() {
-            return Objects.hash(raw, settings, color);
+            int hash = 1;
+            hash = 31 * hash + Objects.hashCode(raw);
+            hash = 31 * hash + Objects.hashCode(settings);
+            hash = 31 * hash + color;
+            return hash;
         }
     }
 
@@ -777,16 +794,17 @@ public final class VanillaTextService {
 
         @Override
         public int hashCode() {
-            return Objects.hash(
-                    raw,
-                    settings.logicalEm,
-                    settings.lineHeight,
-                    settings.baseline,
-                    settings.bidi,
-                    settings.unicode,
-                    System.identityHashCode(settings.textMapping),
-                    width,
-                    policy);
+            int hash = 1;
+            hash = 31 * hash + Objects.hashCode(raw);
+            hash = 31 * hash + Float.hashCode(settings.logicalEm);
+            hash = 31 * hash + Float.hashCode(settings.lineHeight);
+            hash = 31 * hash + Float.hashCode(settings.baseline);
+            hash = 31 * hash + Boolean.hashCode(settings.bidi);
+            hash = 31 * hash + Boolean.hashCode(settings.unicode);
+            hash = 31 * hash + System.identityHashCode(settings.textMapping);
+            hash = 31 * hash + Float.hashCode(width);
+            hash = 31 * hash + Objects.hashCode(policy);
+            return hash;
         }
     }
 
@@ -820,7 +838,15 @@ public final class VanillaTextService {
 
         @Override
         public int hashCode() {
-            return Objects.hash(layout, layout.settings, color, density, revision, tick, salt);
+            int hash = 1;
+            hash = 31 * hash + Objects.hashCode(layout);
+            hash = 31 * hash + Objects.hashCode(layout.settings);
+            hash = 31 * hash + color;
+            hash = 31 * hash + Float.hashCode(density);
+            hash = 31 * hash + Long.hashCode(revision);
+            hash = 31 * hash + Long.hashCode(tick);
+            hash = 31 * hash + Long.hashCode(salt);
+            return hash;
         }
     }
 }

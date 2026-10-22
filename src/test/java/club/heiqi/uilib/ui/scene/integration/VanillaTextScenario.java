@@ -8,6 +8,8 @@ import java.util.Arrays;
 import java.util.List;
 import club.heiqi.uilib.host.client.font.vanilla.VanillaTextService;
 import club.heiqi.uilib.host.client.font.vanilla.VanillaTextService.Settings;
+import club.heiqi.uilib.ui.scene.layout.LayoutBox;
+import club.heiqi.uilib.ui.scene.paint.PaintCommand;
 import club.heiqi.uilib.ui.scene.text.RasterSampling;
 import club.heiqi.uilib.ui.scene.text.TextLayout;
 import club.heiqi.uilib.ui.scene.text.TextPolicy;
@@ -537,6 +539,85 @@ public final class VanillaTextScenario extends TestApplication {
                 "PASS vanilla normal/shadow share actual geometry variant/ink identities; distinct palette paint/sample");
     }
 
+    private static void noWrapReuse(VanillaTextService adapter, Settings s) {
+        String raw = "A§fB§cC§rD\tאבג\nبـب 👩‍💻";
+        TextLayout legacy = adapter.layout(raw, s, -1, Integer.MAX_VALUE, TextPolicy.NO_WRAP);
+        adapter.clear();
+        int width = adapter.width(raw, s);
+        TextLayout measured = adapter.layout(raw, s, -1, Float.MAX_VALUE, TextPolicy.NO_WRAP);
+        TextLayout drawn = adapter.layout(raw, s, 0x7f123456, Float.MAX_VALUE, TextPolicy.NO_WRAP);
+        PaintCommand command = PaintCommand.text(
+                new LayoutBox(7, 11, (int) Math.ceil(drawn.advanceWidth), drawn.height), null, drawn);
+        require(adapter.cachedLayoutCount() == 1 && width == (int) command.text.advanceWidth
+                        && measured.lines().size() == 2 && legacy.advanceWidth == measured.advanceWidth
+                        && legacy.advanceHeight == measured.advanceHeight,
+                "测宽后绘制重复建立无换行几何或改变旧度量/硬换行");
+        require(!adapter.bidiString(raw, s).isEmpty() && adapter.cachedLayoutCount() == 1,
+                "Bidi视觉串未复用绘制的无换行几何");
+        List<TextLayout.Glyph> old = glyphs(legacy), a = glyphs(measured), b = glyphs(command.text);
+        require(old.size() == a.size() && a.size() == b.size(), "无换行测绘glyph数量改变");
+        for (int i = 0; i < a.size(); i++) {
+            TextLayout.Glyph previous = old.get(i), x = a.get(i), y = b.get(i);
+            require(previous.source == x.source && previous.glyphId == x.glyphId
+                            && previous.logicalStart == x.logicalStart && previous.logicalEnd == x.logicalEnd
+                            && previous.x == x.x && previous.y == x.y
+                            && previous.xAdvance == x.xAdvance && previous.yAdvance == x.yAdvance
+                            && x.source == y.source && x.glyphId == y.glyphId
+                            && x.x == y.x && x.y == y.y
+                            && x.xAdvance == y.xAdvance && x.yAdvance == y.yAdvance
+                            && x.inkBounds == y.inkBounds && x.rasterStyle == y.rasterStyle,
+                    "两种无限宽改变glyph定位，或测宽与绘制没有共用实际几何");
+        }
+        require(a.get(0).resolvedStyle.color == -1 && b.get(0).resolvedStyle.color == 0x7f123456
+                        && b.get(1).resolvedStyle.color == 0x7fffffff
+                        && b.get(2).resolvedStyle.color == (0x7f000000 | s.paletteColor(12)),
+                "测宽颜色污染绘制的caller基色或显式palette颜色");
+        int[] colors = palette();
+        colors[12] ^= 0xffffff;
+        Settings recolored = new Settings(s.logicalEm, s.lineHeight, s.baseline,
+                s.bidi, s.unicode, colors, s.textMapping);
+        require(adapter.width(raw, recolored) == width, "palette变化改变测量");
+        TextLayout repaint = adapter.layout(raw, recolored, 0x7f123456, Float.MAX_VALUE, TextPolicy.NO_WRAP);
+        require(adapter.cachedLayoutCount() == 1
+                        && glyphs(repaint).get(2).resolvedStyle.color == (0x7f000000 | colors[12])
+                        && b.get(2).resolvedStyle.color == (0x7f000000 | s.paletteColor(12)),
+                "palette变化重复布局、复用旧颜色或污染冻结绘制载荷");
+
+        adapter.clear();
+        String mappedRaw = "\uE007§fB";
+        Settings wide = new Settings(s.logicalEm, s.lineHeight, s.baseline,
+                s.bidi, s.unicode, palette(), cp -> cp == 0xE007 ? 'W' : cp);
+        Settings narrow = new Settings(s.logicalEm, s.lineHeight, s.baseline,
+                s.bidi, s.unicode, palette(), cp -> cp == 0xE007 ? 'i' : cp);
+        int wideWidth = adapter.width(mappedRaw, wide);
+        TextLayout wideDraw = adapter.layout(mappedRaw, wide, -1, Float.MAX_VALUE, TextPolicy.NO_WRAP);
+        int narrowWidth = adapter.width(mappedRaw, narrow);
+        TextLayout narrowDraw = adapter.layout(mappedRaw, narrow, -1, Float.MAX_VALUE, TextPolicy.NO_WRAP);
+        require(adapter.cachedLayoutCount() == 2 && wideDraw.logicalText.equals("WB")
+                        && narrowDraw.logicalText.equals("iB") && wideDraw.originalText.equals(mappedRaw)
+                        && wideWidth == (int) wideDraw.advanceWidth
+                        && narrowWidth == (int) narrowDraw.advanceWidth,
+                "映射快照变化串用旧无换行几何或测绘分叉");
+
+        adapter.clear();
+        int maximum = adapter.width("A", s);
+        String finiteRaw = "A A";
+        TextLayout whole = adapter.layout(finiteRaw, s, -1, Float.MAX_VALUE, TextPolicy.NO_WRAP);
+        adapter.layout(finiteRaw, s, -1, maximum, TextPolicy.NO_WRAP);
+        require(adapter.cachedLayoutCount() == 3, "实际有限宽布局身份被全局无限宽规范化");
+        TextLayout wrapped = adapter.layout(finiteRaw, s, -1, maximum, TextPolicy.NORMAL);
+        require(whole.lines().size() == 1 && wrapped.lines().size() == 2
+                        && adapter.list(finiteRaw, maximum, s).equals(Arrays.asList("A", "§rA"))
+                        && adapter.trim(finiteRaw, maximum, false, s).equals("A")
+                        && adapter.sizeToWidth(finiteRaw, maximum, s) == 1,
+                "测宽复用破坏实际有限宽换行或裁剪 maximum=" + maximum
+                        + " wholeLines=" + whole.lines().size() + " wrappedLines=" + wrapped.lines().size()
+                        + " list=" + adapter.list(finiteRaw, maximum, s)
+                        + " trim=[" + adapter.trim(finiteRaw, maximum, false, s) + "]"
+                        + " cut=" + adapter.sizeToWidth(finiteRaw, maximum, s));
+        System.out.println("PASS vanilla width/draw/bidi share no-wrap geometry; colors/mapping/finite width remain distinct");
+    }
+
     private static void performance(VanillaTextService adapter, Settings s) {
         String raw = "§lHello §cworld§r بـب 👩‍💻";
         for (int i = 0; i < 300; i++) {
@@ -600,6 +681,7 @@ public final class VanillaTextScenario extends TestApplication {
         scenario("装饰线相对字形基线且不受旧行框与采样密度影响", () -> decorations(adapter));
         scenario("完整簇混淆采样", () -> sampling(adapter, settings));
         scenario("普通阴影几何共享", () -> shadowReuse(adapter, settings));
+        scenario("测宽绘制及Bidi共用无换行几何并保持动态身份", () -> noWrapReuse(adapter, settings));
         scenario("CPU热缓存及容量边界", () -> performance(adapter, settings));
         scenario("票据范围采样事实复用与退役", () ->
                 club.heiqi.uilib.host.client.font.WorldFontSamplingScenario.verify(
@@ -607,30 +689,37 @@ public final class VanillaTextScenario extends TestApplication {
         scenario(
                 "资源代际失效缓存",
                 () -> {
+                    adapter.clear();
+                    int beforeWidth = adapter.width("ABC", settings);
                     TextLayout before =
                             adapter.sample(
                                     "ABC",
                                     settings,
                                     -1,
-                                    1000,
-                                    TextPolicy.SINGLE_LINE,
+                                    Float.MAX_VALUE,
+                                    TextPolicy.NO_WRAP,
                                     RasterSampling.LOGICAL,
                                     0,
                                     0);
+                    require(adapter.cachedLayoutCount() == 1 && beforeWidth == (int) before.advanceWidth,
+                            "重载前测宽与采样绘制重复布局");
                     font.reload(fonts);
+                    int afterWidth = adapter.width("ABC", settings);
                     TextLayout after =
                             adapter.sample(
                                     "ABC",
                                     settings,
                                     -1,
-                                    1000,
-                                    TextPolicy.SINGLE_LINE,
+                                    Float.MAX_VALUE,
+                                    TextPolicy.NO_WRAP,
                                     RasterSampling.LOGICAL,
                                     0,
                                     0);
                     require(
-                            after != before && after.generation > before.generation,
-                            "资源generation没有失效缓存");
+                            after != before && after.generation > before.generation
+                                    && adapter.cachedLayoutCount() == 1
+                                    && afterWidth == (int) after.advanceWidth,
+                            "资源generation未失效缓存或重载后测绘分叉");
                 });
         scenario(
                 "旧冻结计划跨服务重放",
