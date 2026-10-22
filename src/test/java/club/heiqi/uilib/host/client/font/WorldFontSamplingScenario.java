@@ -41,6 +41,32 @@ public final class WorldFontSamplingScenario {
         require(Float.floatToRawIntBits(actual.pixelsPerLayoutUnit)==Float.floatToRawIntBits(expected.pixelsPerLayoutUnit)
                 &&actual.revision==expected.revision,"复用或miss改变实际采样值");
     }
+    private static void memo(TextLayout logical) throws Exception {
+        WorldFontSampling facts=new WorldFontSampling(POLICY,2);
+        FontRenderContext first=context(.01f,0,800,1), equal=context(.01f,0,800,1);
+        PaintCommand a=PaintCommand.text(new LayoutBox(1,2,300,30),null,logical);
+        RasterSampling initial=sample(facts,a,first,true);
+        facts.forget(plan(a)); facts.endFrame();
+        PaintCommand next=PaintCommand.text(new LayoutBox(1,2,300,30),null,logical);
+        require(sample(facts,next,equal,true)==initial,"下一帧相同数值输入未复用采样结果");
+        require(sample(facts,next,equal,false)==initial&&size(facts)==0,"memo命中绕过票据消费");
+        for(PaintCommand moved:new PaintCommand[] {
+                PaintCommand.text(new LayoutBox(2,2,300,30),null,logical),
+                PaintCommand.text(new LayoutBox(1,3,300,30),null,logical)}) {
+            RasterSampling result=sample(facts,moved,equal,false);
+            require(result!=initial,"位置变化复用旧墨迹采样"); sameValue(result,moved,equal);
+        }
+        WorldFontSamplingMemo memo=new WorldFontSamplingMemo(POLICY);
+        WorldFontSampling.Source source=WorldFontSampling.Source.capture(first);
+        RasterSampling oldest=memo.sample(a,first,source);
+        for(int i=0;i<128;i++) memo.sample(PaintCommand.text(new LayoutBox(i+2,2,300,30),null,logical),first,source);
+        Field values=WorldFontSamplingMemo.class.getDeclaredField("values"); values.setAccessible(true);
+        require(((Map<?,?>)values.get(memo)).size()==128,"数值memo容量失控");
+        require(memo.sample(a,first,source)!=oldest,"LRU退役后仍返回旧值对象");
+        facts.clear(); require(sample(facts,a,first,false)!=initial,"资源通知或close未清纯CPU结果");
+        facts.clear();
+    }
+
     public static void verify(TextLayout logical) throws Exception {
         PaintCommand a=PaintCommand.text(new LayoutBox(1,2,300,30),null,logical);
         PaintCommand b=PaintCommand.text(new LayoutBox(1,12,300,30),null,logical);
@@ -52,7 +78,7 @@ public final class WorldFontSamplingScenario {
         require(sample(facts,a,equal,false)==remembered,"数值相同但context身份不同未复用原采样标量");
         require(size(facts)==0,"回放未消费事实");
         RasterSampling consumed=sample(facts,a,first,false);
-        require(consumed!=remembered,"已消费事实续到下一调用"); sameValue(consumed,a,first);
+        require(size(facts)==0,"memo命中不得重建已消费票据"); sameValue(consumed,a,first);
         for(FontRenderContext changed:new FontRenderContext[] {
                 context(Math.nextUp(.01f),0,800,1),context(.01f,1,800,1),
                 context(.01f,0,801,1),context(.01f,0,800,2)}) {
@@ -61,9 +87,10 @@ public final class WorldFontSamplingScenario {
             sameValue(fresh,a,changed);
         }
         RasterSampling keepA=sample(facts,a,first,true), keepB=sample(facts,b,first,true);
-        RasterSampling overflow=sample(facts,c,first,true);
+        sample(facts,c,first,true);
         require(size(facts)==2,"采样事实容量越界");
-        require(sample(facts,c,first,false)!=overflow,"容量满仍保留了第三项");
+        sameValue(sample(facts,c,first,false),c,first);
+        require(size(facts)==2,"数值memo命中改变票据容量");
         require(sample(facts,a,equal,false)==keepA&&sample(facts,b,equal,false)==keepB,
                 "容量满破坏了既有票据事实");
         FontHostOrderQueue queue=new FontHostOrderQueue(2);
@@ -91,6 +118,7 @@ public final class WorldFontSamplingScenario {
         facts.forget(plan(a)); facts.forget(plan(a));
         sameValue(sample(facts,a,equal,false),a,equal);
         sample(facts,b,first,true); facts.clear(); require(size(facts)==0,"帧或owner清理未退役事实");
-        System.out.println("WORLD_FONT_SAMPLING_PASS equivalentContextReuse=true changedSourceMiss=true consumedOnce=true bounded=true queueCancelFailureOverflow=true scalarOnly=true shaderExecuted=false");
+        memo(logical);
+        System.out.println("WORLD_FONT_SAMPLING_PASS equivalentContextReuse=true changedSourceMiss=true consumedOnce=true bounded=true queueCancelFailureOverflow=true numericMemo=true scalarOnly=true shaderExecuted=false");
     }
 }

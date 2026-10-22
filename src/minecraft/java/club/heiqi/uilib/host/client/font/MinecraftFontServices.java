@@ -142,7 +142,12 @@ public final class MinecraftFontServices {
             MinecraftApplicationConfiguration.applyFontResources(() -> {
                 if (shared == null || current != request) { completion.cancel(false); return; }
                 if (failure != null) throw resourceFailure(failure);
-                shared.reload(prepared);
+                try {
+                    shared.reload(prepared);
+                } finally {
+                    // 字体换代即退役纯CPU采样memo，不延长旧logical布局的资源引用。
+                    MinecraftVanillaFont.fontResourcesChanged();
+                }
                 revision = prepared.revision;
                 preparation.applied(requestedSources, declarations);
                 if (loader != null) { loader.retire(); loader = null; }

@@ -296,6 +296,10 @@ public final class MinecraftVanillaFont {
     public static void beforePresent() {
         if (bridge != null && bridge.pending() != 0)
             throw new IllegalStateException("呈现之前仍有未消费的宿主字体票据：" + bridge.pending());
+        if (samplingFacts != null) samplingFacts.endFrame();
+    }
+
+    static void fontResourcesChanged() {
         if (samplingFacts != null) samplingFacts.clear();
     }
 
