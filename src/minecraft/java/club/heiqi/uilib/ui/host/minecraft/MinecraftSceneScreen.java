@@ -67,8 +67,10 @@ public class MinecraftSceneScreen extends GuiScreen {
         if (session != null) return;
         MinecraftSceneHost host = new MinecraftSceneHost(mediaService);
         final boolean[] owned = {false};
+        final Inputs[] openingInputs = {null};
+        ScenePageSession opened = null;
         try {
-            session =
+            opened =
                     ScenePageSession.open(
                             domain,
                             host,
@@ -76,14 +78,32 @@ public class MinecraftSceneScreen extends GuiScreen {
                             ctx -> {
                                 ctx.own(host);
                                 owned[0] = true;
-                                page.build(ctx);
+                                Throwable original = null;
+                                try { page.build(ctx); }
+                                catch (RuntimeException | Error failure) { original = failure; throw failure; }
+                                finally {
+                                    try {
+                                        // 同域 open 可先返回再构造页面；scope 也须兜底清理已取得的宿主输入。
+                                        // 最后登记，先于页面所属资源的关闭回调退休 native；仅捕获本次接入。
+                                        ctx.own(() -> {
+                                            Inputs closing = openingInputs[0];
+                                            if (closing != null) closeOpening(closing.opened, closing);
+                                        });
+                                    } catch (RuntimeException | Error cleanup) {
+                                        if (original == null) throw cleanup;
+                                        if (cleanup != original) original.addSuppressed(cleanup);
+                                    }
+                                }
                             });
-            inputs = new Inputs(session, host::semantics);
-            inputs.initialize();
+            session = opened;
+            Inputs acquired = new Inputs(opened, host::semantics);
+            openingInputs[0] = acquired;
+            inputs = acquired;
+            acquired.initialize();
         } catch (RuntimeException | Error failure) {
             // 已打开会话后的输入桥/适配器初始化失败也释放scope和repeat借用。
             try {
-                onGuiClosed();
+                closeOpening(opened, openingInputs[0]);
             } catch (RuntimeException | Error cleanup) {
                 if (cleanup != failure) failure.addSuppressed(cleanup);
             }
@@ -558,12 +578,16 @@ public class MinecraftSceneScreen extends GuiScreen {
         }
     }
 
+    private void closeOpening(ScenePageSession opened, Inputs closing) {
+        // 只断开本次接入；旧 scope 的迟到清理不能关闭同 screen 已重建的新代。
+        if (session == opened) session = null;
+        if (inputs == closing) inputs = null;
+        new MinecraftScreenResources(opened, closing).close();
+    }
+
     @Override
     public void onGuiClosed() {
-        MinecraftScreenResources closing = new MinecraftScreenResources(session, inputs);
-        // 先断开旧页入口，迟到 ESC 不能关闭新会话；宿主输入同步退休，树按会话边界释放。
-        session = null;
-        inputs = null;
-        closing.close();
+        // 关屏仍同步退休输入；原 scope 后续执行相同的幂等兜底。
+        closeOpening(session, inputs);
     }
 }

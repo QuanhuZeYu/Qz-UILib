@@ -28,7 +28,7 @@
 
 语义消费遵循[Core 无障碍语义与宿主读取规格](<../../../Qz-UILib-Core/specs/scene/2026-10-18-uilib-semantics-spec.md>)，参考 [React Aria TextField 标签与值示例](https://react-aria.adobe.com/TextField)和 [FocusScope 焦点范围示例](https://react-aria.adobe.com/FocusScope)。各版本页面以 `semantics()` 读取同页 Host 回调保存的最新纯值快照，以 `semantic(request)` 将挂载 ID 定向动作交给原页面会话；名称和值、焦点与动作资格由 Core 的当前事实表达。未开屏或关闭后读取为空，动作返回 `CLOSED`；既有页面使用不增加原生无障碍桥前提。`native-only` 通过同一页面端口观察快照与请求结果，仍沿前述隔离夹具边界验收。
 
-页面在输入命令或关闭回调中同步切换到另一页面时，宿主先断开旧页入口并同步退休其原生输入桥和 repeat 借用，再结束正式会话；树、scope 与 GPU 资源继续沿会话所属域的安全清理边界释放。域外关闭和域内切页均须在后继页初始化前解除旧 native/IME 联系，旧页的延迟清理、重复关闭和迟到回调不能改写新页输入状态。释放失败仍尝试其余所属资源，首个失败保持原始 identity，后续失败追加为 suppressed。
+页面在输入命令或关闭回调中同步切换到另一页面时，宿主先断开旧页入口并同步退休其原生输入桥和 repeat 借用，再结束正式会话；树、scope 与 GPU 资源继续沿会话所属域的安全清理边界释放。域外关闭和域内切页均须在后继页初始化前解除旧 native/IME 联系，旧页的延迟清理、重复关闭和迟到回调不能改写新页输入状态。每次打开取得的宿主输入同时由该次页面 scope 幂等兜底；同域打开先返回、随后排队的页面构造失败时仍须退休输入，兜底只清理该次 session/inputs，不关闭后继页或同一 screen 的新代。释放失败仍尝试其余所属资源，首个失败保持原始 identity，后续失败追加为 suppressed。
 
 新版提取式渲染宿主在真实 GPU 提交阶段消费不可变 PaintPlan，提取阶段不执行 GL。页面结束后不得回放旧页计划；资源结束遵循其所有权。宿主提交必须保持有效的目标 framebuffer 与宿主 GL 状态；宿主虚拟化状态仍从实际有效状态取得。
 

@@ -185,6 +185,9 @@ public final class MinecraftScreenInputLifecycleScenario extends TestApplication
         scenario("输入初始化失败保留首错并清理已取得的会话和桥", this::initializationFailure);
         scenario("已排队的native焦点同步在关屏后不接触退休桥或新页", this::queuedFocus);
         scenario("正式文本字段组字在关屏时结束且迟到旧提交不落新页", this::compositionRetires);
+        scenario("命令内同域排队构造失败自动退休输入且后继页可打开", () -> deferredBuildFailure(false));
+        scenario("同域延迟构造失败保留主异常及native与scope清理错误", () -> deferredBuildFailure(true));
+        scenario("同screen新代不受旧scope迟到清理影响", this::sameScreenGeneration);
     }
 
     private void commandSwitches() throws Exception {
@@ -333,42 +336,57 @@ public final class MinecraftScreenInputLifecycleScenario extends TestApplication
         }
     }
 
-    /** 使用真实 initGui/catch/onGuiClosed；共享服务只提供无设备资源，不替换生产清理算法。 */
-    private void initializationFailure() throws Exception {
+    /** 仅安装 initGui 所需的既有共享服务；不渲染、不替换生产清理算法。 */
+    private static final class ClientServices implements AutoCloseable {
+        final club.heiqi.uilib.host.client.image.ClientImageServices images;
+        final club.heiqi.uilib.host.client.font.ClientFontServices fonts;
+        final ReactiveDomain themeDomain = ReactiveDomain.direct();
+        club.heiqi.uilib.ui.reactive.Owner themeOwner;
+        final Field imageOwner = field(club.heiqi.uilib.host.client.image.MinecraftImageServices.class, "shared");
+        final Field imageThread = field(club.heiqi.uilib.host.client.image.MinecraftImageServices.class, "thread");
+        final Field fontOwner = field(club.heiqi.uilib.host.client.font.MinecraftFontServices.class, "shared");
+        final Field fontThread = field(club.heiqi.uilib.host.client.font.MinecraftFontServices.class, "thread");
+        final Field themes = field(club.heiqi.uilib.host.client.settings.MinecraftApplicationConfiguration.class, "themes");
+        final Object[] previous = {imageOwner.get(null), imageThread.get(null), fontOwner.get(null), fontThread.get(null), themes.get(null)};
+        ClientServices() throws Exception {
         club.heiqi.uilib.host.client.gl.GlApi gl = (club.heiqi.uilib.host.client.gl.GlApi)
                 java.lang.reflect.Proxy.newProxyInstance(getClass().getClassLoader(),
                         new Class<?>[] {club.heiqi.uilib.host.client.gl.GlApi.class},
                         (proxy, method, args) -> { throw new AssertionError("失败初始化不应调用 GL：" + method); });
-        try (club.heiqi.uilib.host.client.image.ClientImageServices images =
-                        new club.heiqi.uilib.host.client.image.ClientImageServices(gl,
+            images = new club.heiqi.uilib.host.client.image.ClientImageServices(gl,
                                 source -> () -> { throw new AssertionError("失败初始化不加载图像"); },
                                 club.heiqi.uilib.ui.scene.image.SharedImageService.Budget.defaults());
-                club.heiqi.uilib.host.client.font.ClientFontServices fonts =
-                        new club.heiqi.uilib.host.client.font.ClientFontServices(getClass().getClassLoader(), 1,
+            fonts = new club.heiqi.uilib.host.client.font.ClientFontServices(getClass().getClassLoader(), 1,
                                 club.heiqi.uilib.host.client.font.ClientFontServices.Settings.defaults(),
                                 club.heiqi.uilib.host.font.IsolatedFontEngine.shared(), gl,
                                 club.heiqi.uilib.host.client.gl.GlProgramProvider.NONE);
-                NativeEnvironment environment = new NativeEnvironment()) {
-            Field imageOwner = field(club.heiqi.uilib.host.client.image.MinecraftImageServices.class, "shared");
-            Field imageThread = field(club.heiqi.uilib.host.client.image.MinecraftImageServices.class, "thread");
-            Field fontOwner = field(club.heiqi.uilib.host.client.font.MinecraftFontServices.class, "shared");
-            Field fontThread = field(club.heiqi.uilib.host.client.font.MinecraftFontServices.class, "thread");
-            Field themes = field(club.heiqi.uilib.host.client.settings.MinecraftApplicationConfiguration.class, "themes");
-            Object[] previous = {imageOwner.get(null), imageThread.get(null), fontOwner.get(null), fontThread.get(null), themes.get(null)};
-            ReactiveDomain domain = ReactiveDomain.direct();
-            club.heiqi.uilib.ui.reactive.Owner[] themeOwner = {null};
-            domain.execute(() -> {
-                themeOwner[0] = domain.owner();
-                club.heiqi.uilib.ui.config.ConfigSession config = new club.heiqi.uilib.ui.config.ConfigSession(domain,
+            themeDomain.execute(() -> {
+                themeOwner = themeDomain.owner();
+                club.heiqi.uilib.ui.config.ConfigSession config = new club.heiqi.uilib.ui.config.ConfigSession(themeDomain,
                         club.heiqi.uilib.ui.config.ConfigSchema.of(club.heiqi.uilib.ui.scene.control.ThemeConfiguration.KEY));
                 try {
-                    themes.set(null, new club.heiqi.uilib.ui.scene.control.ThemeConfiguration(domain, config, themeOwner[0]));
+                    themes.set(null, new club.heiqi.uilib.ui.scene.control.ThemeConfiguration(themeDomain, config, themeOwner));
                 } catch (IllegalAccessException failure) { throw new IllegalStateException(failure); }
             });
-            int[] released = {0};
-            MinecraftSceneScreen screen = new MinecraftSceneScreen(domain, context -> context.own(() -> released[0]++));
             imageOwner.set(null, images); imageThread.set(null, Thread.currentThread());
             fontOwner.set(null, fonts); fontThread.set(null, Thread.currentThread());
+        }
+        public void close() throws Exception {
+            try { themeDomain.execute(themeOwner::close); }
+            finally {
+                imageOwner.set(null, previous[0]); imageThread.set(null, previous[1]);
+                fontOwner.set(null, previous[2]); fontThread.set(null, previous[3]); themes.set(null, previous[4]);
+                try { images.close(); } finally { fonts.close(); }
+            }
+        }
+    }
+
+    /** 使用真实 initGui/catch/onGuiClosed，覆盖同步输入初始化失败。 */
+    private void initializationFailure() throws Exception {
+        ReactiveDomain domain = ReactiveDomain.direct();
+        try (ClientServices services = new ClientServices(); NativeEnvironment environment = new NativeEnvironment()) {
+            int[] released = {0};
+            MinecraftSceneScreen screen = new MinecraftSceneScreen(domain, context -> context.own(() -> released[0]++));
             try {
                 RuntimeException original = new IllegalStateException("native availability 初始化失败");
                 environment.initializationFailure = original;
@@ -389,10 +407,109 @@ public final class MinecraftScreenInputLifecycleScenario extends TestApplication
                 require(released[0] == 1 && environment.closed == 1, "失败后重复关屏重复释放");
             } finally {
                 screen.onGuiClosed();
-                domain.execute(themeOwner[0]::close);
-                imageOwner.set(null, previous[0]); imageThread.set(null, previous[1]);
-                fontOwner.set(null, previous[2]); fontThread.set(null, previous[3]); themes.set(null, previous[4]);
             }
+        }
+    }
+
+    private static boolean suppressed(Throwable failure, Throwable expected) {
+        for (Throwable next : failure.getSuppressed())
+            if (next == expected || suppressed(next, expected)) return true;
+        return false;
+    }
+
+    private void deferredBuildFailure(boolean cleanupFails) throws Exception {
+        Minecraft minecraft = (Minecraft) unsafe().allocateInstance(Minecraft.class);
+        ReactiveDomain domain = ReactiveDomain.direct();
+        RuntimeException original = new IllegalStateException("同域延迟page.build失败");
+        Error nativeFailure = new AssertionError("延迟构造native清理失败");
+        RuntimeException scopeFailure = new IllegalArgumentException("延迟构造scope清理失败");
+        int[] built = {0}, released = {0};
+        boolean[] returned = {false};
+        ScenePageSession[] failed = {null};
+        try (ClientServices services = new ClientServices(); NativeEnvironment environment = new NativeEnvironment();
+                Page previous = new Page(minecraft, environment, false, domain)) {
+            MinecraftSceneScreen next = new MinecraftSceneScreen(domain, context -> {
+                built[0]++;
+                context.own(() -> {
+                    released[0]++;
+                    require(environment.owner.get() == null, "页面所属资源回调前native尚未退休");
+                    if (cleanupFails) throw scopeFailure;
+                });
+                throw original;
+            });
+            MinecraftSceneScreen successor = new MinecraftSceneScreen(domain, context -> {});
+            previous.next = () -> {
+                previous.close();
+                next.initGui();
+                returned[0] = true;
+                require(built[0] == 0, "initGui没有在同域构造任务前返回");
+                try { failed[0] = (ScenePageSession) field(MinecraftSceneScreen.class, "session").get(next); }
+                catch (Exception failure) { throw new IllegalStateException(failure); }
+                if (cleanupFails) environment.owner.get().closing = () -> { throw nativeFailure; };
+            };
+            try {
+                try {
+                    previous.click();
+                    throw new AssertionError("排队的page.build失败未传播");
+                } catch (RuntimeException actual) {
+                    require(actual == original && returned[0] && failed[0].ended() && built[0] == 1 && released[0] == 1,
+                            "延迟构造未按预期发生或主异常identity丢失");
+                }
+                System.out.println("MC_DEFERRED_BUILD initReturned=true failedSessionEnded=true originalIdentity=true");
+                // 不调用失败页的onGuiClosed；后继页必须能通过正式入口取得唯一native桥。
+                successor.initGui();
+                require(field(MinecraftSceneScreen.class, "session").get(next) == null
+                        && field(MinecraftSceneScreen.class, "inputs").get(next) == null,
+                        "延迟构造失败后仍保留旧页面入口");
+                require(environment.opened == 3 && environment.closed == 2 && environment.owner.get().active(),
+                        "延迟构造失败的native与repeat没有由scope自动退休");
+                if (cleanupFails)
+                    require(suppressed(original, nativeFailure) && suppressed(original, scopeFailure),
+                            "原始构造异常未保留native/scope清理suppressed");
+                else require(original.getSuppressed().length == 0, "正常scope清理产生额外错误");
+            } finally {
+                next.onGuiClosed();
+                successor.onGuiClosed();
+            }
+            require(environment.opened == environment.closed && !Keyboard.areRepeatEventsEnabled(),
+                    "同域延迟失败后资源未对称释放");
+        }
+    }
+
+    private void sameScreenGeneration() throws Exception {
+        ReactiveDomain domain = ReactiveDomain.direct();
+        Host host = new Host();
+        int[] builds = {0}, releases = {0};
+        ScenePageSession[] next = {null};
+        try (ClientServices services = new ClientServices(); NativeEnvironment environment = new NativeEnvironment()) {
+            MinecraftSceneScreen screen = new MinecraftSceneScreen(domain, context -> {
+                builds[0]++;
+                context.own(() -> releases[0]++);
+            });
+            screen.initGui();
+            ScenePageSession first = (ScenePageSession) field(MinecraftSceneScreen.class, "session").get(screen);
+            Bridge oldBridge = environment.owner.get();
+            try (ScenePageSession command = ScenePageSession.open(domain, host,
+                    (text, style, width) -> new TextLayout(0, 0, style, Collections.emptyList()), context ->
+                            context.mount(SceneButton.create(context, () -> "", context.theme(), SceneCommand.of(() -> true, () -> {
+                                screen.onGuiClosed();
+                                screen.initGui();
+                                try { next[0] = (ScenePageSession) field(MinecraftSceneScreen.class, "session").get(screen); }
+                                catch (Exception failure) { throw new IllegalStateException(failure); }
+                                require(first.ended() && releases[0] == 0 && !oldBridge.active(),
+                                        "同screen重开前没有同步退休输入或提前释放scope");
+                            })).size(Size.fill(1), Size.fill(1))))) {
+                command.pointer(ScenePointerEvent.down(0, 10, 10));
+                command.pointer(ScenePointerEvent.up(0, 10, 10));
+                command.frame();
+                require(builds[0] == 2 && releases[0] == 1 && !next[0].ended()
+                        && field(MinecraftSceneScreen.class, "session").get(screen) == next[0],
+                        "旧scope迟到释放清除了同screen的新代");
+                require(environment.opened == 2 && environment.closed == 1 && environment.owner.get().active()
+                        && Keyboard.areRepeatEventsEnabled(), "旧scope覆盖了新代native/repeat");
+            } finally { screen.onGuiClosed(); }
+            require(releases[0] == 2 && environment.closed == 2 && !Keyboard.areRepeatEventsEnabled(),
+                    "同screen新代资源未对称释放");
         }
     }
 
