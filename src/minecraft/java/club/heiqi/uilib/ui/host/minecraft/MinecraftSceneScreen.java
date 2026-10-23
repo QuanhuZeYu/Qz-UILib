@@ -76,7 +76,6 @@ public class MinecraftSceneScreen extends GuiScreen {
                             ctx -> {
                                 ctx.own(host);
                                 owned[0] = true;
-                                ctx.own(new RepeatEvents());
                                 page.build(ctx);
                             });
             inputs = new Inputs(session, host::semantics);
@@ -159,6 +158,7 @@ public class MinecraftSceneScreen extends GuiScreen {
         private SceneKeyInputAdapter keyInput;
         private boolean leftCtrl, rightCtrl, leftShift, rightShift, leftAlt, rightAlt, leftMeta, rightMeta, repeat;
         private SceneNativeTextInput nativeText;
+        private RepeatEvents repeatEvents;
         private char pendingHigh;
         private club.heiqi.uilib.ui.scene.node.SceneNode pendingTextOwner;
         private final club.heiqi.uilib.ui.scene.input.SceneEditEvent.Clipboard clipboard =
@@ -182,6 +182,7 @@ public class MinecraftSceneScreen extends GuiScreen {
         private boolean pointerSuspended = true;
 
         private void initialize() {
+            repeatEvents = new RepeatEvents();
             if (SceneNativeTextInput.available()) nativeText = new SceneNativeTextInput();
             editInput = new club.heiqi.uilib.ui.scene.host.SceneEditInputAdapter();
             keyInput = new SceneKeyInputAdapter(event -> {
@@ -413,6 +414,7 @@ public class MinecraftSceneScreen extends GuiScreen {
             if (nativeText == null || inputs != this || session != opened) return;
             domain.execute(
                     () -> {
+                        if (inputs != this || session != opened || nativeText == null) return;
                         club.heiqi.uilib.ui.scene.node.SceneNode node =
                                 opened.runtime().focusRouter().focused().get();
                         // 目标与组字失效归Core；切换可编辑字段不重置SDL原来源。
@@ -436,8 +438,22 @@ public class MinecraftSceneScreen extends GuiScreen {
 
         @Override public void close() {
             SceneNativeTextInput closing = nativeText;
+            RepeatEvents repeatClosing = repeatEvents;
             nativeText = null;
-            if (closing != null) closing.close();
+            repeatEvents = null;
+            pendingHigh = 0;
+            pendingTextOwner = null;
+            // repeat 与 native 联系同属宿主输入；旧 scope 延迟恢复会覆盖新页的借用。
+            // 先恢复 repeat，再调用可能同步重入开页的 native close。
+            Throwable failure = null;
+            try { if (repeatClosing != null) repeatClosing.close(); }
+            catch (RuntimeException | Error next) { failure = next; }
+            try { if (closing != null) closing.close(); }
+            catch (RuntimeException | Error next) {
+                if (failure == null) failure = next; else if (failure != next) failure.addSuppressed(next);
+            }
+            if (failure instanceof Error) throw (Error) failure;
+            if (failure instanceof RuntimeException) throw (RuntimeException) failure;
         }
     }
 
@@ -523,7 +539,7 @@ public class MinecraftSceneScreen extends GuiScreen {
         }
     }
 
-    /** LWJGL2.next 在关闭repeat时直接跳过重复事件；页面借用该设置，scope结束恢复原值。
+    /** LWJGL2.next 在关闭repeat时直接跳过重复事件；页面借用该设置，宿主输入结束恢复原值。
      * 编辑与既有导航可接收repeat，按钮/Enter/ESC仍由既有按压门消费一次。 */
     private static final class RepeatEvents implements AutoCloseable {
         private final boolean previous = Keyboard.areRepeatEventsEnabled();
@@ -545,7 +561,7 @@ public class MinecraftSceneScreen extends GuiScreen {
     @Override
     public void onGuiClosed() {
         MinecraftScreenResources closing = new MinecraftScreenResources(session, inputs);
-        // 先断开旧输入联系，迟到ESC不能关闭新会话；原生桥在session释放后结束。
+        // 先断开旧页入口，迟到 ESC 不能关闭新会话；宿主输入同步退休，树按会话边界释放。
         session = null;
         inputs = null;
         closing.close();

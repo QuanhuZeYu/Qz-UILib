@@ -28,6 +28,8 @@
 
 语义消费遵循[Core 无障碍语义与宿主读取规格](<../../../Qz-UILib-Core/specs/scene/2026-10-18-uilib-semantics-spec.md>)，参考 [React Aria TextField 标签与值示例](https://react-aria.adobe.com/TextField)和 [FocusScope 焦点范围示例](https://react-aria.adobe.com/FocusScope)。各版本页面以 `semantics()` 读取同页 Host 回调保存的最新纯值快照，以 `semantic(request)` 将挂载 ID 定向动作交给原页面会话；名称和值、焦点与动作资格由 Core 的当前事实表达。未开屏或关闭后读取为空，动作返回 `CLOSED`；既有页面使用不增加原生无障碍桥前提。`native-only` 通过同一页面端口观察快照与请求结果，仍沿前述隔离夹具边界验收。
 
+页面在输入命令或关闭回调中同步切换到另一页面时，宿主先断开旧页入口并同步退休其原生输入桥和 repeat 借用，再结束正式会话；树、scope 与 GPU 资源继续沿会话所属域的安全清理边界释放。域外关闭和域内切页均须在后继页初始化前解除旧 native/IME 联系，旧页的延迟清理、重复关闭和迟到回调不能改写新页输入状态。释放失败仍尝试其余所属资源，首个失败保持原始 identity，后续失败追加为 suppressed。
+
 新版提取式渲染宿主在真实 GPU 提交阶段消费不可变 PaintPlan，提取阶段不执行 GL。页面结束后不得回放旧页计划；资源结束遵循其所有权。宿主提交必须保持有效的目标 framebuffer 与宿主 GL 状态；宿主虚拟化状态仍从实际有效状态取得。
 
 [测试广场](<../../../Qz-UILib-Core/specs/verification/2026-10-07-uilib-testing-spec.md#2-共享测试广场>)保持共享声明、资源及独立附加产物。人工附加包包含共享广场及其独立核心验证服务和样本，“核心验证”页与无窗口入口使用同一检查目录；正式产物不含测试代码。人工附加包仅登记显式客户端命令 `/qzcore`，不向游戏主菜单注入测试入口或兼容其他模组的菜单实现。生产入口可打开任意 ScenePage；Forge 1.7.10 的被动 HUD 与编辑入口归[HUD 规格](<uilib-minecraft-hud-spec.md>)。正式跨仓依赖与产物边界遵循核心第 9 节，实际坐标、版本与发布策略由各仓构建维护。

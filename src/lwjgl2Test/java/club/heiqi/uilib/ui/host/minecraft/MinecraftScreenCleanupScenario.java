@@ -9,13 +9,13 @@ import club.heiqi.uilib.ui.scene.paint.PaintPlan;
 /** 直接验证MC正式持有者与真实session，不注入screen私有字段或复制关闭算法。 */
 public final class MinecraftScreenCleanupScenario extends TestApplication {
     @Override protected void runTests() throws Exception {
-        scenario("session首错与输入桥附加Error仍全部释放且幂等", () ->
+        scenario("输入退休Error与session异常仍全部释放且幂等", () ->
                 closeFailures(new IllegalStateException("session清理失败"), new AssertionError("输入桥清理失败"), false));
-        scenario("session首个Error不被后续异常覆盖", () ->
+        scenario("输入退休首错不被session后续Error覆盖", () ->
                 closeFailures(new AssertionError("session原始Error"), new IllegalArgumentException("输入桥异常"), false));
-        scenario("域内session实际释放先于输入桥且保首错", () ->
+        scenario("域内输入同步退休、session延后释放且保首错", () ->
                 closeFailures(new IllegalStateException("域内session清理失败"), new AssertionError("域内输入桥清理失败"), true));
-        scenario("域内首个Error与输入桥异常顺序保持", () ->
+        scenario("域内输入首错与session附加Error顺序保持", () ->
                 closeFailures(new AssertionError("域内session原始Error"), new IllegalArgumentException("域内输入桥异常"), true));
         scenario("客户端停机先页后图像字体且保留页面首错", () ->
                 clientShutdown(new IllegalStateException("页面停机失败"), new AssertionError("字体桥停机失败")));
@@ -38,7 +38,7 @@ public final class MinecraftScreenCleanupScenario extends TestApplication {
             context.own(() -> { closed[1]++; order.add("session"); fail(first); });
         });
         MinecraftScreenResources resources = new MinecraftScreenResources(session, () -> {
-            require(session.ended(), "输入桥先于session结束");
+            require(!session.ended(), "会话回调前应先退休宿主输入");
             order.add("inputs");
             closed[2]++;
             fail(second);
@@ -48,11 +48,11 @@ public final class MinecraftScreenCleanupScenario extends TestApplication {
             throw new AssertionError("双关闭没有失败");
         }
         catch (RuntimeException | Error actual) {
-            require(actual == first, "首错identity被覆盖：actual=" + actual + " order=" + order);
-            require(actual.getSuppressed().length == 1 && actual.getSuppressed()[0] == second,
-                    "输入桥错误未作为首错的suppressed");
+            require(actual == second, "输入退休首错 identity 被覆盖：actual=" + actual + " order=" + order);
+            require(actual.getSuppressed().length == 1 && actual.getSuppressed()[0] == first,
+                    "会话清理错误未附加在输入退休首错");
         }
-        require(order.equals(java.util.Arrays.asList("session", "inputs")), "实际所属资源释放顺序错误：" + order);
+        require(order.equals(java.util.Arrays.asList("inputs", "session")), "实际所属资源释放顺序错误：" + order);
         require(closed[0] == 1 && closed[1] == 1 && closed[2] == 1, "释放失败阻断后续所属资源");
         resources.close();
         session.close();

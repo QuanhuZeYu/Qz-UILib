@@ -2,7 +2,7 @@ package club.heiqi.uilib.ui.host.minecraft;
 
 import club.heiqi.uilib.ui.scene.host.ScenePageSession;
 
-/** 一次MC接入按依赖顺序释放session、原生输入桥；清理失败不能覆盖首错。 */
+/** 一次 MC 接入先退休宿主输入，再结束会话；树与 GPU 资源仍由会话在安全边界释放。 */
 final class MinecraftScreenResources implements AutoCloseable {
     private ScenePageSession session;
     private AutoCloseable inputs;
@@ -19,17 +19,14 @@ final class MinecraftScreenResources implements AutoCloseable {
         inputs = null;
         Throwable failure = null;
         try {
-            if (opened != null) opened.close();
+            // 页面宿主规格的唯一输入消费者属于关屏边界，不能随树延迟到当前命令结束。
+            // session.close 的完成回调和 scope 释放也可能重入开页，届时旧桥必须已退休。
+            if (closing != null) closeInput(closing);
         } catch (RuntimeException | Error next) {
             failure = next;
         }
         try {
-            if (closing != null) {
-                if (opened == null) closeInput(closing);
-                // 域内close只结束输入队列，session.release延至当前操作结束。
-                // 原生桥排在同一cleanup队列的后面，不能凭ended标志抢先释放。
-                else opened.domain().deferCleanup(() -> closeInput(closing));
-            }
+            if (opened != null) opened.close();
         } catch (RuntimeException | Error next) {
             if (failure == null) failure = next;
             else if (next != failure) failure.addSuppressed(next);

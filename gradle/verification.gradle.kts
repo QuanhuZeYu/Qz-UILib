@@ -90,10 +90,11 @@ val nativeInput = display("minecraftNativeInputScenario", "无窗口真实历史
 nativeInput.configure { args("native-only") }
 val hud = display("minecraftHudScenario", "无窗口HUD正式会话软件绘制、显示资格与原生输入隔离", "club.heiqi.uilib.ui.host.minecraft.MinecraftHudScenario", true)
 val cleanup = display("minecraftScreenCleanupScenario", "正式session与客户端停机首错和依赖清理", "club.heiqi.uilib.ui.host.minecraft.MinecraftScreenCleanupScenario", true)
+val inputLifecycle = display("minecraftScreenInputLifecycleScenario", "命令内切页与独占原生桥同步释放、重入及初始化失败", "club.heiqi.uilib.ui.host.minecraft.MinecraftScreenInputLifecycleScenario", true)
 val shutdown = display("minecraftFontShutdownScenario", "字体桥失败仍结束真实owner", prefix + "MinecraftFontShutdownScenario", true)
 display("imageLwjgl2Scenario", "LWJGL2实际IMAGE像素及item scope", prefix + "ImageLwjgl2Scenario")
 // screenSwitch 需要真实显示栈；cleanup/nativeInput 为无窗口原生闭环，保留在 check。
-tasks.named("check") { dependsOn(cleanup, nativeInput, hud) }
+tasks.named("check") { dependsOn(cleanup, nativeInput, hud, inputLifecycle) }
 tasks.register<Jar>("lwjgl2TestJar") { group = "verification"; archiveClassifier.set("lwjgl2-test"); from(legacyTests.output) }
 
 val productionNames = listOf("jar", "shadowJar", "reobfJar")
@@ -154,7 +155,7 @@ tasks.register("deviceCheck") {
 
 // Java8 Windows native loader无法加载本机中文绝对DLL路径；只在验证进程边界复制到唯一临时目录。
 // 每个消费者在自己的finalizer释放临时副本，生产加载器与解析产物不改动。
-listOf("minecraftScreenSwitchScenario", "minecraftNativeInputScenario", "minecraftHudScenario", "minecraftScreenCleanupScenario", "minecraftFontShutdownScenario", "imageLwjgl2Scenario", "lwjgl2HostScenario", "lwjgl2VideoVerify", "packagedMediaJava8").forEach { taskName ->
+listOf("minecraftScreenSwitchScenario", "minecraftNativeInputScenario", "minecraftHudScenario", "minecraftScreenCleanupScenario", "minecraftScreenInputLifecycleScenario", "minecraftFontShutdownScenario", "imageLwjgl2Scenario", "lwjgl2HostScenario", "lwjgl2VideoVerify", "packagedMediaJava8").forEach { taskName ->
     val runtimeDirectory = objects.property(File::class.java)
     val cleanup = tasks.register(taskName + "CleanupNatives") {
         doLast { runtimeDirectory.orNull?.let { temporary -> delete(temporary) } }
