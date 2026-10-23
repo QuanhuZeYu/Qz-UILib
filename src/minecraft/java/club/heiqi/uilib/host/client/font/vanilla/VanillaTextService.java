@@ -210,6 +210,9 @@ public final class VanillaTextService {
     }
 
     private static AttributedText measurable(AttributedText request) {
+        boolean obfuscated = request.baseStyle.effects.obfuscated || request.trailingStyle.effects.obfuscated;
+        for (StyleSpan span : request.spans()) obfuscated |= span.style.effects.obfuscated;
+        if (!obfuscated) return request;
         List<StyleSpan> spans = new ArrayList<StyleSpan>();
         for (StyleSpan s : request.spans())
             spans.add(
