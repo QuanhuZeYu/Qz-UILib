@@ -10,6 +10,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Stream;
 import club.heiqi.uilib.host.client.font.LegacyFontConfiguration;
+import club.heiqi.uilib.host.client.font.VanillaFontOptions;
 import club.heiqi.uilib.testing.TestApplication;
 import club.heiqi.uilib.ui.config.ConfigCodecs;
 import club.heiqi.uilib.ui.config.ConfigKey;
@@ -63,6 +64,29 @@ public final class LegacyFontConfigurationScenario extends TestApplication {
                 } catch (IOException error) { throw new UncheckedIOException(error); }
             });
             require(Arrays.equals(before, Files.readAllBytes(file)), "成功迁移不修改旧文件字节");
+        });
+        scenario("通用激进合批配置缺项保守及truefalse实际重载", () -> {
+            Path saved = fixture("mc:\n  replaceVanillaFont: true\n");
+            ReactiveDomain domain = ReactiveDomain.direct();
+            List<String> defaults = FontCandidateConfiguration.defaults(builtins);
+            domain.execute(() -> {
+                ConfigSession config = new ConfigSession(domain, ConfigSchema.of(VanillaFontOptions.REPLACE_VANILLA, VanillaFontOptions.AGGRESSIVE_BATCHING));
+                try {
+                    config.load(saved);
+                    require(!config.get(VanillaFontOptions.AGGRESSIVE_BATCHING), "旧YAML缺键必须保持保序");
+                    config.set(VanillaFontOptions.AGGRESSIVE_BATCHING,true); config.save(saved);
+                    config.set(VanillaFontOptions.AGGRESSIVE_BATCHING,false); config.load(saved);
+                    require(config.get(VanillaFontOptions.AGGRESSIVE_BATCHING), "YAML保存与重载未保留新键");
+                    VanillaFontOptions.publish(true, defaults, config.get(VanillaFontOptions.AGGRESSIVE_BATCHING));
+                    require(VanillaFontOptions.aggressiveBatching(), "配置未发布到不可变owner投影");
+                    VanillaFontOptions.publish(false, defaults);
+                    require(VanillaFontOptions.aggressiveBatching()&&!VanillaFontOptions.enabled(), "旧publish误关独立策略");
+                    config.set(VanillaFontOptions.AGGRESSIVE_BATCHING,false); config.save(saved); config.load(saved);
+                    VanillaFontOptions.publish(true, defaults, config.get(VanillaFontOptions.AGGRESSIVE_BATCHING));
+                    require(!VanillaFontOptions.aggressiveBatching(), "false重载未恢复默认顺序");
+                } catch(IOException failure) { throw new UncheckedIOException(failure); }
+                finally { VanillaFontOptions.publish(true,defaults,false); }
+            });
         });
         scenario("旧 BOM 编码只读兼容", () -> {
             for (String encoding : Arrays.asList("UTF-16LE", "UTF-16BE", "UTF-32BE")) {

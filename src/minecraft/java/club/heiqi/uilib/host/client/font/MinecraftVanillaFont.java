@@ -8,7 +8,6 @@ import org.lwjgl.opengl.Display;
 import club.heiqi.uilib.host.client.font.compat.OptionalFontHostBridge;
 import club.heiqi.uilib.host.client.extension.MinecraftHostExtensions;
 import club.heiqi.uilib.host.client.font.context.FontRenderContext;
-import club.heiqi.uilib.host.client.font.context.FontPlanSampling;
 import club.heiqi.uilib.host.client.font.context.LwjglFontContextCapture;
 import club.heiqi.uilib.host.client.font.context.RasterPolicy;
 import club.heiqi.uilib.host.client.font.context.StandardFontContext;
@@ -35,6 +34,7 @@ public final class MinecraftVanillaFont {
     private static VanillaTextService text;
     private static LwjglFontContextCapture capture;
     private static OptionalFontHostBridge bridge;
+    private static WorldFontSampling samplingFacts;
     private static Thread ownerThread;
     private static volatile boolean installed;
 
@@ -43,6 +43,7 @@ public final class MinecraftVanillaFont {
     public static void install() {
         if (installed) throw new IllegalStateException("原版字体入口重复安装");
         text = new VanillaTextService(() -> MinecraftFontServices.shared().fonts());
+        samplingFacts = new WorldFontSampling(RASTER, 4096);
         ownerThread = Thread.currentThread();
         installed = true;
     }
@@ -192,7 +193,9 @@ public final class MinecraftVanillaFont {
                                 logical.height),
                         null,
                         logical));
-        hostBridge().submit(plans.build(), context, () -> {});
+        PaintPlan plan = plans.build();
+        WorldFontSampling facts = samplingFacts;
+        hostBridge().submit(plan, context, () -> facts.forget(plan));
         font.qz$tailState(text.terminalColor(source, style, color));
         return (int) (x + logical.advanceWidth + (shadow ? 1 : 0));
     }
@@ -203,7 +206,9 @@ public final class MinecraftVanillaFont {
         VanillaTextService.Settings style = settings(font, false);
         TextLayout logical = text.layout(source, style, color, width, TextPolicy.NORMAL);
         font.qz$enableAlpha();
-        hostBridge().submit(plan(logical, x, y), capture(), () -> {});
+        PaintPlan plan = plan(logical, x, y);
+        WorldFontSampling facts = samplingFacts;
+        hostBridge().submit(plan, capture(), () -> facts.forget(plan));
         font.qz$tailState(text.terminalColor(source, style, color));
     }
 
@@ -221,7 +226,8 @@ public final class MinecraftVanillaFont {
     }
 
     private static OptionalFontHostBridge hostBridge() {
-        if (bridge == null)
+        if (bridge == null) {
+            WorldFontSampling facts = samplingFacts;
             bridge =
                     OptionalFontHostBridge.create(
                             MinecraftVanillaFont.class.getClassLoader(),
@@ -235,29 +241,43 @@ public final class MinecraftVanillaFont {
                                 @Override
                                 public void registerVisible(
                                         PaintPlan plan, FontRenderContext context) {
-                                    ClientFontServices owner = MinecraftFontServices.shared();
-                                    GlPaintPlanRenderer renderer = owner.sharedPlanRenderer();
-                                    owner.registerVisibleDemand(
-                                            renderer, sampled(plan, context), context);
+                                    try {
+                                        ClientFontServices owner = MinecraftFontServices.shared();
+                                        GlPaintPlanRenderer renderer = owner.sharedPlanRenderer();
+                                        owner.registerVisibleDemand(
+                                                renderer, sampled(plan, context, facts, true), context);
+                                    } catch (RuntimeException | Error failure) {
+                                        // 列表播放的登记失败不会进入draw，须在此退役已记住的事实。
+                                        facts.forget(plan);
+                                        throw failure;
+                                    }
                                 }
 
                                 @Override
                                 public void draw(PaintPlan plan, FontRenderContext context) {
-                                    ClientFontServices owner = MinecraftFontServices.shared();
-                                    GlPaintPlanRenderer renderer = owner.sharedPlanRenderer();
-                                    try (GlPaintPlanRenderer.Prepared prepared =
-                                            owner.prepare(
-                                                    renderer, sampled(plan, context), context)) {
-                                        prepared.render(context);
+                                    try {
+                                        ClientFontServices owner = MinecraftFontServices.shared();
+                                        GlPaintPlanRenderer renderer = owner.sharedPlanRenderer();
+                                        try (GlPaintPlanRenderer.Prepared prepared =
+                                                owner.prepare(
+                                                        renderer, sampled(plan, context, facts, false), context)) {
+                                            prepared.render(context);
+                                        }
+                                    } finally {
+                                        // 合并计划保留原command引用，成员票据的清理也可重复执行。
+                                        facts.forget(plan);
                                     }
                                 }
                             },
                             4096);
+        }
         return bridge;
     }
 
     /** 逻辑计划不重排；列表播放的新变换只改变采样身份。正clip-w候选用于穿过近裁面的计划。 */
-    private static PaintPlan sampled(PaintPlan plan, FontRenderContext context) {
+    private static PaintPlan sampled(PaintPlan plan, FontRenderContext context,
+            WorldFontSampling facts, boolean remember) {
+        WorldFontSampling.Source source = WorldFontSampling.Source.capture(context);
         PaintPlanBuilder builder = new PaintPlanBuilder();
         long tick = System.nanoTime() / 50000000L;
         for (PaintCommand command : plan.commands()) {
@@ -266,7 +286,7 @@ public final class MinecraftVanillaFont {
                 continue;
             }
             TextLayout layout = command.text;
-            RasterSampling sampling = FontPlanSampling.sampling(command, context, RASTER);
+            RasterSampling sampling = facts.sample(command, context, source, remember);
             TextLayout sample = text.sample(layout, sampling, tick, layout.input.text.hashCode());
             builder.add(PaintCommand.text(command.box, null, sample));
         }
@@ -276,16 +296,25 @@ public final class MinecraftVanillaFont {
     public static void beforePresent() {
         if (bridge != null && bridge.pending() != 0)
             throw new IllegalStateException("呈现之前仍有未消费的宿主字体票据：" + bridge.pending());
+        if (samplingFacts != null) samplingFacts.endFrame();
+    }
+
+    static void fontResourcesChanged() {
+        if (samplingFacts != null) samplingFacts.clear();
     }
 
     public static void close() {
         installed = false;
-        if (bridge != null) {
-            bridge.close();
+        try {
+            if (bridge != null) bridge.close();
+        } finally {
+            // lease先沿旧bridge归还，再清空数值事实；旧列表的清理仍持有原facts实例。
             bridge = null;
+            if (samplingFacts != null) samplingFacts.clear();
+            samplingFacts = null;
+            capture = null;
+            text = null;
+            SETTINGS.clear();
         }
-        capture = null;
-        text = null;
-        SETTINGS.clear();
     }
 }

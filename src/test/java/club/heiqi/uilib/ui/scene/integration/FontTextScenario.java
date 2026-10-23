@@ -877,6 +877,67 @@ public final class FontTextScenario extends TestApplication {
         }
     }
 
+    private void cpuCacheReuse() throws Exception {
+        FontSource source = defaults.get(0);
+        List<FontSource> sources = Collections.singletonList(source);
+        TextStyle requested = new TextStyle("explicit", 20, -1, sources);
+        CountingEngine engine = new CountingEngine();
+        try (FontTextService fonts = new FontTextService(sources, engine, 4, 32, 4096)) {
+            TextPolicy en = policy(TextPolicy.Direction.LTR, TextPolicy.Wrap.NONE, "en");
+            fonts.layout("AB", requested, 1000, en);
+            int raw = engine.shapes - engine.preparedRuns;
+            fonts.layout("BA", requested, 999, en);
+            require(engine.shapes - engine.preparedRuns == raw,
+                    "动态文本/宽度变化重复执行已成功独立字素的资格整形");
+            fonts.layout("BA", requested, 998,
+                    policy(TextPolicy.Direction.LTR, TextPolicy.Wrap.NONE, "tr"));
+            require(engine.shapes - engine.preparedRuns > raw, "不同语言误用匹配资格");
+            raw = engine.shapes - engine.preparedRuns;
+            fonts.reload(sources);
+            fonts.layout("BA", requested, 999, en);
+            require(engine.shapes - engine.preparedRuns > raw, "字体换代没有清除匹配事实");
+            AttributedText value = AttributedText.plain(TextInput.string("AB"), requested);
+            TextLayout first = fonts.layout(value, 1000, en);
+            require(first == fonts.layout(value, 1000, en), "属性热命中重建无变化绘制布局");
+            require(first == first.withColors(first.style, offset -> requested.color),
+                    "颜色未变化仍复制布局");
+            TextStyle color = requested.withColor(0x80336699);
+            TextLayout colored = fonts.layout(AttributedText.plain(value.input, color), 1000, en);
+            require(colored.lines().get(0).glyphs().get(0).resolvedStyle.color == color.color
+                    && first.lines().get(0).glyphs().get(0).resolvedStyle.color == requested.color,
+                    "最近颜色投影污染有效旧计划");
+        }
+        // 同一真实后端的缓存关闭结果作为独立参考，覆盖来源、方向、复杂连接与缺字诊断。
+        try (FontTextService cached = new FontTextService(defaults, new LwjglFontEngine(), 8, 32, 4096);
+                FontTextService reference = new FontTextService(defaults, new LwjglFontEngine(), 8, 0, 0)) {
+            for (String input : new String[] {"Score 123", "Score 124", "中A中B", "a\u0301", "مرحبا 123",
+                    "אבג ABC", "कर्म", "👩‍💻", "\u00adAB\u00adCD", "A\nB", "\u0378"}) {
+                for (int width : new int[] {1000, 32}) {
+                    TextLayout actual = cached.layout(input, style, width, TextPolicy.NORMAL);
+                    TextLayout expected = reference.layout(input, style, width, TextPolicy.NORMAL);
+                    require(actual.advanceWidth == expected.advanceWidth && actual.advanceHeight == expected.advanceHeight,
+                            "缓存改变真实排版度量: " + input);
+                    List<TextLayout.Glyph> a = glyphs(actual), b = glyphs(expected);
+                    require(a.size() == b.size(), "缓存改变真实字形数量: " + input);
+                    for (int i = 0; i < a.size(); i++) {
+                        TextLayout.Glyph x = a.get(i), y = b.get(i);
+                        require(x.source.equals(y.source) && x.glyphId == y.glyphId && x.x == y.x && x.y == y.y
+                                && x.xAdvance == y.xAdvance && x.logicalStart == y.logicalStart && x.logicalEnd == y.logicalEnd
+                                && x.sourceStart == y.sourceStart && x.sourceEnd == y.sourceEnd && x.color == y.color
+                                && x.replacement == y.replacement && x.resolvedStyle.equals(y.resolvedStyle),
+                                "缓存改变真实字形/来源/样式: " + input);
+                    }
+                    require(actual.diagnostics().size() == expected.diagnostics().size(), "缓存丢失资源/缺字诊断");
+                    for (int i = 0; i < actual.diagnostics().size(); i++) {
+                        TextLayout.Diagnostic x = actual.diagnostics().get(i), y = expected.diagnostics().get(i);
+                        require(x.kind == y.kind && x.sourceStart == y.sourceStart && x.sourceEnd == y.sourceEnd
+                                && x.message.equals(y.message), "缓存改变诊断来源或错误信息");
+                    }
+                }
+            }
+        }
+    }
+
     private void paintOnlyColors() throws Exception {
         CountingEngine engine = new CountingEngine();
         try (FontTextService fonts = new FontTextService(defaults, engine, 8, 8, 4096)) {
@@ -982,6 +1043,7 @@ public final class FontTextScenario extends TestApplication {
     protected void runTests() throws Exception {
         scenario("系统文件实际能力与匹配无光栅", this::systemCandidateCapabilities);
         scenario("系统文件复杂脚本完整范围混淆", this::systemObfuscationRanges);
+        scenario("动态文字匹配缓存与属性投影复用", this::cpuCacheReuse);
         scenario("颜色与透明度复用真实定位", this::paintOnlyColors);
         scenario("场景颜色绘制失效与禁用字体缓存", this::scenePaintOnlyColors);
         scenario("交替脚本多run复用完整上下文", this::alternatingScriptContexts);

@@ -66,7 +66,8 @@ public final class MinecraftApplicationConfiguration {
         try {
             List<FontSource> builtins = FontTextService.defaultSources(MinecraftApplicationConfiguration.class.getClassLoader(), 1);
             ConfigKey<List<String>> declaredFonts = FontCandidateConfiguration.key(builtins);
-            ConfigSchema schema = ConfigSchema.of(VanillaFontOptions.REPLACE_VANILLA, declaredFonts, ThemeConfiguration.KEY);
+            ConfigSchema schema = ConfigSchema.of(VanillaFontOptions.REPLACE_VANILLA, declaredFonts, ThemeConfiguration.KEY,
+                    VanillaFontOptions.AGGRESSIVE_BATCHING);
             Path selected = FontConfigurationFiles.yamlPath(legacyFile.toPath());
             ConfigDocument document = FontConfigurationFiles.prepare(schema, legacyFile.toPath(),
                     VanillaFontOptions.REPLACE_VANILLA, declaredFonts, builtins);
@@ -81,7 +82,11 @@ public final class MinecraftApplicationConfiguration {
                         () -> reloadResources.set(reloadResources.get() + 1));
                 owner = DOMAIN.owner();
                 themes = new ThemeConfiguration(DOMAIN, session, owner);
-                DOMAIN.effect(owner, () -> VanillaFontOptions.publish(session.get(VanillaFontOptions.REPLACE_VANILLA), session.get(fonts)));
+                DOMAIN.effect(owner, () -> {
+                    boolean aggressive = session.get(VanillaFontOptions.AGGRESSIVE_BATCHING);
+                    VanillaFontOptions.publish(session.get(VanillaFontOptions.REPLACE_VANILLA), session.get(fonts), aggressive);
+                    MinecraftFontServices.batchingChanged(aggressive);
+                });
                 DOMAIN.effect(owner, () -> {
                     reloadResources.get();
                     List<String> declarations = session.get(fonts);

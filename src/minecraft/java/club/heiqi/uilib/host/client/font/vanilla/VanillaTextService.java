@@ -32,8 +32,8 @@ import java.util.function.Supplier;
 public final class VanillaTextService {
     private static final int ENTRY_LIMIT = 128, TEXT_LIMIT = 8192;
     private final Supplier<FontTextService> provider;
-    private final LinkedHashMap<IdentitySampleKey, TextLayout> planSamples =
-            new LinkedHashMap<IdentitySampleKey, TextLayout>(16, .75f, true);
+    private final LinkedHashMap<IdentitySampleKey, SampleEntry> planSamples =
+            new LinkedHashMap<IdentitySampleKey, SampleEntry>(16, .75f, true);
     private final LinkedHashMap<SampleKey, TextLayout> painted =
             new LinkedHashMap<SampleKey, TextLayout>(16, .75f, true);
     private FontTextService current;
@@ -107,9 +107,16 @@ public final class VanillaTextService {
 
         @Override
         public int hashCode() {
-            return Objects.hash(
-                    logicalEm, lineHeight, baseline, bidi, unicode,
-                    System.identityHashCode(textMapping), Arrays.hashCode(palette));
+            // 沿原字段次序计算哈希，避免装箱和 varargs 分配。
+            int hash = 1;
+            hash = 31 * hash + Float.hashCode(logicalEm);
+            hash = 31 * hash + Float.hashCode(lineHeight);
+            hash = 31 * hash + Float.hashCode(baseline);
+            hash = 31 * hash + Boolean.hashCode(bidi);
+            hash = 31 * hash + Boolean.hashCode(unicode);
+            hash = 31 * hash + System.identityHashCode(textMapping);
+            hash = 31 * hash + Arrays.hashCode(palette);
+            return hash;
         }
     }
 
@@ -203,6 +210,9 @@ public final class VanillaTextService {
     }
 
     private static AttributedText measurable(AttributedText request) {
+        boolean obfuscated = request.baseStyle.effects.obfuscated || request.trailingStyle.effects.obfuscated;
+        for (StyleSpan span : request.spans()) obfuscated |= span.style.effects.obfuscated;
+        if (!obfuscated) return request;
         List<StyleSpan> spans = new ArrayList<StyleSpan>();
         for (StyleSpan s : request.spans())
             spans.add(
@@ -452,7 +462,9 @@ public final class VanillaTextService {
                         obfuscated ? tick : 0,
                         obfuscated ? salt : 0);
         TextLayout result = samples.get(key);
-        if (result != null) return result;
+        if (result != null) {
+            return result;
+        }
         TextLayout logical = layout(raw, settings, baseColor, width, policy);
         result = sample(logical, sampling, tick, salt);
         if (raw.length() <= TEXT_LIMIT) put(samples, key, result);
@@ -464,19 +476,23 @@ public final class VanillaTextService {
     /** 播放时仅使用已冻结的logical glyph/cluster/source/style快照；不重新读取raw或宿主设置。 */
     public TextLayout sample(TextLayout logical, RasterSampling sampling, long tick, long salt) {
         FontTextService font = service();
-        boolean obfuscated = false;
-        for (TextLayout.Line line : logical.lines())
+        // #81 混淆资格属于不可变logical；热命中不再为判断资格反复扫描全部cluster。
+        // key只定位布局/采样对，动态tick/salt由entry精确核对，合法的(0,0)不是静态标记。
+        IdentitySampleKey key = new IdentitySampleKey(logical, sampling);
+        SampleEntry entry = planSamples.get(key);
+        if (entry != null && (!entry.obfuscated || entry.tick == tick && entry.salt == salt)) {
+            return entry.result;
+        }
+        boolean obfuscated = entry != null && entry.obfuscated;
+        if (entry == null) for (TextLayout.Line line : logical.lines()) {
             for (TextLayout.Cluster cluster : line.clusters())
-                obfuscated |= cluster.style.effects.obfuscated;
-        IdentitySampleKey key =
-                new IdentitySampleKey(
-                        logical, sampling, obfuscated ? tick : 0, obfuscated ? salt : 0);
-        TextLayout result = planSamples.get(key);
-        if (result != null) return result;
+                if (cluster.style.effects.obfuscated) { obfuscated = true; break; }
+            if (obfuscated) break;
+        }
         TextLayout prepared = obfuscated ? font.obfuscate(logical, tick, salt) : logical;
-        result = font.sample(prepared, sampling);
+        TextLayout result = font.sample(prepared, sampling);
         if (logical.logicalText.length() <= TEXT_LIMIT) {
-            planSamples.put(key, result);
+            planSamples.put(key, new SampleEntry(obfuscated, tick, salt, result));
             while (planSamples.size() + samples.size() > ENTRY_LIMIT) {
                 if (samples.isEmpty()) planSamples.remove(planSamples.keySet().iterator().next());
                 else samples.remove(samples.keySet().iterator().next());
@@ -490,17 +506,29 @@ public final class VanillaTextService {
         return parse(raw, settings, baseColor).trailingStyle.color;
     }
 
+    /** 只随有界采样缓存存活；代际清理与LRU淘汰同时退役资格和最近采样，不保存外部状态。 */
+    static final class SampleEntry {
+        final boolean obfuscated;
+        final long tick, salt;
+        final TextLayout result;
+
+        SampleEntry(boolean obfuscated, long tick, long salt, TextLayout result) {
+            this.obfuscated = obfuscated;
+            this.tick = tick;
+            this.salt = salt;
+            this.result = result;
+        }
+    }
+
     private static final class IdentitySampleKey {
         final TextLayout logical;
         final float density;
-        final long revision, tick, salt;
+        final long revision;
 
-        IdentitySampleKey(TextLayout logical, RasterSampling sample, long tick, long salt) {
+        IdentitySampleKey(TextLayout logical, RasterSampling sample) {
             this.logical = logical;
             density = sample.pixelsPerLayoutUnit;
             revision = sample.revision;
-            this.tick = tick;
-            this.salt = salt;
         }
 
         @Override
@@ -509,14 +537,16 @@ public final class VanillaTextService {
             IdentitySampleKey k = (IdentitySampleKey) o;
             return logical == k.logical
                     && density == k.density
-                    && revision == k.revision
-                    && tick == k.tick
-                    && salt == k.salt;
+                    && revision == k.revision;
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(System.identityHashCode(logical), density, revision, tick, salt);
+            int hash = 1;
+            hash = 31 * hash + System.identityHashCode(logical);
+            hash = 31 * hash + Float.hashCode(density);
+            hash = 31 * hash + Long.hashCode(revision);
+            return hash;
         }
     }
 
@@ -535,7 +565,7 @@ public final class VanillaTextService {
         return raw == null
                 ? 0
                 : (int)
-                        layout(raw, settings, -1, Integer.MAX_VALUE, TextPolicy.NO_WRAP)
+                        layout(raw, settings, -1, Float.MAX_VALUE, TextPolicy.NO_WRAP)
                                 .advanceWidth;
     }
 
@@ -556,7 +586,7 @@ public final class VanillaTextService {
     private int boundary(String raw, int maximum, boolean reverse, Settings settings) {
         if (maximum <= 0) return reverse ? parse(raw, settings, canonicalColor(settings)).input.text.length() : 0;
         AttributedText request = parse(raw, settings, canonicalColor(settings));
-        TextLayout layout = layout(raw, settings, -1, Integer.MAX_VALUE, TextPolicy.NO_WRAP);
+        TextLayout layout = layout(raw, settings, -1, Float.MAX_VALUE, TextPolicy.NO_WRAP);
         TreeSet<Integer> safe = new TreeSet<Integer>();
         safe.add(0);
         safe.add(request.input.text.length());
@@ -661,7 +691,7 @@ public final class VanillaTextService {
         if (!settings.bidi) return raw;
         service();
         AttributedText request = parse(raw, settings, canonicalColor(settings));
-        TextLayout fact = layout(raw, settings, canonicalColor(settings), Integer.MAX_VALUE, TextPolicy.NO_WRAP);
+        TextLayout fact = layout(raw, settings, canonicalColor(settings), Float.MAX_VALUE, TextPolicy.NO_WRAP);
         StringBuilder result = new StringBuilder();
         boolean formatted = false;
         for (TextInput.SourceSegment segment : request.input.sourceSegments())
@@ -722,7 +752,11 @@ public final class VanillaTextService {
 
         @Override
         public int hashCode() {
-            return Objects.hash(raw, settings, color);
+            int hash = 1;
+            hash = 31 * hash + Objects.hashCode(raw);
+            hash = 31 * hash + Objects.hashCode(settings);
+            hash = 31 * hash + color;
+            return hash;
         }
     }
 
@@ -757,16 +791,17 @@ public final class VanillaTextService {
 
         @Override
         public int hashCode() {
-            return Objects.hash(
-                    raw,
-                    settings.logicalEm,
-                    settings.lineHeight,
-                    settings.baseline,
-                    settings.bidi,
-                    settings.unicode,
-                    System.identityHashCode(settings.textMapping),
-                    width,
-                    policy);
+            int hash = 1;
+            hash = 31 * hash + Objects.hashCode(raw);
+            hash = 31 * hash + Float.hashCode(settings.logicalEm);
+            hash = 31 * hash + Float.hashCode(settings.lineHeight);
+            hash = 31 * hash + Float.hashCode(settings.baseline);
+            hash = 31 * hash + Boolean.hashCode(settings.bidi);
+            hash = 31 * hash + Boolean.hashCode(settings.unicode);
+            hash = 31 * hash + System.identityHashCode(settings.textMapping);
+            hash = 31 * hash + Float.hashCode(width);
+            hash = 31 * hash + Objects.hashCode(policy);
+            return hash;
         }
     }
 
@@ -800,7 +835,15 @@ public final class VanillaTextService {
 
         @Override
         public int hashCode() {
-            return Objects.hash(layout, layout.settings, color, density, revision, tick, salt);
+            int hash = 1;
+            hash = 31 * hash + Objects.hashCode(layout);
+            hash = 31 * hash + Objects.hashCode(layout.settings);
+            hash = 31 * hash + color;
+            hash = 31 * hash + Float.hashCode(density);
+            hash = 31 * hash + Long.hashCode(revision);
+            hash = 31 * hash + Long.hashCode(tick);
+            hash = 31 * hash + Long.hashCode(salt);
+            return hash;
         }
     }
 }
