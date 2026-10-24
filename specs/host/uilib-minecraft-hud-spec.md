@@ -4,10 +4,10 @@
 
 正式入口为 `MinecraftSceneHud(ReactiveDomain, ScenePage, BooleanSupplier)`；`register()` 幂等登记 Forge/FML 事件并返回本对象，`close()` 注销并结束会话，结束后不重新登记。仅 Forge `RenderGameOverlayEvent.Post` 的 `ALL` 阶段呈现，FML 客户端 tick 只观察世界与连接身份变化并释放旧会话。显隐来源在业务所属域读取；隐藏不推进资源准备、页面帧或呈现动效，普通重显沿原会话使用当前环境与状态，不逐帧创建隐藏清理任务。构造、登记、域派发与结束均在所属客户端线程执行。
 
-HUD 内容按真实尺寸排版，锚点与逻辑偏移表达位置，GUI Scale、视口、字体和主题变化后更新并约束到可用空间。放置通过正式 SceneControl 排列和共同几何表达，不平移旧绘制计划或维护另一套命中。
+HUD 内容按真实尺寸排版，锚点与 framebuffer 像素偏移表达位置，视口、字体和主题变化后更新并约束到可用空间；Minecraft GUI Scale 不改变 UILib HUD 的尺寸或位置语义。放置通过正式 SceneControl 排列和共同几何表达，不平移旧绘制计划或维护另一套命中。
 
 显式编辑页复用 MinecraftSceneScreen 和正式 SceneDraggable，提供拖动、吸附、缩放及恢复默认；正常释放只更新业务草稿，ESC/失焦取消拖动不提交。`MinecraftHudEditorScreen(ReactiveDomain, ScenePage)` 是不暂停游戏的薄宿主，沿同一页面输入与 ESC fallback，页面业务提供保存、放弃与返回。业务决定保存，通用宿主不写业务配置。普通 HUD 无输入资格，编辑时只使用编辑页当前范围。设置页与编辑页可在正式 SceneCommand 回调中同步往返；输入桥的退休与会话安全释放沿[多版本宿主生命周期](<2026-10-18-uilib-minecraft-hosts-spec.md#归属与主流程>)，业务不协调 native owner 或额外延迟开页。
 
 GPU 资源只在渲染主线程建立和释放；隐藏、菜单、F1 与无世界时停止呈现推进，世界替换和断线清理旧页面资源，重新进入可重建，不关闭共享字体/图像服务。关闭幂等，登记的外部监听对称解除。
 
-无窗口场景验证正式会话、显示资格、位置约束、输入隔离和生命周期；真实 GL 状态、缩放与 Mod 共存保持实机未验证直到取得游戏证据。
+无窗口场景验证正式会话、显示资格、位置约束、输入隔离和生命周期；真实 GL 状态、视口变化与 Mod 共存保持实机未验证直到取得游戏证据。

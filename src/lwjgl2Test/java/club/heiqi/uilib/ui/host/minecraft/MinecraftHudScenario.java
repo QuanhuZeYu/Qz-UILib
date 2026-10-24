@@ -25,6 +25,10 @@ import club.heiqi.uilib.ui.scene.host.SceneHost;
 import club.heiqi.uilib.ui.scene.host.ScenePage;
 import club.heiqi.uilib.ui.scene.host.ScenePageSession;
 import club.heiqi.uilib.ui.scene.layout.Size;
+import club.heiqi.uilib.ui.scene.layout.LayoutBox;
+import club.heiqi.uilib.ui.scene.layout.SceneGeometryView;
+import club.heiqi.uilib.ui.scene.hud.SceneHud;
+import club.heiqi.uilib.ui.scene.hud.SceneHudPlacement;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.PaintCommand;
 import club.heiqi.uilib.ui.scene.paint.PaintPlan;
@@ -91,6 +95,7 @@ public final class MinecraftHudScenario extends TestApplication {
         Signal<Boolean> visible;
         Signal<Integer> color;
         SceneNode button;
+        final SceneHudPlacement placement = new SceneHudPlacement(SceneHudPlacement.Anchor.TOP_LEFT, 12.4f, 15.6f, 1.5f);
         ScenePageSession session;
         int builds, releases, animations, actions;
         Throwable releaseFailure;
@@ -99,7 +104,7 @@ public final class MinecraftHudScenario extends TestApplication {
             button = SceneButton.create(context, () -> "", context.theme(), () -> actions++)
                     .size(Size.fixed(64), Size.fixed(24));
             context.mount(new SceneNode().size(Size.fill(1), Size.fill(1))
-                    .bind(NodeBinding.value(color, SceneNode::background)).add(button));
+                    .bind(NodeBinding.value(color, SceneNode::background)).add(SceneHud.create(context, button, () -> placement)));
             context.own(context.runtime().animate(now -> { animations++; return true; }));
             context.own(() -> {
                 releases++;
@@ -130,6 +135,7 @@ public final class MinecraftHudScenario extends TestApplication {
         scenario("Forge Post ALL、F1、菜单与FML tick登记对称", () -> {
             try (FmlOwner ignored = new FmlOwner()) { forgeLifecycle(); }
         });
+        scenario("真实GameSettings切换GUI Scale不改变正式HUD盒", this::guiScaleIndependence);
         scenario("被动HUD完整保留原生键鼠历史和repeat设置", this::inputIsolation);
         scenario("编辑薄宿主关闭不提交业务草稿", this::editorOwnership);
     }
@@ -227,6 +233,33 @@ public final class MinecraftHudScenario extends TestApplication {
             FMLCommonHandler.instance().bus().post(new TickEvent.ClientTickEvent(TickEvent.Phase.END));
             require(page.host.frames == 1, "注销后仍接收外部事件");
             System.out.println("HUD_FORGE postAllOnce=true f1=true currentScreen=true noWorldRelease=true registerIdempotent=true unregister=true");
+        } finally { singleton.set(null, previous); }
+    }
+
+    private void guiScaleIndependence() throws Exception {
+        Field singleton = field(Minecraft.class, "theMinecraft");
+        Object previous = singleton.get(null);
+        Minecraft minecraft = (Minecraft) unsafe().allocateInstance(Minecraft.class);
+        minecraft.gameSettings = (GameSettings) unsafe().allocateInstance(GameSettings.class);
+        singleton.set(null, minecraft);
+        try (Page page = new Page()) {
+            page.frame();
+            LayoutBox[] baseline = new LayoutBox[1];
+            page.domain.execute(() -> baseline[0] = page.session.pipeline().current().geometry.get(page.button).box);
+            require(baseline[0].x == 12 && baseline[0].y == 16
+                            && baseline[0].width == 96 && baseline[0].height == 36,
+                    "显式内容缩放或原生像素偏移错误");
+            for (int guiScale : new int[] {0, 1, 2, 3, 4}) {
+                minecraft.gameSettings.guiScale = guiScale;
+                page.frame();
+                page.domain.execute(() -> require(SceneGeometryView.sameBox(baseline[0],
+                        page.session.pipeline().current().geometry.get(page.button).box),
+                        "宿主GUI Scale改变了HUD几何：" + guiScale));
+                require(page.host.image.getRGB(60, 34) != 0xff174a63
+                                && page.host.image.getRGB(109, 34) == 0xff174a63,
+                        "GUI Scale改变了正式PaintPlan软件像素");
+            }
+            System.out.println("HUD_PIXEL_UNITS guiScaleIndependent=true explicitScale=1.5 offset=12.4,15.6 box=12,16,96,36");
         } finally { singleton.set(null, previous); }
     }
 
