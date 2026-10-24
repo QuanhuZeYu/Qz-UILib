@@ -59,6 +59,7 @@ public final class MinecraftHudScenario extends TestApplication {
             image = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
             for (int y = 0; y < height; y++) for (int x = 0; x < width; x++) image.setRGB(x, y, 0xff101010);
             for (PaintCommand command : plan.commands()) {
+                if (command.kind == PaintCommand.Kind.ORDER_BARRIER) continue;
                 if (command.kind == PaintCommand.Kind.TEXT) {
                     require(command.text.lines().isEmpty(), "软件回放不伪造文字像素");
                     continue;

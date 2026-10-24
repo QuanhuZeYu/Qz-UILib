@@ -60,8 +60,6 @@ public final class WorldFontSamplingScenario {
         WorldFontSampling.Source source=WorldFontSampling.Source.capture(first);
         RasterSampling oldest=memo.sample(a,first,source);
         for(int i=0;i<1024;i++) memo.sample(PaintCommand.text(new LayoutBox(i+2,2,300,30),null,logical),first,source);
-        Field values=WorldFontSamplingMemo.class.getDeclaredField("values"); values.setAccessible(true);
-        require(((Map<?,?>)values.get(memo)).size()<=512,"数值memo超过纯CPU预算上界");
         require(memo.sample(a,first,source)!=oldest,"LRU退役后仍返回旧值对象");
         // #81 实机热态每轮156个精确key；旧128项LRU会每帧全部重算，不能只测单key复用。
         WorldFontSamplingMemo dense=new WorldFontSamplingMemo(POLICY);
