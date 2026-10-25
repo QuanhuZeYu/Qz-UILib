@@ -2,6 +2,7 @@ package club.heiqi.uilib.ui.host.minecraft.control;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Consumer;
 import java.util.function.Function;
 
 import club.heiqi.uilib.host.client.image.MinecraftImageServices;
@@ -28,6 +29,12 @@ import club.heiqi.uilib.ui.scene.text.TextContent;
  * 来源应使用 MinecraftItemSource 保存样本；描述始终保留，未知物品也不会失去身份。
  */
 public final class MinecraftItemList {
+    /**
+     * 物品名来自宿主显示名，只含样式、不含链接；富文本入口仍要求显式接收方，这里声明本模板不发布链接激活。
+     * 若将来物品名需要可点击目标，应把该接收方提升为模板参数，而不是在此处补业务动作。
+     */
+    private static final Consumer<String> NO_LINKS = target -> { };
+
     private MinecraftItemList() { }
 
     public static <T, K, C> SceneDataTable<T, K, C> create(
@@ -58,7 +65,7 @@ public final class MinecraftItemList {
                 });
                 SceneNode labels = SceneAppearance.column(0)
                     .add(SceneRichText.create(page, name,
-                        () -> style.colors.get().theme(.9f, style.colors.get().text, 0), null))
+                        () -> style.colors.get().theme(.9f, style.colors.get().text, 0), NO_LINKS))
                     .add(style.label(detail, .72f, true));
                 return SceneAppearance.row(0).add(icon).add(labels)
                     .bind(NodeBinding.value(() -> theme.get().gap, SceneNode::gap)).own(rowOwner);
