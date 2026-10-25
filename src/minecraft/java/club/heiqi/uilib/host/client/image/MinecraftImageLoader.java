@@ -49,7 +49,9 @@ public final class MinecraftImageLoader implements ImageLoader {
                         durabilityVisible,
                         remaining,
                         0xff000000 | (255 - green) << 16 | green << 8);
-        ImageContent content = new MinecraftItemContent(stack, facts);
+        ImageContent content = new MinecraftItemContent(stack, facts,
+                MinecraftTooltipContent.fromMinecraft(stack.getDisplayName(),
+                        ((club.heiqi.uilib.host.client.font.FontRendererAccess) mc.fontRenderer).qz$palette()));
         return () -> content;
     }
 }
