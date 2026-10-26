@@ -20,6 +20,7 @@ import club.heiqi.uilib.ui.reactive.Owner;
 import club.heiqi.uilib.ui.reactive.ReactiveDomain;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.control.ThemeConfiguration;
+import club.heiqi.uilib.ui.scene.control.ScrollConfiguration;
 import club.heiqi.uilib.ui.scene.text.font.FontCandidateConfiguration;
 import club.heiqi.uilib.ui.scene.text.font.FontSource;
 import club.heiqi.uilib.ui.scene.text.font.FontTextService;
@@ -39,6 +40,7 @@ public final class MinecraftApplicationConfiguration {
     private static ConfigSession session;
     private static SettingsConfiguration settings;
     private static ThemeConfiguration themes;
+    private static ScrollConfiguration scroll;
     private static ConfigKey<List<String>> fonts;
     private static Path path;
     private static Owner owner;
@@ -67,7 +69,7 @@ public final class MinecraftApplicationConfiguration {
             List<FontSource> builtins = FontTextService.defaultSources(MinecraftApplicationConfiguration.class.getClassLoader(), 1);
             ConfigKey<List<String>> declaredFonts = FontCandidateConfiguration.key(builtins);
             ConfigSchema schema = ConfigSchema.of(VanillaFontOptions.REPLACE_VANILLA, declaredFonts, ThemeConfiguration.KEY,
-                    VanillaFontOptions.AGGRESSIVE_BATCHING);
+                    VanillaFontOptions.AGGRESSIVE_BATCHING, ScrollConfiguration.KEY);
             Path selected = FontConfigurationFiles.yamlPath(legacyFile.toPath());
             ConfigDocument document = FontConfigurationFiles.prepare(schema, legacyFile.toPath(),
                     VanillaFontOptions.REPLACE_VANILLA, declaredFonts, builtins);
@@ -82,6 +84,7 @@ public final class MinecraftApplicationConfiguration {
                         () -> reloadResources.set(reloadResources.get() + 1));
                 owner = DOMAIN.owner();
                 themes = new ThemeConfiguration(DOMAIN, session, owner);
+                scroll = new ScrollConfiguration(DOMAIN, session, owner);
                 DOMAIN.effect(owner, () -> {
                     boolean aggressive = session.get(VanillaFontOptions.AGGRESSIVE_BATCHING);
                     VanillaFontOptions.publish(session.get(VanillaFontOptions.REPLACE_VANILLA), session.get(fonts), aggressive);
@@ -105,6 +108,10 @@ public final class MinecraftApplicationConfiguration {
     public static ThemeConfiguration themes() {
         if (themes == null) throw new IllegalStateException("MC应用配置尚未安装");
         return themes;
+    }
+    public static ScrollConfiguration scroll() {
+        if (scroll == null) throw new IllegalStateException("MC应用配置尚未安装");
+        return scroll;
     }
     public static SettingsConfiguration settings() {
         if (settings == null) throw new IllegalStateException("MC应用配置尚未安装");

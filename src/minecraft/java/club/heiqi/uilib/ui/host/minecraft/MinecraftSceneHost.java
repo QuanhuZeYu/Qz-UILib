@@ -6,6 +6,7 @@ import club.heiqi.uilib.host.client.font.FramebufferSceneRenderer;
 import club.heiqi.uilib.host.client.font.MinecraftFontServices;
 import club.heiqi.uilib.host.client.settings.MinecraftApplicationConfiguration;
 import club.heiqi.uilib.ui.scene.control.ThemeConfiguration;
+import club.heiqi.uilib.ui.scene.control.ScrollConfiguration;
 import club.heiqi.uilib.ui.scene.host.SceneHost;
 import club.heiqi.uilib.ui.scene.semantics.SceneSemanticSnapshot;
 import club.heiqi.uilib.ui.scene.paint.PaintPlan;
@@ -42,6 +43,10 @@ public final class MinecraftSceneHost implements SceneHost, SceneTextMeasurer, A
     @Override
     public ThemeConfiguration themeConfiguration() {
         return MinecraftApplicationConfiguration.themes();
+    }
+
+    @Override public ScrollConfiguration scrollConfiguration() {
+        return MinecraftApplicationConfiguration.scroll();
     }
 
     public club.heiqi.uilib.ui.scene.image.ImageService images() {
