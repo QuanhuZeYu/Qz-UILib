@@ -11,6 +11,8 @@ import java.util.HashSet;
 import java.util.Set;
 import club.heiqi.uilib.host.embedded.EmbeddedSceneInputs;
 import club.heiqi.uilib.host.embedded.EmbeddedSceneInputs.Key;
+import club.heiqi.uilib.host.embedded.NativeInputPolicy;
+import club.heiqi.uilib.host.embedded.ScrollAccumulator;
 import club.heiqi.uilib.ui.scene.host.ScenePageSession;
 import club.heiqi.uilib.ui.scene.semantics.SceneSemanticRequest;
 import java.util.concurrent.CompletableFuture;
@@ -36,8 +38,9 @@ final class NeoForgeSceneInput implements AutoCloseable {
     private final Set<Integer> down = new HashSet<>(), imeConfirmKeys = new HashSet<>();
     private SceneNode textOwner;
     private SceneCompositionSource composition;
-    private boolean focused, available, composing, cancelledComposition, nativeText;
-    private double scrollRemainder;
+    private boolean focused, available, composing, cancelledComposition, nativeText, closed;
+    private final NativeInputPolicy inputPolicy = new NativeInputPolicy(InputQuirks.REPLACE_CTRL_KEY_WITH_CMD_KEY);
+    private final ScrollAccumulator scroll = new ScrollAccumulator();
 
     NeoForgeSceneInput(NeoForgeSceneScreen screen, ScenePageSession page) {
         this.screen = screen; this.page = page;
@@ -65,7 +68,7 @@ final class NeoForgeSceneInput implements AutoCloseable {
         return new IllegalStateException(action + "失败：" + org.lwjgl.sdl.SDLError.SDL_GetError());
     }
     private void updateAvailability() {
-        available = focused && screen.current();
+        available = !closed && focused && screen.current();
         inputs.availability(available);
     }
     void focus(boolean value) {
@@ -104,10 +107,8 @@ final class NeoForgeSceneInput implements AutoCloseable {
         inputs.pointer(pointer);
     }
     void scroll(double x, double y, double delta) {
-        scrollRemainder += delta;
-        int whole = (int) scrollRemainder;
+        int whole = scroll.add(delta);
         if (whole != 0) {
-            scrollRemainder -= whole;
             var coordinates = NeoForgeSceneCoordinates.input(Minecraft.getInstance().getWindow());
             inputs.pointer(ScenePointerEvent.scroll(coordinates.guiX(x), coordinates.guiY(y), whole));
         }
@@ -130,9 +131,9 @@ final class NeoForgeSceneInput implements AutoCloseable {
         if (pressed && !repeat && !composing && semantic != Key.ENTER && semantic != Key.KEYPAD_ENTER) {
             composition = null; cancelledComposition = false;
         }
-        int extraModifier = InputQuirks.REPLACE_CTRL_KEY_WITH_CMD_KEY ? SDL_KMOD_CTRL : SDL_KMOD_GUI;
-        inputs.key(scan, semantic, pressed, repeat, event.hasControlDownWithQuirk(), event.hasShiftDown(),
-                event.hasAltDown(), (event.modifiers() & extraModifier) != 0);
+        boolean control = (event.modifiers() & SDL_KMOD_CTRL) != 0, meta = (event.modifiers() & SDL_KMOD_GUI) != 0;
+        inputs.key(scan, semantic, pressed, repeat, inputPolicy.primary(control, meta), event.hasShiftDown(),
+                event.hasAltDown(), inputPolicy.extra(control, meta));
     }
 
     private static Key key(int scan) {
@@ -249,8 +250,10 @@ final class NeoForgeSceneInput implements AutoCloseable {
     }
 
     void syncTextInput() {
+        if (closed) return;
         SceneNode[] target = {null};
         page.domain().execute(() -> {
+            if (closed) return;
             SceneNode focusedNode = page.runtime().focusRouter().focused().get();
             if (focusedNode != null && focusedNode.control() != null && focusedNode.control().acceptsTextInput(focusedNode))
                 target[0] = focusedNode;
@@ -292,12 +295,20 @@ final class NeoForgeSceneInput implements AutoCloseable {
         if (!SDL_StopTextInput(window)) throw nativeFailure("结束 SDL 文本输入");
     }
     @Override public void close() {
+        if (closed) return;
+        closed = true;
+        available = false;
         Throwable failure = null;
-        try { cancelComposition(); } catch (RuntimeException | Error next) { failure = next; }
-        try { stopNativeText(); } catch (RuntimeException | Error next) {
+        // 焦点/编辑取消可同步开后继页；先结束旧 SDL 联系，之后不再触碰窗口的原生文本状态。
+        try { stopNativeText(); } catch (RuntimeException | Error next) { failure = next; }
+        try { inputs.availability(false); } catch (RuntimeException | Error next) {
+            if (failure == null) failure = next; else if (failure != next) failure.addSuppressed(next);
+        }
+        try { cancelComposition(); } catch (RuntimeException | Error next) {
             if (failure == null) failure = next; else if (failure != next) failure.addSuppressed(next);
         }
         textOwner = null;
+        scroll.reset(); down.clear(); imeConfirmKeys.clear();
         if (failure instanceof Error error) throw error;
         if (failure instanceof RuntimeException error) throw error;
     }

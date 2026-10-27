@@ -347,7 +347,8 @@ public final class MinecraftScreenInputLifecycleScenario extends TestApplication
         final Field fontOwner = field(club.heiqi.uilib.host.client.font.MinecraftFontServices.class, "shared");
         final Field fontThread = field(club.heiqi.uilib.host.client.font.MinecraftFontServices.class, "thread");
         final Field themes = field(club.heiqi.uilib.host.client.settings.MinecraftApplicationConfiguration.class, "themes");
-        final Object[] previous = {imageOwner.get(null), imageThread.get(null), fontOwner.get(null), fontThread.get(null), themes.get(null)};
+        final Field scroll = field(club.heiqi.uilib.host.client.settings.MinecraftApplicationConfiguration.class, "scroll");
+        final Object[] previous = {imageOwner.get(null), imageThread.get(null), fontOwner.get(null), fontThread.get(null), themes.get(null), scroll.get(null)};
         ClientServices() throws Exception {
         club.heiqi.uilib.host.client.gl.GlApi gl = (club.heiqi.uilib.host.client.gl.GlApi)
                 java.lang.reflect.Proxy.newProxyInstance(getClass().getClassLoader(),
@@ -363,9 +364,11 @@ public final class MinecraftScreenInputLifecycleScenario extends TestApplication
             themeDomain.execute(() -> {
                 themeOwner = themeDomain.owner();
                 club.heiqi.uilib.ui.config.ConfigSession config = new club.heiqi.uilib.ui.config.ConfigSession(themeDomain,
-                        club.heiqi.uilib.ui.config.ConfigSchema.of(club.heiqi.uilib.ui.scene.control.ThemeConfiguration.KEY));
+                        club.heiqi.uilib.ui.config.ConfigSchema.of(club.heiqi.uilib.ui.scene.control.ThemeConfiguration.KEY,
+                                club.heiqi.uilib.ui.scene.control.ScrollConfiguration.KEY));
                 try {
                     themes.set(null, new club.heiqi.uilib.ui.scene.control.ThemeConfiguration(themeDomain, config, themeOwner));
+                    scroll.set(null, new club.heiqi.uilib.ui.scene.control.ScrollConfiguration(themeDomain, config, themeOwner));
                 } catch (IllegalAccessException failure) { throw new IllegalStateException(failure); }
             });
             imageOwner.set(null, images); imageThread.set(null, Thread.currentThread());
@@ -375,7 +378,8 @@ public final class MinecraftScreenInputLifecycleScenario extends TestApplication
             try { themeDomain.execute(themeOwner::close); }
             finally {
                 imageOwner.set(null, previous[0]); imageThread.set(null, previous[1]);
-                fontOwner.set(null, previous[2]); fontThread.set(null, previous[3]); themes.set(null, previous[4]);
+                fontOwner.set(null, previous[2]); fontThread.set(null, previous[3]);
+                themes.set(null, previous[4]); scroll.set(null, previous[5]);
                 try { images.close(); } finally { fonts.close(); }
             }
         }

@@ -7,6 +7,9 @@ import net.minecraft.client.gui.GuiScreen;
 import org.lwjgl.input.Mouse;
 import org.lwjgl.input.Keyboard;
 import org.lwjgl.opengl.Display;
+import org.lwjgl.LWJGLUtil;
+import club.heiqi.uilib.host.embedded.NativeInputPolicy;
+import club.heiqi.uilib.host.embedded.ScrollAccumulator;
 import club.heiqi.uilib.ui.reactive.ReactiveDomain;
 import club.heiqi.uilib.ui.scene.host.ScenePage;
 import club.heiqi.uilib.ui.scene.host.ScenePageSession;
@@ -78,23 +81,9 @@ public class MinecraftSceneScreen extends GuiScreen {
                             ctx -> {
                                 ctx.own(host);
                                 owned[0] = true;
-                                Throwable original = null;
-                                try { page.build(ctx); }
-                                catch (RuntimeException | Error failure) { original = failure; throw failure; }
-                                finally {
-                                    try {
-                                        // 同域 open 可先返回再构造页面；scope 也须兜底清理已取得的宿主输入。
-                                        // 最后登记，先于页面所属资源的关闭回调退休 native；仅捕获本次接入。
-                                        ctx.own(() -> {
-                                            Inputs closing = openingInputs[0];
-                                            if (closing != null) closeOpening(closing.opened, closing);
-                                        });
-                                    } catch (RuntimeException | Error cleanup) {
-                                        if (original == null) throw cleanup;
-                                        if (cleanup != original) original.addSuppressed(cleanup);
-                                    }
-                                }
-                            });
+                                page.build(ctx);
+                            },
+                            closing -> closeOpening(closing, openingInputs[0]));
             session = opened;
             Inputs acquired = new Inputs(opened, host::semantics);
             openingInputs[0] = acquired;
@@ -165,6 +154,9 @@ public class MinecraftSceneScreen extends GuiScreen {
     private final class Inputs implements AutoCloseable {
         final ScenePageSession opened;
         private final Supplier<SceneSemanticSnapshot> semantics;
+        private final NativeInputPolicy inputPolicy =
+                new NativeInputPolicy(LWJGLUtil.getPlatform() == LWJGLUtil.PLATFORM_MACOSX);
+        private final ScrollAccumulator scroll = new ScrollAccumulator();
         Inputs(ScenePageSession opened, Supplier<SceneSemanticSnapshot> semantics) {
             this.opened = opened;
             this.semantics = Objects.requireNonNull(semantics, "语义读取端口");
@@ -214,9 +206,9 @@ public class MinecraftSceneScreen extends GuiScreen {
                 else opened.key(event);
             });
             tabInput = new SceneTabInputAdapter(direction -> keyInput.key(new SceneKeyEvent(SceneKey.TAB,
-                    leftCtrl || rightCtrl,
+                    primary(),
                     direction == club.heiqi.uilib.ui.scene.input.SceneNavigationEvent.PREVIOUS,
-                    leftAlt || rightAlt, leftMeta || rightMeta, repeat, clipboard), true));
+                    leftAlt || rightAlt, extra(), repeat, clipboard), true));
             // 主Enter和小键盘Enter保留各自的物理按压段。
             enterInput = new club.heiqi.uilib.ui.scene.host.SceneKeyPressInputAdapter(
                     () -> keyInput.key(event(SceneKey.ENTER), true));
@@ -231,9 +223,12 @@ public class MinecraftSceneScreen extends GuiScreen {
             if (nativeText != null) inputAvailability(Display.isActive());
         }
 
+        private boolean primary() { return inputPolicy.primary(leftCtrl || rightCtrl, leftMeta || rightMeta); }
+        private boolean extra() { return inputPolicy.extra(leftCtrl || rightCtrl, leftMeta || rightMeta); }
+
         private SceneKeyEvent event(SceneKey key) {
-            return new SceneKeyEvent(key, leftCtrl || rightCtrl, leftShift || rightShift,
-                    leftAlt || rightAlt, leftMeta || rightMeta, repeat, clipboard);
+            return new SceneKeyEvent(key, primary(), leftShift || rightShift,
+                    leftAlt || rightAlt, extra(), repeat, clipboard);
         }
 
         /** 同一消费者耗尽历史之后，才确认物理全释放并恢复输入。 */
@@ -345,7 +340,7 @@ public class MinecraftSceneScreen extends GuiScreen {
                 return;
             }
             if (named != null && down && accepted) {
-                if ((!named.letter() && character < 32) || leftCtrl || rightCtrl) pendingHigh = 0;
+                if ((!named.letter() && character < 32) || primary() || extra()) pendingHigh = 0;
                 keyInput.key(event(named), down);
             }
             if (!accepted) return;
@@ -357,7 +352,7 @@ public class MinecraftSceneScreen extends GuiScreen {
                 pendingHigh = 0;
                 pendingTextOwner = current[0];
             }
-            if (character >= 32 && !(leftCtrl || rightCtrl)) {
+            if (character >= 32 && !primary()) {
                 if (Character.isHighSurrogate(character)) {
                     pendingHigh = character;
                     return;
@@ -384,11 +379,12 @@ public class MinecraftSceneScreen extends GuiScreen {
             int y =
                     club.heiqi.uilib.host.client.font.FramebufferCoordinates.mouseY(
                             Display.getHeight(), Mouse.getEventY());
-            int wheel = Mouse.getEventDWheel();
+            // LWJGL2 的原生一格为 120；先转换标准格，再由共享策略保留多格与不足一格的余量。
+            int wheel = scroll.add(Mouse.getEventDWheel() / 120.0);
             if (button >= 0) routePointer(down ? ScenePointerEvent.down(button, x, y)
                     : ScenePointerEvent.up(button, x, y));
             else routePointer(ScenePointerEvent.move(x, y));
-            if (wheel != 0) routePointer(ScenePointerEvent.scroll(x, y, Integer.signum(wheel)));
+            if (wheel != 0) routePointer(ScenePointerEvent.scroll(x, y, wheel));
         }
 
         private void routePointer(ScenePointerEvent event) {
@@ -463,7 +459,8 @@ public class MinecraftSceneScreen extends GuiScreen {
             repeatEvents = null;
             pendingHigh = 0;
             pendingTextOwner = null;
-            // repeat 与 native 联系同属宿主输入；旧 scope 延迟恢复会覆盖新页的借用。
+            scroll.reset();
+            // repeat 与 native 联系同属本次宿主输入，必须在可重入页面释放回调前同步退休。
             // 先恢复 repeat，再调用可能同步重入开页的 native close。
             Throwable failure = null;
             try { if (repeatClosing != null) repeatClosing.close(); }
@@ -579,7 +576,7 @@ public class MinecraftSceneScreen extends GuiScreen {
     }
 
     private void closeOpening(ScenePageSession opened, Inputs closing) {
-        // 只断开本次接入；旧 scope 的迟到清理不能关闭同 screen 已重建的新代。
+        // 只断开本次接入；旧会话的退休回调不能关闭同 screen 已重建的新代。
         if (session == opened) session = null;
         if (inputs == closing) inputs = null;
         new MinecraftScreenResources(opened, closing).close();
@@ -587,7 +584,7 @@ public class MinecraftSceneScreen extends GuiScreen {
 
     @Override
     public void onGuiClosed() {
-        // 关屏仍同步退休输入；原 scope 后续执行相同的幂等兜底。
+        // 关屏同步退休输入；session的前置退休回调复用相同幂等边界。
         closeOpening(session, inputs);
     }
 }

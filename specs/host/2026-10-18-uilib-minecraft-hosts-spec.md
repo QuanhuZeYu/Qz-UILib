@@ -22,7 +22,7 @@
 
 核心、坐标和产物边界遵循[核心规格第 9 节](<../../../Qz-UILib-Core/specs/2026-10-07-uilib-core-contract-design.md#9-平台边界与验收>)；开屏持键、失焦、ESC、组字、重初始化与释放遵循[页面宿主规格](<../../../Qz-UILib-Core/specs/host/2026-10-07-uilib-page-host-spec.md>)。
 
-嵌入式页面服务组合既有场景、共享 GL、CPU 字体、图像、媒体与配置能力。各版本宿主只负责加载器入口、页面打开关闭、资源变更通知、framebuffer 尺寸与原生事件转换，不重新实现布局、绘制或输入权威，也不通过全局替换游戏输入回调接管其他页面。
+嵌入式页面服务组合既有场景、共享 GL、CPU 字体、图像、媒体与配置能力。各版本宿主只负责加载器入口、页面打开关闭、资源变更通知、framebuffer 尺寸与原生事件转换，不重新实现布局、绘制或输入权威，也不通过全局替换游戏输入回调接管其他页面。各入口复用 Platform 中性策略映射 Primary/extra 与累积标准滚轮格数；LWJGL2 原生增量先按每格 120 单位转换，Cmd/Ctrl 的环境事实由宿主提供。
 
 宿主按[Core 命令与范围快捷键规格](<../../../Qz-UILib-Core/specs/scene/2026-10-18-uilib-command-spec.md>)只递交命名键 DOWN/UP、当次修饰键与重复事实，字符和组字经独立文本入口递交。按压与焦点交互参考 [React Aria usePress](https://react-aria.adobe.com/usePress) 和 [useFocus](https://react-aria.adobe.com/useFocus) 案例：Space 的原目标联系、完整释放后的单次激活及离开焦点取消由 Core 维护，Enter 在 DOWN 激活。`native-only` 回归验证生产输入转换与路由，窗口可用性和物理状态由隔离夹具提供，不替代真实设备与窗口运行。
 

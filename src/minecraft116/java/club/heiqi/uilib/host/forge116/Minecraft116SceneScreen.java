@@ -5,6 +5,8 @@ import club.heiqi.uilib.host.embedded.EmbeddedSceneHost;
 import club.heiqi.uilib.host.embedded.EmbeddedSceneInputs;
 import club.heiqi.uilib.host.embedded.EmbeddedSceneInputs.Key;
 import club.heiqi.uilib.host.embedded.EmbeddedSceneServices;
+import club.heiqi.uilib.host.embedded.NativeInputPolicy;
+import club.heiqi.uilib.host.embedded.ScrollAccumulator;
 import club.heiqi.uilib.ui.media.MediaService;
 import club.heiqi.uilib.ui.scene.host.ScenePage;
 import club.heiqi.uilib.ui.scene.host.ScenePageSession;
@@ -29,7 +31,9 @@ public class Minecraft116SceneScreen extends Screen {
     private ScenePageSession session;
     private volatile EmbeddedSceneInputs inputs;
     private volatile EmbeddedSceneHost semanticHost;
-    private double scrollRemainder;
+    private final NativeInputPolicy inputPolicy = new NativeInputPolicy(
+            org.lwjgl.system.Platform.get() == org.lwjgl.system.Platform.MACOSX);
+    private final ScrollAccumulator scroll = new ScrollAccumulator();
 
     public Minecraft116SceneScreen(Screen parent, ScenePage page) { this(parent, page, null); }
     public Minecraft116SceneScreen(Screen parent, ScenePage page, MediaService media) {
@@ -64,17 +68,21 @@ public class Minecraft116SceneScreen extends Screen {
         EmbeddedSceneHost host = new EmbeddedSceneHost(services, this::framebufferWidth, this::framebufferHeight, media);
         semanticHost = host;
         boolean[] owned = {false};
+        ScenePageSession opened = null;
+        EmbeddedSceneInputs[] openingInputs = {null};
         try {
-            session = ScenePageSession.open(services.domain(), host, services.fonts(), context -> {
-                context.own(host); owned[0] = true; page.build(context);
-            });
-            ScenePageSession opened = session;
-            inputs = new EmbeddedSceneInputs(opened, new SceneEditEvent.Clipboard() {
+            ScenePageSession created = ScenePageSession.open(services.domain(), host, services.fonts(), context -> {
+                context.own(host); owned[0] = true;
+                page.build(context);
+            }, closing -> closeOpening(closing, openingInputs[0], host));
+            session = opened = created;
+            inputs = openingInputs[0] = new EmbeddedSceneInputs(created, new SceneEditEvent.Clipboard() {
                 public String read() { String text = glfwGetClipboardString(window()); return text == null ? "" : text; }
                 public void write(String text) { glfwSetClipboardString(window(), text); }
-            }, () -> { if (session == opened && minecraft.currentScreen == this) requestClose(); });
+            }, () -> { if (session == created && minecraft.currentScreen == this) requestClose(); });
         } catch (RuntimeException | Error failure) {
-            try { onClose(); } catch (Throwable cleanup) { if (cleanup != failure) failure.addSuppressed(cleanup); }
+            try { closeOpening(opened, openingInputs[0], host); }
+            catch (RuntimeException | Error cleanup) { if (cleanup != failure) failure.addSuppressed(cleanup); }
             if (!owned[0]) try { host.close(); } catch (Throwable cleanup) { if (cleanup != failure) failure.addSuppressed(cleanup); }
             throw failure;
         }
@@ -83,14 +91,17 @@ public class Minecraft116SceneScreen extends Screen {
         if (session == null) init();
         ScenePageSession opened = session;
         if (opened == null || minecraft.currentScreen != this) return;
+        EmbeddedSceneInputs collecting = inputs;
         collectAvailability();
+        if (session != opened || inputs != collecting || collecting == null) return;
         Set<Integer> physical = new HashSet<>();
         for (int key : NATIVE_KEYS) if (glfwGetKey(window(), key) == GLFW_PRESS) physical.add(key);
         Set<Key> special = EnumSet.noneOf(Key.class);
         for (int key : physical) special.add(semantic(key));
         boolean released = true;
         for (int button = 0; button <= GLFW_MOUSE_BUTTON_LAST; button++) released &= glfwGetMouseButton(window(), button) == GLFW_RELEASE;
-        inputs.historyDrained(physical, special, released);
+        collecting.historyDrained(physical, special, released);
+        if (session != opened || inputs != collecting) return;
         held.retainAll(physical);
         if (session == opened && minecraft.currentScreen == this) opened.frame();
     }
@@ -110,24 +121,27 @@ public class Minecraft116SceneScreen extends Screen {
         mouseMoved(mouseX, mouseY); return true;
     }
     @Override public boolean mouseScrolled(double mouseX, double mouseY, double delta) {
-        collectAvailability(); scrollRemainder += delta;
-        int whole = (int) scrollRemainder;
-        if (inputs != null && whole != 0) { scrollRemainder -= whole; inputs.pointer(ScenePointerEvent.scroll(x(mouseX), y(mouseY), whole)); }
+        collectAvailability();
+        if (inputs != null) {
+            int whole = scroll.add(delta);
+            if (whole != 0) inputs.pointer(ScenePointerEvent.scroll(x(mouseX), y(mouseY), whole));
+        }
         return true;
     }
     @Override public boolean keyPressed(int key, int scanCode, int modifiers) {
         collectAvailability(); boolean repeat = !held.add(key);
-        if (inputs != null) inputs.key(key, semantic(key), true, repeat,
-                (modifiers & GLFW_MOD_CONTROL) != 0, (modifiers & GLFW_MOD_SHIFT) != 0,
-                (modifiers & GLFW_MOD_ALT) != 0, (modifiers & GLFW_MOD_SUPER) != 0);
+        dispatchKey(key, true, repeat, modifiers);
         return true;
     }
     @Override public boolean keyReleased(int key, int scanCode, int modifiers) {
         collectAvailability(); held.remove(key);
-        if (inputs != null) inputs.key(key, semantic(key), false, false,
-                (modifiers & GLFW_MOD_CONTROL) != 0, (modifiers & GLFW_MOD_SHIFT) != 0,
-                (modifiers & GLFW_MOD_ALT) != 0, (modifiers & GLFW_MOD_SUPER) != 0);
+        dispatchKey(key, false, false, modifiers);
         return true;
+    }
+    private void dispatchKey(int key, boolean down, boolean repeat, int modifiers) {
+        boolean control = (modifiers & GLFW_MOD_CONTROL) != 0, meta = (modifiers & GLFW_MOD_SUPER) != 0;
+        if (inputs != null) inputs.key(key, semantic(key), down, repeat, inputPolicy.primary(control, meta),
+                (modifiers & GLFW_MOD_SHIFT) != 0, (modifiers & GLFW_MOD_ALT) != 0, inputPolicy.extra(control, meta));
     }
     @Override public boolean charTyped(char character, int modifiers) {
         collectAvailability(); if (inputs != null) inputs.character(character); return true;
@@ -135,9 +149,15 @@ public class Minecraft116SceneScreen extends Screen {
     protected void requestClose() { minecraft.displayGuiScreen(parent); }
     @Override public void closeScreen() { if (session != null) session.escape(this::requestClose); }
     @Override public boolean isPauseScreen() { return false; }
-    @Override public void onClose() {
-        ScenePageSession closing = session; session = null; inputs = null; semanticHost = null; held.clear();
-        if (closing != null) closing.close();
+    @Override public void onClose() { closeOpening(session, inputs, semanticHost); }
+
+    private void closeOpening(ScenePageSession opened, EmbeddedSceneInputs closing, EmbeddedSceneHost host) {
+        // 旧会话的退休回调不清空同 screen 新代的入口或物理按压事实。
+        if (session == opened && inputs == closing) { held.clear(); scroll.reset(); }
+        if (session == opened) session = null;
+        if (inputs == closing) inputs = null;
+        if (semanticHost == host) semanticHost = null;
+        if (opened != null) opened.close();
     }
     private static Key semantic(int key) {
         switch (key) {

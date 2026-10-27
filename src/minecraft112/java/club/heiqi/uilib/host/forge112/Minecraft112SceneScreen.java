@@ -5,6 +5,8 @@ import club.heiqi.uilib.host.embedded.EmbeddedSceneHost;
 import club.heiqi.uilib.host.embedded.EmbeddedSceneInputs;
 import club.heiqi.uilib.host.embedded.EmbeddedSceneInputs.Key;
 import club.heiqi.uilib.host.embedded.EmbeddedSceneServices;
+import club.heiqi.uilib.host.embedded.NativeInputPolicy;
+import club.heiqi.uilib.host.embedded.ScrollAccumulator;
 import club.heiqi.uilib.ui.media.MediaService;
 import club.heiqi.uilib.ui.scene.host.ScenePage;
 import club.heiqi.uilib.ui.scene.host.ScenePageSession;
@@ -29,9 +31,11 @@ public class Minecraft112SceneScreen extends GuiScreen {
     private ScenePageSession session;
     private volatile EmbeddedSceneInputs inputs;
     private volatile EmbeddedSceneHost semanticHost;
-    private boolean repeatEvents, repeatBorrowed;
+    private RepeatEvents repeatEvents;
     private boolean leftControl, rightControl, leftShift, rightShift, leftAlt, rightAlt, leftMeta, rightMeta;
-    private double wheelRemainder;
+    private final NativeInputPolicy inputPolicy = new NativeInputPolicy(
+            org.lwjgl.LWJGLUtil.getPlatform() == org.lwjgl.LWJGLUtil.PLATFORM_MACOSX);
+    private final ScrollAccumulator scroll = new ScrollAccumulator();
 
     public Minecraft112SceneScreen(GuiScreen parent, ScenePage page) { this(parent, page, null); }
     public Minecraft112SceneScreen(GuiScreen parent, ScenePage page, MediaService media) {
@@ -62,21 +66,23 @@ public class Minecraft112SceneScreen extends GuiScreen {
         EmbeddedSceneHost host = new EmbeddedSceneHost(services, Display::getWidth, Display::getHeight, media);
         semanticHost = host;
         boolean[] owned = {false};
-        repeatEvents = Keyboard.areRepeatEventsEnabled();
-        Keyboard.enableRepeatEvents(true);
-        repeatBorrowed = true;
+        ScenePageSession opened = null;
+        EmbeddedSceneInputs[] openingInputs = {null};
+        RepeatEvents[] openingRepeat = {null};
         try {
-            session = ScenePageSession.open(services.domain(), host, services.fonts(), context -> {
+            repeatEvents = openingRepeat[0] = new RepeatEvents();
+            ScenePageSession created = ScenePageSession.open(services.domain(), host, services.fonts(), context -> {
                 context.own(host); owned[0] = true;
                 page.build(context);
-            });
-            ScenePageSession opened = session;
-            inputs = new EmbeddedSceneInputs(opened, new SceneEditEvent.Clipboard() {
+            }, closing -> closeOpening(closing, openingInputs[0], host, openingRepeat[0]));
+            session = opened = created;
+            inputs = openingInputs[0] = new EmbeddedSceneInputs(created, new SceneEditEvent.Clipboard() {
                 public String read() { return GuiScreen.getClipboardString(); }
                 public void write(String text) { GuiScreen.setClipboardString(text); }
-            }, () -> { if (session == opened && mc.currentScreen == this) requestClose(); });
+            }, () -> { if (session == created && mc.currentScreen == this) requestClose(); });
         } catch (RuntimeException | Error failure) {
-            try { onGuiClosed(); } catch (Throwable cleanup) { if (cleanup != failure) failure.addSuppressed(cleanup); }
+            try { closeOpening(opened, openingInputs[0], host, openingRepeat[0]); }
+            catch (RuntimeException | Error cleanup) { if (cleanup != failure) failure.addSuppressed(cleanup); }
             if (!owned[0]) try { host.close(); } catch (Throwable cleanup) { if (cleanup != failure) failure.addSuppressed(cleanup); }
             throw failure;
         }
@@ -104,6 +110,7 @@ public class Minecraft112SceneScreen extends GuiScreen {
         boolean released = true;
         for (int button = 0; button < Mouse.getButtonCount(); button++) released &= !Mouse.isButtonDown(button);
         collecting.historyDrained(physical, special, released);
+        if (inputs != collecting) return;
         leftControl = Keyboard.isKeyDown(Keyboard.KEY_LCONTROL); rightControl = Keyboard.isKeyDown(Keyboard.KEY_RCONTROL);
         leftShift = Keyboard.isKeyDown(Keyboard.KEY_LSHIFT); rightShift = Keyboard.isKeyDown(Keyboard.KEY_RSHIFT);
         leftAlt = Keyboard.isKeyDown(Keyboard.KEY_LMENU); rightAlt = Keyboard.isKeyDown(Keyboard.KEY_RMENU);
@@ -111,7 +118,8 @@ public class Minecraft112SceneScreen extends GuiScreen {
     }
 
     @Override public void handleKeyboardInput() {
-        if (inputs == null) return;
+        EmbeddedSceneInputs collecting = inputs;
+        if (collecting == null) return;
         int key = Keyboard.getEventKey();
         boolean down = Keyboard.getEventKeyState();
         if (key == Keyboard.KEY_LCONTROL) leftControl = down;
@@ -123,30 +131,56 @@ public class Minecraft112SceneScreen extends GuiScreen {
         if (key == Keyboard.KEY_LMETA) leftMeta = down;
         if (key == Keyboard.KEY_RMETA) rightMeta = down;
         if (key != Keyboard.KEY_NONE)
-            inputs.key(key, semantic(key), down, Keyboard.isRepeatEvent(), leftControl || rightControl,
-                    leftShift || rightShift, leftAlt || rightAlt, leftMeta || rightMeta);
-        if (down || key == Keyboard.KEY_NONE) inputs.character(Keyboard.getEventCharacter());
+            collecting.key(key, semantic(key), down, Keyboard.isRepeatEvent(),
+                    inputPolicy.primary(leftControl || rightControl, leftMeta || rightMeta),
+                    leftShift || rightShift, leftAlt || rightAlt,
+                    inputPolicy.extra(leftControl || rightControl, leftMeta || rightMeta));
+        if (inputs == collecting && (down || key == Keyboard.KEY_NONE)) collecting.character(Keyboard.getEventCharacter());
     }
 
     @Override public void handleMouseInput() {
-        if (inputs == null) return;
+        EmbeddedSceneInputs collecting = inputs;
+        if (collecting == null) return;
         long sampled = Mouse.getEventNanoseconds();
         int x = Mouse.getEventX(), y = Display.getHeight() - Mouse.getEventY() - 1, button = Mouse.getEventButton();
-        if (button >= 0) inputs.pointer((Mouse.getEventButtonState() ? ScenePointerEvent.down(button, x, y)
+        int wheel = scroll.add(Mouse.getEventDWheel() / 120.0);
+        if (button >= 0) collecting.pointer((Mouse.getEventButtonState() ? ScenePointerEvent.down(button, x, y)
                 : ScenePointerEvent.up(button, x, y)).at(sampled));
-        else inputs.pointer(ScenePointerEvent.move(x, y).at(sampled));
-        wheelRemainder += Mouse.getEventDWheel() / 120.0;
-        int wheel = (int) wheelRemainder;
-        if (wheel != 0) { wheelRemainder -= wheel; inputs.pointer(ScenePointerEvent.scroll(x, y, wheel).at(sampled)); }
+        else collecting.pointer(ScenePointerEvent.move(x, y).at(sampled));
+        if (inputs == collecting && wheel != 0) collecting.pointer(ScenePointerEvent.scroll(x, y, wheel).at(sampled));
     }
 
     protected void requestClose() { mc.displayGuiScreen(parent); }
-    @Override public void onGuiClosed() {
-        ScenePageSession closing = session;
-        session = null; inputs = null; semanticHost = null;
-        try { if (closing != null) closing.close(); }
-        finally {
-            if (repeatBorrowed) { repeatBorrowed = false; Keyboard.enableRepeatEvents(repeatEvents); }
+    @Override public void onGuiClosed() { closeOpening(session, inputs, semanticHost, repeatEvents); }
+
+    private void closeOpening(ScenePageSession opened, EmbeddedSceneInputs closing, EmbeddedSceneHost host, RepeatEvents repeat) {
+        // 旧会话只断开自己的入口与借用，不能改写同 screen 新代的物理状态。
+        if (session == opened && inputs == closing) {
+            scroll.reset();
+            leftControl = rightControl = leftShift = rightShift = leftAlt = rightAlt = leftMeta = rightMeta = false;
+        }
+        if (session == opened) session = null;
+        if (inputs == closing) inputs = null;
+        if (semanticHost == host) semanticHost = null;
+        if (repeatEvents == repeat) repeatEvents = null;
+        Throwable failure = null;
+        // session 结束可重入开页；先恢复旧 repeat，后继页再取得自己的借用。
+        try { if (repeat != null) repeat.close(); } catch (RuntimeException | Error next) { failure = next; }
+        try { if (opened != null) opened.close(); } catch (RuntimeException | Error next) {
+            if (failure == null) failure = next; else if (failure != next) failure.addSuppressed(next);
+        }
+        if (failure instanceof Error) throw (Error) failure;
+        if (failure instanceof RuntimeException) throw (RuntimeException) failure;
+    }
+
+    private static final class RepeatEvents implements AutoCloseable {
+        private final boolean previous = Keyboard.areRepeatEventsEnabled();
+        private boolean closed;
+        RepeatEvents() { Keyboard.enableRepeatEvents(true); }
+        @Override public void close() {
+            if (closed) return;
+            closed = true;
+            Keyboard.enableRepeatEvents(previous);
         }
     }
     @Override public boolean doesGuiPauseGame() { return false; }

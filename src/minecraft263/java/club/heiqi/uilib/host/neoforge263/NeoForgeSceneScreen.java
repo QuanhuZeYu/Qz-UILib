@@ -25,7 +25,7 @@ public class NeoForgeSceneScreen extends Screen {
     private final Screen parent;
     private final ScenePage content;
     private final MediaService media;
-    private final NeoForgeFramebuffer framebuffer = new NeoForgeFramebuffer();
+    private NeoForgeFramebuffer framebuffer;
     private Consumer<Runnable> closeRequest = Runnable::run;
     private ScenePageSession session;
     private volatile NeoForgeSceneInput input;
@@ -65,15 +65,34 @@ public class NeoForgeSceneScreen extends Screen {
         if (!services.ready().isDone() || services.ready().isCompletedExceptionally()) return;
         EmbeddedSceneHost host = new EmbeddedSceneHost(services, () -> coordinates.width(), () -> coordinates.height(), media);
         semanticHost = host;
+        NeoForgeFramebuffer openedFramebuffer = new NeoForgeFramebuffer();
+        framebuffer = openedFramebuffer;
         boolean[] owned = {false};
+        ScenePageSession opened = null;
+        NeoForgeSceneInput[] openingInput = {null};
         try {
-            session = ScenePageSession.open(services.domain(), host, services.fonts(), context -> {
-                ownPageResources(context);
-                context.own(host); owned[0] = true; content.build(context);
-            });
-            input = new NeoForgeSceneInput(this, session);
+            ScenePageSession created = ScenePageSession.open(services.domain(), host, services.fonts(), context -> {
+                Throwable original = null;
+                try {
+                    ownPageResources(context);
+                    context.own(host); owned[0] = true;
+                    content.build(context);
+                } catch (RuntimeException | Error failure) { original = failure; throw failure; }
+                finally {
+                    try {
+                        // 资源钩子失败也转交 host；正常次序仍让 renderer 先于页面媒体服务释放。
+                        if (!owned[0]) { context.own(host); owned[0] = true; }
+                    } catch (RuntimeException | Error cleanup) {
+                        if (original == null) throw cleanup;
+                        if (cleanup != original) original.addSuppressed(cleanup);
+                    }
+                }
+            }, closing -> closeOpening(closing, openingInput[0], host, openedFramebuffer));
+            session = opened = created;
+            input = openingInput[0] = new NeoForgeSceneInput(this, created);
         } catch (RuntimeException | Error failure) {
-            try { removed(); } catch (Throwable cleanup) { if (cleanup != failure) failure.addSuppressed(cleanup); }
+            try { closeOpening(opened, openingInput[0], host, openedFramebuffer); }
+            catch (RuntimeException | Error cleanup) { if (cleanup != failure) failure.addSuppressed(cleanup); }
             if (!owned[0]) try { host.close(); } catch (Throwable cleanup) { if (cleanup != failure) failure.addSuppressed(cleanup); }
             throw failure;
         }
@@ -91,13 +110,16 @@ public class NeoForgeSceneScreen extends Screen {
         var target = minecraft.gameRenderer.mainRenderTarget();
         // GameRenderer 已按本帧 WindowRenderState 重建目标；不能再与下一次 OS 尺寸作跨代比较。
         coordinates = NeoForgeSceneCoordinates.frame(target, minecraft.getWindow());
-        input.historyDrained();
-        if (minecraft.gui.overlay() != null) { input.syncTextInput(); return; }
         ScenePageSession opened = session;
-        framebuffer.render(target, () -> {
-            if (session == opened && minecraft.gui.screen() == this) opened.frame();
+        NeoForgeSceneInput collecting = input;
+        NeoForgeFramebuffer presenting = framebuffer;
+        collecting.historyDrained();
+        if (session != opened || input != collecting || minecraft.gui.screen() != this) return;
+        if (minecraft.gui.overlay() != null) { collecting.syncTextInput(); return; }
+        presenting.render(target, () -> {
+            if (session == opened && input == collecting && minecraft.gui.screen() == this) opened.frame();
         });
-        if (session == opened && minecraft.gui.screen() == this) input.syncTextInput();
+        if (session == opened && input == collecting && minecraft.gui.screen() == this) collecting.syncTextInput();
     }
 
     final NeoForgeSceneCoordinates frameCoordinates() { return coordinates; }
@@ -127,15 +149,21 @@ public class NeoForgeSceneScreen extends Screen {
         }));
     }
 
-    @Override public void removed() {
-        ScenePageSession closing = session; session = null; semanticHost = null;
-        NeoForgeSceneInput oldInput = input; input = null;
+    @Override public void removed() { closeOpening(session, input, semanticHost, framebuffer); }
+
+    private void closeOpening(ScenePageSession opened, NeoForgeSceneInput closing, EmbeddedSceneHost host,
+            NeoForgeFramebuffer closingFramebuffer) {
+        // 先断开入口；旧会话的退休回调不能清空新代字段，也不能释放新代 FBO。
+        if (session == opened) session = null;
+        if (input == closing) input = null;
+        if (semanticHost == host) semanticHost = null;
+        if (framebuffer == closingFramebuffer) framebuffer = null;
         Throwable failure = null;
-        try { if (oldInput != null) oldInput.close(); } catch (RuntimeException | Error next) { failure = next; }
-        try { if (closing != null) closing.close(); } catch (RuntimeException | Error next) {
+        try { if (closing != null) closing.close(); } catch (RuntimeException | Error next) { failure = next; }
+        try { if (opened != null) opened.close(); } catch (RuntimeException | Error next) {
             if (failure == null) failure = next; else if (failure != next) failure.addSuppressed(next);
         }
-        try { framebuffer.close(); } catch (RuntimeException | Error next) {
+        try { if (closingFramebuffer != null) closingFramebuffer.close(); } catch (RuntimeException | Error next) {
             if (failure == null) failure = next; else if (failure != next) failure.addSuppressed(next);
         }
         if (failure instanceof Error error) throw error;
