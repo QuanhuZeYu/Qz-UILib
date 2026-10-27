@@ -12,7 +12,7 @@ import club.heiqi.uilib.host.client.gl.GlApi;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.image.ImagePlacement;
 
-/** 原版 GUI item 的状态边界，独立于字体 producer。Angelica 的有效栈和 driver 栈分别保存、恢复。
+/** 原版 GUI item 的状态边界，独立于字体 producer。有效栈与可用的 driver 固定管线分别保存、恢复。
  * all attrib 包含 lighting/material/alpha/depth/blend/color/normal；矩阵、现代 bindings 单独保存。
  * legacy客户端数组使用默认 VAO 并另存其client状态，异常漏出的 matrix push 按原深度 unwind；不承诺恢复任意 hook 对全局资源的修改。 */
 public final class ItemStateScope implements AutoCloseable {
@@ -32,7 +32,11 @@ public final class ItemStateScope implements AutoCloseable {
     public ItemStateScope(GlApi gl) {
         this.gl = java.util.Objects.requireNonNull(gl, "gl");
         ClassLoader loader = ItemStateScope.class.getClassLoader();
-        raw = new Port(loader);
+        // core profile 没有原生固定管线；反射调用 glMatrixMode 仍会让 LWJGL 直接 abort JVM。
+        // 按当前 context 能力选择状态来源，遵循 MC 渲染规格 §3 的有效宿主状态边界。
+        boolean nativeLegacy = !gl.capabilities().openGL32
+                || (gl.glGetInteger(GL_CONTEXT_PROFILE_MASK) & GL_CONTEXT_CORE_PROFILE_BIT) == 0;
+        raw = nativeLegacy ? new Port(loader) : null;
         Port selected = null;
         for (club.heiqi.uilib.host.client.extension.MinecraftHostExtension service :
                 club.heiqi.uilib.host.client.extension.MinecraftHostExtensions.services()) {
@@ -40,6 +44,8 @@ public final class ItemStateScope implements AutoCloseable {
             if (selected != null) break;
         }
         effective = selected;
+        if (raw == null && effective == null)
+            throw new IllegalStateException("当前 core profile 缺少物品固定管线宿主端口");
         program = gl.glGetInteger(GL_CURRENT_PROGRAM);
         vao = gl.glGetInteger(GL_VERTEX_ARRAY_BINDING);
         vbo = gl.glGetInteger(GL_ARRAY_BUFFER_BINDING);
@@ -49,7 +55,9 @@ public final class ItemStateScope implements AutoCloseable {
         activeUnit = gl.glGetInteger(GL_ACTIVE_TEXTURE);
         gl.glGetIntegerv(GL_VIEWPORT, viewport);
         samplers = gl.capabilities().samplerObjects;
-        textures = new int[gl.glGetInteger(GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS)][5];
+        int textureUnits = gl.glGetInteger(GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS);
+        if (effective != null) textureUnits = Math.min(textureUnits, effective.integer(GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS));
+        textures = new int[textureUnits][5];
         try {
             for (int i = 0; i < textures.length; i++) {
                 gl.glActiveTexture(GL_TEXTURE0 + i);
@@ -61,15 +69,15 @@ public final class ItemStateScope implements AutoCloseable {
             gl.glActiveTexture(activeUnit);
         }
         // 先捕获 driver；effective 查询会改变 raw active unit，但不能覆盖这份入口快照。
-        driver = new LegacySnapshot(raw, gl.glGetInteger(34018));
-        cached = effective == null ? null : new LegacySnapshot(effective, gl.glGetInteger(34018));
+        driver = raw == null ? null : new LegacySnapshot(raw, raw.integer(34018));
+        cached = effective == null ? null : new LegacySnapshot(effective, effective.integer(34018));
         try {
-            driver.push();
+            if (driver != null) driver.push();
             if (cached != null) cached.push();
             if (effective != null) effective.one("glBindVertexArray", 0);
             gl.glBindVertexArray(0);
             // compatibility客户端数组禁止非零VAO+CPU指针；先保存默认VAO自身，再清空buffer绑定。
-            driver.pushDefaultClient();
+            if (driver != null) driver.pushDefaultClient();
             if (cached != null) cached.pushDefaultClient();
             if (effective != null) {
                 effective.call(
@@ -136,9 +144,11 @@ public final class ItemStateScope implements AutoCloseable {
             effective.matrix(GL_MODELVIEW, model);
             effective.mode(GL_MODELVIEW);
         }
-        raw.matrix(GL_PROJECTION, projection);
-        raw.matrix(GL_MODELVIEW, model);
-        raw.mode(GL_MODELVIEW);
+        if (raw != null) {
+            raw.matrix(GL_PROJECTION, projection);
+            raw.matrix(GL_MODELVIEW, model);
+            raw.mode(GL_MODELVIEW);
+        }
         if (effective != null) effective.one("glUseProgram", 0);
         gl.glUseProgram(0);
         gl.glViewport(0, 0, framebufferWidth, framebufferHeight);
@@ -148,7 +158,7 @@ public final class ItemStateScope implements AutoCloseable {
         }
         // shader quad不依赖固定纹理enable/env/matrix；原版flat RenderItem只bind atlas，须自备旧GUI入态。
         if (effective != null) effective.guiTextures(cached.matrices.size() - 2);
-        raw.guiTextures(driver.matrices.size() - 2);
+        if (raw != null) raw.guiTextures(driver.matrices.size() - 2);
         gl.glActiveTexture(GL_TEXTURE0);
         if (effective != null) effective.active(GL_TEXTURE0);
         if (samplers) {
@@ -163,8 +173,10 @@ public final class ItemStateScope implements AutoCloseable {
         closed = true;
         RuntimeException failure = null;
         // 漏出的嵌套 attrib 先在委托当前 FBO 下 unwind；最后属于本 scope 的快照才在入口 FBO 下 pop。
-        driver.unwindDelegatedAttribs();
-        driver.unwindDelegatedClients();
+        if (driver != null) {
+            driver.unwindDelegatedAttribs();
+            driver.unwindDelegatedClients();
+        }
         // cache pop 可写 driver，所以必须先 cache，后独立 driver 恢复。
         if (cached != null)
             try {
@@ -180,7 +192,7 @@ public final class ItemStateScope implements AutoCloseable {
         gl.glBindBuffer(GL_ARRAY_BUFFER, vbo);
         gl.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
         try {
-            driver.restore();
+            if (driver != null) driver.restore();
         } catch (RuntimeException error) {
             if (failure == null) failure = error;
             else failure.addSuppressed(error);
