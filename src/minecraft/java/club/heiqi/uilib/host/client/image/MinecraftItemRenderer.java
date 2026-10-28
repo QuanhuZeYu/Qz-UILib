@@ -3,6 +3,7 @@ package club.heiqi.uilib.host.client.image;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.RenderHelper;
 import net.minecraft.client.renderer.entity.RenderItem;
+import org.lwjgl.opengl.GL11;
 import club.heiqi.uilib.host.client.font.ClientFontServices;
 import club.heiqi.uilib.host.client.gl.GlImageResources;
 import club.heiqi.uilib.ui.scene.image.ImageContent;
@@ -32,7 +33,14 @@ public final class MinecraftItemRenderer implements GlImageResources.HostItems {
                     boolean color = renderer.renderWithColor;
                     try (ItemStateScope scope = new ItemStateScope(fonts.gl())) {
                         scope.place(image, clip, width, height);
-                        RenderHelper.enableGUIStandardItemLighting();
+                        // 光源方向在 eye space 定义，避免图标的非等比尺寸变换改变 GUI 光照。
+                        GL11.glPushMatrix();
+                        try {
+                            GL11.glLoadIdentity();
+                            RenderHelper.enableGUIStandardItemLighting();
+                        } finally {
+                            GL11.glPopMatrix();
+                        }
                         Minecraft mc = Minecraft.getMinecraft();
                         renderer.renderItemAndEffectIntoGUI(
                                 mc.fontRenderer,

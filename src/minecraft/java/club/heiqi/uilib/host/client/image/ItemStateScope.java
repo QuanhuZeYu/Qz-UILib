@@ -24,6 +24,7 @@ public final class ItemStateScope implements AutoCloseable {
     private final boolean samplers;
     private final int[] viewport = new int[4];
     private boolean closed;
+    private static final int GL_NORMALIZE = 0x0BA1;
     private static final int[] TARGETS = {GL_TEXTURE_2D, GL_TEXTURE_2D_ARRAY, 32879, 34067};
     private static final int[] BINDINGS = {
         GL_TEXTURE_BINDING_2D, GL_TEXTURE_BINDING_2D_ARRAY, 32874, 34068
@@ -149,6 +150,10 @@ public final class ItemStateScope implements AutoCloseable {
             raw.matrix(GL_MODELVIEW, model);
             raw.mode(GL_MODELVIEW);
         }
+        // 图标 XY 与 Z 可非等比缩放，RenderItem 还会放大方块模型；归一化后法线不再随尺寸变暗。
+        // 此状态由所属 attrib 快照恢复，遵循 MC 渲染规格 §3；RESCALE_NORMAL 只适用于等比缩放。
+        if (effective != null) effective.one("glEnable", GL_NORMALIZE);
+        if (raw != null) raw.one("glEnable", GL_NORMALIZE);
         if (effective != null) effective.one("glUseProgram", 0);
         gl.glUseProgram(0);
         gl.glViewport(0, 0, framebufferWidth, framebufferHeight);
