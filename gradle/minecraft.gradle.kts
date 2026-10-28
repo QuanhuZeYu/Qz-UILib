@@ -40,14 +40,14 @@ listOf("runClient", "runServer").forEach { name ->
     tasks.named<JavaExec>(name) { classpath = content + development + font + configurations.getByName("uilibMedia8") + classpath }
 }
 
-// 只装配中性平台；非原版LWJGL3ify binding装配归独立Compat。
+// 装配中性平台与原版 binding；LWJGL3ify 专用 binding 由独立 Compat 提供。
 listOf("jar", "shadowJar").forEach { name ->
     tasks.named<Jar>(name) {
         from(provider { zipTree(gl.singleFile) }) { exclude("META-INF/MANIFEST.MF", "LICENSE") }
         from(provider { zipTree(lwjgl2.singleFile) }) { exclude("META-INF/MANIFEST.MF", "LICENSE", "META-INF/THIRD-PARTY-NOTICES.md") }
     }
 }
-// 资源管理器只看到外层Mod，不能依赖Core嵌套库恰巧可作为资源包。
+// 将 Core 字体资产导入外层 Mod，使 ResourceManager 取得正式资源包身份。
 val coreResourceArtifact = configurations.getByName("uilibCore8")
 val fontResourceRoots = listOf("assets/qz_uilib/fonts/", "assets/qz_uilib/unicode/emoji17/")
 tasks.named<ProcessResources>("processResources") {

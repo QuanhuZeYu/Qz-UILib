@@ -46,7 +46,7 @@ import club.heiqi.uilib.ui.scene.text.font.nativefont.GlyphBitmap;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.FontFace;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.FontSession;
 
-/** 非 JUnit 真实 CPU 链路；不加载 MC/Forge/AWT，不用 GPU 是否就绪参与度量。 */
+/** 通过 TestApplication 验证真实 CPU 字体链路与独立度量，MC/GL 接入由所属场景覆盖。 */
 public final class FontTextScenario extends TestApplication {
 
     private static TextPolicy policy(
@@ -459,7 +459,7 @@ public final class FontTextScenario extends TestApplication {
                         + service.cachedLayoutCount());
     }
 
-    /** 真实评审发现：WJ/GL禁止边界、Common tatweel连接范围与长文冷排版。 */
+    /** 验证 WJ/GL 禁止断点、Common tatweel 连接范围与长文冷排版。 */
     private static void reviewRegressions(
             FontTextService service, List<FontSource> defaults, TextStyle style) throws Exception {
         TextPolicy emergency = policy(TextPolicy.Direction.AUTO, TextPolicy.Wrap.EMERGENCY, "und");
@@ -540,7 +540,7 @@ public final class FontTextScenario extends TestApplication {
                             && error.getMessage().contains("SFNT元数据解析失败"),
                     "最终资源错误丢失身份/origin/元数据原因: " + error);
         }
-        // 每个输入只调用一次，均为layout cache miss；记录耗时，不设置机器相关硬阈值。
+        // 每个输入首次排版形成 cache miss，记录当前机器的实际耗时。
         for (int count : new int[] {512, 1024, 2048, 4096, 8192}) {
             char[] chars = new char[count];
             Arrays.fill(chars, 'a');
@@ -623,7 +623,7 @@ public final class FontTextScenario extends TestApplication {
         System.out.println("PASS SHY hidden/adopted/trailing/UTF8/width/RTL/script/spacing/highlight/underline");
     }
 
-    /** 计数包在正式 FT/HB 边界，不以缓存字段或伪造字形作为期望值。 */
+    /** 在正式 FT/HB 调用边界计数，保留真实后端的结果和行为。 */
     private static final class CountingEngine implements FontEngine {
         int shapes, rasters, preparedContexts, preparedRuns;
         long preparedUnits;
@@ -655,7 +655,7 @@ public final class FontTextScenario extends TestApplication {
         }
     }
 
-    /** 审计反例使用随包文件经过真实 resolver；计数代理只观察生产调用，不替换 FT/HB 行为。 */
+    /** 通过真实 resolver 验证随包文件的实际能力，计数代理观察生产 FT/HB 调用。 */
     private void systemCandidateCapabilities() throws Exception {
         java.nio.file.Path directory = Paths.get(root, "src/core/resources/assets/qz_uilib/fonts/noto");
         FontSource arabic = FontRealStyleScenario.family(directory.resolve("NotoSansArabic.ttf"), 31);
@@ -694,7 +694,7 @@ public final class FontTextScenario extends TestApplication {
                                 && !face.hasColorGlyph(0),
                         "实际 ZWJ 颜色事实或逐 glyph 边界错误");
             }
-            // 来源谎称脚本和彩色也必须被实际能力拒绝，不能只以 cmap 或非 .notdef 成功。
+            // 核验字体实际脚本布局与彩色能力，拒绝元数据误标的候选。
             FontSource mislabeled = FontSource.file("incorrect-hints", 31,
                     Paths.get(root, "src/core/resources/assets/qz_uilib/fonts/unifont/unifont-16.0.04.otf"),
                     0, true, Collections.singleton("Arab"));
@@ -780,7 +780,7 @@ public final class FontTextScenario extends TestApplication {
         }
     }
 
-    /** 同一系统文件不因 scripts 提示缺失而拆开必要连接范围；正式 §k/§r 使用逻辑首样式。 */
+    /** 验证同一系统文件的必要连接范围与 scripts 提示独立，§k/§r 使用逻辑首样式。 */
     private void systemObfuscationRanges() throws Exception {
         java.nio.file.Path path = Paths.get(root, "src/core/resources/assets/qz_uilib/fonts/noto/NotoSansArabic.ttf");
         FontSource system = FontRealStyleScenario.family(path, 33);

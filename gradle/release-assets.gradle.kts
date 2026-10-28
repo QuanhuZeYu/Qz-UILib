@@ -2,7 +2,7 @@ import org.gradle.api.tasks.bundling.AbstractArchiveTask
 import org.gradle.api.tasks.bundling.Zip
 
 // 正式发行装配：build/release 仅含本次版本的正式资产，Sync 删除旧版本残留。
-// 安装包是自包含的宿主运行集合；源包与媒体/人工附件分别独立，禁止扁平汇总跨版本同名库。
+// 安装包封装各宿主运行集合，源包、媒体与人工附件独立装配，跨版本同名库保留各自 ZIP 边界。
 val releaseVersion = version.toString()
 val releaseHost = "1.7.10"
 val releaseDir = layout.buildDirectory.dir("release")
@@ -67,7 +67,7 @@ val installZip = tasks.register<Zip>("releaseInstallZip") {
     from(assetsManifest) { rename { "MANIFEST.txt" } }
 }
 
-// 实例安装复用上述正式与人工附件 provider；安装集合不从 release 目录枚举。
+// 实例安装直接复用正式与人工附件 provider 确定安装集合。
 val runtimeInstallAssets = installAssets.map { mapOf("from" to it.first, "name" to it.second) } + listOf(
     mapOf("from" to manualTestAsset.first, "name" to manualTestAsset.second),
     mapOf("from" to media8, "name" to "qz_uilib-media-adapter-java8.jar")

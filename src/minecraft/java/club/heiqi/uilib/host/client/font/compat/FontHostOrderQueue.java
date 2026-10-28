@@ -4,8 +4,8 @@ import java.util.ArrayDeque;
 import java.util.IdentityHashMap;
 import java.util.Objects;
 
-/** 新旧consumer共用单调顺序。旧segment身份来自实际对象，不以可复用的range当身份。
- * 只保logical ticket及source lease，任何atlas Frame/entry/UV必须在回放时短期获取。 */
+/** 新旧 consumer 共用单调顺序，旧 segment 按对象身份登记，range 可重复使用。
+ * 队列持有 logical ticket 与 source lease，atlas Frame/entry/UV 在回放期获取并释放。 */
 public final class FontHostOrderQueue implements AutoCloseable {
     private final Thread thread = Thread.currentThread();
     private final int capacity;

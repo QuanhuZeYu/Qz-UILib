@@ -14,7 +14,7 @@ import club.heiqi.uilib.ui.scene.text.TextLayout;
 import java.lang.reflect.Field;
 import java.util.Map;
 
-/** 真实逻辑字形、生产采样器和正式队列；不执行GL，不把复用次数等同FPS。 */
+/** 以真实逻辑字形、生产采样器和正式队列验证 CPU 采样复用，FPS 由 GPU/实机场景观察。 */
 public final class WorldFontSamplingScenario {
     private static final RasterPolicy POLICY = new RasterPolicy(32,48,64,96,128,192,256,384,512);
     private static void require(boolean ok, String message) {
@@ -61,7 +61,7 @@ public final class WorldFontSamplingScenario {
         RasterSampling oldest=memo.sample(a,first,source);
         for(int i=0;i<1024;i++) memo.sample(PaintCommand.text(new LayoutBox(i+2,2,300,30),null,logical),first,source);
         require(memo.sample(a,first,source)!=oldest,"LRU退役后仍返回旧值对象");
-        // #81 实机热态每轮156个精确key；旧128项LRU会每帧全部重算，不能只测单key复用。
+        // 按实机热态的 156 个精确 key 构造循环工作集，核验整轮采样复用。
         WorldFontSamplingMemo dense=new WorldFontSamplingMemo(POLICY);
         PaintCommand[] commands=new PaintCommand[156];
         RasterSampling[] samples=new RasterSampling[commands.length];

@@ -9,7 +9,7 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-/** 失焦与 SDL key/text 使用同一客户端递交入口，不从绘制轮询跨越原生历史。 */
+/** 失焦与 SDL key/text 经同一客户端入口递交，保留原生采集顺序。 */
 @Mixin(value = Window.class, remap = false)
 abstract class WindowMixin {
     @Shadow public abstract long handle();

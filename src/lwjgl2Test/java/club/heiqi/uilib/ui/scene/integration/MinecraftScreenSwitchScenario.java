@@ -31,7 +31,7 @@ import club.heiqi.uilib.ui.scene.paint.PaintPlan;
 import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
 import club.heiqi.uilib.ui.scene.text.TextLayout;
 
-/** 实际 MC screen.drawScreen 与正式 Session；仅宿主环境注入，不启动世界或 FML。 */
+/** 验证实际 MC screen.drawScreen 与正式 Session，隔离环境提供窗口及原生历史事实。 */
 public final class MinecraftScreenSwitchScenario extends TestApplication {
     private boolean nativeOnly;
     private static final class Host implements SceneHost {
@@ -58,7 +58,7 @@ public final class MinecraftScreenSwitchScenario extends TestApplication {
     private AutoCloseable installSession(MinecraftSceneScreen screen, ScenePageSession session,
             Supplier<SceneSemanticSnapshot> semantics) throws Exception {
         field(MinecraftSceneScreen.class, screen, "session", session);
-        // 本场景绕过完整MC字体/原生文本安装，只注入宿主环境；同次会话借用仍用生产对象。
+        // 在隔离宿主环境中为正式会话建立生产 Inputs，验证输入联系与绘制交接。
         Class<?> type = Class.forName(MinecraftSceneScreen.class.getName() + "$Inputs");
         java.lang.reflect.Constructor<?> constructor = type.getDeclaredConstructor(
                 MinecraftSceneScreen.class, ScenePageSession.class, Supplier.class);
@@ -77,7 +77,7 @@ public final class MinecraftScreenSwitchScenario extends TestApplication {
         return (sun.misc.Unsafe) access.get(null);
     }
 
-    /** 只固定窗口可用性；真实Display、LWJGL事件消费者和生产Inputs保持原路径。 */
+    /** 提供稳定窗口可用性，Display、LWJGL 事件消费者和 Inputs 沿生产实现运行。 */
     private static final class ActiveWindow implements AutoCloseable {
         final sun.misc.Unsafe access = unsafe();
         final Field field = org.lwjgl.opengl.Display.class.getDeclaredField("display_impl");
@@ -101,7 +101,7 @@ public final class MinecraftScreenSwitchScenario extends TestApplication {
         public void close() { access.putObjectVolatile(base, offset, original); }
     }
 
-    /** 隔离JVM只借用LWJGL历史缓冲和可用性事实，不创建Display/设备或调用系统输入。 */
+    /** 在独立 JVM 中借用 LWJGL 历史缓冲与可用性事实，验证无窗口输入路径。 */
     private static final class NativeHistoryEnvironment implements AutoCloseable {
         final Field window = nativeField(org.lwjgl.opengl.Display.class, "window_created");
         final Field keyboard = nativeField(Keyboard.class, "created");
@@ -124,7 +124,7 @@ public final class MinecraftScreenSwitchScenario extends TestApplication {
         }
     }
 
-    /** 沿已有LWJGL2原生载荷回归的方式借用历史；字节由真正WindowsKeyboard生成。 */
+    /** 使用 WindowsKeyboard 生成的真实载荷布置 LWJGL2 历史。 */
     private static final class NativeCharacters implements AutoCloseable {
         final Field buffer = keyboardField("readBuffer"), current = keyboardField("current_event"),
                 scratch = keyboardField("tmp_event");
@@ -457,7 +457,7 @@ public final class MinecraftScreenSwitchScenario extends TestApplication {
         try (ActiveWindow active = new ActiveWindow(nativeOnly); NativeCharacters history = new NativeCharacters();
                 NativeField input = new NativeField(mc)) {
             input.activate(mc);
-            input.screen.handleInput(); // 第一个逻辑tick；随后中间render没有tick采集。
+            input.screen.handleInput(); // 首个逻辑 tick 后，逐帧验证 render 的独立采集。
             int renderHz = 120, tickHz = 20, renderPerTick = renderHz / tickHz;
             for (int frame = 1; frame < renderPerTick; frame++) {
                 history.load('中');
@@ -466,7 +466,7 @@ public final class MinecraftScreenSwitchScenario extends TestApplication {
                         "中间render仍在等待下一20Hz tick采集，frame=" + frame);
             }
             String beforeTick = input.draft();
-            input.screen.handleInput(); // 下一逻辑tick不能重放render已耗尽的历史。
+            input.screen.handleInput(); // 下一逻辑 tick 核验已消费历史保持耗尽。
             input.screen.drawScreen(0, 0, 0);
             require(input.draft().equals(beforeTick) && input.screen.nativeEvents == renderPerTick - 1,
                     "tick或空render重复递交已消费原生字符");
@@ -525,7 +525,7 @@ public final class MinecraftScreenSwitchScenario extends TestApplication {
         scenario("原生采集中切页隔离历史尾部", () -> closeWhileCollecting(true));
         if (nativeOnly) return;
         scenario("点击切页当帧提交新页且旧输入不转投", () -> {
-            // MC构造会启动完整游戏基础设施；环境只供currentScreen身份，生产screen正常构造。
+            // 使用分配实例提供 currentScreen 身份，页面仍通过生产构造器创建。
             Field access = sun.misc.Unsafe.class.getDeclaredField("theUnsafe");
             access.setAccessible(true);
             Minecraft mc = (Minecraft) ((sun.misc.Unsafe) access.get(null)).allocateInstance(Minecraft.class);

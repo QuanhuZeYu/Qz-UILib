@@ -22,7 +22,7 @@ import java.util.Set;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.util.text.StringTextComponent;
 
-/** 只消费 Minecraft 递交的 Screen 事件；不替换游戏 GLFW 回调或创建第二个事件轮询。 */
+/** 将 Minecraft 递交的 Screen 事件转换到共享页面输入端口。 */
 public class Minecraft116SceneScreen extends Screen {
     private final Screen parent;
     private final ScenePage page;
@@ -46,7 +46,7 @@ public class Minecraft116SceneScreen extends Screen {
     private int framebufferWidth() { int[] w = {0}, h = {0}; glfwGetFramebufferSize(window(), w, h); return w[0]; }
     private int framebufferHeight() { int[] w = {0}, h = {0}; glfwGetFramebufferSize(window(), w, h); return h[0]; }
 
-    /** 最近发布的同页纯值语义；读取不执行frame或访问runtime。 */
+    /** 返回同页 Host 最近发布的纯值语义快照。 */
     public SceneSemanticSnapshot semantics() {
         EmbeddedSceneHost host = semanticHost;
         return host == null ? SceneSemanticSnapshot.EMPTY : host.semantics();
@@ -152,7 +152,7 @@ public class Minecraft116SceneScreen extends Screen {
     @Override public void onClose() { closeOpening(session, inputs, semanticHost); }
 
     private void closeOpening(ScenePageSession opened, EmbeddedSceneInputs closing, EmbeddedSceneHost host) {
-        // 旧会话的退休回调不清空同 screen 新代的入口或物理按压事实。
+        // 按会话身份清理所属入口与物理按压事实。
         if (session == opened && inputs == closing) { held.clear(); scroll.reset(); }
         if (session == opened) session = null;
         if (inputs == closing) inputs = null;

@@ -1,4 +1,4 @@
-// 显式安装目录只从已解析 Maven 产物同步，不成为各 loader 工程的依赖入口。
+// 从已解析 Maven 产物同步显式安装目录，各 loader 工程分别解析自己的 Maven 依赖。
 fun Sync.artifact(configuration: String, target: String) {
     from(configurations.getByName(configuration)) { rename { target } }
 }
@@ -25,7 +25,7 @@ tasks.register<Sync>("prepareEmbedded") {
     artifact("uilibLwjgl3_21", "lwjgl3.jar")
     artifact("uilibGallery", "gallery.jar")
 }
-// 旧测试显式传入源码布局的资源根，数据由正式 Maven Jar 提取至本仓 build。
+// 从正式 Maven Jar 提取验证资源至本仓 build，按场景所需目录布局传入。
 val core = configurations.getByName("uilibCore8")
 val verification = configurations.getByName("uilibCoreVerification")
 tasks.register<Sync>("extractVerificationResources") {

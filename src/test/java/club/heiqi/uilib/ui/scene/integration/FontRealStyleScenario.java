@@ -30,7 +30,7 @@ import java.util.Collections;
 import java.util.Locale;
 import java.util.Arrays;
 
-/** 真实系统字体与bundled variable经过正式匹配/FT/HB/光栅，防止粗体只换图片不换排版。 */
+/** 以系统字体与随包可变字体验证正式匹配、FT/HB 和光栅的实际样式与排版度量。 */
 public final class FontRealStyleScenario extends TestApplication {
     public static List<TextLayout.Glyph> glyphs(TextLayout layout) {
         List<TextLayout.Glyph> out = new ArrayList<TextLayout.Glyph>();

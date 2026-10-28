@@ -17,7 +17,7 @@ import club.heiqi.uilib.ui.scene.text.font.glyph.AsyncGlyphRasterizer;
 
 import java.lang.reflect.Field;
 
-/** 实际MC共享关闭入口和CPU/GL owner；只注入可选桥的失败票据，不启动世界。 */
+/** 向可选桥注入失败票据，验证实际 MC 共享关闭入口对 CPU/GL owner 的清理与首错保留。 */
 public final class MinecraftFontShutdownScenario extends TestApplication {
     public static void main(String[] args) throws Exception { new MinecraftFontShutdownScenario().run(args); }
 
@@ -37,7 +37,7 @@ public final class MinecraftFontShutdownScenario extends TestApplication {
         ClientFontServices owner = own(new ClientFontServices(getClass().getClassLoader(), 1,
                 ClientFontServices.Settings.defaults(), IsolatedFontEngine.shared(), new Lwjgl2GlApi(),
                 GlProgramProvider.NONE));
-        // 真实native face与GPU消费者被创建；不能只观察一个无资源的关闭helper。
+        // 先创建真实 native face 与 GPU 消费者，再核验所属资源的关闭。
         owner.layout("A", new TextStyle("default", 16, 0xff000000), 100);
         owner.createPlanRenderer();
         AsyncGlyphRasterizer cpu = owner.rasterizer();
@@ -66,7 +66,7 @@ public final class MinecraftFontShutdownScenario extends TestApplication {
         } catch (RuntimeException | Error observed) {
             require(observed == failure, "资源退出覆盖了首个桥异常");
         } finally {
-            // 只清理测试注入的静态环境；实际owner必须已由生产closeShared结束。
+            // 恢复场景注入的静态环境，随后核验生产 closeShared 已结束实际 owner。
             field(MinecraftVanillaFont.class, "bridge", null);
             MinecraftVanillaFont.close();
         }

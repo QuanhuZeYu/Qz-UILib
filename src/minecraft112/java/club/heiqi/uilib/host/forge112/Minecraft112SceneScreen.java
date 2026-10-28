@@ -44,7 +44,7 @@ public class Minecraft112SceneScreen extends GuiScreen {
         this.media = media;
     }
 
-    /** 最近发布的同页纯值语义；读取不执行frame或访问runtime。 */
+    /** 返回同页 Host 最近发布的纯值语义快照。 */
     public SceneSemanticSnapshot semantics() {
         EmbeddedSceneHost host = semanticHost;
         return host == null ? SceneSemanticSnapshot.EMPTY : host.semantics();
@@ -154,7 +154,7 @@ public class Minecraft112SceneScreen extends GuiScreen {
     @Override public void onGuiClosed() { closeOpening(session, inputs, semanticHost, repeatEvents); }
 
     private void closeOpening(ScenePageSession opened, EmbeddedSceneInputs closing, EmbeddedSceneHost host, RepeatEvents repeat) {
-        // 旧会话只断开自己的入口与借用，不能改写同 screen 新代的物理状态。
+        // 按会话身份断开旧入口与借用，物理状态随所属代清理。
         if (session == opened && inputs == closing) {
             scroll.reset();
             leftControl = rightControl = leftShift = rightShift = leftAlt = rightAlt = leftMeta = rightMeta = false;

@@ -8,8 +8,8 @@ import club.heiqi.uilib.ui.scene.text.RasterSampling;
 import java.util.IdentityHashMap;
 import java.util.Objects;
 
-/** MC渲染规格3.2的原票据范围内复用纯CPU采样事实；不拥有context、GL或已采样布局。
- * 原command身份保持逻辑墨迹不变，消费、票据退役和帧结束均移除事实。 */
+/** 按原 command 身份在票据内复用 CPU 采样数值，临时 context 与 GL 资源由回放持有。
+ * 消费、票据退役和帧结束均移除事实；跨票据数值复用交给有界 memo。 */
 final class WorldFontSampling {
     private final int limit;
     private final IdentityHashMap<PaintCommand, Entry> entries = new IdentityHashMap<>();
@@ -67,7 +67,7 @@ final class WorldFontSampling {
             boolean remember) {
         Objects.requireNonNull(source, "source");
         if (!remember) {
-            // 先消费再比较；不同投影必须正常重算，旧事实不能留给另一票据误用。
+            // 先移除票据事实，再核验投影；投影变化时重新采样。
             Entry entry = entries.remove(command);
             if (entry != null && entry.source.same(source)) return entry.sampling;
         }

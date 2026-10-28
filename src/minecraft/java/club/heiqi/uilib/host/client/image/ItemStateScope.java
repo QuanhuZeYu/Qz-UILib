@@ -14,7 +14,7 @@ import club.heiqi.uilib.ui.scene.image.ImagePlacement;
 
 /** 原版 GUI item 的状态边界，独立于字体 producer。有效栈与可用的 driver 固定管线分别保存、恢复。
  * all attrib 包含 lighting/material/alpha/depth/blend/color/normal；矩阵、现代 bindings 单独保存。
- * legacy客户端数组使用默认 VAO 并另存其client状态，异常漏出的 matrix push 按原深度 unwind；不承诺恢复任意 hook 对全局资源的修改。 */
+ * legacy 客户端数组使用默认 VAO 并保存其 client 状态；异常遗留的 matrix push 按原深度 unwind，恢复范围限于所属状态。 */
 public final class ItemStateScope implements AutoCloseable {
     private final GlApi gl;
     private final Port raw, effective;
@@ -68,7 +68,7 @@ public final class ItemStateScope implements AutoCloseable {
         } finally {
             gl.glActiveTexture(activeUnit);
         }
-        // 先捕获 driver；effective 查询会改变 raw active unit，但不能覆盖这份入口快照。
+        // effective 查询会改变 raw active unit，先捕获 driver 以保留原入口快照。
         driver = raw == null ? null : new LegacySnapshot(raw, raw.integer(34018));
         cached = effective == null ? null : new LegacySnapshot(effective, effective.integer(34018));
         try {
@@ -76,7 +76,7 @@ public final class ItemStateScope implements AutoCloseable {
             if (cached != null) cached.push();
             if (effective != null) effective.one("glBindVertexArray", 0);
             gl.glBindVertexArray(0);
-            // compatibility客户端数组禁止非零VAO+CPU指针；先保存默认VAO自身，再清空buffer绑定。
+            // CPU 指针使用默认 VAO；先保存其 client 状态，再清空 buffer 绑定。
             if (driver != null) driver.pushDefaultClient();
             if (cached != null) cached.pushDefaultClient();
             if (effective != null) {
@@ -100,7 +100,7 @@ public final class ItemStateScope implements AutoCloseable {
         }
     }
 
-    /** framebuffer XY 正交矩阵直接加载到两套矩阵；不乘 GUI Scale。RenderItem 用自身 16px 坐标。 */
+    /** 将 framebuffer XY 正交矩阵加载到 driver 与有效宿主状态，RenderItem 使用自身 16px 坐标。 */
     public void place(
             ImagePlacement image, LayoutBox clip, int framebufferWidth, int framebufferHeight) {
         float[] projection = {
@@ -156,7 +156,7 @@ public final class ItemStateScope implements AutoCloseable {
             gl.glEnable(GL_SCISSOR_TEST);
             gl.glScissor(clip.x, framebufferHeight - clip.y - clip.height, clip.width, clip.height);
         }
-        // shader quad不依赖固定纹理enable/env/matrix；原版flat RenderItem只bind atlas，须自备旧GUI入态。
+        // 原版 flat RenderItem 只绑定 atlas，此处补齐固定管线的纹理 enable/env/matrix 入态。
         if (effective != null) effective.guiTextures(cached.matrices.size() - 2);
         if (raw != null) raw.guiTextures(driver.matrices.size() - 2);
         gl.glActiveTexture(GL_TEXTURE0);
@@ -184,8 +184,7 @@ public final class ItemStateScope implements AutoCloseable {
             } catch (RuntimeException error) {
                 failure = error;
             }
-        // GL_COLOR_BUFFER_BIT 恢复的 draw/read buffer 属于入口 FBO，必须先重新绑定它，否则 default FBO 拒绝
-        // COLOR_ATTACHMENT0。
+        // 先绑定入口 FBO，再恢复属于它的 draw/read buffer，确保 COLOR_ATTACHMENT0 对应有效附件。
         gl.glBindFramebuffer(GL_DRAW_FRAMEBUFFER, drawFbo);
         gl.glBindFramebuffer(36008, readFbo);
         gl.glBindVertexArray(vao);
@@ -315,7 +314,7 @@ public final class ItemStateScope implements AutoCloseable {
         }
 
         void restoreClients() {
-            // Angelica pop只写当前VAO的flags，不绑定push时VAO；不可先bind父然后总whilepop。
+            // Angelica pop 写当前 VAO 的 flags，先清委托栈，再分别绑定默认与父 VAO 弹出所属快照。
             unwindDelegatedClients();
             if (defaultClientPushed) {
                 p.bindVao(0);
@@ -423,7 +422,7 @@ public final class ItemStateScope implements AutoCloseable {
         }
     }
 
-    /** 宿主反射端口同时支持 LWJGL2/3；core GlApi 不携带 MC 固定管线类型。 */
+    /** 通过反射统一 LWJGL2/3 固定管线端口，供中性 GlApi 之外的 MC 物品委托使用。 */
     public static class Port {
         protected final Class<?> type, multitexture;
         protected final boolean cached;

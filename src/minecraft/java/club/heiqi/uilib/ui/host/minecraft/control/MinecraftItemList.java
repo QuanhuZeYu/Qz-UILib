@@ -26,12 +26,11 @@ import club.heiqi.uilib.ui.scene.text.TextContent;
 /**
  * MC 物品列表模板：首列组合图标、宿主名称与业务描述，其余列沿正式数据表声明。
  * 业务提供稳定行键、物品来源和读数；滚动、虚拟化、提示与资源租约仍归原控件。
- * 来源应使用 MinecraftItemSource 保存样本；描述始终保留，未知物品也不会失去身份。
+ * MinecraftItemSource 保存物品样本；描述在未知物品的占位与标签中保留业务身份。
  */
 public final class MinecraftItemList {
     /**
-     * 物品名来自宿主显示名，只含样式、不含链接；富文本入口仍要求显式接收方，这里声明本模板不发布链接激活。
-     * 若将来物品名需要可点击目标，应把该接收方提升为模板参数，而不是在此处补业务动作。
+     * 宿主物品名只携带样式；富文本所需的链接接收方使用空动作。
      */
     private static final Consumer<String> NO_LINKS = target -> { };
 

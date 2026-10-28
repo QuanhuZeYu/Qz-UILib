@@ -1,7 +1,7 @@
 name: Minecraft 发布
 
 # 仅手动触发：接收既存 tag 与确认短语，从该 tag 完整构建后再创建或更新同一 Release。
-# tag 由用户创建，工作流不创建、不移动、不重写 tag。
+# tag 的创建与变更由用户管理，工作流消费既存 tag。
 on:
   workflow_dispatch:
     inputs:
@@ -31,7 +31,7 @@ on:
 permissions:
   contents: read
 
-# 同一 tag 的发布串行执行，不取消进行中的发布。
+# 同一 tag 的发布按队列串行完成。
 concurrency:
   group: uilib-minecraft-release-${{ inputs.tag }}
   cancel-in-progress: false
@@ -155,7 +155,7 @@ jobs:
         with:
           # 发布检出既存 tag，只读取普通默认分支 CI 生成的缓存。
           cache-read-only: true
-          # action 自带的 matrix 缓存身份区分各 wrapper；保留其分发包以免重复下载。
+          # action 按 matrix 区分各 wrapper 的缓存身份，保留分发包供后续构建复用。
           gradle-home-cache-includes: |
             caches
             notifications

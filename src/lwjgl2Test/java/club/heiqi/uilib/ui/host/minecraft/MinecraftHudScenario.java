@@ -39,7 +39,7 @@ import club.heiqi.uilib.ui.scene.text.TextStyle;
 
 /**
  * 无窗口验证正式 HUD 更新、Forge/FML 入口与真实 Session；仅替换设备和回放边界。
- * 反射只布置已有会话和宿主事实，不向生产代码添加测试工厂或重写生命周期算法。
+ * 反射布置已有会话与宿主事实，沿生产生命周期算法结算。
  */
 public final class MinecraftHudScenario extends TestApplication {
     private static final class SoftwareHost implements SceneHost, SceneTextMeasurer {
@@ -303,7 +303,7 @@ public final class MinecraftHudScenario extends TestApplication {
         }
     }
 
-    /** 只补FML登记所需的当前Mod事实，不运行Loader、Mod扫描或游戏启动。 */
+    /** 为 FML 登记布置当前 Mod 身份，支持独立 JVM 中的事件注册。 */
     private static final class FmlOwner implements AutoCloseable {
         final Field singleton = field(cpw.mods.fml.common.Loader.class, "instance");
         final Object previous = singleton.get(null);
@@ -320,7 +320,7 @@ public final class MinecraftHudScenario extends TestApplication {
         public void close() throws Exception { singleton.set(null, previous); }
     }
 
-    /** 沿Forge自己的转换器准备事件默认构造与ListenerList；不复制或模拟事件总线。 */
+    /** 通过 Forge 正式转换器准备事件默认构造与 ListenerList。 */
     private static final class EventRuntime extends java.net.URLClassLoader {
         EventRuntime(java.net.URL[] urls) { super(urls, ClassLoader.getSystemClassLoader().getParent()); }
         @Override protected Class<?> findClass(String name) throws ClassNotFoundException {

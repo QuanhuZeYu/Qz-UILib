@@ -20,7 +20,7 @@ import club.heiqi.uilib.ui.scene.text.TextPolicy;
 import club.heiqi.uilib.ui.scene.text.TextStyle;
 import club.heiqi.uilib.ui.scene.text.font.FontTextService;
 
-/** 真正 MC 资源链与 FT/HB；不启动游戏。复现普通依赖 jar 不会成为 FML 资源包。 */
+/** 通过实际 MC 资源链与 FT/HB，验证显式登记后的 Core 资产、用户覆盖和资源换代。 */
 public final class CoreAssetResourceScenario extends TestApplication {
     @Override
     protected void runTests() throws Exception {

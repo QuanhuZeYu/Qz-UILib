@@ -15,7 +15,7 @@ import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/** 只读的一次迁移输入；仅接受旧字体入口实际输出的两个 Forge 属性，不调用其带恢复副作用的加载器。 */
+/** 只读迁移旧字体入口输出的两个 Forge 属性，解析失败直接报告。 */
 public final class LegacyFontConfiguration {
     private static final String ENABLED = "font.replaceVanillaFont";
     private static final String PATHS = "font.systemFontFiles";
@@ -25,7 +25,7 @@ public final class LegacyFontConfiguration {
     private static final Pattern LIST = Pattern.compile(
             "S\\s*:\\s*(?:systemFontFiles|\"systemFontFiles\")\\s*<");
 
-    /** 完整解析成功后才交给配置核心；列表不可被调用者修改。 */
+    /** 完整解析后交给配置核心的不可变快照。 */
     public static final class Snapshot {
         public final boolean enabled;
         public final List<String> paths;
@@ -38,7 +38,7 @@ public final class LegacyFontConfiguration {
 
     private LegacyFontConfiguration() {}
 
-    /** 保留旧 Forge 实际支持的 BOM 编码，仅只读解码，不沿用其损坏文件恢复。 */
+    /** 按旧 Forge 支持的 BOM 解码文件，损坏编码沿解析通道报告。 */
     private static BufferedReader reader(Path file) throws IOException {
         byte[] bytes = Files.readAllBytes(file);
         Charset encoding = StandardCharsets.UTF_8;
@@ -70,7 +70,7 @@ public final class LegacyFontConfiguration {
         boolean list = false;
         List<String> paths = new ArrayList<>();
         int lineNumber = 0;
-        // Forge.save 写 # Configuration file，不写 encoding 指令；原入口未设置 config version。
+        // 迁移语法对应原入口的 Forge.save 输出：# Configuration file 头与无版本类别。
         try (BufferedReader reader = reader(file)) {
             String raw;
             while ((raw = reader.readLine()) != null) {

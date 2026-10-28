@@ -13,8 +13,8 @@ import club.heiqi.uilib.ui.scene.text.font.FontResources;
 import club.heiqi.uilib.ui.scene.text.font.FontSource;
 import club.heiqi.uilib.ui.scene.text.font.FontTextService;
 
-/** MC主线程只取得本代独立streams；read/hash/metadata/close全部交字体worker。
- * 捕获后不再访问当前 ResourceManager，旧代worker即使迟到也不能读到新包。
+/** MC 主线程捕获本代独立 streams，字体 worker 负责 read/hash/metadata/close。
+ * 每代持有自己的流，迟到任务继续消费所属代的资源。
  */
 public final class ResourceManagerFontSources implements EmbeddedSceneServices.FontSources {
     private static final String PREFIX = "assets/qz_uilib/";

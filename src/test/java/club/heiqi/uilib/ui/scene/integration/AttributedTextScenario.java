@@ -22,7 +22,7 @@ import club.heiqi.uilib.ui.scene.text.font.nativefont.GlyphBitmap;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.FontFace;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.FontSession;
 
-/** 真实属性文本集成，覆盖格式来源、完整簇、逻辑度量/实际采样事实，不运行MC。 */
+/** 通过真实属性文本链路验证格式来源、完整簇与逻辑度量、采样事实。 */
 public final class AttributedTextScenario extends TestApplication {
 
     static List<TextLayout.Glyph> glyphs(TextLayout layout) {
@@ -331,7 +331,7 @@ public final class AttributedTextScenario extends TestApplication {
                             "A\n\n",
                             base,
                             Arrays.asList(new StyleSpan(0, 1, base), new StyleSpan(1, 3, active)));
-            // 空段度量的合同是保留硬行而不软折行，不能请求单行可见标记。
+            // 用 NO_WRAP 保留硬行，逐段核验空行活动样式的真实度量。
             TextLayout layout = service.layout(input, 1000, TextPolicy.NO_WRAP),
                     reference = service.layout("", active, 1000, TextPolicy.NO_WRAP);
             require(layout.style == base && layout.lines().size() == 3, "空行或base样式被覆盖");

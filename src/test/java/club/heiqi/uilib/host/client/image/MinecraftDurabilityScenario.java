@@ -5,7 +5,7 @@ import net.minecraft.item.ItemSword;
 import net.minecraft.item.ItemStack;
 import club.heiqi.uilib.testing.TestApplication;
 
-/** 无游戏启动：按原版注册表达式构造Item/钻石剑并执行Forge patched的Item/ItemStack耐久方法，复现实机钻石0/0。 */
+/** 按原版注册表达式构造 Item/钻石剑，验证 Forge patched 耐久方法返回的钻石 NaN 与工具比例。 */
 public final class MinecraftDurabilityScenario extends TestApplication {
     @Override
     protected void runTests() throws Exception {

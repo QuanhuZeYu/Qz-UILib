@@ -19,7 +19,7 @@ import club.heiqi.uilib.host.client.font.context.LwjglFontContextCapture;
 import club.heiqi.uilib.host.client.font.context.RasterPolicy;
 import club.heiqi.uilib.host.client.font.context.FontRenderContext.MatrixState;
 
-/** CPU数学与真实hidden GL context捕捉；不替代文字world producer或Angelica/Iris实机验收。 */
+/** 验证 CPU 投影与 hidden GL context 捕捉；world 文字接入及 Angelica/Iris 共存由实机验收。 */
 public final class FontProjectionScenario extends TestApplication {
     static float[] identity() {
         float[] m = new float[16];

@@ -26,7 +26,7 @@ import club.heiqi.uilib.ui.scene.paint.PaintPlan;
 import club.heiqi.uilib.ui.scene.semantics.SceneSemanticSnapshot;
 import club.heiqi.uilib.ui.scene.text.TextLayout;
 
-/** 正式会话、命令和生产 Inputs；只在中性 SPI 与窗口事实边界提供隔离环境，不创建游戏或 GL。 */
+/** 在中性 SPI 与窗口事实边界提供无窗口环境，验证正式会话、命令及生产 Inputs 的生命周期。 */
 public final class MinecraftScreenInputLifecycleScenario extends TestApplication {
     private static Field field(Class<?> type, String name) throws Exception {
         Field result = type.getDeclaredField(name);
@@ -38,7 +38,7 @@ public final class MinecraftScreenInputLifecycleScenario extends TestApplication
         return (sun.misc.Unsafe) field(sun.misc.Unsafe.class, "theUnsafe").get(null);
     }
 
-    /** 唯一 owner 与退休来源只属于 fixture；不替代 Core 输入/焦点/组字权威。 */
+    /** fixture 持有唯一 native owner 与退休来源，输入、焦点和组字由 Core 协调。 */
     private static final class NativeEnvironment implements MinecraftHostExtension, AutoCloseable {
         final AtomicReference<Bridge> owner = new AtomicReference<>();
         final Field services = field(MinecraftHostExtensions.class, "SERVICES");
@@ -336,7 +336,7 @@ public final class MinecraftScreenInputLifecycleScenario extends TestApplication
         }
     }
 
-    /** 仅安装 initGui 所需的既有共享服务；不渲染、不替换生产清理算法。 */
+    /** 为 initGui 安装既有共享服务，使用生产入口验证初始化与清理。 */
     private static final class ClientServices implements AutoCloseable {
         final club.heiqi.uilib.host.client.image.ClientImageServices images;
         final club.heiqi.uilib.host.client.font.ClientFontServices fonts;
@@ -460,7 +460,7 @@ public final class MinecraftScreenInputLifecycleScenario extends TestApplication
                             "延迟构造未按预期发生或主异常identity丢失");
                 }
                 System.out.println("MC_DEFERRED_BUILD initReturned=true failedSessionEnded=true originalIdentity=true");
-                // 不调用失败页的onGuiClosed；后继页必须能通过正式入口取得唯一native桥。
+                // 直接打开后继页，核验失败会话已自动退休并交还唯一 native 桥。
                 successor.initGui();
                 require(field(MinecraftSceneScreen.class, "session").get(next) == null
                         && field(MinecraftSceneScreen.class, "inputs").get(next) == null,

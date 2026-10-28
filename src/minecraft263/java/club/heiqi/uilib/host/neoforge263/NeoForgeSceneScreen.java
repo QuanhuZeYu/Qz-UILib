@@ -20,7 +20,7 @@ import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.client.input.PreeditEvent;
 import net.minecraft.network.chat.Component;
 
-/** 任意正式 ScenePage 的 26.3 入口；extract 不提交 GL，真实帧后范围推进同一 session。 */
+/** ScenePage 的 26.3 入口；实际 GPU 提交阶段推进页面会话，extract 仅承接宿主生命周期。 */
 public class NeoForgeSceneScreen extends Screen {
     private final Screen parent;
     private final ScenePage content;
@@ -49,7 +49,7 @@ public class NeoForgeSceneScreen extends Screen {
         return host == null ? SceneSemanticSnapshot.EMPTY : host.semantics();
     }
 
-    /** 仍经同一页面Inputs/Session排队，不从旧快照调用动作。 */
+    /** 动作经同页 Inputs/Session 排队，由当前会话核验并执行。 */
     public CompletableFuture<SceneSemanticRequest.Result> semantic(SceneSemanticRequest request) {
         Objects.requireNonNull(request, "语义请求");
         NeoForgeSceneInput current = input;
@@ -108,7 +108,7 @@ public class NeoForgeSceneScreen extends Screen {
         if (session == null) init();
         if (session == null || session.ended() || minecraft.gui.screen() != this) return;
         var target = minecraft.gameRenderer.mainRenderTarget();
-        // GameRenderer 已按本帧 WindowRenderState 重建目标；不能再与下一次 OS 尺寸作跨代比较。
+        // 以 GameRenderer 按本帧 WindowRenderState 建立的目标尺寸作为本次回放事实。
         coordinates = NeoForgeSceneCoordinates.frame(target, minecraft.getWindow());
         ScenePageSession opened = session;
         NeoForgeSceneInput collecting = input;
@@ -153,7 +153,7 @@ public class NeoForgeSceneScreen extends Screen {
 
     private void closeOpening(ScenePageSession opened, NeoForgeSceneInput closing, EmbeddedSceneHost host,
             NeoForgeFramebuffer closingFramebuffer) {
-        // 先断开入口；旧会话的退休回调不能清空新代字段，也不能释放新代 FBO。
+        // 按身份断开所属入口，旧会话仅释放自己的输入与 FBO。
         if (session == opened) session = null;
         if (input == closing) input = null;
         if (semanticHost == host) semanticHost = null;

@@ -1,4 +1,4 @@
-// ResourceManager只把外层Mod识别为资源包；正式Core库/JiJ只提供类，不承担资源包身份。
+// 将 Core 字体与 Unicode 资产导入外层 Mod，供 ResourceManager 以 Mod 资源包身份加载。
 def fontRoot = 'assets/qz_uilib/fonts/'
 def unicodeRoot = 'assets/qz_uilib/unicode/emoji17/'
 def resourceRoots = [fontRoot, unicodeRoot]

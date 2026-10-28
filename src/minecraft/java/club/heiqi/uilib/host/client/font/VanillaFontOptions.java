@@ -42,14 +42,14 @@ public final class VanillaFontOptions {
     }
     /** 已有调用只更新原版接管与候选，保留当前批处理策略。 */
     public static void publish(boolean enabled, List<String> candidates) { publish(enabled, candidates, settings.aggressiveBatching); }
-    /** 应用源域Effect发布已冻结值；绘制入口只消费该投影，不读盘或重复派生。 */
+    /** 应用源域 Effect 发布冻结投影，供绘制入口直接读取。 */
     public static void publish(boolean enabled, List<String> candidates, boolean aggressiveBatching) {
         settings = new Settings(enabled, candidates, aggressiveBatching);
     }
     public static boolean enabled() { return settings.enabled; }
     public static List<String> candidates() { return settings.candidates; }
     public static boolean aggressiveBatching() { return settings.aggressiveBatching; }
-    // 已有接入入口保留转发，新页面直接借用应用配置持有者。
+    // MC 接入入口统一转交应用配置持有者。
     public static void load(File legacyFile) { MinecraftApplicationConfiguration.load(legacyFile); }
     public static ThemeConfiguration themeConfiguration() { return MinecraftApplicationConfiguration.themes(); }
     public static SettingsConfiguration settingsConfiguration() { return MinecraftApplicationConfiguration.settings(); }

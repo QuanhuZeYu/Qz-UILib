@@ -6,7 +6,7 @@ import club.heiqi.uilib.ui.scene.host.SceneHost;
 import club.heiqi.uilib.ui.scene.host.ScenePageSession;
 import club.heiqi.uilib.ui.scene.paint.PaintPlan;
 
-/** 直接验证MC正式持有者与真实session，不注入screen私有字段或复制关闭算法。 */
+/** 通过 MC 正式资源持有者与真实 session 验证关闭顺序、首错保留和幂等释放。 */
 public final class MinecraftScreenCleanupScenario extends TestApplication {
     @Override protected void runTests() throws Exception {
         scenario("输入退休Error与session异常仍全部释放且幂等", () ->

@@ -1,6 +1,6 @@
 plugins { id 'base' }
 
-// 当前模式只使用显式提供的 Prism 运行输入；标准 ForgeGradle 工程不参与这次配置。
+// Prism 模式以显式实例输入配置独立编译与重映射任务。
 repositories {
     maven { url = uri('.gradle/maven'); metadataSources { artifact() } }
     mavenCentral()
@@ -42,7 +42,7 @@ tasks.register('installBundle', Exec) { task ->
     dependsOn 'clientCacheBuild'
     configurePrismBuild(task, true)
 }
-// 缓存构建器的明确安装输出；旧版本可留在同目录，清单不枚举历史产物。
+// 安装清单按本次版本声明缓存构建器的确切输出。
 ext.uilibInstallHost = 'forge112'
 ext.uilibInstallAssets = [
         [name: "qz_uilib_forge112-${project.version}.jar"],
@@ -51,7 +51,7 @@ ext.uilibInstallAssets = [
 ext.uilibInstallDependencies = ['core', 'font-adapter', 'media-adapter', 'gl-renderer', 'lwjgl2', 'gallery', 'verification'].collect { uilibArtifacts[it] }
 apply from: '../../gradle/install-manifest.gradle'
 
-// 验证实际 LWJGL2 事件编码与生产合并消费者；不创建窗口或改动游戏事件队列。
+// 在独立历史缓冲中验证实际 LWJGL2 事件编码与生产合并消费者。
 def inputQueueVerification = tasks.register('compileInputQueueVerification', JavaCompile) {
     source file('../../src/minecraftShared/java/club/heiqi/uilib/host/lwjgl2/Lwjgl2InputQueue.java'),
             file('verification/Lwjgl2InputQueueVerification.java')
@@ -65,7 +65,7 @@ tasks.register('verifyInputQueue', JavaExec) {
     def actualClasspath = files(inputQueueVerification.map { it.destinationDir }) + inputQueueVerification.get().classpath
     inputs.files actualClasspath
     doFirst {
-        // Java8 Windows launcher不能处理本机中文绝对classpath；以工程目录为工作目录传相对路径。
+        // 以工程目录为基准传入相对 classpath，绕过 Java8 Windows launcher 的中文绝对路径解码问题。
         classpath = files()
         jvmArgs '-cp', actualClasspath.files.collect { artifact ->
             def location = workingDir.toPath()

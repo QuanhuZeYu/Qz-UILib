@@ -91,7 +91,7 @@ public final class ResourceManagerFontSourcesScenario extends TestApplication {
             TextLayout old = service.fonts().layout("MW", style, 1000);
             FontSource previous = old.lines().get(0).glyphs().get(0).source;
             byte[] oldBytes = bytes(previous);
-            // 覆盖字体必须实际包含 MW；缺字会正确转入后续候选，不能据其来源变化判断重载失败。
+            // 选用实际覆盖 MW 的替换字体，使来源、字节与度量变化对应本次资源重载。
             pack.replacement = "assets/qz_uilib/fonts/math/STIXTwoMath-Regular.otf";
             sources.resourcesReloaded(); await(service, service.resourcesReloaded());
             TextLayout next = service.fonts().layout("MW", style, 1000);

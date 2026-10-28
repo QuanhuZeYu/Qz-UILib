@@ -31,7 +31,7 @@ import club.heiqi.uilib.ui.scene.paint.PaintPlanBuilder;
 import club.heiqi.uilib.ui.scene.text.TextLayout;
 import club.heiqi.uilib.ui.scene.text.TextStyle;
 
-/** 真实原 LWJGL2 compat：IMAGE 像素与独立 item state scope，不启动游戏、不冒称 Forge/Iris/glint 实测。 */
+/** 在独立 LWJGL2 compatibility 上下文验证 IMAGE 像素与 item state scope，Forge/Iris/glint 共存由实机验收。 */
 public final class ImageLwjgl2Scenario extends TestApplication {
     private static final int W = 240, H = 160;
     private final Lwjgl2GlApi gl = new Lwjgl2GlApi();
@@ -248,7 +248,7 @@ public final class ImageLwjgl2Scenario extends TestApplication {
         } finally { glColor4f(previous[0], previous[1], previous[2], previous[3]); }
     }
 
-    /** 与RenderItem.renderIcon相同顶点/UV/z及Tessellator的固定管线client数组提交，不运行MC。 */
+    /** 按 RenderItem.renderIcon 的顶点、UV、z 与 Tessellator client 数组提交方式绘制隔离样本。 */
     private void flatIcon(int texture) {
         glDisable(GL_LIGHTING);
         glEnable(GL_BLEND);
@@ -376,7 +376,7 @@ public final class ImageLwjgl2Scenario extends TestApplication {
             PaintPlanBuilder b = new PaintPlanBuilder();
             b.add(PaintCommand.rect(new LayoutBox(0, 0, W, H), null, 0xffffffff));
             b.add(PaintCommand.text(new LayoutBox(5, 100, 220, 40), null, text));
-            // shader绘制不需要固定管线texture enable；主动保留此典型shader入口，验证scope自备旧路径。
+            // 从 shader 常见的固定纹理关闭状态进入，核验 scope 自行建立 RenderItem 所需入态。
             glDisable(GL_TEXTURE_2D);
             glAlphaFunc(GL_GREATER, .1f);
             if (poison) {

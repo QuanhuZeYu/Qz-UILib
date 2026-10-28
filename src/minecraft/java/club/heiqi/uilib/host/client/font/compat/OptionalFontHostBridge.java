@@ -5,13 +5,13 @@ import club.heiqi.uilib.host.client.gl.GlApi;
 import club.heiqi.uilib.host.client.font.context.FontRenderContext;
 import club.heiqi.uilib.ui.scene.paint.PaintPlan;
 
-/** 原版adapter可选宿主桥；不需要scene，不拥有字体engine/atlas。
- * submit接管sourceLease，父owner负责需求union和回放短Prepared。关闭替代开关由adapter决定。 */
+/** 原版 adapter 的可选提交桥；submit 接管 sourceLease，父 owner 持有字体 engine/atlas，
+ * 负责需求合并与回放期 Prepared。替代开关由 adapter 决定。 */
 public interface OptionalFontHostBridge extends AutoCloseable {
     interface ReplaySink {
         void draw(PaintPlan plan, FontRenderContext context);
 
-        /** 仅供延期回放：提交时先把可见字形并入本帧需求。即时draw自带需求准备，不应再先登记。 */
+        /** 延期回放在提交时登记本帧可见需求；即时 draw 在 prepare 中完成同一步骤。 */
         void registerVisible(PaintPlan plan, FontRenderContext context);
 
         FontRenderContext capture();
@@ -55,8 +55,7 @@ public interface OptionalFontHostBridge extends AutoCloseable {
             Objects.requireNonNull(lease, "lease");
             try {
                 if (closed) throw new IllegalStateException("font bridge已关闭");
-                // #81 即时回放的prepare已按同一plan/context并入整帧需求并请求光栅；
-                // registerVisible只服务延期回放，在此重复会使每次drawString采样与可见性准备各做两遍。
+                // 即时 draw 的 prepare 统一完成采样、可见需求合并与光栅请求。
                 sink.draw(plan, context);
             } finally {
                 FontHostOrderQueue.release(lease);

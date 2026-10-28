@@ -15,7 +15,7 @@ import zipfile
 
 
 def run(command: list[str], cwd: Path) -> None:
-    # Java8 Windows launcher无法处理本机中文绝对路径；只在进程边界转相对参数。
+    # Java8 Windows launcher 在进程边界使用相对参数，绕过中文绝对路径的解码问题。
     def relative(value: str) -> str:
         if not Path(value).is_absolute():
             return value
@@ -132,12 +132,12 @@ def package_mod(destination: Path, classes: Path, package: str, resources: Path,
                     result.write(path, name)
         result.write(repository / "LICENSE", "LICENSE")
         if fonts:
-            # 仅字体树及随树许可证进入外层Mod；普通Core库不属于ResourceManager资源包。
+            # 将字体树及随树许可证装入外层 Mod，取得 ResourceManager 的资源包身份。
             with zipfile.ZipFile(fonts) as source:
                 for entry in source.infolist():
                     if not entry.is_dir() and entry.filename.startswith("assets/qz_uilib/fonts/"):
                         result.writestr(entry, source.read(entry))
-        # 独立包各自携带 MIT；合并时保留来源目录，不能覆盖外层宿主许可证。
+        # 合并独立包时按来源目录保留各自 MIT，外层根目录保留宿主许可证。
         for archive, component in [(gallery, "core-gallery"), (verification, "core-verification")]:
             if archive:
                 with zipfile.ZipFile(archive) as source:
@@ -211,7 +211,7 @@ def main() -> None:
     cache.mkdir(parents=True, exist_ok=True)
     classes = cache / "classes"
     classes.mkdir(exist_ok=True)
-    # 只清理本构建器拥有的字节码，避免已删除的宿主类残留进新成品。
+    # 重建前清理本构建器拥有的字节码，使产物对应当前宿主源码。
     for obsolete in classes.rglob("*.class"):
         obsolete.unlink()
     staging = project / "build/client-cache"
@@ -277,7 +277,7 @@ def main() -> None:
     host_manifest = base_manifest
     if args.target == "112":
         host_manifest += "FMLCorePlugin: club.heiqi.uilib.host.forge112.loading.UILibLoadingPlugin\r\nFMLCorePluginContainsFMLMod: true\r\n"
-    # 输出目录可保留旧版本；本次验证只检查实际生成的组合，不把历史包混入当前验收。
+    # 按本次实际生成的组合核验产物，输出目录中的历史版本独立保留。
     produced = []
     for kind in (["host", "manual"] if args.install_bundle else ["host"]):
         development = staging / (kind + "-dev.jar")

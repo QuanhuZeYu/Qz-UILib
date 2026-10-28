@@ -29,7 +29,7 @@ sourceSets {
     }
 }
 tasks.withType(ProcessResources).configureEach {
-    // mods.toml 的版本与依赖范围由构建期属性展开，不保留手写版本。
+    // mods.toml 的版本与依赖范围统一由构建期属性展开。
     inputs.property 'uilibVersion', project.version.toString()
     filesMatching('META-INF/mods.toml') { expand(uilibVersion: project.version.toString()) }
 }
@@ -72,7 +72,7 @@ tasks.named('check') {
     }
 }
 
-// Forge 36 从 FMLModType 装载独立库；消费 Maven 正式产物，不把核心装进宿主 Mod。
+// Forge 36 通过 FMLModType 装载 Maven 正式库，宿主 Mod 与核心分别持有自身类。
 task glAdapterJar(type: Jar) {
     archiveFileName = 'qz_uilib-gl-adapter-java8.jar'
     from('../../LICENSE')

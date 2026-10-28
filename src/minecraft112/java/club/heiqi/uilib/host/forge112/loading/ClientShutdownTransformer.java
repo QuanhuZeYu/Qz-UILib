@@ -8,7 +8,7 @@ import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 
-/** Forge 无客户端停止事件；仅在 Minecraft 销毁 Display 前释放所属 GPU 服务。 */
+/** 在 Minecraft.shutdownMinecraftApplet 入口挂接客户端结束通知，于 Display 销毁前释放所属 GPU 服务。 */
 public final class ClientShutdownTransformer implements IClassTransformer {
     public byte[] transform(String name, String transformedName, byte[] bytes) {
         if (!"net.minecraft.client.Minecraft".equals(transformedName) || bytes == null) return bytes;

@@ -4,7 +4,7 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.FloatBuffer;
 
-/** MC可选桥的小型宿主反射参数，不链接任一LWJGL BufferUtils。 */
+/** 用 Java NIO 创建可选宿主桥的反射参数缓冲。 */
 public final class CompatBuffers {
     private CompatBuffers() {}
 

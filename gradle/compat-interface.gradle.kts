@@ -2,12 +2,12 @@ import org.gradle.api.publish.maven.MavenPublication
 import org.gradle.api.tasks.SourceSetContainer
 import org.gradle.api.tasks.bundling.Zip
 
-// 输入仓与发布输出可独立指定；原有工作站 -PuilibRepository 调用保持可用。
+// 发布输出优先使用 uilibPublicationRepository，再沿 uilibRepository 或本仓 build/maven 取值。
 val developmentRepository = uri(findProperty("uilibPublicationRepository")?.toString()
     ?: findProperty("uilibRepository")?.toString()
     ?: layout.buildDirectory.dir("maven").get().asFile.toURI().toString())
 
-// 明确发布本仓接口编译产物；Compat通过Maven消费，不读取本仓源码或classes。
+// 发布本仓接口编译产物，供 Compat 通过 Maven 消费。
 val developmentJar = tasks.register<Jar>("minecraftDevelopmentJar") {
     archiveClassifier.set("development-java8")
     from(project.extensions.getByType<SourceSetContainer>().getByName("main").output)
@@ -24,7 +24,7 @@ extensions.configure<org.gradle.api.publish.PublishingExtension> {
     }
 }
 
-// 复用正式 publication 的 Maven 输出，仅打包本次坐标，不带入输入仓或旧版本。
+// 从正式 publication 输出中提取本次坐标，装配独立 Maven ZIP。
 tasks.register<Zip>("minecraftMavenZip") {
     group = "publishing"
     description = "生成独立 Compat 可消费的 Minecraft 开发接口 Maven ZIP"

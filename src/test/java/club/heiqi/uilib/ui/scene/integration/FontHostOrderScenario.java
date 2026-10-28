@@ -12,10 +12,10 @@ import club.heiqi.uilib.host.client.font.context.FontRenderContext;
 import club.heiqi.uilib.ui.scene.paint.PaintPlan;
 import club.heiqi.uilib.ui.scene.paint.PaintPlanBuilder;
 
-/** 直接运行生产queue与absent-host bridge callbacks；不将模型称为真实Mixin安装或world画面验收。 */
+/** 验证生产 queue 与 absent-host bridge callbacks 的票据保序和租约释放，画面与注入由实机验收。 */
 public final class FontHostOrderScenario extends TestApplication {
 
-    /** 只给生产queue提供identity票据，不模拟BFR；同range故意equals相等以防退化到值映射。 */
+    /** 为生产 queue 提供身份票据；同 range 的 equals 相等，用于核验按对象身份区分 segment。 */
     private static final class RangeSegment {
         final Object owner;
         final int start, end;
@@ -171,7 +171,7 @@ public final class FontHostOrderScenario extends TestApplication {
                                         @Override
                                         public void registerVisible(
                                                 PaintPlan value, FontRenderContext snapshot) {
-                                            // #81 即时路径由prepare准备需求，重复登记会让每次drawString做两遍可见性准备。
+                                            // 以独立计数识别重复登记，核验即时路径由 prepare 统一准备需求。
                                             callbacks[0] += 100;
                                         }
 

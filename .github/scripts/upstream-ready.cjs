@@ -29,7 +29,7 @@ async function main() {
     const response = await fetch(base + '/releases/tags/' + encodeURIComponent(tag),
       { headers, signal: AbortSignal.timeout(30000) });
     if (response.status === 404) {
-      // 只有存在的仓库缺少公开 Release 才等待；错仓库或访问失败仍是配置/认证错误。
+      // 先确认仓库可访问，再将缺少公开 Release 记录为等待；其他失败沿错误通道报告。
       const check = await fetch(base, { headers, signal: AbortSignal.timeout(30000) });
       if (!check.ok) throw new Error(repo + ' 仓库检查失败 HTTP ' + check.status);
       missing.push(repo + ' ' + tag + '：Release 尚未公开（HTTP 404）');
@@ -52,5 +52,5 @@ async function main() {
   console.log(summary);
 }
 
-// 不把认证、网络、服务端或配置错误转换为 ready=false，避免跳过真实故障。
+// 认证、网络、服务端与配置错误使任务失败，ready=false 专用于等待上游发布。
 main().catch(error => { console.error('上游 Release 检查失败：' + error.message); process.exitCode = 1; });

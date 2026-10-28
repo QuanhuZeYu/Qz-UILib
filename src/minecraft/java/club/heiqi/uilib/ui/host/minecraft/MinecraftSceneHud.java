@@ -13,9 +13,9 @@ import club.heiqi.uilib.ui.scene.host.ScenePage;
 import club.heiqi.uilib.ui.scene.host.ScenePageSession;
 
 /**
- * Forge 1.7.10 被动 HUD：只借用页面会话与 framebuffer 宿主，不建立原生输入联系。
- * 显隐停止呈现而保留页面；世界或连接替换结束旧资源。位置与编辑策略归页面，见 HUD 规格。
- * 构造、登记、域派发和结束均由同一客户端线程执行；业务域与共享字体/图像服务不归本对象。
+ * Forge 1.7.10 被动 HUD：借用页面会话与 framebuffer 宿主，输入继续由游戏处理。
+ * 隐藏时保留页面并暂停呈现；世界或连接替换结束旧资源。位置与编辑策略归页面，见 HUD 规格。
+ * 构造、登记、域派发和结束均由同一客户端线程执行；业务域与共享字体/图像服务归外部持有者。
  */
 public final class MinecraftSceneHud implements AutoCloseable {
     private final ReactiveDomain domain;
@@ -37,7 +37,7 @@ public final class MinecraftSceneHud implements AutoCloseable {
         this.visible = Objects.requireNonNull(visible, "visible");
     }
 
-    /** 幂等登记两个所属事件总线；登记不创建页面或 GPU 资源。结束后不能重新登记。 */
+    /** 幂等登记 Forge/FML 事件；页面与 GPU 资源在首次显示时创建，结束后拒绝登记。 */
     public MinecraftSceneHud register() {
         checkThread();
         if (closed) throw new IllegalStateException("HUD 已结束");
@@ -64,7 +64,7 @@ public final class MinecraftSceneHud implements AutoCloseable {
 
     @SubscribeEvent
     public void tick(TickEvent.ClientTickEvent event) {
-        // F1 或菜单期间仍观察断线与世界替换；tick 不创建会话，也不补跑隐藏帧。
+        // tick 持续观察断线与世界替换；页面帧仅由可见 HUD 的渲染阶段推进。
         if (event.phase == TickEvent.Phase.END) update(false);
     }
 
@@ -75,7 +75,7 @@ public final class MinecraftSceneHud implements AutoCloseable {
                 minecraft.currentScreen == null && !minecraft.gameSettings.hideGUI, render);
     }
 
-    /** 游戏身份只用于资源代际；不从世界或连接重建页面输入、布局或业务状态。 */
+    /** 世界与连接身份界定资源代际，页面声明与业务状态沿原来源保持。 */
     void update(Object nextWorld, Object nextConnection, boolean gameHudVisible, boolean render) {
         checkThread();
         if (closed) return;
@@ -96,7 +96,7 @@ public final class MinecraftSceneHud implements AutoCloseable {
         if (!shown || closed || !eligible) return;
         if (session == null) {
             ScenePageSession opened = openSession(domain, page);
-            // 页面构造可能同步结束宿主，不能把迟到会话重新挂到已结束对象上。
+            // 页面构造可能同步结束宿主，发布会话前再次核验呈现资格。
             if (closed || !eligible) {
                 opened.close();
                 return;
@@ -136,7 +136,7 @@ public final class MinecraftSceneHud implements AutoCloseable {
             throw new IllegalStateException("HUD 必须在所属客户端线程执行");
     }
 
-    /** 注销与会话结束均尝试完成；保持首错，重复结束不重复释放。 */
+    /** 幂等结束会话并注销所属监听；逐项尝试释放，保持首错并追加后续失败。 */
     @Override
     public void close() {
         if (closed) return;

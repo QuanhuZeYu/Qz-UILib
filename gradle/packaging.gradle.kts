@@ -18,12 +18,12 @@ val manualTestDevJar by tasks.registering(Zip::class) {
     archiveBaseName.set("qz_uilib_manualtest"); archiveVersion.set(project.version.toString()); archiveClassifier.set("dev"); archiveExtension.set("jar")
     destinationDirectory.set(layout.buildDirectory.dir("manual-test"))
     from(manual.output)
-    // 独立消费包各自带 MIT；合并时按来源保留，避免与外层宿主 LICENSE 同名冲突。
+    // 独立消费包的 MIT 按来源目录保留，外层根目录保留宿主 LICENSE。
     from(provider { zipTree(gallery.singleFile) }) {
         exclude("META-INF/MANIFEST.MF")
         filesMatching("LICENSE") { path = "META-INF/licenses/core-gallery/LICENSE" }
     }
-    // 核心验证页的服务实现、数据及第三方通知随人工广场提供，生产包仍不带测试代码。
+    // 核心验证服务、数据及第三方通知归人工广场附加包。
     from(provider { zipTree(verification.singleFile) }) {
         exclude("META-INF/MANIFEST.MF")
         filesMatching("LICENSE") { path = "META-INF/licenses/core-verification/LICENSE" }
@@ -47,13 +47,13 @@ val manualTestJar by tasks.registering(ReobfuscatedJar::class) {
             check(zip.getEntry("club/heiqi/uilib/ui/reactive/Signal.class") == null) { "附加包不能重复打入核心" }
             val removed = listOf("CoreLoopPage", "CoreLocalizationPage", "CoreRichTextPage", "CoreImagePage", "CoreMathPage", "CoreDocumentPage", "UsageScenarios", "ProjectSettings", "TextScenarios", "MediaScenarios", "InteractionScenarios", "ResourceScenarios", "GallerySamples")
             check(zip.entries().asSequence().none { entry -> removed.any { entry.name.startsWith("club/heiqi/uilib/testing/gallery/$it") } })
-            // 核心验证用的字体、图像与语言样本属于本人工附加包；旧页面类仍按上方清单排除。
+            // 附加包保留字体、图像与语言样本；页面类按上方清单筛选。
         }
     }
 }
 tasks.register("galleryBuild") { group = "build"; description = "显式装配 Minecraft 1.7.10 人工广场"; dependsOn(manualTestJar) }
 // 外层 Jar 与根 MIT 许可同步；第三方许可随各自组件保留。
-// Gradle 9 的 jvm.Jar 与 bundling.Jar 互不继承，按 CopySpec 配置避免类型分叉。
+// 按两种 Jar 任务共用的 CopySpec 配置许可，适配 Gradle 9 的类型层次。
 val licenseFile = rootProject.file("LICENSE")
 listOf("jar", "shadowJar", "sourcesJar", "apiJar", "reobfJar", "manualTestDevJar").forEach { name ->
     tasks.named(name) { (this as org.gradle.api.file.CopySpec).from(licenseFile) }

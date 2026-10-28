@@ -8,7 +8,7 @@ import net.minecraft.util.ResourceLocation;
 import club.heiqi.uilib.host.client.font.MinecraftFontServices;
 import club.heiqi.uilib.ui.scene.image.SharedImageService;
 
-/** 安装/资源换代/退出均使用正式client生命周期；worker仅持独立stream，绝不读取ResourceManager。 */
+/** 客户端生命周期负责安装、资源换代与退出；主线程捕获独立 stream，worker 消费该流。 */
 public final class MinecraftImageServices {
     private static ClientImageServices shared;
     private static Thread thread;

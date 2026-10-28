@@ -9,7 +9,7 @@ import net.minecraft.command.CommandBase;
 import net.minecraft.command.ICommandSender;
 import net.minecraftforge.client.ClientCommandHandler;
 
-/** 仅开发 classpath 中注册；场景不进入发布包。 */
+/** 人工附加包登记客户端命令，在聊天输入收尾后打开共享广场或性能页。 */
 public final class CoreLoopBootstrap {
     private static boolean installed, pendingOpen, pendingPerformance;
     private static club.heiqi.uilib.testing.gallery.TestGallery.Page pendingPage=club.heiqi.uilib.testing.gallery.TestGallery.Page.HOME;

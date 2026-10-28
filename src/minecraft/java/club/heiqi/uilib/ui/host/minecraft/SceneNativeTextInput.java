@@ -41,7 +41,7 @@ public final class SceneNativeTextInput implements AutoCloseable {
     public List<NativeEvent> drain() { return port.drain(); }
     public void close() { port.close(); }
 
-    /** 自包含不可变事实；组字在采集时关联来源，drain不读取焦点或改写其所属联系。
+    /** 自包含不可变事实；组字在采集时关联来源，drain 保留该来源联系。
      * pointer/focused/edit各自非空时表示对应事实，其余为键事实。 */
     public static final class NativeEvent {
         public final int key;

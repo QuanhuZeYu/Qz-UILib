@@ -9,9 +9,9 @@ import club.heiqi.uilib.ui.host.minecraft.SceneNativeTextInput;
 
 /** 可选宿主只提供外部事实；布局、字体与GPU资源仍由UILib拥有。返回null表示该能力缺席。 */
 public interface MinecraftHostExtension {
-    /** 不可变的显示码点映射快照；配置变化必须返回不同实例，热路径不得I/O。 */
+    /** 配置持有者预先准备不可变显示码点映射，变化时发布不同稳定实例供热路径消费。 */
     default java.util.function.IntUnaryOperator textMapping() { return null; }
-    /** 客户端资源owner在捕获新字体代之前通知；异常直接暴露，不代替扩展发布默认值。 */
+    /** 客户端资源 owner 在捕获新字体代前通知扩展，失败沿原异常通道报告。 */
     default void resourcesReloaded() {}
     default OptionalFontHostBridge fontBridge(ClassLoader loader, GlApi gl,
             OptionalFontHostBridge.ReplaySink sink, int capacity) { return null; }

@@ -26,7 +26,7 @@ import java.util.TreeSet;
 import java.util.function.Supplier;
 
 /**
- * 原版标准文字语义适配。格式解析与度量均复用共享服务，不建立逐char排字引擎或scene。
+ * 将原版格式与方法语义转换为共享字体服务的属性文本、度量和采样请求。
  * 创建/使用在线程专属FontTextService所属线程。host负责PresentationEpoch、GL和资源生命周期。
  */
 public final class VanillaTextService {
@@ -107,7 +107,7 @@ public final class VanillaTextService {
 
         @Override
         public int hashCode() {
-            // 沿原字段次序计算哈希，避免装箱和 varargs 分配。
+            // 按字段次序直接计算哈希，省去装箱与 varargs 分配。
             int hash = 1;
             hash = 31 * hash + Float.hashCode(logicalEm);
             hash = 31 * hash + Float.hashCode(lineHeight);
@@ -173,7 +173,7 @@ public final class VanillaTextService {
         ParseKey key = new ParseKey(raw, settings, color);
         AttributedText cached = parsed.get(key);
         if (cached != null) return cached;
-        // 装饰相对字形基线；旧行框下沿与中线不能作为现代字体的下划线或删除线位置。
+        // 下划线与删除线按 em 声明，再沿真实字形基线定位。
         TextDecoration decoration = TextDecoration.NONE.fromEm(settings.logicalEm, true, true);
         TextStyle base =
                 new TextStyle(
@@ -240,7 +240,7 @@ public final class VanillaTextService {
                 input.hardBreak);
     }
 
-    /** 顶部caller原点按Settings.baseline对齐；不缩小回退字体以塞入固定行高。 */
+    /** 按 Settings.baseline 对齐 caller 顶部原点，保留各实际字体的字形尺寸。 */
     private static TextLayout align(TextLayout layout, Settings settings) {
         List<TextLayout.Line> lines = new ArrayList<TextLayout.Line>();
         float top = 0;
@@ -319,7 +319,7 @@ public final class VanillaTextService {
                 layout.input).withPolicy(layout.policy());
     }
 
-    /** 彩色码与base颜色重绑到簇，不走HB；显式§f不会误继承新的base颜色。 */
+    /** 将格式色与 caller 基色重绑到既有簇，复用 HB 几何并保留显式 §f 的颜色身份。 */
     private static TextLayout paint(TextLayout geometry, AttributedText request) {
         List<TextLayout.Line> lines = new ArrayList<TextLayout.Line>();
         for (TextLayout.Line line : geometry.lines()) {
@@ -473,11 +473,10 @@ public final class VanillaTextService {
         return result;
     }
 
-    /** 播放时仅使用已冻结的logical glyph/cluster/source/style快照；不重新读取raw或宿主设置。 */
+    /** 播放时从冻结的 logical glyph/cluster/source/style 快照生成采样布局。 */
     public TextLayout sample(TextLayout logical, RasterSampling sampling, long tick, long salt) {
         FontTextService font = service();
-        // #81 混淆资格属于不可变logical；热命中不再为判断资格反复扫描全部cluster。
-        // key只定位布局/采样对，动态tick/salt由entry精确核对，合法的(0,0)不是静态标记。
+        // 随采样缓存保存 logical 的混淆资格；动态结果按 tick/salt 精确核验，(0,0) 也是合法输入。
         IdentitySampleKey key = new IdentitySampleKey(logical, sampling);
         SampleEntry entry = planSamples.get(key);
         if (entry != null && (!entry.obfuscated || entry.tick == tick && entry.salt == salt)) {
@@ -506,7 +505,7 @@ public final class VanillaTextService {
         return parse(raw, settings, baseColor).trailingStyle.color;
     }
 
-    /** 只随有界采样缓存存活；代际清理与LRU淘汰同时退役资格和最近采样，不保存外部状态。 */
+    /** 有界采样缓存持有混淆资格和最近结果，随代际清理或 LRU 淘汰一同释放。 */
     static final class SampleEntry {
         final boolean obfuscated;
         final long tick, salt;
@@ -550,7 +549,7 @@ public final class VanillaTextService {
         }
     }
 
-    /** 调色板外的基色保留“继承caller”事实；片段前缀不能把它误写成显式§f。 */
+    /** 用调色板外的基色区分 caller 继承色与显式格式色。 */
     private static int canonicalColor(Settings settings) {
         int rgb = 0;
         while (true) {
@@ -569,7 +568,7 @@ public final class VanillaTextService {
                                 .advanceWidth;
     }
 
-    /** Java char接口只表达一个UTF16单元；半代理项沿正常无效输入替代，不能伪称完整emoji。 */
+    /** Java char 表达一个 UTF-16 单元，半代理项按无效输入替代合同测量。 */
     public int charWidth(char c, Settings settings) {
         return c == 167 ? -1 : width(String.valueOf(c), settings);
     }
@@ -686,7 +685,7 @@ public final class VanillaTextService {
         return (int) (list(raw, maximum, settings).size() * settings.lineHeight);
     }
 
-    /** 显式legacy字符串视觉API；layout始终读取原逻辑串，不能把此结果再次送去重排。 */
+    /** 返回 legacy API 所需的视觉顺序串；layout 的输入始终为原逻辑串。 */
     public String bidiString(String raw, Settings settings) {
         if (!settings.bidi) return raw;
         service();

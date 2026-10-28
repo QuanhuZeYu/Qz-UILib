@@ -6,7 +6,7 @@ import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import club.heiqi.uilib.ui.scene.image.ImageSource;
 
-/** 声明时深复制 ItemStack（含 NBT/数量/damage）。原对象变更须发布新的 source，不承诺自动观察外部对象。 */
+/** 声明时深复制 ItemStack（含 NBT/数量/damage），原对象变更通过发布新 source 生效。 */
 public final class MinecraftItemSource extends ImageSource {
     private static final AtomicLong IDS = new AtomicLong();
     private final ItemStack snapshot;

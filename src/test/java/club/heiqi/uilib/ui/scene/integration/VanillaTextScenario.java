@@ -20,7 +20,7 @@ import club.heiqi.uilib.ui.scene.text.font.nativefont.GlyphBitmap;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.FontFace;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.FontSession;
 
-/** 原版适配CPU真实集成，替代一次标准文字API实机测量；不宣称GL/MC性能验收。 */
+/** 通过原版适配 CPU 链路验证标准文字 API 的真实度量，GL 与 MC 性能由所属场景验收。 */
 public final class VanillaTextScenario extends TestApplication {
 
     private static List<TextLayout.Glyph> glyphs(TextLayout l) {
@@ -736,7 +736,7 @@ public final class VanillaTextScenario extends TestApplication {
                     TextLayout frozen =
                             adapter.layout("§k👩‍💻", settings, -1, 1000, TextPolicy.SINGLE_LINE);
                     FontSource expected = frozen.style.candidates().get(0);
-                    // 此处关闭是跨服务代际重放的真实前置条件；应用仍兜底关闭幂等服务。
+                    // 先结束旧服务再验证跨代际重放，应用持有者随后执行幂等清理。
                     holder[0].close();
                     holder[0] =
                             own(

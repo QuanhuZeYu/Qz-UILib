@@ -1,4 +1,4 @@
-// 跨仓只解析正式 Maven 产物；开发包提供原包名，发行仍使用私有重定位核心。
+// 跨仓依赖经 Maven 解析；开发包提供原包名，发行包使用私有重定位核心。
 val uilibVersion = findProperty("uilibDependencyVersion")?.toString() ?: project.version.toString()
 val uilibGroup = findProperty("uilibGroup")?.toString()
     ?: if (uilibVersion.startsWith("4.")) "club.heiqi.uilib" else "asia.quanhuzeyu.uilib"

@@ -4,7 +4,7 @@ plugins {
 }
 
 // Maven GAV group 与 Java package 解耦：公开仓使用 asia.quanhuzeyu.uilib，代码包名保持 club.heiqi.uilib。
-// 工作站本地开发组合与原 -P 共用项目属性，避免依赖和宿主版本分别取值。
+// 工作站配置与 -P 共用项目属性，统一宿主与依赖的版本选择。
 version = findProperty("uilibVersion")?.toString() ?: "5.0.0-beta1"
 group = findProperty("uilibGroup")?.toString()
     ?: if (version.toString().startsWith("4.")) "club.heiqi.uilib" else "asia.quanhuzeyu.uilib"

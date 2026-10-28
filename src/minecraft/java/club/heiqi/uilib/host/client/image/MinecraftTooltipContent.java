@@ -7,8 +7,8 @@ import club.heiqi.uilib.ui.scene.text.TextInput;
 import club.heiqi.uilib.ui.scene.text.TextEffects;
 import club.heiqi.uilib.ui.scene.text.TextDecoration;
 
-/** 物品tooltip在宿主事实取得时转换一次。核心只接收中性内容，主题变化只resolve，不再解析§。
- * 混淆意图保留给正式属性布局的UNSUPPORTED诊断及原正文显示；不为tooltip另建动画引擎。
+/** 取得物品事实时将 tooltip 转为中性内容，主题变化复用解析结果进行 resolve。
+ * 混淆意图交给正式属性布局，沿其 UNSUPPORTED 诊断与原正文显示处理。
  */
 public final class MinecraftTooltipContent {
     private MinecraftTooltipContent() {}

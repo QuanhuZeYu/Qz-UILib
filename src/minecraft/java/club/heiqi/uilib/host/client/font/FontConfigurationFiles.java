@@ -13,11 +13,11 @@ import club.heiqi.uilib.ui.scene.text.font.FontCandidateConfiguration;
 import club.heiqi.uilib.ui.scene.text.font.FontSource;
 
 /** MC 的文件选择与一次迁移；类型、持久化格式和权威值均由核心承担。
- * YAML > Properties > Forge，仅选择一个来源，不合并、不改写旧文件。 */
+ * 按 YAML > Properties > Forge 选择首个现有来源，旧文件保持原样。 */
 public final class FontConfigurationFiles {
     private FontConfigurationFiles() {}
 
-    /** 只推导正式路径，不访问文件或状态域。 */
+    /** 从旧文件路径推导同目录的 YAML 路径。 */
     public static Path yamlPath(Path legacy) { return sibling(legacy, ".yaml"); }
 
     private static Path sibling(Path legacy, String suffix) {
@@ -27,7 +27,7 @@ public final class FontConfigurationFiles {
         return legacy.resolveSibling(base + suffix);
     }
 
-    /** 可由 worker 调用的纯文档 I/O；迁移目标成功写入后才返回，不发布配置。 */
+    /** 准备配置文档并完成迁移目标写入；调用方选择 I/O 线程并负责配置发布。 */
     public static ConfigDocument prepare(ConfigSchema schema, Path legacy,
             ConfigKey<Boolean> enabled, ConfigKey<List<String>> candidates,
             List<FontSource> builtins) throws IOException {

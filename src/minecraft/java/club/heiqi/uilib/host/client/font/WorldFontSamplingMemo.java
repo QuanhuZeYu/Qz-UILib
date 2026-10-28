@@ -8,11 +8,10 @@ import club.heiqi.uilib.ui.scene.text.RasterSampling;
 import club.heiqi.uilib.ui.scene.text.TextLayout;
 import java.util.LinkedHashMap;
 
-/** 采样函数的有界数值memo，输入按值精确失效；不参与票据、绘制或管线生命周期。
- * logical布局只提供不可变墨迹；当前tick的混淆布局仍由text.sample重新产生。
- * 不保存context、pipeline、图集、UV或GL scope，字体换代通知及owner关闭清空旧布局引用。 */
+/** 按 logical 布局身份、位置和投影数值缓存有界采样结果，GPU 资源归回放范围。
+ * 当前 tick 的混淆布局由 text.sample 生成；字体换代及 owner 关闭清空旧布局引用。 */
 final class WorldFontSamplingMemo {
-    // 容纳稳定文字工作集，避免顺序扫描整轮淘汰。
+    // 容纳稳定文字工作集，保持整轮顺序扫描的缓存复用。
     private static final int LIMIT = 256;
     private final LinkedHashMap<Key, RasterSampling> values = new LinkedHashMap<>(LIMIT, .75f, true);
     private long revision;
@@ -26,7 +25,7 @@ final class WorldFontSamplingMemo {
             WorldFontSampling.Source source) {
         if (command.kind != PaintCommand.Kind.TEXT || command.text == null)
             throw new IllegalArgumentException("采样需要文本计划");
-        // revision也属于key；此清理避免旧代际占据有界空间，通知负责无后续消费时的退役。
+        // revision 参与 key；消费时换代清理旧项，无后续消费时由资源通知退役。
         if (revision != source.revision) {
             values.clear();
             revision = source.revision;

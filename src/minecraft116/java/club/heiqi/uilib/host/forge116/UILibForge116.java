@@ -4,7 +4,7 @@ import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.fml.DistExecutor;
 import net.minecraftforge.fml.common.Mod;
 
-/** 客户端入口不把 Minecraft 类型带入共享核心。 */
+/** Forge 客户端生命周期入口，安装共享页面服务的游戏适配。 */
 @Mod("qz_uilib")
 public final class UILibForge116 {
     public UILibForge116() {

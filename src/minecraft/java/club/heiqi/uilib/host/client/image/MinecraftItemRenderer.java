@@ -9,7 +9,7 @@ import club.heiqi.uilib.ui.scene.image.ImageContent;
 import club.heiqi.uilib.ui.scene.image.ImagePlacement;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 
-/** 每次 replay 直接原版 RenderItem，保留 Forge inventory hook/动态 glint。覆盖层不调用原版 FontRenderer overlay。 */
+/** 每次 replay 委托 RenderItem 保留 Forge inventory hook 与动态 glint，覆盖层由 UILib 绘制。 */
 public final class MinecraftItemRenderer implements GlImageResources.HostItems {
     private final ClientFontServices fonts;
     private final RenderItem renderer = new RenderItem();

@@ -10,7 +10,7 @@ import club.heiqi.uilib.mixin.client.VanillaFontRendererMixin;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-/** FML启动绘制线程不接管；真实安装只建立逻辑适配器，不创建MC字体服务或GL对象。 */
+/** 验证逻辑适配器安装与 owner 线程接管边界，FML 启动绘制沿原入口执行。 */
 public final class VanillaFontThreadScenario extends TestApplication {
 
     private static final class FontBoundary extends VanillaFontRendererMixin {

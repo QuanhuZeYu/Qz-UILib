@@ -77,7 +77,7 @@ final class NeoForgeSceneInput implements AutoCloseable {
         if (!value) { cancelComposition(); stopNativeText(); }
     }
 
-    /** Post 在 SDL 消费者及客户端任务之后，物理确认不会跨过尚未消费的旧尾部。 */
+    /** Post 在 SDL 事件与客户端任务耗尽后，以物理快照确认旧按压结束。 */
     void historyDrained() {
         updateAvailability();
         Set<Integer> physical = new HashSet<>();
@@ -119,11 +119,11 @@ final class NeoForgeSceneInput implements AutoCloseable {
         boolean repeat = pressed && !down.add(scan);
         if (!pressed) down.remove(scan);
         Key semantic = key(scan);
-        // shortcutKey保留宿主键盘布局的字母身份；这里不解释复制、撤销等编辑动作。
+        // shortcutKey 提供当前键盘布局的字母身份，Core 解释编辑与应用命令。
         if (event.shortcutKey() >= 'a' && event.shortcutKey() <= 'z')
             semantic = Key.valueOf(String.valueOf((char) (event.shortcutKey() - 'a' + 'A')));
         // 旧 source 保留给迟到 commit；只有当前非空预编辑占有新的 IME 确认段。
-        // 已占有的按压独立吞到 UP，不随空预编辑或提交结束而转交业务。
+        // IME 已占有的按压持续消费到 UP，独立于预编辑和提交的结束时点。
         if (imeConfirmKeys.contains(scan)) { if (!pressed) imeConfirmKeys.remove(scan); return; }
         if (pressed && composing && !cancelledComposition && (semantic == Key.ENTER || semantic == Key.KEYPAD_ENTER)) {
             imeConfirmKeys.add(scan); return;
@@ -243,7 +243,7 @@ final class NeoForgeSceneInput implements AutoCloseable {
     private void cancelComposition() {
         if (composition != null && !cancelledComposition) {
             page.edit(SceneEditEvent.compositionCancel(composition));
-            // 保留旧来源直到其尾部到达；迟到 commit 仍交核心拒绝，不能重投当前焦点。
+            // 保留已取消来源到尾部到达，由 Core 按原联系拒绝迟到 commit。
             cancelledComposition = true;
         }
         composing = false;
@@ -299,7 +299,7 @@ final class NeoForgeSceneInput implements AutoCloseable {
         closed = true;
         available = false;
         Throwable failure = null;
-        // 焦点/编辑取消可同步开后继页；先结束旧 SDL 联系，之后不再触碰窗口的原生文本状态。
+        // 焦点/编辑取消可同步开后继页，先结束本页 SDL 联系，再执行核心取消。
         try { stopNativeText(); } catch (RuntimeException | Error next) { failure = next; }
         try { inputs.availability(false); } catch (RuntimeException | Error next) {
             if (failure == null) failure = next; else if (failure != next) failure.addSuppressed(next);

@@ -14,7 +14,7 @@ import net.minecraft.util.ResourceLocation;
 import club.heiqi.uilib.ui.scene.text.font.FontTextService;
 
 /** Core 资产由独立成品持有；MC 将它注册为默认资源包，用户资源包仍按宿主顺序覆盖。
- * 普通 classpath jar 不会被 FML 自动注册，不能把资源读取失败当成 Emoji 缺字。
+ * 显式登记补齐普通 classpath Jar 的资源包身份，资源读取错误按来源问题报告。
  * 每次读取走资源管理器的本次重载，字体来源仍由既有代际持有字节快照。 */
 public final class CoreAssetResourcePack implements IResourcePack {
     private final ClassLoader loader = FontTextService.class.getClassLoader();

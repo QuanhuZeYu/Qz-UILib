@@ -5,7 +5,7 @@ import club.heiqi.uilib.ui.scene.image.ImageContent;
 import club.heiqi.uilib.ui.scene.image.ItemImageFacts;
 import club.heiqi.uilib.ui.scene.text.TextContent;
 
-/** HOST_ITEM 专用快照；RenderItem 每次取得隔离 copy，Forge hook 无法污染被已冻结 PaintPlan 持有的内容。 */
+/** HOST_ITEM 专用快照；RenderItem 每次取得隔离副本，冻结 PaintPlan 保留原物品事实。 */
 public final class MinecraftItemContent extends ImageContent {
     private final ItemStack snapshot;
     private final ItemImageFacts facts;

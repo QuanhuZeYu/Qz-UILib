@@ -14,7 +14,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.ServiceLoader;
 
-/** 核心测试与正式 Core 同包；在独立运行域保持包内访问，不向 FML 模块平铺验证类。 */
+/** 在隔离类加载器中运行与 Core 同包的核心检查，保持包内访问及 FML 模块边界。 */
 public final class IsolatedCoreGalleryChecks implements GalleryChecks {
     private static final String ROOT = "/META-INF/uilib-verification/";
     private static final List<String> LIBRARIES = List.of("core.jar", "gallery.jar", "core-verification.jar");

@@ -6,7 +6,7 @@ import cpw.mods.fml.relauncher.Side;
 import club.heiqi.uilib.Tags;
 import club.heiqi.uilib.internal.devtools.CoreLoopBootstrap;
 
-/** 只打入显式构建的人工测试附加包，真实客户端无需额外 JVM 参数。 */
+/** 人工测试附加包的客户端入口，安装后通过显式命令打开广场。 */
 @Mod(
         modid = "qz_uilib_manualtest",
         name = "Qz UILib Manual Test",

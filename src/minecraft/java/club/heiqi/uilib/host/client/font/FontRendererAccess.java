@@ -1,6 +1,6 @@
 package club.heiqi.uilib.host.client.font;
 
-/** 标准FontRenderer的MC专有事实，止于入口适配；不向文本核心传递MC对象。 */
+/** 提供标准 FontRenderer 的 MC 专有事实，供入口适配转换为中性字体请求。 */
 public interface FontRendererAccess {
     int qz$fontHeight();
 

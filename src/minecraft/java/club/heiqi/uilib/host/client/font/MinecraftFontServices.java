@@ -26,9 +26,9 @@ import net.minecraft.client.resources.IResourceManager;
 import net.minecraft.client.resources.IResourceManagerReloadListener;
 import net.minecraft.util.ResourceLocation;
 
-/** MC资源管理适配，生产client init安装；字体/GL服务不依赖开发scene。
- * 父级退出挂接必须在 Minecraft.shutdownMinecraftApplet HEAD 主/GL线程调用 closeShared()，
- * 这里不使用shutdownhook，不在任意JVM线程释放主线程FontTextService或GL对象。
+/** MC 资源管理适配，由客户端 init 安装。
+ * Minecraft.shutdownMinecraftApplet HEAD 在主/GL 线程调用 closeShared()，
+ * 在上下文销毁前结束所属 FontTextService 与 GL 资源。
  */
 public final class MinecraftFontServices {
     private static ClientFontServices shared;
@@ -40,7 +40,7 @@ public final class MinecraftFontServices {
     private static Thread thread;
     private static long revision, resourceRevision;
     private static boolean installed;
-    // 显式资源重载先读取文件，再统一换代；避免同一load触发配置effect重复换代。
+    // 显式资源重载先读取文件，再统一换代；配置 Effect 在该阶段合并到同次更新。
     private static boolean resourceReloading;
 
     private MinecraftFontServices() {}
@@ -103,7 +103,7 @@ public final class MinecraftFontServices {
                         });
     }
 
-    /** 配置入口不安装服务；启动前只保留快照，退出后通知也不能重新创建owner。 */
+    /** 已安装且处于配置更新阶段时返回可用；服务创建与退出归客户端生命周期。 */
     public static boolean configurationUpdateAvailable() {
         if (shared == null) return false;
         checkThread();
@@ -118,7 +118,7 @@ public final class MinecraftFontServices {
         return applyCandidates(declarations);
     }
 
-    /** 异步校验与随后apply复用同代、同声明的准备future；不发布配置或native状态。 */
+    /** 异步校验与 apply 复用同代、同声明的准备 future，发布由 apply 负责。 */
     public static CompletableFuture<Void> validateCandidates(List<String> declarations) {
         if (shared == null) throw new IllegalStateException("客户端字体服务尚未安装/已关闭");
         checkThread();
@@ -128,7 +128,7 @@ public final class MinecraftFontServices {
     private static FontResourcePreparation.Sources captureSources(IResourceManager manager) {
         checkThread();
         try {
-            // 只在当前主线程捕获streams，worker绝不打开当前manager。
+            // 主线程捕获本代独立 streams，worker 消费捕获结果。
             ResourceManagerFontSources captured = new ResourceManagerFontSources(MinecraftFontServices.class.getClassLoader(),
                     id -> manager.getResource(new ResourceLocation(id)).getInputStream());
             return captured.capture(++resourceRevision);
@@ -148,7 +148,7 @@ public final class MinecraftFontServices {
                 try {
                     shared.reload(prepared);
                 } finally {
-                    // 字体换代即退役纯CPU采样memo，不延长旧logical布局的资源引用。
+                    // 字体换代时清空 CPU 采样 memo，释放旧 logical 布局引用。
                     MinecraftVanillaFont.fontResourcesChanged();
                 }
                 revision = prepared.revision;
@@ -191,13 +191,13 @@ public final class MinecraftFontServices {
                 paths.isEmpty() ? null : new club.heiqi.uilib.ui.scene.text.font.FontFamilyResolver(
                         configured, directories, generation,
                         message -> FMLLog.warning("[Qz-UILib] %s", message));
-        // 完整列表只消费已声明来源；默认内置资源作为可选目录，不再自动追加尾链。
+        // 按完整声明列表解析候选，内置资源以可选目录参与显式选择。
         return FontCandidateConfiguration.resolve(
                 declarations, builtins,
                 (path, position) -> resolver.family(Paths.get(path), "system-file-" + position));
     }
 
-    /** 配置Effect沿原owner线程推送，不在绘制期间轮询文件或创建额外监听。 */
+    /** 配置 Effect 在 owner 线程发布批处理策略，绘制入口消费当前值。 */
     public static void batchingChanged(boolean enabled) {
         if (shared == null) return;
         checkThread();
@@ -219,7 +219,7 @@ public final class MinecraftFontServices {
         if (Thread.currentThread() != thread) throw new IllegalStateException("MC字体资源仅限客户端主线程");
     }
 
-    /** 已发布字体排版代际；同来源候选变更也换代，外部缓存不能用来源revision代替。 */
+    /** 返回已发布的字体排版代际，供外部缓存响应来源重载与同来源候选变化。 */
     public static long fontGeneration() {
         return shared().fonts().generation();
     }
@@ -236,7 +236,7 @@ public final class MinecraftFontServices {
     }
 
     /** LWJGL窗口交换之前的通知；org.lwjgl类被宿主排除转换，故由MC调用点转交。
-     * 无文字消费时不创建呈现范围、worker或GL资源。 */
+     * 仅结束已激活的文字呈现范围。 */
     public static void beforePresent() {
         if (shared == null) return;
         checkThread();
@@ -250,7 +250,7 @@ public final class MinecraftFontServices {
         ClientFontServices owner = shared;
         shared = null;
         for (CompletableFuture<Void> update : new ArrayList<>(pending)) update.cancel(false);
-        // 应用配置先终止异步观察，桥和native owner仍按同一主线程生命周期释放。
+        // 在同一主线程先结束原版桥，再逆序释放应用配置与字体 owner。
         try (ClientFontServices closing = owner; AutoCloseable configuration = MinecraftApplicationConfiguration::close) {
             MinecraftVanillaFont.close();
         } catch (RuntimeException | Error failure) { throw failure; }
@@ -265,8 +265,8 @@ public final class MinecraftFontServices {
         }
     }
 
-    /** 仅资源指定的候选列表；读取失败显式报告，不回退classpath或append隐藏字体。
-     * 旧plan已加载FontSource保持byte snapshot；退休代际未加载source拒绝重读新包。
+    /** qz_uilib 资产从本代 ResourceManager 读取，读取失败携带资源身份报告。
+     * 旧 plan 保留已加载 FontSource 的字节快照，退休代际拒绝再次读取。
      */
     private static final class ResourceFonts extends ClassLoader {
         private final IResourceManager resources;

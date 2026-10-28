@@ -11,9 +11,9 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import club.heiqi.uilib.host.client.font.FontRendererAccess;
 import club.heiqi.uilib.host.client.font.MinecraftVanillaFont;
 
-/** 标准入口仅转交UILib同一定位/资源/backend，无scene节点。
- * HEAD注入在后应用的Mixin中前插；低于Angelica的1000使本入口最后安装、最先判断开关。
- * 不凭priority数字断言接管顺序，以正式包的真实变换字节码验收。 */
+/** 标准入口转交 UILib 共享定位、资源与 backend。
+ * HEAD 注入在后应用的 Mixin 中前插，priority 500 用于先检查接管开关；
+ * 与 Angelica 的实际顺序以正式包的变换字节码核验。 */
 @Mixin(value = FontRenderer.class, priority = 500)
 public abstract class VanillaFontRendererMixin implements FontRendererAccess {
     @Shadow public int FONT_HEIGHT;

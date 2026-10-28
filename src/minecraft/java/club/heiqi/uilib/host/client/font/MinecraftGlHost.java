@@ -2,7 +2,7 @@ package club.heiqi.uilib.host.client.font;
 
 import club.heiqi.uilib.host.client.gl.GlApi;
 
-/** MC最外层按实际窗口宿主选择binding；核心与GPU算法不检测游戏或加载另一套bindings。 */
+/** 在 MC 最外层按当前窗口宿主选择共享 GlApi binding。 */
 final class MinecraftGlHost {
     private MinecraftGlHost() {}
 

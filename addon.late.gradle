@@ -2,14 +2,14 @@ import com.gtnewhorizons.retrofuturagradle.minecraft.RunMinecraftTask
 import org.gradle.api.GradleException
 import org.gradle.api.artifacts.component.ModuleComponentIdentifier
 
-// GTNHGradle 2.0.25 内置发布模块只识别 -pre；这里使用其公开扩展/API 覆盖 beta 链。
+// 使用 GTNHGradle 2.0.25 公开扩展/API 将 alpha、beta、rc 版本映射为预发布。
 def releaseTypeForVersion = { String version ->
     version ==~ /(?i)^.+-(beta|alpha|rc)([-.]?[0-9A-Za-z].*)?$/ ? "beta" : "release"
 }
 
 def modVersionProvider = providers.provider { project.ext.modVersion.toString() }
 
-// projectId 为空时 GTNHGradle 不创建扩展；findByName 保证未来启用时才配置。
+// 按已创建的 modrinth 扩展配置版本类型，扩展由启用的 projectId 提供。
 def modrinth = extensions.findByName("modrinth")
 if (modrinth != null) {
     modrinth.versionType.set(modVersionProvider.map { version -> releaseTypeForVersion(version) })

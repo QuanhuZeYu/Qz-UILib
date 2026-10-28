@@ -103,7 +103,7 @@ tasks.named('check') {
     }
 }
 
-// 独立目录保留Maven 解析的库；宿主与人工入口不重复打入核心。
+// Maven 解析的库保留在独立目录，宿主与人工入口各自装配所属类。
 task glAdapterJar(type: Jar) {
     archiveFileName = 'qz_uilib-gl-adapter-java8.jar'
     from('../../LICENSE')

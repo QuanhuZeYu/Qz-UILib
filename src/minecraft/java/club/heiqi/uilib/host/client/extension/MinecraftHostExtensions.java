@@ -8,7 +8,7 @@ import club.heiqi.uilib.host.client.gl.GlApi;
 import club.heiqi.uilib.host.client.gl.GlProgramProvider;
 import club.heiqi.uilib.host.client.font.context.LwjglFontContextCapture;
 
-/** 仅发现正式SPI；主仓不包含任何可选Mod类名或版本判断。服务实例不持有GL上下文。 */
+/** 通过 ServiceLoader 发现中性宿主 SPI，具体 Mod 识别与版本选择归外部扩展。 */
 public final class MinecraftHostExtensions {
     private static final List<MinecraftHostExtension> SERVICES = discover();
     private static final java.util.function.IntUnaryOperator IDENTITY = value -> value;

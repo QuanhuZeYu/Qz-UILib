@@ -23,7 +23,7 @@ import club.heiqi.uilib.ui.scene.semantics.SceneSemanticRequest;
 import club.heiqi.uilib.ui.scene.semantics.SceneSemanticSnapshot;
 
 /** 正式 MC 页面入口：内容声明与 GuiScreen 生命周期、唯一原生输入消费者分离。
- * 同一次打开的重初始化保留会话，关闭只释放本页资源，不关闭共享字体服务。
+ * 同次打开的重初始化保留会话；本页负责所属资源，共享字体服务归应用持有。
  * 游戏是否暂停由页面通过 doesGuiPauseGame 声明，默认沿用 GuiScreen。
  */
 public class MinecraftSceneScreen extends GuiScreen {
@@ -37,21 +37,21 @@ public class MinecraftSceneScreen extends GuiScreen {
         this(ReactiveDomain.direct(), page);
     }
 
-    /** 借用外部业务状态所属域，结束页面不结束该域。 */
+    /** 借用业务状态所属域，其生命周期由业务持有者管理。 */
     public MinecraftSceneScreen(ReactiveDomain domain, ScenePage page) {
         this(domain, page, null);
     }
     public MinecraftSceneScreen(ScenePage page, club.heiqi.uilib.ui.media.MediaService media) {
         this(ReactiveDomain.direct(), page, Objects.requireNonNull(media, "media"));
     }
-    /** 媒体服务由业务持有；默认入口仍无媒体，不在screen构造时初始化native。 */
+    /** 借用业务持有的媒体服务，native 随实际媒体会话初始化。 */
     public MinecraftSceneScreen(ReactiveDomain domain, ScenePage page, club.heiqi.uilib.ui.media.MediaService media) {
         this.mediaService = media;
         this.domain = Objects.requireNonNull(domain, "domain");
         this.page = Objects.requireNonNull(page, "page");
     }
 
-    /** 读取同页Host最近发布的纯值快照；未开屏或关闭后为空，不触发绘制。 */
+    /** 返回同页 Host 最近发布的纯值快照，未开屏或关闭后返回空快照。 */
     public SceneSemanticSnapshot semantics() {
         Inputs current = inputs;
         return current == null ? SceneSemanticSnapshot.EMPTY : current.semantics();
@@ -90,13 +90,13 @@ public class MinecraftSceneScreen extends GuiScreen {
             inputs = acquired;
             acquired.initialize();
         } catch (RuntimeException | Error failure) {
-            // 已打开会话后的输入桥/适配器初始化失败也释放scope和repeat借用。
+            // 输入初始化失败时退休本次输入，并结束会话及其 scope。
             try {
                 closeOpening(opened, openingInputs[0]);
             } catch (RuntimeException | Error cleanup) {
                 if (cleanup != failure) failure.addSuppressed(cleanup);
             }
-            // open 的早期失败也释放尚未转交作用域的本页资源，原始失败保持权威。
+            // 直接释放尚待转交作用域的宿主，清理失败追加到原始失败。
             if (!owned[0]) {
                 try {
                     host.close();
@@ -108,7 +108,7 @@ public class MinecraftSceneScreen extends GuiScreen {
         }
     }
 
-    /** MC可在没有runTick时绘制；呈现前采集同一原生历史，失焦取消仍不能借物理快照提前放行旧事件。 */
+    /** MC 可独立于 runTick 绘制；呈现前耗尽原生历史，再按物理释放事实恢复失焦后的输入。 */
     @Override
     public void drawScreen(int mouseX, int mouseY, float partialTicks) {
         if (session == null) return;
@@ -116,13 +116,11 @@ public class MinecraftSceneScreen extends GuiScreen {
         Inputs collecting = inputs;
         if (mc.currentScreen == this) {
             collecting.syncInputAvailability();
-            // 原版只在20Hz runTick采集输入；呈现前沿同一历史队列消费，拖动不必等下一tick。
-            // tick入口仍可调用，Mouse.next/Keyboard.next已经取走的事件不会重复。
+            // 呈现前与 runTick 共用原生历史消费者，及时响应拖动；next 保证每个事件消费一次。
             handleInput();
             if (mc.currentScreen == this && session == opened && inputs == collecting) opened.frame();
         }
-        // 按钮在本次 frame 内换页时旧会话已结束，不能回放旧计划。
-        // MC 此次仍调用旧 screen；交给当前 UILib screen 完成本次绘制，避免先 present 游戏世界。
+        // frame 内换页后由当前 UILib screen 接续绘制，使本帧呈现新页。
         GuiScreen active = mc.currentScreen;
         if (active != this) {
             if (active instanceof MinecraftSceneScreen) active.drawScreen(mouseX, mouseY, partialTicks);
@@ -188,7 +186,7 @@ public class MinecraftSceneScreen extends GuiScreen {
                 keypadEnterInput,
                 spaceInput;
 
-        /** 宿主只记录原生输入可用性；目标、挂载代际和物理按钮权威全部归核心。 */
+        /** 宿主记录原生输入可用性；目标、挂载代际和按钮权威归核心。 */
         private boolean pointerWindowActive;
 
         private boolean pointerSuspended = true;
@@ -200,7 +198,7 @@ public class MinecraftSceneScreen extends GuiScreen {
             keyInput = new SceneKeyInputAdapter(event -> {
                 if (event.key == SceneKey.ESCAPE && event.phase == SceneKeyEvent.Phase.DOWN)
                     opened.key(event, () -> {
-                        // 延迟结果只可关闭递交事件的同一页/会话。
+                        // 延迟关闭核验递交事件的页面与会话身份。
                         if (session == opened && mc.currentScreen == MinecraftSceneScreen.this) fallbackEscape();
                     });
                 else opened.key(event);
@@ -233,7 +231,7 @@ public class MinecraftSceneScreen extends GuiScreen {
 
         /** 同一消费者耗尽历史之后，才确认物理全释放并恢复输入。 */
         void historyDrained() {
-            // ESC等键盘事件可能已关闭本页，不能访问已释放的session。
+            // 原生事件可能同步关页，继续采集前核验会话身份。
             if (inputs != this || session != opened) return;
             syncInputAvailability();
             if (nativeText != null)
@@ -258,7 +256,7 @@ public class MinecraftSceneScreen extends GuiScreen {
                 enterInput.historyDrained(Keyboard.isKeyDown(Keyboard.KEY_RETURN));
                 keypadEnterInput.historyDrained(Keyboard.isKeyDown(Keyboard.KEY_NUMPADENTER));
                 spaceInput.historyDrained(Keyboard.isKeyDown(Keyboard.KEY_SPACE));
-                // 仅在历史耗尽后建立下一段修饰键起点，不让未来快照影响已经采集的事件。
+                // 历史耗尽后，以物理快照建立下一段修饰键起点。
                 leftCtrl = Keyboard.isKeyDown(Keyboard.KEY_LCONTROL);
                 rightCtrl = Keyboard.isKeyDown(Keyboard.KEY_RCONTROL);
                 leftShift = Keyboard.isKeyDown(Keyboard.KEY_LSHIFT);
@@ -284,7 +282,7 @@ public class MinecraftSceneScreen extends GuiScreen {
         void handleKeyboardInput() {
             if (inputs != this || session != opened) return;
             syncInputAvailability();
-            if (nativeText != null) return; // 增强路径在同一native序列翻译，旧Keyboard合成字符只消费不再投递。
+            if (nativeText != null) return; // 增强路径从 native 序列递交正式事件，此处耗尽兼容历史。
             routeKey(
                     Keyboard.getEventKey(),
                     Keyboard.getEventKeyState(),
@@ -295,7 +293,7 @@ public class MinecraftSceneScreen extends GuiScreen {
         private void routeKey(int key, boolean down, boolean repeat, char character) {
             if (inputs != this || session != opened) return;
             // WindowsKeyboard.handleChar 可递交 key=NONE/state=false 的独立WM_CHAR（包括中文提交）。
-            // 字符不是物理释放；只经过窗口/旧持键文本门，不往按键集合写入虚假的NONE。
+            // 独立字符按窗口与旧持键文本资格处理；物理按键集合只记录键事件。
             boolean accepted =
                     key == Keyboard.KEY_NONE && character >= 32
                             ? editInput.available()
@@ -357,7 +355,7 @@ public class MinecraftSceneScreen extends GuiScreen {
                     pendingHigh = character;
                     return;
                 }
-                // 丢弃孤立低代理；高代理等待同一页面焦点的下一个单元，不向字体递交非法UTF-16。
+                // 丢弃孤立低代理，高代理与同一焦点的后续低代理组成完整 UTF-16。
                 if (Character.isLowSurrogate(character) && pendingHigh == 0) return;
                 String text =
                         Character.isLowSurrogate(character) && pendingHigh != 0
@@ -368,11 +366,11 @@ public class MinecraftSceneScreen extends GuiScreen {
             }
         }
 
-        /** LWJGL2 翻译当前游标；增强路径不重复投递宿主兼容鼠标队列。 */
+        /** 翻译 LWJGL2 当前事件；增强路径改由统一 native 序列递交鼠标事实。 */
         void handleMouseInput() {
             if (inputs != this || session != opened || nativeText != null) return;
             syncInputAvailability();
-            pendingHigh = 0; // 指针焦点意图尚在管线队列中，不能将半代理带到后来的目标。
+            pendingHigh = 0; // 指针意图可能改变焦点，先结束上一目标的半代理缓存。
             int button = Mouse.getEventButton();
             boolean down = button >= 0 && Mouse.getEventButtonState();
             int x = Mouse.getEventX();
@@ -393,7 +391,7 @@ public class MinecraftSceneScreen extends GuiScreen {
             if (!pointerSuspended || event.kind == ScenePointerEvent.Kind.UP) opened.pointer(event);
         }
 
-        /** 窗口焦点边沿取消手势；重获焦点仍等所有物理键释放，不能借恢复焦点重建旧owner。 */
+        /** 失焦取消手势；重获焦点后等待历史耗尽与物理全释放，再接受新按压。 */
         private void syncInputAvailability() {
             if (nativeText == null) inputAvailability(Display.isActive());
         }
@@ -433,7 +431,7 @@ public class MinecraftSceneScreen extends GuiScreen {
                         if (inputs != this || session != opened || nativeText == null) return;
                         club.heiqi.uilib.ui.scene.node.SceneNode node =
                                 opened.runtime().focusRouter().focused().get();
-                        // 目标与组字失效归Core；切换可编辑字段不重置SDL原来源。
+                        // Core 协调目标与组字失效；SDL 来源在可编辑字段切换间保持原联系。
                         boolean requested =
                                 node != null
                                         && opened.runtime().interactive(node)
@@ -443,7 +441,7 @@ public class MinecraftSceneScreen extends GuiScreen {
                     });
         }
 
-        /** 只在handleInput历史事件消费完成后调用；未创建Mouse不能被当成物理全释放。 */
+        /** handleInput 耗尽历史后查询；Mouse 已创建且所有按钮释放时返回 true。 */
         private boolean allNativeButtonsReleased() {
             if (!Mouse.isCreated()) return false;
             for (int button = 0; button < Mouse.getButtonCount(); button++)
@@ -576,7 +574,7 @@ public class MinecraftSceneScreen extends GuiScreen {
     }
 
     private void closeOpening(ScenePageSession opened, Inputs closing) {
-        // 只断开本次接入；旧会话的退休回调不能关闭同 screen 已重建的新代。
+        // 按身份断开本次接入，保留同 screen 后继代的会话与输入。
         if (session == opened) session = null;
         if (inputs == closing) inputs = null;
         new MinecraftScreenResources(opened, closing).close();

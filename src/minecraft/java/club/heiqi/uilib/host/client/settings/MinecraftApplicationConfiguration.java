@@ -32,7 +32,7 @@ import cpw.mods.fml.common.eventhandler.EventBus;
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 import net.minecraft.client.Minecraft;
 
-/** MC应用唯一配置装配；字体声明归特性，页面只借用主题/设置，不拥有应用订阅。 */
+/** MC 应用配置装配持有配置会话与应用订阅，页面借用主题和设置，字体声明归字体特性。 */
 public final class MinecraftApplicationConfiguration {
     private static final MinecraftApplicationConfiguration LISTENER = new MinecraftApplicationConfiguration();
     private static final ConcurrentLinkedQueue<Runnable> OWNER_ACTIONS = new ConcurrentLinkedQueue<>();
@@ -59,9 +59,8 @@ public final class MinecraftApplicationConfiguration {
         for (Runnable action; (action = OWNER_ACTIONS.poll()) != null;) action.run();
     }
 
-    /** 1.7 的 preInit():void 后紧接 init():void 安装字体，尚无可等待的异步加载屏障。
-     * 保留同步 bootstrap 的真实配置意图；有宿主加载屏障后才将 prepare 移到 worker，
-     * 不能先用默认配置安装字体，再让迟到文档改写启动选择。运行期 reload 已独立异步。 */
+    /** 1.7 的 preInit 后紧接 init 安装字体，启动配置在此同步准备以确定首次字体选择。
+     * 运行期 reload 通过异步文档入口准备，再回原域发布。 */
     public static void load(File legacyFile) {
         if (!Minecraft.getMinecraft().func_152345_ab()) throw new IllegalStateException("MC应用配置安装仅限客户端主线程");
         if (session != null) throw new IllegalStateException("MC应用配置重复安装");
@@ -93,7 +92,7 @@ public final class MinecraftApplicationConfiguration {
                 DOMAIN.effect(owner, () -> {
                     reloadResources.get();
                     List<String> declarations = session.get(fonts);
-                    // 安装前及F3T去重时没有实际更新，不宣布资源成功或清除旧诊断。
+                    // 仅在已安装且通过 F3T 去重的配置入口发布实际更新。
                     if (MinecraftFontServices.configurationUpdateAvailable())
                         MinecraftFontServices.configurationChanged(declarations);
                 });
@@ -128,10 +127,10 @@ public final class MinecraftApplicationConfiguration {
         return completed;
     }
 
-    /** 客户端应用退出时结束配置请求及应用订阅；普通页面关闭不调用此入口。 */
+    /** 客户端应用退出时结束配置请求与应用订阅；页面借用关系随各自会话释放。 */
     public static void close() {
         if (!Minecraft.getMinecraft().func_152345_ab()) throw new IllegalStateException("MC应用配置关闭仅限客户端主线程");
-        // 先结算已从 worker 递交但游戏尚未 tick 的 drain，不能丢掉 domain 的唯一 scheduled 任务。
+        // 退出屏障先结算 worker 已递交的 drain，使 domain 的已调度任务完成交接。
         try { pumpOwner(); }
         catch (RuntimeException | Error failure) {
             try { closeOnOwner(); }

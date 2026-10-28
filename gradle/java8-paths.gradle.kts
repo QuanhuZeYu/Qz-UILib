@@ -1,5 +1,5 @@
-// Java8 Windows launcher在中文工作区不能解析绝对classpath；生产/验证仍使用原Java目标。
-// 仅在进程启动边界换为相对路径，保留任务声明的classpath用于依赖与运行隔离检查。
+// Java8 Windows launcher 使用相对路径绕过中文绝对 classpath 的解码问题。
+// 启动前保留声明的 classpath 供依赖与隔离检查，Java 目标沿任务配置。
 val windows = System.getProperty("os.name").lowercase().contains("win")
 tasks.withType<JavaExec>().configureEach {
     doFirst {

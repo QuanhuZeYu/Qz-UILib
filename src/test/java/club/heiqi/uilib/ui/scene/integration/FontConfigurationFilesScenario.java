@@ -23,7 +23,7 @@ import club.heiqi.uilib.ui.scene.text.font.FontCandidateConfiguration;
 import club.heiqi.uilib.ui.scene.text.font.FontSource;
 import club.heiqi.uilib.ui.scene.text.font.FontTextService;
 
-/** 真实 MC 来源选择生产路径，在没有 Forge/MC 的类路径上读写真实迁移文件。 */
+/** 在独立 CPU 类路径中执行正式 MC 来源选择，读写真实迁移文件。 */
 public final class FontConfigurationFilesScenario extends TestApplication {
     public static void main(String[] args) throws Exception { new FontConfigurationFilesScenario().run(); }
     private List<FontSource> builtins;
@@ -43,7 +43,7 @@ public final class FontConfigurationFilesScenario extends TestApplication {
             require(Arrays.equals(bytes, Files.readAllBytes(properties)), "迁移不改Properties字节");
             Path yaml = old.resolveSibling("font.yaml");
             require(Files.exists(yaml), "保存新YAML来源");
-            // YAML 已成为唯一权威，不再解析损坏的旧来源。
+            // 核验已存在的 YAML 保持来源权威，旧文件损坏与当前读取独立。
             Files.write(properties, "损坏Properties".getBytes(StandardCharsets.UTF_8));
             load(old, false, Collections.emptyList());
         });

@@ -21,14 +21,13 @@ import club.heiqi.uilib.ui.scene.text.TextLayout;
 import club.heiqi.uilib.ui.scene.text.TextPolicy;
 import club.heiqi.uilib.ui.scene.text.RasterSampling;
 
-/** MC标准入口语义适配。核心布局不读取GUI Scale，caller变换只在实际播放位置捕获。
- * 安装只创建逻辑适配器，度量不创建GL对象；所有文字共享scene的字体/worker/atlas/backend。 */
+/** MC 标准文字入口适配：布局使用共享字体服务，caller 的 GUI/世界变换在播放位置捕获。
+ * 安装创建逻辑适配器，GPU 资源按需取得；文字与 scene 共用字体、worker、atlas 和 backend。 */
 public final class MinecraftVanillaFont {
     private static final Map<FontRendererAccess, SettingsEntry> SETTINGS =
             new WeakHashMap<FontRendererAccess, SettingsEntry>();
-    // 标准文字的小字号轮廓至少以32px采样，布局em/advance/基线仍由Settings决定。
-    // 微软雅黑“世界/取消”探针在em11、GUI密度2时，24px首墨迹行比32px晚一物理像素；
-    // 32px采样保留顶部细节，避免为显示质量改变共享字体的hinting、整形或墨迹规则。
+    // 小字号轮廓从 32px 采样以保留顶部细节，布局 em/advance/基线由 Settings 决定。
+    // 依据：微软雅黑“世界/取消”在 em11、GUI 密度 2 时，24px 首墨迹行较 32px 晚一物理像素。
     private static final RasterPolicy RASTER =
             new RasterPolicy(32, 48, 64, 96, 128, 192, 256, 384, 512);
     private static VanillaTextService text;
@@ -48,8 +47,7 @@ public final class MinecraftVanillaFont {
         installed = true;
     }
 
-    // Forge Splash在独立线程和context继续绘制启动字；安装后也不属于游戏字体owner。
-    // volatile安装标记发布逻辑适配器与owner，所有标准入口先判断线程，避免访问资源、缓存或GL。
+    // Forge Splash 使用独立线程与 context；volatile 发布安装结果，标准入口仅在游戏 owner 线程接管。
     public static boolean active() {
         return installed && Thread.currentThread() == ownerThread && VanillaFontOptions.enabled();
     }
@@ -135,8 +133,7 @@ public final class MinecraftVanillaFont {
         return color & 0xff000000 | (color & 0x00fcfcfc) >>> 2;
     }
 
-    // 原版适配的视觉位置微调：同字号微软雅黑GPU对照中文墨迹下沿在caller+10附近，
-    // 整体上移2个GUI单位靠近原版8px框底；不改变字形生成、布局或阴影相对偏移。
+    // 微软雅黑 GPU 对照的中文墨迹下沿位于 caller+10 附近；绘制原点上移 2 个 GUI 单位对齐原版框底。
     private static final int DRAW_Y_OFFSET = -2;
 
     private static PaintPlan plan(TextLayout layout, int x, int y) {
@@ -247,7 +244,7 @@ public final class MinecraftVanillaFont {
                                         owner.registerVisibleDemand(
                                                 renderer, sampled(plan, context, facts, true), context);
                                     } catch (RuntimeException | Error failure) {
-                                        // 列表播放的登记失败不会进入draw，须在此退役已记住的事实。
+                                        // 登记失败时立即退役本次采样事实。
                                         facts.forget(plan);
                                         throw failure;
                                     }
@@ -274,7 +271,7 @@ public final class MinecraftVanillaFont {
         return bridge;
     }
 
-    /** 逻辑计划不重排；列表播放的新变换只改变采样身份。正clip-w候选用于穿过近裁面的计划。 */
+    /** 按播放位置的投影采样原逻辑计划，保留布局并生成当前 tick 的混淆字形。 */
     private static PaintPlan sampled(PaintPlan plan, FontRenderContext context,
             WorldFontSampling facts, boolean remember) {
         WorldFontSampling.Source source = WorldFontSampling.Source.capture(context);

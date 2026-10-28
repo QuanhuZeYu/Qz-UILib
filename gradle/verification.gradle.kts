@@ -63,7 +63,7 @@ val asset = scenario("coreAssetResourceScenario", "MC资源链Core资产及用�
 val itemFacts = scenario("minecraftItemImageFactsScenario", "真实MC物品提示转换、palette快照与共同绘制输入", "club.heiqi.uilib.host.client.image.MinecraftItemImageFactsScenario")
 tasks.named("check") { dependsOn(cpu, fontProjection, fontText, vanillaThread, durability, asset, itemFacts) }
 
-// 保留显式 GPU 场景入口；普通 check 维持原来的设备需求范围。
+// GPU 场景通过显式入口运行，默认 check 汇集 CPU 与无窗口验证。
 scenario("fontContextGlScenario", "有效字体上下文Core与Compatibility捕获", prefix + "FontProjectionScenario")
 scenario("fontRealStyleGlScenario", "真实微软雅黑原版样式GPU图像", prefix + "FontRealStyleGlScenario") { args(layout.buildDirectory.file("font-real-style/font-real-style-msyh.png").get().asFile.absolutePath) }
 
@@ -93,7 +93,7 @@ val cleanup = display("minecraftScreenCleanupScenario", "正式session与客户�
 val inputLifecycle = display("minecraftScreenInputLifecycleScenario", "命令内切页与独占原生桥同步释放、重入及初始化失败", "club.heiqi.uilib.ui.host.minecraft.MinecraftScreenInputLifecycleScenario", true)
 val shutdown = display("minecraftFontShutdownScenario", "字体桥失败仍结束真实owner", prefix + "MinecraftFontShutdownScenario", true)
 display("imageLwjgl2Scenario", "LWJGL2实际IMAGE像素及item scope", prefix + "ImageLwjgl2Scenario")
-// screenSwitch 需要真实显示栈；cleanup/nativeInput 为无窗口原生闭环，保留在 check。
+// check 包含无窗口的清理、原生输入与 HUD 生命周期闭环，screenSwitch 通过设备入口运行。
 tasks.named("check") { dependsOn(cleanup, nativeInput, hud, inputLifecycle) }
 tasks.register<Jar>("lwjgl2TestJar") { group = "verification"; archiveClassifier.set("lwjgl2-test"); from(legacyTests.output) }
 
@@ -127,9 +127,9 @@ hostDisplay.configure {
         setExecutable(legacyJava)
     }
 }
-// packagedMediaJava8 需要真实窗口与音频输出，改为显式设备入口。
+// packagedMediaJava8 在显式设备入口验证真实窗口与音频输出。
 
-// 保留标准运行classpath门禁，但不执行任何游戏任务。
+// 从标准游戏任务读取 classpath，静态核验字节码与隔离边界。
 val runtime = files(listOf("runClient", "runServer").map { tasks.named<JavaExec>(it).get().classpath })
 tasks.named("verifyRunClasspathIsolation") {
     dependsOn("classes"); inputs.files(runtime)
@@ -144,7 +144,7 @@ tasks.named("verifyRunClasspathIsolation") {
         }
     }
 }
-// 显式设备验收聚合：窗口、GPU 与显示栈场景需要用户授权的真实设备，不进入默认 build/check。
+// deviceCheck 聚合窗口、GPU 与显示栈场景，按用户设备授权单独执行。
 tasks.register("deviceCheck") {
     group = "verification"
     description = "显式设备验收：真实窗口、GPU 与显示栈场景"
@@ -153,8 +153,8 @@ tasks.register("deviceCheck") {
             "imageLwjgl2Scenario", "lwjgl2HostScenario", "lwjgl2VideoVerify")
 }
 
-// Java8 Windows native loader无法加载本机中文绝对DLL路径；只在验证进程边界复制到唯一临时目录。
-// 每个消费者在自己的finalizer释放临时副本，生产加载器与解析产物不改动。
+// Java8 Windows native loader 从唯一临时目录加载 DLL，绕过本机中文绝对路径的解码问题。
+// 验证任务各自持有并通过 finalizer 删除临时副本。
 listOf("minecraftScreenSwitchScenario", "minecraftNativeInputScenario", "minecraftHudScenario", "minecraftScreenCleanupScenario", "minecraftScreenInputLifecycleScenario", "minecraftFontShutdownScenario", "imageLwjgl2Scenario", "lwjgl2HostScenario", "lwjgl2VideoVerify", "packagedMediaJava8").forEach { taskName ->
     val runtimeDirectory = objects.property(File::class.java)
     val cleanup = tasks.register(taskName + "CleanupNatives") {

@@ -22,7 +22,7 @@ public final class MinecraftFormat {
     public interface Context {
         int paletteColor(int index);
 
-        /** 宿主显示码点快照；不改raw或来源范围，格式标记先于本转换消费。 */
+        /** 格式标记消费后转换显示码点，保留 raw 与完整来源范围。 */
         default int codePoint(int codePoint) { return codePoint; }
 
         TextEffects effects(

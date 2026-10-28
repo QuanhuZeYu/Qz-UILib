@@ -19,8 +19,7 @@ final class MinecraftScreenResources implements AutoCloseable {
         inputs = null;
         Throwable failure = null;
         try {
-            // 页面宿主规格的唯一输入消费者属于关屏边界，不能随树延迟到当前命令结束。
-            // session.close 的完成回调和 scope 释放也可能重入开页，届时旧桥必须已退休。
+            // 关屏先同步退休唯一输入消费者，使 close 回调或 scope 释放可安全重入开页。
             if (closing != null) closeInput(closing);
         } catch (RuntimeException | Error next) {
             failure = next;

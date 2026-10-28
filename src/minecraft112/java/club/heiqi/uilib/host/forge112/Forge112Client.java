@@ -54,7 +54,7 @@ public final class Forge112Client {
         if (Thread.currentThread() != thread) throw new IllegalStateException("UILib 服务必须在客户端 GL 线程访问");
     }
 
-    /** 由本包 coremod 在 Display.destroy 之前调用；不在 JVM shutdown hook 上操作 GL。 */
+    /** 由本包 coremod 在 Display.destroy 前调用，在客户端 GL 线程结束页面与应用服务。 */
     public static void close() {
         if (services == null) return;
         checkThread();

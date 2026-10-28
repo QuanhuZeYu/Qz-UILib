@@ -16,7 +16,7 @@ import club.heiqi.uilib.ui.scene.text.TextPolicy;
 import club.heiqi.uilib.ui.scene.text.TextStyle;
 
 /** 正式 MC 宿主与生产 client 字体服务共享度量、异步光栅及图集；坐标统一为 framebuffer px。
- * 本页只拥有 renderer；关闭不释放共享 ClientFontServices。 */
+ * 本页持有 renderer 与 mediaViews，共享字体、图像和媒体服务归外部持有者。 */
 public final class MinecraftSceneHost implements SceneHost, SceneTextMeasurer, AutoCloseable {
     private final ClientFontServices fonts = MinecraftFontServices.shared();
     private final club.heiqi.uilib.host.client.image.ClientImageServices images =
@@ -26,14 +26,14 @@ public final class MinecraftSceneHost implements SceneHost, SceneTextMeasurer, A
     private volatile SceneSemanticSnapshot semantics = SceneSemanticSnapshot.EMPTY;
 
     public MinecraftSceneHost() { this(null); }
-    /** 借用中性服务；MC的framebuffer-submit回执不冒充游戏最终交换。 */
+    /** 借用中性媒体服务；回执表示 framebuffer 提交，最终交换由游戏负责。 */
     public MinecraftSceneHost(club.heiqi.uilib.ui.media.MediaService media) {
         mediaViews = media == null ? null : new club.heiqi.uilib.ui.scene.video.MediaViewPump();
         renderer = new FramebufferSceneRenderer(fonts, images, media, false);
     }
     @Override public club.heiqi.uilib.ui.scene.video.MediaViewPump mediaViews() { return mediaViews; }
 
-    /** 只保留Core最近发布的不可变事实，读取不推进页面或访问runtime。 */
+    /** 返回 Core 最近发布的不可变语义快照。 */
     public SceneSemanticSnapshot semantics() { return semantics; }
 
     @Override public void semanticsChanged(SceneSemanticSnapshot snapshot) {

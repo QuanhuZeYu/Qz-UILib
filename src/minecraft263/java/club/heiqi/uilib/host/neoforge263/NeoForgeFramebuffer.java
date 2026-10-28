@@ -7,7 +7,7 @@ import com.mojang.blaze3d.pipeline.RenderTarget;
 import com.mojang.renderpearl.backend.opengl.GlStateManager;
 import com.mojang.renderpearl.backend.opengl.GlTextureView;
 
-/** Post 位于主贴图 blit 之前；宿主 render pass 已解绑，不能向默认 FBO 回放。 */
+/** Post 在主贴图 blit 前将当前颜色附件绑定到专属 FBO，承接已结束的宿主 render pass。 */
 final class NeoForgeFramebuffer implements AutoCloseable {
     private int framebuffer;
     private GlTextureView attachedColor;

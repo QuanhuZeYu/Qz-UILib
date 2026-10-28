@@ -23,7 +23,7 @@ modules.each { name, module ->
 }
 ext.uilibProduction = files(uilibArtifacts.core, uilibArtifacts['font-adapter'], uilibArtifacts['gl-renderer'], uilibArtifacts[project.uilibBinding])
 ext.uilibManual = files(uilibArtifacts.gallery, uilibArtifacts['media-adapter'], uilibArtifacts.verification)
-// 只对本工程解析结果同步安装名；其他工程不读取这个 build 目录。
+// 将本工程解析结果同步为稳定安装名，各工程分别持有自己的输出。
 ext.uilibResolvedDirectory = layout.buildDirectory.dir('resolved-uilib')
 tasks.register('resolveUilibProduction', Sync) {
     into uilibResolvedDirectory

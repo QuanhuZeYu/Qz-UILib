@@ -21,7 +21,7 @@ import club.heiqi.uilib.ui.scene.text.font.FontCandidateConfiguration;
 import club.heiqi.uilib.ui.scene.text.font.FontSource;
 import club.heiqi.uilib.ui.scene.text.font.FontTextService;
 
-/** 用真实旧 UTF-8 文件验证只读迁移，运行类路径不需要 Forge、MC 或 native。 */
+/** 在独立 CPU 类路径中，以真实旧 UTF-8 文件验证只读迁移。 */
 public final class LegacyFontConfigurationScenario extends TestApplication {
     public static void main(String[] args) throws Exception { new LegacyFontConfigurationScenario().run(); }
 

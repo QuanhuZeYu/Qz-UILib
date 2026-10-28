@@ -63,7 +63,7 @@ if (providers.gradleProperty('prismRoot').isPresent()) {
     def patched = new File(prism, 'libraries/net/neoforged/minecraft-client-patched/26.3.0.86/minecraft-client-patched-26.3.0.86.jar')
     if (!patched.isFile()) throw new GradleException('指定 Prism 缓存缺少精确 NeoForge 26.3.0.86 patched 客户端')
     libraries.add(patched)
-    // MixinExtras 的注入辅助不用于本接入；Mixin API 已由实例 loader 依赖提供。
+    // 以精确实例的 loader 依赖提供本接入所需 Mixin API。
     sourceSets.main.compileClasspath = files(libraries, uilibProduction)
     sourceSets.manual.compileClasspath = files(sourceSets.main.output, sourceSets.main.compileClasspath,
             uilibManual)
@@ -103,8 +103,7 @@ def nestedResources = { String name, List<String> modules ->
 def productionNested = nestedResources('productionNestedResources', productionNestedLibraries)
 def manualNested = nestedResources('manualNestedResources', manualNestedLibraries)
 
-// 媒体可按需安装；独立资源 Mod 只携带正式媒体 JiJ，不依赖人工广场。
-// FML 12 直接支持无入口类的模组，不需要已废弃的 lowcodefml。
+// 独立媒体资源 Mod 按需安装，携带正式媒体 JiJ；FML 12 直接加载其无入口类声明。
 def mediaNested = nestedResources('mediaNestedResources', ['media-adapter'])
 def mediaJar = tasks.register('mediaJar', Jar) {
     archiveBaseName = 'qz_uilib-media-neoforge263'
@@ -136,7 +135,7 @@ def verifyMediaBundle = tasks.register('verifyMediaBundle') {
     }
 }
 
-// 普通测试资源不登记到 FML JiJ；同包核心检查只在独立加载器中运行。
+// 测试资源封装为人工包内的独立 Jar，同包核心检查在隔离加载器中运行。
 def manualVerification = tasks.register('manualVerificationResources', Sync) {
     into layout.buildDirectory.dir('generated/manualVerificationResources')
     manualVerificationLibraries.each { module, filename ->
@@ -146,7 +145,7 @@ def manualVerification = tasks.register('manualVerificationResources', Sync) {
 tasks.named('jar', Jar) {
     dependsOn productionNested
     from(layout.buildDirectory.dir('generated/productionNestedResources'))
-    // GL API 与具体 binding 同包，消费共同编译输出合入此适配，避免 FML 模块 split package。
+    // 同包的 GL API 与具体 binding 合入一个适配模块，保持 FML 包归属唯一。
     ['gl-renderer', 'lwjgl3'].each { module ->
         from({ zipTree(uilibArtifacts[module].singleFile) }) {
             exclude 'META-INF/MANIFEST.MF', 'LICENSE', 'META-INF/*.SF', 'META-INF/*.RSA', 'META-INF/*.DSA', 'module-info.class'
@@ -165,7 +164,7 @@ def manualJar = tasks.register('manualJar', Jar) {
     // 媒体页沿用共享路径 helper；验证实现及生产同包场景保留在独立 Jar 中。
     from({ zipTree(uilibArtifacts.verification.singleFile) }) { include 'club/heiqi/uilib/testing/host/LocalMediaFiles*.class' }
     from(manualVerification) { into manualVerificationRoot }
-    // 图像资产必须属于正式 mod 资源包；普通 JiJ library 不承担 ResourceManager 的资源包身份。
+    // 图像资产装入外层 Mod，供 ResourceManager 以正式资源包身份加载。
     from({ zipTree(uilibArtifacts.gallery.singleFile) }) { exclude 'META-INF/MANIFEST.MF', 'LICENSE' }
     from(layout.buildDirectory.dir('generated/manualNestedResources'))
     from(new File(repositoryRoot, 'LICENSE'))
@@ -194,7 +193,7 @@ def verifyBundle = { File artifact, boolean manual ->
                 def shared = packages(zip).intersect(packages(core))
                 if (!shared.isEmpty()) throw new GradleException('人工 FML 模块与正式 Core 拆包冲突: ' + shared.sort())
             }
-            // 真实加载外层 SPI；适配器同时从内嵌三 Jar 读取独立服务目录，不能只检查 class 名称。
+            // 真实加载外层 SPI 并执行检查，核验适配器对内嵌三 Jar 服务目录的读取。
             new URLClassLoader([artifact.toURI().toURL()] as URL[], (ClassLoader) null).withCloseable { loader ->
                 def contract = loader.loadClass('club.heiqi.uilib.testing.gallery.GalleryChecks')
                 def providers = ServiceLoader.load(contract, loader).iterator()

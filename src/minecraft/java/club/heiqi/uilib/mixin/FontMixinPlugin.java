@@ -6,8 +6,7 @@ import org.spongepowered.asm.lib.tree.ClassNode;
 import org.spongepowered.asm.mixin.extensibility.IMixinConfigPlugin;
 import org.spongepowered.asm.mixin.extensibility.IMixinInfo;
 
-/** 可选宿主只按目标class资源存在性选择；不得Class.forName提前初始化/变换目标。
- * 替代开关在标准入口运行时检查，关闭后保持原宿主完整实现，兼容桥不吞运行错误。 */
+/** 按 Mixin 配置应用本仓声明的目标；可选宿主接入由中性扩展提供。 */
 public final class FontMixinPlugin implements IMixinConfigPlugin {
     @Override
     public void onLoad(String mixinPackage) {}
