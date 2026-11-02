@@ -11,7 +11,7 @@
 | 实例 | Minecraft | 加载器或整合包版本 | Java 与窗口/输入宿主 |
 | --- | --- | --- | --- |
 | Forge 1.7.10 | 1.7.10 | Forge 10.13.4.1614 | Java8 / LWJGL2 |
-| GTNH | 1.7.10 | GTNH 2.9.0-beta-3 | 既有 Java 组合 / LWJGL3ify 与 Angelica |
+| GTNH | 1.7.10 | GTNH 2.9.0 | 既有 Java 组合 / LWJGL3ify 与 Angelica |
 | Forge 1.12.2 | 1.12.2 | Forge 14.23.5.2864 | Java8 / LWJGL2 |
 | Forge 1.16.5 | 1.16.5 | Forge 36.2.42 | Java8 / LWJGL3 |
 | NeoForge 26.3 | 26.3 | NeoForge 26.3.0.86 | Java25 / SDL |
