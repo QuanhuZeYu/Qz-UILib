@@ -171,6 +171,8 @@ jobs:
           UILIB_GROUP: ${{ needs.validate.outputs.group }}
           GRADLE_TASKS: ${{ matrix.tasks }}
           UILIB_JDK8: ${{ env.JAVA_HOME_8_X64 }}
+          # GTNH Nexus 读取缓慢时，legacy 构建使用有限的连接和读取等待。
+          GRADLE_OPTS: ${{ matrix.host == '1.7.10' && '-Dorg.gradle.internal.http.connectionTimeout=60000 -Dorg.gradle.internal.http.socketTimeout=120000' || '' }}
         run: |
           set -euo pipefail
           # Java8 原生参数按 UTF-8 解码；Forge 根地址要求可接受的 User-Agent。
